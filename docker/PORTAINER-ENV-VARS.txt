@@ -1,0 +1,36 @@
+# Quick Environment Variables for Portainer
+
+Copy these into Portainer's "Environment variables" section when creating the stack.
+Replace values in <brackets> with your actual values.
+
+NODE_ENV=production
+PORT=3000
+HOST=0.0.0.0
+LOG_LEVEL=info
+
+# Generate with: openssl rand -base64 64
+JWT_SECRET=<REPLACE_WITH_64_CHAR_RANDOM_STRING>
+JWT_REFRESH_SECRET=<REPLACE_WITH_ANOTHER_64_CHAR_RANDOM_STRING>
+
+CORS_ORIGIN=https://chat.sosiagaming.com
+
+# Database - Use a strong password
+DATABASE_URL=postgresql://voxcord:<YOUR_DB_PASSWORD>@postgres:5432/voxcord
+POSTGRES_USER=voxcord
+POSTGRES_PASSWORD=<YOUR_DB_PASSWORD>
+POSTGRES_DB=voxcord
+
+REDIS_URL=redis://redis:6379
+
+# LiveKit - Generate with: openssl rand -hex 16 and openssl rand -base64 32
+LIVEKIT_API_KEY=<YOUR_LIVEKIT_KEY>
+LIVEKIT_API_SECRET=<YOUR_LIVEKIT_SECRET>
+LIVEKIT_URL=wss://chat.sosiagaming.com:3045
+
+# MinIO S3 Storage - Use a strong password
+MINIO_ENDPOINT=minio:9000
+MINIO_ACCESS_KEY=voxcord_admin
+MINIO_SECRET_KEY=<YOUR_MINIO_PASSWORD>
+
+# Push Notifications
+NTFY_BASE_URL=http://192.168.2.23:3048

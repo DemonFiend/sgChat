@@ -1,0 +1,162 @@
+version: '3.8'
+
+services:
+  # ============================================================
+  # API Server - DISABLED: Build locally first
+  # ============================================================
+  # api:
+  #   build:
+  #     context: ../packages/api
+  #     dockerfile: ../../docker/Dockerfile.api
+  #   ports:
+  #     - "3040:3000"
+  #   environment:
+  #     - NODE_ENV=production
+  #     - PORT=3000
+  #     - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+  #     - REDIS_URL=redis://redis:6379
+  #     - JWT_SECRET=${JWT_SECRET}
+  #     - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+  #     - CORS_ORIGIN=${CORS_ORIGIN}
+  #     - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
+  #     - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
+  #     - LIVEKIT_URL=ws://livekit:7880
+  #     - MINIO_ENDPOINT=minio:9000
+  #     - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+  #     - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+  #     - NTFY_URL=http://ntfy:80
+  #   depends_on:
+  #     - postgres
+  #     - redis
+  #     - minio
+  #     - livekit
+  #     - ntfy
+  #   restart: unless-stopped
+  #   networks:
+  #     - sgchat
+
+  # ============================================================
+  # PostgreSQL Database
+  # ============================================================
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "3041:5432"
+    restart: unless-stopped
+    networks:
+      - sgchat
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================
+  # Redis Cache
+  # ============================================================
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "3042:6379"
+    restart: unless-stopped
+    networks:
+      - sgchat
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ============================================================
+  # MinIO (S3-compatible storage)
+  # ============================================================
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - "3043:9000"
+      - "3044:9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ACCESS_KEY}
+      - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY}
+    volumes:
+      - minio_data:/data
+    restart: unless-stopped
+    networks:
+      - sgchat
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # ============================================================
+  # LiveKit (Voice/Video SFU)
+  # ============================================================
+  livekit:
+    image: livekit/livekit-server:latest
+    command: --config /etc/livekit.yaml
+    ports:
+      - "3045:7880"   # WebSocket
+      - "3046:7881"   # WebRTC TCP
+      - "3047:7882/udp" # WebRTC UDP
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml
+    restart: unless-stopped
+    networks:
+      - sgchat
+
+  # ============================================================
+  # ntfy (Push Notifications)
+  # ============================================================
+  ntfy:
+    image: binwiederhier/ntfy:latest
+    command: serve --cache-file /var/lib/ntfy/cache.db
+    ports:
+      - "3048:80"
+    environment:
+      - NTFY_BASE_URL=${NTFY_BASE_URL}
+      - NTFY_AUTH_DEFAULT_ACCESS=deny-all
+    volumes:
+      - ntfy_data:/var/lib/ntfy
+    restart: unless-stopped
+    networks:
+      - sgchat
+
+  # ============================================================
+  # Nginx (Web Client + Downloadable Installers)
+  # ============================================================
+  client:
+    image: nginx:alpine
+    ports:
+      - "3049:80"
+      - "3050:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ../packages/client-web/dist:/usr/share/nginx/html
+      - ./downloads:/usr/share/nginx/html/downloads
+    # depends_on:
+    #   - api
+    restart: unless-stopped
+    networks:
+      - sgchat
+
+networks:
+  sgchat:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  ntfy_data:
