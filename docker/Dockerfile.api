@@ -30,6 +30,7 @@ RUN npm install -g pnpm@8
 
 # Copy package files for production install
 COPY --from=builder /app/package.json ./
+COPY --from=builder /app/pnpm-lock.yaml ./
 COPY --from=builder /app/pnpm-workspace.yaml ./
 COPY --from=builder /app/packages/api/package.json ./packages/api/
 COPY --from=builder /app/packages/shared/package.json ./packages/shared/
