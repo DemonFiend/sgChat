@@ -2,38 +2,36 @@ version: '3.8'
 
 services:
   # ============================================================
-  # API Server - DISABLED: Build locally first
+  # API Server
   # ============================================================
-  # api:
-  #   build:
-  #     context: ../packages/api
-  #     dockerfile: ../../docker/Dockerfile.api
-  #   ports:
-  #     - "3040:3000"
-  #   environment:
-  #     - NODE_ENV=production
-  #     - PORT=3000
-  #     - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-  #     - REDIS_URL=redis://redis:6379
-  #     - JWT_SECRET=${JWT_SECRET}
-  #     - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
-  #     - CORS_ORIGIN=${CORS_ORIGIN}
-  #     - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
-  #     - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
-  #     - LIVEKIT_URL=ws://livekit:7880
-  #     - MINIO_ENDPOINT=minio:9000
-  #     - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
-  #     - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
-  #     - NTFY_URL=http://ntfy:80
-  #   depends_on:
-  #     - postgres
-  #     - redis
-  #     - minio
-  #     - livekit
-  #     - ntfy
-  #   restart: unless-stopped
-  #   networks:
-  #     - sgchat
+  api:
+    image: sosiagaming/sgchat-api:latest
+    ports:
+      - "3040:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      - CORS_ORIGIN=${CORS_ORIGIN}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
+      - LIVEKIT_URL=ws://livekit:7880
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - NTFY_URL=http://ntfy:80
+    depends_on:
+      - postgres
+      - redis
+      - minio
+      - livekit
+      - ntfy
+    restart: unless-stopped
+    networks:
+      - sgchat
 
   # ============================================================
   # PostgreSQL Database
@@ -46,7 +44,7 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - /opt/sgchat/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
       - "3041:5432"
     restart: unless-stopped
@@ -111,7 +109,7 @@ services:
       - "3046:7881"   # WebRTC TCP
       - "3047:7882/udp" # WebRTC UDP
     volumes:
-      - ./livekit.yaml:/etc/livekit.yaml
+      - /opt/sgchat/livekit.yaml:/etc/livekit.yaml
     restart: unless-stopped
     networks:
       - sgchat
@@ -134,22 +132,22 @@ services:
       - sgchat
 
   # ============================================================
-  # Nginx (Web Client + Downloadable Installers)
+  # Nginx (Web Server) - Optional, uncomment when client is built
   # ============================================================
-  client:
-    image: nginx:alpine
-    ports:
-      - "3049:80"
-      - "3050:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
-      - ../packages/client-web/dist:/usr/share/nginx/html
-      - ./downloads:/usr/share/nginx/html/downloads
-    # depends_on:
-    #   - api
-    restart: unless-stopped
-    networks:
-      - sgchat
+  # client:
+  #   image: nginx:alpine
+  #   ports:
+  #     - "3049:80"
+  #     - "3050:443"
+  #   volumes:
+  #     - /opt/sgchat/nginx.conf:/etc/nginx/nginx.conf
+  #     - /opt/sgchat/client-web:/usr/share/nginx/html
+  #     - /opt/sgchat/downloads:/usr/share/nginx/html/downloads
+  #   depends_on:
+  #     - api
+  #   restart: unless-stopped
+  #   networks:
+  #     - sgchat
 
 networks:
   sgchat:
