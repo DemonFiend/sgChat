@@ -1,4 +1,5 @@
-import 'dotenv/config';
+// dotenv not needed in Docker - environment variables are passed by container
+// import 'dotenv/config';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
