@@ -3,7 +3,7 @@ import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { createServer, handleMemberJoin, handleMemberLeave, createRoleFromTemplate, generateInviteCode } from '../services/server.js';
 import { calculatePermissions } from '../services/permissions.js';
-import { ServerPermissions, hasPermission, createServerSchema, createChannelSchema, createRoleSchema, createInviteSchema, RoleTemplates } from '@voxcord/shared';
+import { ServerPermissions, hasPermission, createServerSchema, createChannelSchema, createRoleSchema, createInviteSchema, RoleTemplates } from '@sgchat/shared';
 
 export const serverRoutes: FastifyPluginAsync = async (fastify) => {
   // Get user's servers

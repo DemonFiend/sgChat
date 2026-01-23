@@ -3,7 +3,7 @@ import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { calculatePermissions } from '../services/permissions.js';
 import { generateLiveKitToken, getLiveKitUrl } from '../services/livekit.js';
-import { VoicePermissions, hasPermission } from '@voxcord/shared';
+import { VoicePermissions, hasPermission } from '@sgchat/shared';
 
 export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
   // Join voice channel (get LiveKit token)

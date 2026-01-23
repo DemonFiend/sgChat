@@ -4,7 +4,7 @@ import { nanoid } from 'nanoid';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
-import { registerSchema, loginSchema } from '@voxcord/shared';
+import { registerSchema, loginSchema } from '@sgchat/shared';
 
 export const authRoutes: FastifyPluginAsync = async (fastify) => {
   // Register

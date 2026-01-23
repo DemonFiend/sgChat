@@ -2,7 +2,7 @@ import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { canAccessChannel, calculatePermissions } from '../services/permissions.js';
-import { ServerPermissions, TextPermissions, hasPermission, sendMessageSchema } from '@voxcord/shared';
+import { ServerPermissions, TextPermissions, hasPermission, sendMessageSchema } from '@sgchat/shared';
 
 export const channelRoutes: FastifyPluginAsync = async (fastify) => {
   // Get channel by ID

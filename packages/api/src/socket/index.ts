@@ -3,7 +3,7 @@ import { FastifyInstance } from 'fastify';
 import { db } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
 import { calculatePermissions } from '../services/permissions.js';
-import { TextPermissions, hasPermission } from '@voxcord/shared';
+import { TextPermissions, hasPermission } from '@sgchat/shared';
 
 export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
   // Authentication middleware

@@ -1,6 +1,6 @@
 import postgres from 'postgres';
 
-const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://voxcord:password@localhost:5432/voxcord';
+const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://sgchat:password@localhost:5432/sgchat';
 
 export const sql = postgres(DATABASE_URL, {
   max: 10,

@@ -2,7 +2,7 @@ import { sql } from '../lib/db.js';
 import { db } from '../lib/db.js';
 import { nanoid } from 'nanoid';
 import { getDefaultPermissions } from './permissions.js';
-import { permissionToString, RoleTemplates } from '@voxcord/shared';
+import { permissionToString, RoleTemplates } from '@sgchat/shared';
 
 /**
  * Create a new server with default channels and roles

@@ -1,4 +1,4 @@
-# VoxCord
+# sgChat
 
 A self-hosted Discord/Revolt/Guilded clone with voice, video, and text chat capabilities.
 
@@ -67,7 +67,7 @@ docker-compose up -d
 ## Project Structure
 
 ```
-voxcord/
+sgchat/
 ├── packages/
 │   ├── shared/          # Shared types, validators, constants
 │   ├── api/             # Fastify server

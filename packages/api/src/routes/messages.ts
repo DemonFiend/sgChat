@@ -2,7 +2,7 @@ import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { calculatePermissions } from '../services/permissions.js';
-import { TextPermissions, hasPermission } from '@voxcord/shared';
+import { TextPermissions, hasPermission } from '@sgchat/shared';
 
 export const messageRoutes: FastifyPluginAsync = async (fastify) => {
   // Edit message

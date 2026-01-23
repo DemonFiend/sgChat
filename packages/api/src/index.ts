@@ -89,7 +89,7 @@ async function start() {
   
   initSocketIO(io, fastify);
 
-  fastify.log.info(`🚀 VoxCord API running on http://${HOST}:${PORT}`);
+  fastify.log.info(`🚀 sgChat API running on http://${HOST}:${PORT}`);
   fastify.log.info(`📡 Socket.IO ready for connections`);
 
   // Graceful shutdown

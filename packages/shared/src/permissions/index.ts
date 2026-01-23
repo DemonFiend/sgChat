@@ -1,5 +1,5 @@
 /**
- * Permission system for VoxCord
+ * Permission system for sgChat
  * Uses bigint bitmasks for efficient permission checking
  */
 

@@ -6,7 +6,7 @@ import {
   hasPermission,
   stringToPermission,
   DEFAULT_EVERYONE_PERMISSIONS,
-} from '@voxcord/shared';
+} from '@sgchat/shared';
 
 export interface PermissionSet {
   server: bigint;

@@ -1,9 +1,9 @@
 {
-  "name": "voxcord",
+  "name": "sgchat",
   "version": "1.0.0",
   "private": true,
   "description": "Self-hosted Discord clone with voice, video, and text chat",
-  "author": "VoxCord Team",
+  "author": "sgChat Team",
   "license": "MIT",
   "engines": {
     "node": ">=20.0.0",
@@ -11,10 +11,10 @@
   },
   "packageManager": "pnpm@8.15.0",
   "scripts": {
-    "dev": "pnpm --filter=@voxcord/* dev",
-    "build": "pnpm --filter=@voxcord/* build",
-    "clean": "pnpm --filter=@voxcord/* clean",
-    "typecheck": "pnpm --filter=@voxcord/* typecheck",
+    "dev": "pnpm --filter=@sgchat/* dev",
+    "build": "pnpm --filter=@sgchat/* build",
+    "clean": "pnpm --filter=@sgchat/* clean",
+    "typecheck": "pnpm --filter=@sgchat/* typecheck",
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\""
   },

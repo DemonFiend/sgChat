@@ -2,7 +2,7 @@ import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
-import { UserStatus } from '@voxcord/shared';
+import { UserStatus } from '@sgchat/shared';
 import { z } from 'zod';
 
 const updateProfileSchema = z.object({

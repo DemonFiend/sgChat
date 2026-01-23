@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import { redis } from '../lib/redis.js';
-import { RATE_LIMITS } from '@voxcord/shared';
+import { RATE_LIMITS } from '@sgchat/shared';
 
 export const rateLimitPlugin: FastifyPluginAsync = async (fastify) => {
   // Global rate limit

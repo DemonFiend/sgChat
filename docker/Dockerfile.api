@@ -17,8 +17,8 @@ COPY packages/api ./packages/api
 COPY tsconfig.json ./tsconfig.json
 
 # Build both packages
-RUN pnpm --filter @voxcord/shared build
-RUN pnpm --filter @voxcord/api build
+RUN pnpm --filter @sgchat/shared build
+RUN pnpm --filter @sgchat/api build
 
 # Production image
 FROM node:20-alpine
