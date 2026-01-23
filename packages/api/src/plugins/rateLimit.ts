@@ -9,7 +9,7 @@ export const rateLimitPlugin: FastifyPluginAsync = async (fastify) => {
     global: true,
     max: RATE_LIMITS.API_READ.max,
     timeWindow: `${RATE_LIMITS.API_READ.window} seconds`,
-    redis,
+    redis: redis.client,
     nameSpace: 'rl:',
     keyGenerator: (req) => {
       // Use user ID if authenticated, otherwise IP
