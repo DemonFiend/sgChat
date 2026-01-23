@@ -22,7 +22,8 @@ services:
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
-      - NTFY_URL=http://ntfy:80
+      - MINIO_BUCKET=${MINIO_BUCKET}
+      - NTFY_BASE_URL=http://ntfy:80
     depends_on:
       - postgres
       - redis

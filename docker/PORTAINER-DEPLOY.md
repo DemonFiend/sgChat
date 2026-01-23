@@ -1,4 +1,4 @@
-# VoxCord - Portainer Deployment Guide
+# sgChat - Portainer Deployment Guide
 
 ## Your Configuration
 - **Domain:** chat.sosiagaming.com
@@ -52,7 +52,7 @@ openssl rand -base64 32  # API Secret
 
 1. **Login to Portainer** at http://192.168.2.23:9000
 2. Click **Stacks** → **Add Stack**
-3. **Name:** `voxcord`
+3. **Name:** `sgchat`
 4. **Build method:** Choose "Web editor"
 5. **Paste the contents of `docker-compose.yml`** into the editor
 
@@ -70,10 +70,10 @@ JWT_SECRET=<paste your first openssl output>
 JWT_REFRESH_SECRET=<paste your second openssl output>
 CORS_ORIGIN=https://chat.sosiagaming.com
 
-DATABASE_URL=postgresql://voxcord:YOUR_DB_PASSWORD@postgres:5432/voxcord
-POSTGRES_USER=voxcord
+DATABASE_URL=postgresql://sgchat:YOUR_DB_PASSWORD@postgres:5432/sgchat
+POSTGRES_USER=sgchat
 POSTGRES_PASSWORD=<create strong password>
-POSTGRES_DB=voxcord
+POSTGRES_DB=sgchat
 
 REDIS_URL=redis://redis:6379
 
@@ -82,7 +82,7 @@ LIVEKIT_API_SECRET=<your generated secret>
 LIVEKIT_URL=wss://chat.sosiagaming.com:3045
 
 MINIO_ENDPOINT=minio:9000
-MINIO_ACCESS_KEY=voxcord_admin
+MINIO_ACCESS_KEY=sgchat_admin
 MINIO_SECRET_KEY=<create strong password>
 
 NTFY_BASE_URL=http://192.168.2.23:3048
@@ -96,14 +96,14 @@ NTFY_BASE_URL=http://192.168.2.23:3048
 If you prefer, you can create a `.env` file on the server:
 
 1. SSH into your server
-2. Create directory: `mkdir -p /opt/voxcord/docker`
+2. Create directory: `mkdir -p /opt/sgchat/docker`
 3. Copy files:
    ```bash
-   # Copy docker-compose.yml, init.sql, livekit.yaml to /opt/voxcord/docker/
+   # Copy docker-compose.yml, init.sql, livekit.yaml to /opt/sgchat/docker/
    ```
 4. Create `.env` from `.env.example`:
    ```bash
-   cd /opt/voxcord/docker
+   cd /opt/sgchat/docker
    cp .env.example .env
    nano .env  # Edit with your values
    ```
@@ -113,7 +113,7 @@ If you prefer, you can create a `.env` file on the server:
 
 ### Check Container Status
 In Portainer:
-- Go to **Stacks** → **voxcord**
+- Go to **Stacks** → **sgchat**
 - All 7 containers should show as "running" (green)
 - Check logs if any are failing
 
@@ -123,10 +123,10 @@ In Portainer:
 curl http://192.168.2.23:3040/health
 
 # PostgreSQL
-docker exec -it voxcord-postgres-1 psql -U voxcord -d voxcord -c "SELECT 1;"
+docker exec -it sgchat-postgres-1 psql -U sgchat -d sgchat -c "SELECT 1;"
 
 # Redis
-docker exec -it voxcord-redis-1 redis-cli ping
+docker exec -it sgchat-redis-1 redis-cli ping
 
 # MinIO
 curl http://192.168.2.23:3043/minio/health/live
@@ -147,11 +147,11 @@ For production with SSL, setup Caddy or Nginx Proxy Manager:
 ```bash
 docker run -d \
   --name caddy \
-  --network voxcord_voxcord \
+  --network sgchat_sgchat \
   -p 80:80 \
   -p 443:443 \
   -v caddy_data:/data \
-  -v /opt/voxcord/Caddyfile:/etc/caddy/Caddyfile \
+  -v /opt/sgchat/Caddyfile:/etc/caddy/Caddyfile \
   caddy:latest
 ```
 
@@ -169,7 +169,7 @@ chat.sosiagaming.com:3045 {
 ## Troubleshooting
 
 ### API won't start
-- Check logs: `docker logs voxcord-api-1`
+- Check logs: `docker logs sgchat-api-1`
 - Verify database is healthy
 - Check JWT_SECRET is set
 
@@ -194,7 +194,7 @@ chat.sosiagaming.com:3045 {
 3. **Data persists** in Docker volumes even if containers restart
 4. **Backup volumes** regularly:
    ```bash
-   docker run --rm -v voxcord_postgres_data:/data -v $(pwd):/backup alpine tar czf /backup/postgres-backup.tar.gz /data
+   docker run --rm -v sgchat_postgres_data:/data -v $(pwd):/backup alpine tar czf /backup/postgres-backup.tar.gz /data
    ```
 
 ## Next Steps

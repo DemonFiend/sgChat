@@ -8,8 +8,7 @@ redis:
   address: redis:6379
 
 keys:
-  APIKey: ${LIVEKIT_API_KEY}
-  APISecret: ${LIVEKIT_API_SECRET}
+  e5f39c91e7a67a8eb3404ecda50a7e31: jaGcQ6wso+aQK4EGDOU+fSRBY1SPUVTQuSCKJ2X2bRQ=
 
 room:
   auto_create: true

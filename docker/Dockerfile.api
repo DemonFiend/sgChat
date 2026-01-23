@@ -25,18 +25,10 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install pnpm
-RUN npm install -g pnpm@8
-
-# Copy package files for production install
-COPY --from=builder /app/package.json ./
-COPY --from=builder /app/pnpm-lock.yaml ./
-COPY --from=builder /app/pnpm-workspace.yaml ./
-COPY --from=builder /app/packages/api/package.json ./packages/api/
-COPY --from=builder /app/packages/shared/package.json ./packages/shared/
-
-# Install production dependencies only
-RUN pnpm install --prod --frozen-lockfile
+# Copy node_modules from builder (includes all dependencies)
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages/api/node_modules ./packages/api/node_modules
+COPY --from=builder /app/packages/shared/node_modules ./packages/shared/node_modules
 
 # Copy built files
 COPY --from=builder /app/packages/api/dist ./dist
