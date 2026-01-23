@@ -1,4 +1,4 @@
-FROM node:20-alpine AS builder
+FROM node:20-alpine
 
 WORKDIR /app
 
@@ -19,27 +19,6 @@ COPY tsconfig.json ./tsconfig.json
 # Build both packages
 RUN pnpm --filter @sgchat/shared build
 RUN pnpm --filter @sgchat/api build
-
-# Prune dev dependencies, keeping only production deps
-RUN pnpm prune --prod
-
-# Production image
-FROM node:20-alpine
-
-WORKDIR /app
-
-# Copy package files (needed for module resolution)
-COPY --from=builder /app/package.json ./
-COPY --from=builder /app/pnpm-workspace.yaml ./
-COPY --from=builder /app/packages/api/package.json ./packages/api/
-COPY --from=builder /app/packages/shared/package.json ./packages/shared/
-
-# Copy entire node_modules with pnpm structure
-COPY --from=builder /app/node_modules ./node_modules
-
-# Copy built files
-COPY --from=builder /app/packages/api/dist ./packages/api/dist
-COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 
 # Expose port
 EXPOSE 3000
