@@ -73,10 +73,10 @@ async function start() {
     return { status: 'ok', timestamp: new Date().toISOString() };
   });
 
-  // Start HTTP server
-  await fastify.listen({ port: PORT, host: HOST });
-
-  // Initialize Socket.IO
+  // Initialize Socket.IO BEFORE starting the server
+  // We need to use fastify.server which is available after ready()
+  await fastify.ready();
+  
   const io = new SocketIOServer(fastify.server, {
     cors: {
       origin: process.env.CORS_ORIGIN || '*',
@@ -84,10 +84,10 @@ async function start() {
     },
   });
 
-  // Attach io to fastify instance
-  fastify.decorate('io', io);
-  
   initSocketIO(io, fastify);
+
+  // Start HTTP server
+  await fastify.listen({ port: PORT, host: HOST });
 
   fastify.log.info(`🚀 sgChat API running on http://${HOST}:${PORT}`);
   fastify.log.info(`📡 Socket.IO ready for connections`);
