@@ -2,6 +2,7 @@ import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { sendMessageSchema } from '@sgchat/shared';
+import { notFound, forbidden, badRequest } from '../utils/errors.js';
 
 export const dmRoutes: FastifyPluginAsync = async (fastify) => {
   // Get user's DM channels
@@ -20,7 +21,7 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
       const { user_id } = request.body as { user_id: string };
       
       if (user_id === request.user!.id) {
-        return reply.status(400).send({ error: 'Cannot DM yourself' });
+        return badRequest(reply, 'Cannot DM yourself');
       }
 
       // Check if DM already exists
@@ -43,12 +44,12 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
       
       const dm = await db.dmChannels.findById(id);
       if (!dm) {
-        return reply.status(404).send({ error: 'DM channel not found' });
+        return notFound(reply, 'DM channel');
       }
 
       // Verify user is part of this DM
       if (dm.user1_id !== request.user!.id && dm.user2_id !== request.user!.id) {
-        return reply.status(403).send({ error: 'Not part of this DM' });
+        return forbidden(reply, 'Not part of this DM');
       }
 
       const messages = await db.messages.findByDMChannelId(
@@ -73,12 +74,12 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
       
       const dm = await db.dmChannels.findById(id);
       if (!dm) {
-        return reply.status(404).send({ error: 'DM channel not found' });
+        return notFound(reply, 'DM channel');
       }
 
       // Verify user is part of this DM
       if (dm.user1_id !== request.user!.id && dm.user2_id !== request.user!.id) {
-        return reply.status(403).send({ error: 'Not part of this DM' });
+        return forbidden(reply, 'Not part of this DM');
       }
 
       const message = await db.messages.create({
@@ -123,8 +124,35 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/unread', {
     onRequest: [authenticate],
     handler: async (request, reply) => {
-      // TODO: Implement unread DM fetching logic
-      return { message: 'Unread DMs - TODO' };
+      // Get all DM channels for user
+      const dmChannels = await db.dmChannels.findByUserId(request.user!.id);
+      
+      const unreadCounts: { channel_id: string; count: number; last_message_at: string | null }[] = [];
+      
+      for (const dm of dmChannels) {
+        // Count messages not authored by current user that are in 'sent' status (not 'received' or 'read')
+        const result = await db.sql`
+          SELECT COUNT(*) as count, MAX(created_at) as last_message_at
+          FROM dm_messages
+          WHERE dm_channel_id = ${dm.id}
+            AND author_id != ${request.user!.id}
+            AND status = 'sent'
+        `;
+        
+        const count = parseInt(result[0]?.count || '0');
+        if (count > 0) {
+          unreadCounts.push({
+            channel_id: dm.id,
+            count,
+            last_message_at: result[0]?.last_message_at || null,
+          });
+        }
+      }
+      
+      return {
+        total: unreadCounts.reduce((sum, c) => sum + c.count, 0),
+        channels: unreadCounts,
+      };
     },
   });
 };

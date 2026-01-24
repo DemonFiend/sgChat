@@ -3,29 +3,36 @@ import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { calculatePermissions } from '../services/permissions.js';
 import { generateLiveKitToken, getLiveKitUrl } from '../services/livekit.js';
-import { VoicePermissions, hasPermission } from '@sgchat/shared';
+import { VoicePermissions, hasPermission, RATE_LIMITS } from '@sgchat/shared';
+import { notFound, forbidden, badRequest } from '../utils/errors.js';
 
 export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
   // Join voice channel (get LiveKit token)
   fastify.post('/join/:channelId', {
     onRequest: [authenticate],
+    config: {
+      rateLimit: {
+        max: RATE_LIMITS.VOICE_JOIN.max,
+        timeWindow: `${RATE_LIMITS.VOICE_JOIN.window} seconds`,
+      },
+    },
     handler: async (request, reply) => {
       const { channelId } = request.params as { channelId: string };
       
       const channel = await db.channels.findById(channelId);
       if (!channel) {
-        return reply.status(404).send({ error: 'Channel not found' });
+        return notFound(reply, 'Channel');
       }
 
       if (channel.type !== 'voice') {
-        return reply.status(400).send({ error: 'Not a voice channel' });
+        return badRequest(reply, 'Not a voice channel');
       }
 
       // Check permissions
       const perms = await calculatePermissions(request.user!.id, channel.server_id, channelId);
       
       if (!hasPermission(perms.voice, VoicePermissions.CONNECT)) {
-        return reply.status(403).send({ error: 'Missing CONNECT permission' });
+        return forbidden(reply, 'Missing CONNECT permission');
       }
 
       // Generate LiveKit token with appropriate grants
@@ -55,12 +62,21 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
   // Move to AFK channel
   fastify.post('/move-to-afk', {
     onRequest: [authenticate],
+    config: {
+      rateLimit: {
+        max: RATE_LIMITS.VOICE_JOIN.max,
+        timeWindow: `${RATE_LIMITS.VOICE_JOIN.window} seconds`,
+      },
+    },
     handler: async (request, reply) => {
       const { server_id } = request.body as { server_id: string };
       
       const server = await db.servers.findById(server_id);
+      if (!server) {
+        return notFound(reply, 'Server');
+      }
       if (!server.afk_channel_id) {
-        return reply.status(400).send({ error: 'Server has no AFK channel configured' });
+        return badRequest(reply, 'Server has no AFK channel configured');
       }
 
       // Generate token for AFK channel (will be muted automatically)
@@ -84,6 +100,12 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
   // Move member (moderator action)
   fastify.post('/move-member', {
     onRequest: [authenticate],
+    config: {
+      rateLimit: {
+        max: RATE_LIMITS.VOICE_JOIN.max,
+        timeWindow: `${RATE_LIMITS.VOICE_JOIN.window} seconds`,
+      },
+    },
     handler: async (request, reply) => {
       const { user_id, from_channel_id, to_channel_id } = request.body as {
         user_id: string;
@@ -92,10 +114,13 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
       };
 
       const fromChannel = await db.channels.findById(from_channel_id);
+      if (!fromChannel) {
+        return notFound(reply, 'Source channel');
+      }
       const perms = await calculatePermissions(request.user!.id, fromChannel.server_id);
       
       if (!hasPermission(perms.voice, VoicePermissions.MOVE_MEMBERS)) {
-        return reply.status(403).send({ error: 'Missing MOVE_MEMBERS permission' });
+        return forbidden(reply, 'Missing MOVE_MEMBERS permission');
       }
 
       // Notify user via Socket.IO to switch channels
@@ -112,6 +137,12 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
   // Disconnect member (moderator action)
   fastify.post('/disconnect-member', {
     onRequest: [authenticate],
+    config: {
+      rateLimit: {
+        max: RATE_LIMITS.VOICE_JOIN.max,
+        timeWindow: `${RATE_LIMITS.VOICE_JOIN.window} seconds`,
+      },
+    },
     handler: async (request, reply) => {
       const { user_id, channel_id } = request.body as {
         user_id: string;
@@ -119,10 +150,13 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
       };
 
       const channel = await db.channels.findById(channel_id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
       const perms = await calculatePermissions(request.user!.id, channel.server_id);
       
       if (!hasPermission(perms.voice, VoicePermissions.DISCONNECT_MEMBERS)) {
-        return reply.status(403).send({ error: 'Missing DISCONNECT_MEMBERS permission' });
+        return forbidden(reply, 'Missing DISCONNECT_MEMBERS permission');
       }
 
       // Notify user via Socket.IO to disconnect

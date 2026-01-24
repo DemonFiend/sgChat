@@ -2,22 +2,13 @@ import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
-import { UserStatus } from '@sgchat/shared';
+import { UserStatus, usernameSchema, updateStatusSchema, updateCustomStatusSchema } from '@sgchat/shared';
 import { z } from 'zod';
+import { notFound, badRequest } from '../utils/errors.js';
 
 const updateProfileSchema = z.object({
-  username: z.string().min(3).max(32).regex(/^[a-zA-Z0-9_]+$/).optional(),
+  username: usernameSchema.optional(),
   avatar_url: z.string().url().nullable().optional(),
-});
-
-const updateStatusSchema = z.object({
-  status: z.enum(['active', 'idle', 'busy', 'dnd', 'invisible']),
-});
-
-const updateCustomStatusSchema = z.object({
-  emoji: z.string().max(10).nullable().optional(),
-  text: z.string().max(128).nullable().optional(),
-  expires_at: z.string().datetime().nullable().optional(),
 });
 
 export const userRoutes: FastifyPluginAsync = async (fastify) => {
@@ -27,7 +18,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
     handler: async (request, reply) => {
       const user = await db.users.findById(request.user!.id);
       if (!user) {
-        return reply.status(404).send({ error: 'User not found' });
+        return notFound(reply, 'User');
       }
 
       const { password_hash: _, ...safeUser } = user;
@@ -45,7 +36,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
       if (body.username) {
         const existing = await db.users.findByUsername(body.username);
         if (existing && existing.id !== request.user!.id) {
-          return reply.status(400).send({ error: 'Username already taken' });
+          return badRequest(reply, 'Username already taken');
         }
       }
 

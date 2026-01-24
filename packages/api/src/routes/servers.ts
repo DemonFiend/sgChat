@@ -4,6 +4,7 @@ import { db } from '../lib/db.js';
 import { createServer, handleMemberJoin, handleMemberLeave, createRoleFromTemplate, generateInviteCode } from '../services/server.js';
 import { calculatePermissions } from '../services/permissions.js';
 import { ServerPermissions, hasPermission, createServerSchema, createChannelSchema, createRoleSchema, createInviteSchema, RoleTemplates } from '@sgchat/shared';
+import { notFound, forbidden, conflict, badRequest, sendError } from '../utils/errors.js';
 
 export const serverRoutes: FastifyPluginAsync = async (fastify) => {
   // Get user's servers
@@ -36,14 +37,13 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       
       const member = await db.members.findByUserAndServer(request.user!.id, id);
       if (!member) {
-        return reply.status(403).send({
-          statusCode: 403,
-          error: 'Forbidden',
-          message: 'You are not a member of this server',
-        });
+        return forbidden(reply, 'You are not a member of this server');
       }
 
       const server = await db.servers.findById(id);
+      if (!server) {
+        return notFound(reply, 'Server');
+      }
       return server;
     },
   });
@@ -56,7 +56,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       
       const member = await db.members.findByUserAndServer(request.user!.id, id);
       if (!member) {
-        return reply.status(403).send({ error: 'Not a member' });
+        return forbidden(reply, 'You are not a member of this server');
       }
 
       const channels = await db.channels.findByServerId(id);
@@ -73,7 +73,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       
       const perms = await calculatePermissions(request.user!.id, id);
       if (!hasPermission(perms.server, ServerPermissions.MANAGE_CHANNELS)) {
-        return reply.status(403).send({ error: 'Missing MANAGE_CHANNELS permission' });
+        return forbidden(reply, 'Missing MANAGE_CHANNELS permission');
       }
 
       const channel = await db.channels.create({
@@ -93,7 +93,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       
       const member = await db.members.findByUserAndServer(request.user!.id, id);
       if (!member) {
-        return reply.status(403).send({ error: 'Not a member' });
+        return forbidden(reply, 'You are not a member of this server');
       }
 
       const members = await db.members.findByServerId(id);
@@ -109,7 +109,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       
       const member = await db.members.findByUserAndServer(request.user!.id, id);
       if (!member) {
-        return reply.status(403).send({ error: 'Not a member' });
+        return forbidden(reply, 'You are not a member of this server');
       }
 
       const roles = await db.roles.findByServerId(id);
@@ -126,7 +126,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       
       const perms = await calculatePermissions(request.user!.id, id);
       if (!hasPermission(perms.server, ServerPermissions.MANAGE_ROLES)) {
-        return reply.status(403).send({ error: 'Missing MANAGE_ROLES permission' });
+        return forbidden(reply, 'Missing MANAGE_ROLES permission');
       }
 
       const role = await db.roles.create({
@@ -151,7 +151,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       
       const perms = await calculatePermissions(request.user!.id, id);
       if (!hasPermission(perms.server, ServerPermissions.MANAGE_ROLES)) {
-        return reply.status(403).send({ error: 'Missing MANAGE_ROLES permission' });
+        return forbidden(reply, 'Missing MANAGE_ROLES permission');
       }
 
       const role = await createRoleFromTemplate(id, template);
@@ -167,7 +167,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       
       const perms = await calculatePermissions(request.user!.id, id);
       if (!hasPermission(perms.server, ServerPermissions.MANAGE_SERVER)) {
-        return reply.status(403).send({ error: 'Missing MANAGE_SERVER permission' });
+        return forbidden(reply, 'Missing MANAGE_SERVER permission');
       }
 
       const invites = await db.invites.findByServerId(id);
@@ -184,7 +184,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       
       const perms = await calculatePermissions(request.user!.id, id);
       if (!hasPermission(perms.server, ServerPermissions.CREATE_INVITES)) {
-        return reply.status(403).send({ error: 'Missing CREATE_INVITES permission' });
+        return forbidden(reply, 'Missing CREATE_INVITES permission');
       }
 
       const code = await generateInviteCode();
@@ -208,20 +208,20 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       
       const invite = await db.invites.findByCode(code);
       if (!invite) {
-        return reply.status(404).send({ error: 'Invite not found' });
+        return notFound(reply, 'Invite');
       }
 
       if (invite.expires_at && new Date(invite.expires_at) < new Date()) {
-        return reply.status(410).send({ error: 'Invite expired' });
+        return sendError(reply, 410, 'Invite has expired', 'Gone');
       }
 
       if (invite.max_uses && invite.uses >= invite.max_uses) {
-        return reply.status(410).send({ error: 'Invite has reached maximum uses' });
+        return sendError(reply, 410, 'Invite has reached maximum uses', 'Gone');
       }
 
       const existing = await db.members.findByUserAndServer(request.user!.id, invite.server_id);
       if (existing) {
-        return reply.status(409).send({ error: 'Already a member of this server' });
+        return conflict(reply, 'Already a member of this server');
       }
 
       await handleMemberJoin(request.user!.id, invite.server_id);
@@ -239,10 +239,12 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       const { id } = request.params as { id: string };
       const server = await db.servers.findById(id);
       
+      if (!server) {
+        return notFound(reply, 'Server');
+      }
+      
       if (server.owner_id === request.user!.id) {
-        return reply.status(400).send({
-          error: 'Server owner cannot leave. Transfer ownership or delete the server.',
-        });
+        return badRequest(reply, 'Server owner cannot leave. Transfer ownership or delete the server.');
       }
 
       await handleMemberLeave(request.user!.id, id);

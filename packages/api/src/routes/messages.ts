@@ -3,6 +3,7 @@ import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { calculatePermissions } from '../services/permissions.js';
 import { TextPermissions, hasPermission } from '@sgchat/shared';
+import { notFound, forbidden } from '../utils/errors.js';
 
 export const messageRoutes: FastifyPluginAsync = async (fastify) => {
   // Edit message
@@ -17,12 +18,12 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
       
       const message = await db.messages.findById(id);
       if (!message) {
-        return reply.status(404).send({ error: 'Message not found' });
+        return notFound(reply, 'Message');
       }
 
       // Can only edit own messages
       if (message.author_id !== request.user!.id) {
-        return reply.status(403).send({ error: 'Can only edit own messages' });
+        return forbidden(reply, 'Can only edit own messages');
       }
 
       const updated = await db.messages.update(id, {
@@ -49,7 +50,7 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
       
       const message = await db.messages.findById(id);
       if (!message) {
-        return reply.status(404).send({ error: 'Message not found' });
+        return notFound(reply, 'Message');
       }
 
       // Can delete own messages OR if has MANAGE_MESSAGES permission
@@ -57,13 +58,16 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
       
       if (!canDelete && message.channel_id) {
         const channel = await db.channels.findById(message.channel_id);
+        if (!channel) {
+          return notFound(reply, 'Channel');
+        }
         const perms = await calculatePermissions(request.user!.id, channel.server_id, message.channel_id);
         
         if (!hasPermission(perms.text, TextPermissions.MANAGE_MESSAGES)) {
-          return reply.status(403).send({ error: 'Cannot delete this message' });
+          return forbidden(reply, 'Cannot delete this message');
         }
       } else if (!canDelete) {
-        return reply.status(403).send({ error: 'Cannot delete this message' });
+        return forbidden(reply, 'Cannot delete this message');
       }
 
       await db.messages.delete(id);

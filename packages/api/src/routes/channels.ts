@@ -3,6 +3,7 @@ import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { canAccessChannel, calculatePermissions } from '../services/permissions.js';
 import { ServerPermissions, TextPermissions, hasPermission, sendMessageSchema } from '@sgchat/shared';
+import { notFound, forbidden, badRequest } from '../utils/errors.js';
 
 export const channelRoutes: FastifyPluginAsync = async (fastify) => {
   // Get channel by ID
@@ -13,10 +14,13 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       
       const canAccess = await canAccessChannel(request.user!.id, id);
       if (!canAccess) {
-        return reply.status(403).send({ error: 'Cannot access this channel' });
+        return forbidden(reply, 'Cannot access this channel');
       }
 
       const channel = await db.channels.findById(id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
       return channel;
     },
   });
@@ -30,14 +34,17 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       
       const canAccess = await canAccessChannel(request.user!.id, id);
       if (!canAccess) {
-        return reply.status(403).send({ error: 'Cannot access this channel' });
+        return forbidden(reply, 'Cannot access this channel');
       }
 
       const channel = await db.channels.findById(id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
       const perms = await calculatePermissions(request.user!.id, channel.server_id, id);
       
       if (!hasPermission(perms.text, TextPermissions.READ_MESSAGE_HISTORY)) {
-        return reply.status(403).send({ error: 'Missing READ_MESSAGE_HISTORY permission' });
+        return forbidden(reply, 'Missing READ_MESSAGE_HISTORY permission');
       }
 
       const messages = await db.messages.findByChannelId(
@@ -62,13 +69,13 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       
       const channel = await db.channels.findById(id);
       if (!channel) {
-        return reply.status(404).send({ error: 'Channel not found' });
+        return notFound(reply, 'Channel');
       }
 
       const perms = await calculatePermissions(request.user!.id, channel.server_id, id);
       
       if (!hasPermission(perms.text, TextPermissions.SEND_MESSAGES)) {
-        return reply.status(403).send({ error: 'Missing SEND_MESSAGES permission' });
+        return forbidden(reply, 'Missing SEND_MESSAGES permission');
       }
 
       const message = await db.messages.create({
@@ -94,14 +101,17 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       const { bitrate } = request.body as { bitrate: number };
       
       const channel = await db.channels.findById(id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
       if (channel.type !== 'voice') {
-        return reply.status(400).send({ error: 'Not a voice channel' });
+        return badRequest(reply, 'Not a voice channel');
       }
 
       const perms = await calculatePermissions(request.user!.id, channel.server_id);
       // Moderators can adjust bitrate - check for either MANAGE_CHANNELS or MOVE_MEMBERS voice permission
       if (!hasPermission(perms.server, ServerPermissions.MANAGE_CHANNELS)) {
-        return reply.status(403).send({ error: 'Missing permission' });
+        return forbidden(reply, 'Missing MANAGE_CHANNELS permission');
       }
 
       await db.channels.updateBitrate(id, bitrate);
