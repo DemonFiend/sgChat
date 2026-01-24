@@ -4,6 +4,7 @@ import { nanoid } from 'nanoid';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
+import { handleMemberJoin } from '../services/server.js';
 import { registerSchema, loginSchema, ServerPermissions, TextPermissions, VoicePermissions } from '@sgchat/shared';
 import { z } from 'zod';
 
@@ -57,6 +58,14 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       await db.sql`
         INSERT INTO user_settings (user_id) VALUES (${user.id})
       `;
+
+      // Single-tenant: Auto-join user to the server
+      const [server] = await db.sql`
+        SELECT id FROM servers ORDER BY created_at ASC LIMIT 1
+      `;
+      if (server) {
+        await handleMemberJoin(user.id, server.id, fastify.io);
+      }
 
       // Generate tokens
       const access_token = fastify.jwt.sign({
@@ -132,6 +141,19 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 
       // Update last seen
       await db.users.updateStatus(user.id, 'active');
+
+      // Single-tenant: Ensure user is a member of the server
+      const [server] = await db.sql`
+        SELECT id FROM servers ORDER BY created_at ASC LIMIT 1
+      `;
+      if (server) {
+        const [existingMember] = await db.sql`
+          SELECT 1 FROM members WHERE user_id = ${user.id} AND server_id = ${server.id}
+        `;
+        if (!existingMember) {
+          await handleMemberJoin(user.id, server.id, fastify.io);
+        }
+      }
 
       // Set refresh token as httpOnly cookie
       const isProduction = process.env.NODE_ENV === 'production';
