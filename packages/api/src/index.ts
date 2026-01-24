@@ -4,9 +4,11 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import cookie from '@fastify/cookie';
+import multipart from '@fastify/multipart';
 import { Server as SocketIOServer } from 'socket.io';
 import { db, initDatabase } from './lib/db.js';
 import { redis, initRedis } from './lib/redis.js';
+import { initStorage } from './lib/storage.js';
 import { rateLimitPlugin } from './plugins/rateLimit.js';
 import { errorHandler } from './plugins/errorHandler.js';
 import { authRoutes } from './routes/auth.js';
@@ -22,9 +24,10 @@ const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
 
 async function start() {
-  // Initialize database and redis
+  // Initialize database, redis, and storage
   await initDatabase();
   await initRedis();
+  await initStorage();
 
   // Create Fastify instance
   const fastify = Fastify({
@@ -41,13 +44,25 @@ async function start() {
     },
   });
 
+  // Parse CORS origins - supports comma-separated list or single origin
+  const corsOrigins = process.env.CORS_ORIGIN 
+    ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
+    : true; // true = reflect request origin (allow all)
+
   // Register plugins
   await fastify.register(cors, {
-    origin: process.env.CORS_ORIGIN || '*',
+    origin: corsOrigins,
     credentials: true,
   });
 
   await fastify.register(cookie);
+
+  await fastify.register(multipart, {
+    limits: {
+      fileSize: 8 * 1024 * 1024, // 8MB max file size
+      files: 1, // Max 1 file per request for avatars
+    },
+  });
 
   await fastify.register(jwt, {
     secret: process.env.JWT_SECRET || 'change-me-in-production',
@@ -84,7 +99,7 @@ async function start() {
   
   const io = new SocketIOServer(fastify.server, {
     cors: {
-      origin: process.env.CORS_ORIGIN || '*',
+      origin: corsOrigins,
       credentials: true,
     },
   });

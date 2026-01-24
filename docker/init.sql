@@ -261,6 +261,49 @@ CREATE INDEX idx_invites_creator ON invites(creator_id);
 CREATE INDEX idx_invites_expires ON invites(expires_at) WHERE expires_at IS NOT NULL;
 
 -- ============================================================
+-- BANS
+-- ============================================================
+
+CREATE TABLE bans (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  server_id UUID NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  moderator_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  reason TEXT CHECK (length(reason) <= 512),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  
+  UNIQUE (server_id, user_id)
+);
+
+CREATE INDEX idx_bans_server ON bans(server_id);
+CREATE INDEX idx_bans_user ON bans(user_id);
+
+-- ============================================================
+-- AUDIT LOG
+-- ============================================================
+
+CREATE TABLE audit_log (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  server_id UUID NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id) ON DELETE SET NULL, -- Actor
+  action TEXT NOT NULL CHECK (action IN (
+    'server_update', 'channel_create', 'channel_update', 'channel_delete',
+    'role_create', 'role_update', 'role_delete',
+    'member_kick', 'member_ban', 'member_unban',
+    'invite_create', 'invite_delete'
+  )),
+  target_type TEXT CHECK (target_type IN ('server', 'channel', 'role', 'member', 'invite')),
+  target_id TEXT, -- UUID as text for flexibility
+  changes JSONB DEFAULT '{}', -- Before/after values
+  reason TEXT CHECK (length(reason) <= 512),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_audit_log_server ON audit_log(server_id, created_at DESC);
+CREATE INDEX idx_audit_log_user ON audit_log(user_id);
+CREATE INDEX idx_audit_log_action ON audit_log(server_id, action);
+
+-- ============================================================
 -- USER SETTINGS
 -- ============================================================
 

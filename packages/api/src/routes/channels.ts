@@ -4,6 +4,23 @@ import { db } from '../lib/db.js';
 import { canAccessChannel, calculatePermissions } from '../services/permissions.js';
 import { ServerPermissions, TextPermissions, hasPermission, sendMessageSchema } from '@sgchat/shared';
 import { notFound, forbidden, badRequest } from '../utils/errors.js';
+import { z } from 'zod';
+
+const updateChannelSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  topic: z.string().max(1024).nullable().optional(),
+  position: z.number().min(0).optional(),
+  bitrate: z.number().min(8000).max(384000).optional(), // voice only
+  user_limit: z.number().min(0).max(99).optional(), // voice only
+  is_afk_channel: z.boolean().optional(), // voice only
+});
+
+const reorderChannelsSchema = z.object({
+  channels: z.array(z.object({
+    id: z.string().uuid(),
+    position: z.number().min(0),
+  })),
+});
 
 export const channelRoutes: FastifyPluginAsync = async (fastify) => {
   // Get channel by ID
@@ -116,6 +133,138 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
 
       await db.channels.updateBitrate(id, bitrate);
       return { bitrate };
+    },
+  });
+
+  // ============================================================
+  // CHANNEL MANAGEMENT (Phase 4)
+  // ============================================================
+
+  // Update channel
+  fastify.patch('/:id', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const body = updateChannelSchema.parse(request.body);
+
+      const channel = await db.channels.findById(id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, channel.server_id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_CHANNELS)) {
+        return forbidden(reply, 'Missing MANAGE_CHANNELS permission');
+      }
+
+      // Build updates - filter voice-only properties for text channels
+      const updates: Record<string, any> = {};
+      if (body.name !== undefined) updates.name = body.name;
+      if ('topic' in body) updates.topic = body.topic;
+      if (body.position !== undefined) updates.position = body.position;
+      
+      // Voice channel specific
+      if (channel.type === 'voice') {
+        if (body.bitrate !== undefined) updates.bitrate = body.bitrate;
+        if (body.user_limit !== undefined) updates.user_limit = body.user_limit;
+        if (body.is_afk_channel !== undefined) updates.is_afk_channel = body.is_afk_channel;
+      }
+
+      if (Object.keys(updates).length === 0) {
+        return badRequest(reply, 'No updates provided');
+      }
+
+      await db.sql`
+        UPDATE channels
+        SET ${db.sql(updates)}
+        WHERE id = ${id}
+      `;
+
+      // Audit log
+      await db.sql`
+        INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
+        VALUES (${channel.server_id}, ${request.user!.id}, 'channel_update', 'channel', ${id}, ${JSON.stringify({ updates })})
+      `;
+
+      const updatedChannel = await db.channels.findById(id);
+      fastify.io?.to(`server:${channel.server_id}`).emit('channel:update', updatedChannel);
+
+      return updatedChannel;
+    },
+  });
+
+  // Delete channel
+  fastify.delete('/:id', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params as { id: string };
+
+      const channel = await db.channels.findById(id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, channel.server_id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_CHANNELS)) {
+        return forbidden(reply, 'Missing MANAGE_CHANNELS permission');
+      }
+
+      // Check this isn't the last channel
+      const channels = await db.channels.findByServerId(channel.server_id);
+      if (channels.length <= 1) {
+        return badRequest(reply, 'Cannot delete the last channel in a server');
+      }
+
+      await db.sql`DELETE FROM channels WHERE id = ${id}`;
+
+      // Audit log
+      await db.sql`
+        INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
+        VALUES (${channel.server_id}, ${request.user!.id}, 'channel_delete', 'channel', ${id}, ${JSON.stringify({ deleted: channel })})
+      `;
+
+      fastify.io?.to(`server:${channel.server_id}`).emit('channel:delete', { id, server_id: channel.server_id });
+
+      return { message: 'Channel deleted' };
+    },
+  });
+
+  // Reorder channels
+  fastify.patch('/:id/reorder', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params as { id: string }; // This is the server ID
+
+      const body = reorderChannelsSchema.parse(request.body);
+
+      const perms = await calculatePermissions(request.user!.id, id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_CHANNELS)) {
+        return forbidden(reply, 'Missing MANAGE_CHANNELS permission');
+      }
+
+      // Verify all channels belong to this server
+      const serverChannels = await db.channels.findByServerId(id);
+      const channelIds = new Set(serverChannels.map(c => c.id));
+
+      for (const { id: channelId } of body.channels) {
+        if (!channelIds.has(channelId)) {
+          return badRequest(reply, `Channel ${channelId} not in this server`);
+        }
+      }
+
+      // Update positions
+      for (const { id: channelId, position } of body.channels) {
+        await db.sql`
+          UPDATE channels
+          SET position = ${position}
+          WHERE id = ${channelId}
+        `;
+      }
+
+      const updatedChannels = await db.channels.findByServerId(id);
+      fastify.io?.to(`server:${id}`).emit('channels:reorder', updatedChannels);
+
+      return updatedChannels;
     },
   });
 };

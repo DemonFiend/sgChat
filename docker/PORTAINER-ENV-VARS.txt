@@ -12,7 +12,8 @@ LOG_LEVEL=info
 JWT_SECRET=<REPLACE_WITH_64_CHAR_RANDOM_STRING>
 JWT_REFRESH_SECRET=<REPLACE_WITH_ANOTHER_64_CHAR_RANDOM_STRING>
 
-CORS_ORIGIN=https://chat.sosiagaming.com
+# Multiple origins: localhost for dev, domain for production
+CORS_ORIGIN=http://localhost:5174,https://chat.sosiagaming.com
 
 # Database - Use a strong password
 DATABASE_URL=postgresql://voxcord:<YOUR_DB_PASSWORD>@postgres:5432/voxcord

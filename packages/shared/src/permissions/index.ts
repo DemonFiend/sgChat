@@ -14,6 +14,7 @@ export const ServerPermissions = {
   CREATE_INVITES: 1n << 6n,
   CHANGE_NICKNAME: 1n << 7n,
   MANAGE_NICKNAMES: 1n << 8n,
+  VIEW_AUDIT_LOG: 1n << 9n,
 } as const;
 
 // Text channel permissions
