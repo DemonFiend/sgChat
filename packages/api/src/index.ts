@@ -9,6 +9,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import { db, initDatabase } from './lib/db.js';
 import { redis, initRedis } from './lib/redis.js';
 import { initStorage } from './lib/storage.js';
+import { bootstrapServer } from './lib/bootstrap.js';
 import { rateLimitPlugin } from './plugins/rateLimit.js';
 import { errorHandler } from './plugins/errorHandler.js';
 import { authRoutes } from './routes/auth.js';
@@ -32,6 +33,9 @@ async function start() {
   await initDatabase();
   await initRedis();
   await initStorage();
+
+  // Bootstrap server (creates default server/channels on first run)
+  await bootstrapServer();
 
   // Create Fastify instance
   const fastify = Fastify({

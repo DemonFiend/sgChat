@@ -17,9 +17,19 @@ const updateServerSchema = z.object({
   description: z.string().max(500).nullable().optional(),
   icon_url: z.string().url().nullable().optional(),
   banner_url: z.string().url().nullable().optional(),
+  motd: z.string().max(2000).nullable().optional(),
+  motd_enabled: z.boolean().optional(),
+  timezone: z.string().max(50).optional(),
+  afk_timeout: z.number().int().min(60).max(3600).optional(), // 1 min to 1 hour
+  afk_channel_id: z.string().uuid().nullable().optional(),
+  welcome_channel_id: z.string().uuid().nullable().optional(),
   announce_joins: z.boolean().optional(),
   announce_leaves: z.boolean().optional(),
   announce_online: z.boolean().optional(),
+});
+
+const transferOwnershipSchema = z.object({
+  user_id: z.string().uuid(),
 });
 
 /**
@@ -56,6 +66,7 @@ export const globalServerRoutes: FastifyPluginAsync = async (fastify) => {
           owner_id: null,
           created_at: null,
           member_count: 0,
+          admin_claimed: false,
           features: ['voice', 'video', 'file_uploads'],
         };
       }
@@ -65,7 +76,13 @@ export const globalServerRoutes: FastifyPluginAsync = async (fastify) => {
         SELECT COUNT(*) as count FROM members WHERE server_id = ${server.id}
       `;
 
-      return {
+      // Check if user has admin permission to see full settings
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) || 
+                      server.owner_id === request.user!.id;
+
+      // Base response for all users
+      const response: any = {
         id: server.id,
         name: server.name,
         description: server.description || null,
@@ -74,22 +91,37 @@ export const globalServerRoutes: FastifyPluginAsync = async (fastify) => {
         owner_id: server.owner_id,
         created_at: server.created_at,
         member_count: parseInt(count, 10),
+        admin_claimed: server.admin_claimed,
         features: ['voice', 'video', 'file_uploads'],
-        settings: {
+      };
+
+      // Include MOTD if enabled
+      if (server.motd_enabled && server.motd) {
+        response.motd = server.motd;
+      }
+
+      // Include full settings only for admins
+      if (isAdmin) {
+        response.settings = {
+          motd: server.motd,
+          motd_enabled: server.motd_enabled,
+          timezone: server.timezone,
           announce_joins: server.announce_joins,
           announce_leaves: server.announce_leaves,
           announce_online: server.announce_online,
           afk_timeout: server.afk_timeout,
           welcome_channel_id: server.welcome_channel_id,
           afk_channel_id: server.afk_channel_id,
-        },
-      };
+        };
+      }
+
+      return response;
     },
   });
 
   /**
    * PATCH /server - Update instance/server settings
-   * Requires manage_server permission
+   * Requires ADMINISTRATOR permission or be server owner
    */
   fastify.patch('/', {
     onRequest: [authenticate],
@@ -99,9 +131,13 @@ export const globalServerRoutes: FastifyPluginAsync = async (fastify) => {
         return notFound(reply, 'Server');
       }
 
+      // Check if user is admin or owner
       const perms = await calculatePermissions(request.user!.id, server.id);
-      if (!hasPermission(perms.server, ServerPermissions.MANAGE_SERVER)) {
-        return forbidden(reply, 'Missing MANAGE_SERVER permission');
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) || 
+                      server.owner_id === request.user!.id;
+
+      if (!isAdmin) {
+        return forbidden(reply, 'Only administrators can modify server settings');
       }
 
       const body = updateServerSchema.parse(request.body);
@@ -111,12 +147,43 @@ export const globalServerRoutes: FastifyPluginAsync = async (fastify) => {
       if ('description' in body) updates.description = body.description;
       if ('icon_url' in body) updates.icon_url = body.icon_url;
       if ('banner_url' in body) updates.banner_url = body.banner_url;
+      if ('motd' in body) updates.motd = body.motd;
+      if (body.motd_enabled !== undefined) updates.motd_enabled = body.motd_enabled;
+      if (body.timezone !== undefined) updates.timezone = body.timezone;
+      if (body.afk_timeout !== undefined) updates.afk_timeout = body.afk_timeout;
+      if ('afk_channel_id' in body) updates.afk_channel_id = body.afk_channel_id;
+      if ('welcome_channel_id' in body) updates.welcome_channel_id = body.welcome_channel_id;
       if (body.announce_joins !== undefined) updates.announce_joins = body.announce_joins;
       if (body.announce_leaves !== undefined) updates.announce_leaves = body.announce_leaves;
       if (body.announce_online !== undefined) updates.announce_online = body.announce_online;
 
       if (Object.keys(updates).length === 0) {
         return badRequest(reply, 'No updates provided');
+      }
+
+      // Validate channel references if provided
+      if (updates.afk_channel_id) {
+        const [channel] = await db.sql`
+          SELECT id, type FROM channels WHERE id = ${updates.afk_channel_id} AND server_id = ${server.id}
+        `;
+        if (!channel) {
+          return badRequest(reply, 'AFK channel not found');
+        }
+        if (channel.type !== 'voice') {
+          return badRequest(reply, 'AFK channel must be a voice channel');
+        }
+      }
+
+      if (updates.welcome_channel_id) {
+        const [channel] = await db.sql`
+          SELECT id, type FROM channels WHERE id = ${updates.welcome_channel_id} AND server_id = ${server.id}
+        `;
+        if (!channel) {
+          return badRequest(reply, 'Welcome channel not found');
+        }
+        if (channel.type !== 'text') {
+          return badRequest(reply, 'Welcome channel must be a text channel');
+        }
       }
 
       await db.sql`
@@ -136,6 +203,82 @@ export const globalServerRoutes: FastifyPluginAsync = async (fastify) => {
       fastify.io?.to(`server:${server.id}`).emit('server:update', updated);
 
       return updated;
+    },
+  });
+
+  /**
+   * POST /server/transfer-ownership - Transfer server ownership to another user
+   * Only the current owner can transfer ownership
+   */
+  fastify.post('/transfer-ownership', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) {
+        return notFound(reply, 'Server');
+      }
+
+      // Only current owner can transfer
+      if (server.owner_id !== request.user!.id) {
+        return forbidden(reply, 'Only the server owner can transfer ownership');
+      }
+
+      const { user_id: newOwnerId } = transferOwnershipSchema.parse(request.body);
+
+      // Can't transfer to yourself
+      if (newOwnerId === request.user!.id) {
+        return badRequest(reply, 'Cannot transfer ownership to yourself');
+      }
+
+      // Check if target user is a member
+      const [targetMember] = await db.sql`
+        SELECT user_id FROM members WHERE user_id = ${newOwnerId} AND server_id = ${server.id}
+      `;
+
+      if (!targetMember) {
+        return badRequest(reply, 'Target user must be a member of the server');
+      }
+
+      // Transfer ownership
+      await db.sql`
+        UPDATE servers
+        SET owner_id = ${newOwnerId}
+        WHERE id = ${server.id}
+      `;
+
+      // Audit log
+      await db.sql`
+        INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
+        VALUES (
+          ${server.id}, 
+          ${request.user!.id}, 
+          'ownership_transferred', 
+          'server', 
+          ${server.id}, 
+          ${JSON.stringify({ from: request.user!.id, to: newOwnerId })}
+        )
+      `;
+
+      // Get target user info
+      const [newOwner] = await db.sql`
+        SELECT id, username FROM users WHERE id = ${newOwnerId}
+      `;
+
+      console.log(`🔄 Server ownership transferred from ${request.user!.id} to ${newOwnerId}`);
+
+      // Broadcast update
+      fastify.io?.to(`server:${server.id}`).emit('server:ownership_transferred', {
+        previous_owner_id: request.user!.id,
+        new_owner_id: newOwnerId,
+      });
+
+      return {
+        message: 'Ownership transferred successfully',
+        new_owner: {
+          id: newOwner.id,
+          username: newOwner.username,
+        },
+      };
     },
   });
 };

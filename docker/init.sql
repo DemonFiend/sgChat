@@ -41,8 +41,10 @@ CREATE INDEX idx_users_status ON users(status) WHERE status != 'offline';
 CREATE TABLE servers (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL CHECK (length(name) >= 1 AND length(name) <= 100),
+  description TEXT CHECK (length(description) <= 500),
   icon_url TEXT,
-  owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  banner_url TEXT,
+  owner_id UUID REFERENCES users(id) ON DELETE SET NULL, -- NULL = unclaimed server
   
   -- Special channels
   welcome_channel_id UUID, -- Set after channels are created
@@ -50,6 +52,15 @@ CREATE TABLE servers (
   
   -- AFK settings
   afk_timeout INTEGER DEFAULT 300 CHECK (afk_timeout > 0), -- seconds
+  
+  -- Server settings
+  motd TEXT CHECK (length(motd) <= 2000), -- Message of the day
+  motd_enabled BOOLEAN DEFAULT false,
+  timezone VARCHAR(50) DEFAULT 'UTC',
+  
+  -- Admin claim system (for single-tenant bootstrap)
+  admin_claim_code VARCHAR(64),
+  admin_claimed BOOLEAN DEFAULT false,
   
   -- Announcement settings
   announce_joins BOOLEAN DEFAULT true,

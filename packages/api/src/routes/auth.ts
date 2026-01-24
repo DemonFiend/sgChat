@@ -4,7 +4,12 @@ import { nanoid } from 'nanoid';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
-import { registerSchema, loginSchema } from '@sgchat/shared';
+import { registerSchema, loginSchema, ServerPermissions, TextPermissions, VoicePermissions } from '@sgchat/shared';
+import { z } from 'zod';
+
+const claimAdminSchema = z.object({
+  code: z.string().min(1).max(64),
+});
 
 export const authRoutes: FastifyPluginAsync = async (fastify) => {
   // Register
@@ -236,6 +241,206 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       await redis.setUserOffline(userId);
 
       return { message: 'Logged out successfully' };
+    },
+  });
+
+  /**
+   * POST /auth/claim-admin - Claim server ownership with admin code
+   * 
+   * On first server startup, an admin claim code is generated.
+   * The first user to submit this code becomes the server owner
+   * with full Administrator permissions.
+   */
+  fastify.post('/claim-admin', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { code } = claimAdminSchema.parse(request.body);
+      const userId = request.user!.id;
+
+      // Get the server
+      const [server] = await db.sql`
+        SELECT id, admin_claim_code, admin_claimed, owner_id 
+        FROM servers 
+        ORDER BY created_at ASC 
+        LIMIT 1
+      `;
+
+      if (!server) {
+        return reply.status(404).send({
+          statusCode: 404,
+          error: 'Not Found',
+          message: 'No server exists yet',
+        });
+      }
+
+      // Check if already claimed
+      if (server.admin_claimed) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: 'Server ownership has already been claimed',
+        });
+      }
+
+      // Validate claim code
+      if (server.admin_claim_code !== code) {
+        return reply.status(403).send({
+          statusCode: 403,
+          error: 'Forbidden',
+          message: 'Invalid admin claim code',
+        });
+      }
+
+      // Claim the server - set user as owner
+      await db.sql`
+        UPDATE servers
+        SET 
+          owner_id = ${userId},
+          admin_claimed = true,
+          admin_claim_code = NULL
+        WHERE id = ${server.id}
+      `;
+
+      // Add user as member if not already
+      const [existingMember] = await db.sql`
+        SELECT 1 FROM members WHERE user_id = ${userId} AND server_id = ${server.id}
+      `;
+
+      if (!existingMember) {
+        await db.sql`
+          INSERT INTO members (user_id, server_id)
+          VALUES (${userId}, ${server.id})
+        `;
+      }
+
+      // Create Administrator role with ALL permissions
+      const ALL_SERVER_PERMS = (
+        ServerPermissions.ADMINISTRATOR |
+        ServerPermissions.MANAGE_SERVER |
+        ServerPermissions.MANAGE_CHANNELS |
+        ServerPermissions.MANAGE_ROLES |
+        ServerPermissions.KICK_MEMBERS |
+        ServerPermissions.BAN_MEMBERS |
+        ServerPermissions.CREATE_INVITES |
+        ServerPermissions.CHANGE_NICKNAME |
+        ServerPermissions.MANAGE_NICKNAMES |
+        ServerPermissions.VIEW_AUDIT_LOG
+      ).toString();
+
+      const ALL_TEXT_PERMS = (
+        TextPermissions.VIEW_CHANNEL |
+        TextPermissions.SEND_MESSAGES |
+        TextPermissions.EMBED_LINKS |
+        TextPermissions.ATTACH_FILES |
+        TextPermissions.ADD_REACTIONS |
+        TextPermissions.MENTION_EVERYONE |
+        TextPermissions.MANAGE_MESSAGES |
+        TextPermissions.READ_MESSAGE_HISTORY
+      ).toString();
+
+      const ALL_VOICE_PERMS = (
+        VoicePermissions.CONNECT |
+        VoicePermissions.SPEAK |
+        VoicePermissions.VIDEO |
+        VoicePermissions.STREAM |
+        VoicePermissions.MUTE_MEMBERS |
+        VoicePermissions.DEAFEN_MEMBERS |
+        VoicePermissions.MOVE_MEMBERS |
+        VoicePermissions.DISCONNECT_MEMBERS |
+        VoicePermissions.PRIORITY_SPEAKER |
+        VoicePermissions.USE_VOICE_ACTIVITY
+      ).toString();
+
+      // Check if Administrator role exists
+      const [existingAdminRole] = await db.sql`
+        SELECT id FROM roles WHERE server_id = ${server.id} AND name = 'Administrator'
+      `;
+
+      let adminRoleId: string;
+
+      if (existingAdminRole) {
+        adminRoleId = existingAdminRole.id;
+        // Update permissions to ensure they're complete
+        await db.sql`
+          UPDATE roles
+          SET 
+            server_permissions = ${ALL_SERVER_PERMS},
+            text_permissions = ${ALL_TEXT_PERMS},
+            voice_permissions = ${ALL_VOICE_PERMS}
+          WHERE id = ${adminRoleId}
+        `;
+      } else {
+        // Create Administrator role at highest position
+        const [maxPos] = await db.sql`
+          SELECT COALESCE(MAX(position), 0) + 1 as pos FROM roles WHERE server_id = ${server.id}
+        `;
+
+        const [adminRole] = await db.sql`
+          INSERT INTO roles (
+            server_id,
+            name,
+            color,
+            position,
+            server_permissions,
+            text_permissions,
+            voice_permissions
+          ) VALUES (
+            ${server.id},
+            'Administrator',
+            '#FF0000',
+            ${maxPos.pos},
+            ${ALL_SERVER_PERMS},
+            ${ALL_TEXT_PERMS},
+            ${ALL_VOICE_PERMS}
+          )
+          RETURNING id
+        `;
+        adminRoleId = adminRole.id;
+      }
+
+      // Assign Administrator role to user
+      const [existingRoleAssignment] = await db.sql`
+        SELECT 1 FROM member_roles 
+        WHERE member_user_id = ${userId} 
+          AND member_server_id = ${server.id} 
+          AND role_id = ${adminRoleId}
+      `;
+
+      if (!existingRoleAssignment) {
+        await db.sql`
+          INSERT INTO member_roles (member_user_id, member_server_id, role_id)
+          VALUES (${userId}, ${server.id}, ${adminRoleId})
+        `;
+      }
+
+      // Log to audit
+      await db.sql`
+        INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
+        VALUES (
+          ${server.id}, 
+          ${userId}, 
+          'admin_claimed', 
+          'server', 
+          ${server.id}, 
+          ${JSON.stringify({ claimed_by: userId })}
+        )
+      `;
+
+      console.log(`🎉 Server ownership claimed by user ${userId}`);
+
+      // Get updated server info
+      const [updatedServer] = await db.sql`
+        SELECT * FROM servers WHERE id = ${server.id}
+      `;
+
+      return {
+        message: 'Server ownership claimed successfully! You are now the administrator.',
+        server: {
+          id: updatedServer.id,
+          name: updatedServer.name,
+          owner_id: updatedServer.owner_id,
+        },
+      };
     },
   });
 };
