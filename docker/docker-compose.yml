@@ -5,6 +5,9 @@ services:
   # API Server
   # ============================================================
   api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
     image: sosiagaming/sgchat-api:latest
     ports:
       - "3040:3000"
