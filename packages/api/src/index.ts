@@ -68,9 +68,14 @@ async function start() {
   await fastify.register(dmRoutes, { prefix: '/dms' });
   await fastify.register(voiceRoutes, { prefix: '/voice' });
 
-  // Health check
+  // Health check with server info for client network discovery
   fastify.get('/health', async () => {
-    return { status: 'ok', timestamp: new Date().toISOString() };
+    return {
+      status: 'ok',
+      name: process.env.SERVER_NAME || 'sgChat Server',
+      version: '1.0.0',
+      timestamp: new Date().toISOString(),
+    };
   });
 
   // Initialize Socket.IO BEFORE starting the server

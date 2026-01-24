@@ -63,12 +63,21 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       const refresh_token = nanoid(32);
       await redis.setSession(user.id, refresh_token);
 
+      // Set refresh token as httpOnly cookie
+      const isProduction = process.env.NODE_ENV === 'production';
+      reply.setCookie('refresh_token', refresh_token, {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: isProduction ? 'none' : 'lax',
+        path: '/auth',
+        maxAge: 7 * 24 * 60 * 60, // 7 days in seconds
+      });
+
       // Remove sensitive data
       const { password_hash: _, ...safeUser } = user;
 
       return {
         access_token,
-        refresh_token,
         user: safeUser,
       };
     },
@@ -119,46 +128,44 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       // Update last seen
       await db.users.updateStatus(user.id, 'active');
 
+      // Set refresh token as httpOnly cookie
+      const isProduction = process.env.NODE_ENV === 'production';
+      reply.setCookie('refresh_token', refresh_token, {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: isProduction ? 'none' : 'lax',
+        path: '/auth',
+        maxAge: 7 * 24 * 60 * 60, // 7 days in seconds
+      });
+
       // Remove sensitive data
       const { password_hash: _, ...safeUser } = user;
 
       return {
         access_token,
-        refresh_token,
         user: safeUser,
       };
     },
   });
 
-  // Refresh token
+  // Refresh token (reads from httpOnly cookie, rotates token)
   fastify.post('/refresh', async (request, reply) => {
-    const { refresh_token } = request.body as { refresh_token: string };
+    const refresh_token = request.cookies.refresh_token;
 
     if (!refresh_token) {
-      return reply.status(400).send({
-        statusCode: 400,
-        error: 'Bad Request',
-        message: 'Refresh token required',
+      return reply.status(401).send({
+        statusCode: 401,
+        error: 'Unauthorized',
+        message: 'No refresh token provided',
       });
     }
 
     try {
-      // Decode the current token to get user ID (even if expired)
-      const decoded = fastify.jwt.decode(
-        request.headers.authorization?.replace('Bearer ', '') || ''
-      ) as any;
-
-      if (!decoded?.id) {
-        return reply.status(401).send({
-          statusCode: 401,
-          error: 'Unauthorized',
-          message: 'Invalid token',
-        });
-      }
-
-      // Verify refresh token
-      const storedToken = await redis.getSession(decoded.id);
-      if (storedToken !== refresh_token) {
+      // Look up session by token (no Bearer header needed)
+      const session = await redis.getSessionByToken(refresh_token);
+      if (!session) {
+        // Clear invalid cookie
+        reply.clearCookie('refresh_token', { path: '/auth' });
         return reply.status(401).send({
           statusCode: 401,
           error: 'Unauthorized',
@@ -167,8 +174,10 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       // Get fresh user data
-      const user = await db.users.findById(decoded.id);
+      const user = await db.users.findById(session.userId);
       if (!user) {
+        await redis.deleteSession(session.userId);
+        reply.clearCookie('refresh_token', { path: '/auth' });
         return reply.status(401).send({
           statusCode: 401,
           error: 'Unauthorized',
@@ -176,15 +185,32 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      // Generate new access token
+      // Delete old session (invalidates old refresh token)
+      await redis.deleteSession(session.userId);
+
+      // Generate new tokens (rotation)
       const access_token = fastify.jwt.sign({
         id: user.id,
         username: user.username,
         email: user.email,
       });
 
+      const new_refresh_token = nanoid(32);
+      await redis.setSession(user.id, new_refresh_token);
+
+      // Set new refresh token cookie
+      const isProduction = process.env.NODE_ENV === 'production';
+      reply.setCookie('refresh_token', new_refresh_token, {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: isProduction ? 'none' : 'lax',
+        path: '/auth',
+        maxAge: 7 * 24 * 60 * 60, // 7 days
+      });
+
       return { access_token };
     } catch (err) {
+      reply.clearCookie('refresh_token', { path: '/auth' });
       return reply.status(401).send({
         statusCode: 401,
         error: 'Unauthorized',
@@ -199,8 +225,11 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     handler: async (request, reply) => {
       const userId = request.user.id;
       
-      // Delete refresh token
+      // Delete refresh token from Redis
       await redis.deleteSession(userId);
+      
+      // Clear the refresh token cookie
+      reply.clearCookie('refresh_token', { path: '/auth' });
       
       // Update user status to offline
       await db.users.updateStatus(userId, 'offline');

@@ -27,20 +27,51 @@ export async function initRedis() {
   }
 }
 
+// Session data structure for cookie-based auth
+interface SessionData {
+  token: string;
+  userId: string;
+}
+
 // Redis helper functions
 export const redis = {
   client, // Expose client for direct access
 
-  // Session management
+  // Session management with token indexing for cookie-based refresh
   async setSession(userId: string, token: string, expiresIn: number = 604800) {
-    await client.setex(`session:${userId}`, expiresIn, token);
+    const sessionData: SessionData = { token, userId };
+    // Store session by userId
+    await client.setex(`session:${userId}`, expiresIn, JSON.stringify(sessionData));
+    // Index by token for lookup without userId (cookie-based refresh)
+    await client.setex(`session_token:${token}`, expiresIn, userId);
   },
 
-  async getSession(userId: string): Promise<string | null> {
-    return client.get(`session:${userId}`);
+  async getSession(userId: string): Promise<SessionData | null> {
+    const data = await client.get(`session:${userId}`);
+    if (!data) return null;
+    try {
+      return JSON.parse(data) as SessionData;
+    } catch {
+      return null;
+    }
+  },
+
+  // Look up session by token (for cookie-based refresh without Bearer header)
+  async getSessionByToken(token: string): Promise<{ userId: string } | null> {
+    const userId = await client.get(`session_token:${token}`);
+    if (!userId) return null;
+    // Verify the session still exists and token matches
+    const session = await this.getSession(userId);
+    if (!session || session.token !== token) return null;
+    return { userId };
   },
 
   async deleteSession(userId: string) {
+    // Get the token first to delete the index
+    const session = await this.getSession(userId);
+    if (session?.token) {
+      await client.del(`session_token:${session.token}`);
+    }
     await client.del(`session:${userId}`);
   },
 
