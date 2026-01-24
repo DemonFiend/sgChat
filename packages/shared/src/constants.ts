@@ -60,6 +60,7 @@ export const RATE_LIMITS = {
   LOGIN: { max: 5, window: 900 }, // 5 attempts per 15 minutes
   REGISTER: { max: 3, window: 3600 }, // 3 per hour
   FILE_UPLOAD: { max: 10, window: 60 }, // 10 per minute
+  VOICE_JOIN: { max: 10, window: 60 }, // 10 voice joins per minute
 } as const;
 
 // Notification batching
