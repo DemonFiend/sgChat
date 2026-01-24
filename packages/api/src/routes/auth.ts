@@ -86,13 +86,13 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     handler: async (request, reply) => {
       const body = loginSchema.parse(request.body);
 
-      // Find user by username
-      const user = await db.users.findByUsername(body.username);
+      // Find user by email
+      const user = await db.users.findByEmail(body.email);
       if (!user) {
         return reply.status(401).send({
           statusCode: 401,
           error: 'Unauthorized',
-          message: 'Invalid username or password',
+          message: 'Invalid email or password',
         });
       }
 
@@ -102,7 +102,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.status(401).send({
           statusCode: 401,
           error: 'Unauthorized',
-          message: 'Invalid username or password',
+          message: 'Invalid email or password',
         });
       }
 

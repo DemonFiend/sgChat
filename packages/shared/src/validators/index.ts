@@ -22,7 +22,7 @@ export const registerSchema = z.object({
 });
 
 export const loginSchema = z.object({
-  username: z.string(),
+  email: emailSchema,
   password: z.string(),
 });
 
