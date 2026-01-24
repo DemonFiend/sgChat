@@ -79,4 +79,146 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
       return { message: 'Message deleted' };
     },
   });
+
+  /**
+   * PUT /messages/:id/reactions/:emoji - Add reaction to message
+   */
+  fastify.put<{ Params: { id: string; emoji: string } }>('/:id/reactions/:emoji', {
+    onRequest: [authenticate],
+    config: {
+      rateLimit: { max: 30, timeWindow: '1 minute' },
+    },
+    handler: async (request, reply) => {
+      const { id, emoji } = request.params;
+      
+      const message = await db.messages.findById(id);
+      if (!message) {
+        return notFound(reply, 'Message');
+      }
+
+      // Check user has access to the channel
+      if (message.channel_id) {
+        const channel = await db.channels.findById(message.channel_id);
+        if (!channel) {
+          return notFound(reply, 'Channel');
+        }
+        // Check membership
+        const [membership] = await db.sql`
+          SELECT 1 FROM members WHERE user_id = ${request.user!.id} AND server_id = ${channel.server_id}
+        `;
+        if (!membership) {
+          return forbidden(reply, 'Not a member of this server');
+        }
+      }
+
+      // Validate emoji (basic check: allow common emojis and shortcodes)
+      const emojiDecoded = decodeURIComponent(emoji);
+      if (emojiDecoded.length > 32) {
+        return reply.code(400).send({ error: 'Invalid emoji' });
+      }
+
+      // Add reaction (upsert - ignore if already exists)
+      await db.sql`
+        INSERT INTO message_reactions (message_id, user_id, emoji)
+        VALUES (${id}, ${request.user!.id}, ${emojiDecoded})
+        ON CONFLICT (message_id, user_id, emoji) DO NOTHING
+      `;
+
+      // Get updated reaction counts
+      const reactions = await db.sql`
+        SELECT emoji, COUNT(*)::int as count,
+               BOOL_OR(user_id = ${request.user!.id}) as me
+        FROM message_reactions
+        WHERE message_id = ${id}
+        GROUP BY emoji
+      `;
+
+      // Broadcast reaction update
+      const roomId = message.channel_id ? `channel:${message.channel_id}` : `dm:${message.dm_channel_id}`;
+      fastify.io?.to(roomId).emit('message:reaction', {
+        message_id: id,
+        emoji: emojiDecoded,
+        user_id: request.user!.id,
+        action: 'add',
+        reactions,
+      });
+
+      return { reactions };
+    },
+  });
+
+  /**
+   * DELETE /messages/:id/reactions/:emoji - Remove reaction from message
+   */
+  fastify.delete<{ Params: { id: string; emoji: string } }>('/:id/reactions/:emoji', {
+    onRequest: [authenticate],
+    config: {
+      rateLimit: { max: 30, timeWindow: '1 minute' },
+    },
+    handler: async (request, reply) => {
+      const { id, emoji } = request.params;
+      
+      const message = await db.messages.findById(id);
+      if (!message) {
+        return notFound(reply, 'Message');
+      }
+
+      const emojiDecoded = decodeURIComponent(emoji);
+
+      // Remove reaction
+      await db.sql`
+        DELETE FROM message_reactions
+        WHERE message_id = ${id} AND user_id = ${request.user!.id} AND emoji = ${emojiDecoded}
+      `;
+
+      // Get updated reaction counts
+      const reactions = await db.sql`
+        SELECT emoji, COUNT(*)::int as count,
+               BOOL_OR(user_id = ${request.user!.id}) as me
+        FROM message_reactions
+        WHERE message_id = ${id}
+        GROUP BY emoji
+      `;
+
+      // Broadcast reaction update
+      const roomId = message.channel_id ? `channel:${message.channel_id}` : `dm:${message.dm_channel_id}`;
+      fastify.io?.to(roomId).emit('message:reaction', {
+        message_id: id,
+        emoji: emojiDecoded,
+        user_id: request.user!.id,
+        action: 'remove',
+        reactions,
+      });
+
+      return { reactions };
+    },
+  });
+
+  /**
+   * GET /messages/:id/reactions - Get all reactions for a message
+   */
+  fastify.get<{ Params: { id: string } }>('/:id/reactions', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params;
+      
+      const message = await db.messages.findById(id);
+      if (!message) {
+        return notFound(reply, 'Message');
+      }
+
+      // Get reactions grouped by emoji with user list
+      const reactions = await db.sql`
+        SELECT emoji, 
+               COUNT(*)::int as count,
+               BOOL_OR(user_id = ${request.user!.id}) as me,
+               ARRAY_AGG(user_id) as user_ids
+        FROM message_reactions
+        WHERE message_id = ${id}
+        GROUP BY emoji
+      `;
+
+      return reactions;
+    },
+  });
 };

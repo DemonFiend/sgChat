@@ -267,4 +267,98 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       return updatedChannels;
     },
   });
+
+  /**
+   * POST /channels/:id/ack - Mark channel as read up to a message
+   * Body: { message_id?: string } - If no message_id, marks all as read
+   */
+  fastify.post<{ Params: { id: string } }>('/:id/ack', {
+    onRequest: [authenticate],
+    config: {
+      rateLimit: { max: 60, timeWindow: '1 minute' },
+    },
+    handler: async (request, reply) => {
+      const { id } = request.params;
+      const { message_id } = (request.body as { message_id?: string }) || {};
+      
+      const canAccess = await canAccessChannel(request.user!.id, id);
+      if (!canAccess) {
+        return forbidden(reply, 'Cannot access this channel');
+      }
+
+      const channel = await db.channels.findById(id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+
+      // If message_id provided, use it; otherwise find the latest message
+      let lastMessageId = message_id;
+      if (!lastMessageId) {
+        const [latest] = await db.sql`
+          SELECT id FROM messages WHERE channel_id = ${id} ORDER BY created_at DESC LIMIT 1
+        `;
+        lastMessageId = latest?.id;
+      }
+
+      if (!lastMessageId) {
+        // No messages in channel, nothing to ack
+        return { last_read_message_id: null, unread_count: 0 };
+      }
+
+      // Upsert channel read state
+      await db.sql`
+        INSERT INTO channel_read_state (channel_id, user_id, last_read_message_id, last_read_at)
+        VALUES (${id}, ${request.user!.id}, ${lastMessageId}, NOW())
+        ON CONFLICT (channel_id, user_id)
+        DO UPDATE SET last_read_message_id = ${lastMessageId}, last_read_at = NOW()
+      `;
+
+      return { last_read_message_id: lastMessageId, unread_count: 0 };
+    },
+  });
+
+  /**
+   * GET /channels/:id/read-state - Get read state for a channel
+   */
+  fastify.get<{ Params: { id: string } }>('/:id/read-state', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params;
+      
+      const canAccess = await canAccessChannel(request.user!.id, id);
+      if (!canAccess) {
+        return forbidden(reply, 'Cannot access this channel');
+      }
+
+      // Get read state
+      const [readState] = await db.sql`
+        SELECT last_read_message_id, last_read_at
+        FROM channel_read_state
+        WHERE channel_id = ${id} AND user_id = ${request.user!.id}
+      `;
+
+      // Count unread messages
+      let unreadCount = 0;
+      if (readState?.last_read_message_id) {
+        const [result] = await db.sql`
+          SELECT COUNT(*)::int as count FROM messages
+          WHERE channel_id = ${id}
+            AND created_at > (SELECT created_at FROM messages WHERE id = ${readState.last_read_message_id})
+        `;
+        unreadCount = result?.count || 0;
+      } else {
+        // No read state = all messages are unread
+        const [result] = await db.sql`
+          SELECT COUNT(*)::int as count FROM messages WHERE channel_id = ${id}
+        `;
+        unreadCount = result?.count || 0;
+      }
+
+      return {
+        last_read_message_id: readState?.last_read_message_id || null,
+        last_read_at: readState?.last_read_at || null,
+        unread_count: unreadCount,
+      };
+    },
+  });
 };

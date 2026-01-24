@@ -18,6 +18,10 @@ import { channelRoutes } from './routes/channels.js';
 import { messageRoutes } from './routes/messages.js';
 import { dmRoutes } from './routes/dms.js';
 import { voiceRoutes } from './routes/voice.js';
+import { globalServerRoutes } from './routes/server.js';
+import { standaloneRoutes } from './routes/standalone.js';
+import { categoryRoutes } from './routes/categories.js';
+import { uploadRoutes } from './routes/upload.js';
 import { initSocketIO } from './socket/index.js';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -82,6 +86,12 @@ async function start() {
   await fastify.register(messageRoutes, { prefix: '/messages' });
   await fastify.register(dmRoutes, { prefix: '/dms' });
   await fastify.register(voiceRoutes, { prefix: '/voice' });
+  
+  // Single-tenant routes (no prefix - global endpoints)
+  await fastify.register(globalServerRoutes); // GET/PATCH /server
+  await fastify.register(standaloneRoutes);   // /roles, /members, /invites, /bans, /audit-log
+  await fastify.register(categoryRoutes);     // /categories
+  await fastify.register(uploadRoutes);       // /upload, /upload/image
 
   // Health check with server info for client network discovery
   fastify.get('/health', async () => {

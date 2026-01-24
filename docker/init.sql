@@ -403,3 +403,57 @@ BEGIN
   WHERE status_expires_at IS NOT NULL AND status_expires_at < NOW();
 END;
 $$ LANGUAGE plpgsql;
+
+-- ============================================================
+-- ADDITIONAL SCHEMA (Added for single-tenant upgrade)
+-- ============================================================
+
+-- Add reply_to_id for message threading (was missing)
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_id UUID REFERENCES messages(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_messages_reply ON messages(reply_to_id) WHERE reply_to_id IS NOT NULL;
+
+-- ============================================================
+-- CATEGORIES
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS categories (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  server_id UUID NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+  name TEXT NOT NULL CHECK (length(name) >= 1 AND length(name) <= 100),
+  position INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_categories_server ON categories(server_id, position);
+
+-- Add category_id to channels
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS category_id UUID REFERENCES categories(id) ON DELETE SET NULL;
+
+-- ============================================================
+-- MESSAGE REACTIONS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS message_reactions (
+  message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  emoji TEXT NOT NULL CHECK (length(emoji) >= 1 AND length(emoji) <= 32),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (message_id, user_id, emoji)
+);
+
+CREATE INDEX IF NOT EXISTS idx_reactions_message ON message_reactions(message_id);
+
+-- ============================================================
+-- CHANNEL READ STATE (for unread tracking)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS channel_read_state (
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  channel_id UUID NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+  last_read_message_id UUID REFERENCES messages(id) ON DELETE SET NULL,
+  last_read_at TIMESTAMPTZ DEFAULT NOW(),
+  mention_count INTEGER DEFAULT 0,
+  PRIMARY KEY (user_id, channel_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_channel_read_user ON channel_read_state(user_id);

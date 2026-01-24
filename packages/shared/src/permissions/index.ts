@@ -164,3 +164,93 @@ export function permissionToString(perm: bigint): string {
 export function stringToPermission(str: string): bigint {
   return BigInt(str);
 }
+
+/**
+ * Named permissions object for client consumption
+ */
+export interface NamedPermissions {
+  // Server permissions
+  administrator: boolean;
+  manage_server: boolean;
+  manage_channels: boolean;
+  manage_roles: boolean;
+  kick_members: boolean;
+  ban_members: boolean;
+  create_invites: boolean;
+  change_nickname: boolean;
+  manage_nicknames: boolean;
+  view_audit_log: boolean;
+  // Text permissions
+  view_channel: boolean;
+  send_messages: boolean;
+  embed_links: boolean;
+  attach_files: boolean;
+  add_reactions: boolean;
+  mention_everyone: boolean;
+  manage_messages: boolean;
+  read_message_history: boolean;
+  // Voice permissions
+  connect: boolean;
+  speak: boolean;
+  video: boolean;
+  stream: boolean;
+  mute_members: boolean;
+  deafen_members: boolean;
+  move_members: boolean;
+  disconnect_members: boolean;
+  priority_speaker: boolean;
+  use_voice_activity: boolean;
+}
+
+/**
+ * Convert bitmask permissions to named boolean object
+ * @param serverPerms Server permission bitmask (bigint or string)
+ * @param textPerms Text permission bitmask (bigint or string)
+ * @param voicePerms Voice permission bitmask (bigint or string)
+ * @returns Named permissions object with boolean values
+ */
+export function toNamedPermissions(
+  serverPerms: bigint | string | number,
+  textPerms: bigint | string | number,
+  voicePerms: bigint | string | number
+): NamedPermissions {
+  const server = typeof serverPerms === 'bigint' ? serverPerms : BigInt(serverPerms || 0);
+  const text = typeof textPerms === 'bigint' ? textPerms : BigInt(textPerms || 0);
+  const voice = typeof voicePerms === 'bigint' ? voicePerms : BigInt(voicePerms || 0);
+
+  const isAdmin = (server & ServerPermissions.ADMINISTRATOR) !== 0n;
+
+  return {
+    // Server permissions (admin bypasses all)
+    administrator: isAdmin,
+    manage_server: isAdmin || (server & ServerPermissions.MANAGE_SERVER) !== 0n,
+    manage_channels: isAdmin || (server & ServerPermissions.MANAGE_CHANNELS) !== 0n,
+    manage_roles: isAdmin || (server & ServerPermissions.MANAGE_ROLES) !== 0n,
+    kick_members: isAdmin || (server & ServerPermissions.KICK_MEMBERS) !== 0n,
+    ban_members: isAdmin || (server & ServerPermissions.BAN_MEMBERS) !== 0n,
+    create_invites: isAdmin || (server & ServerPermissions.CREATE_INVITES) !== 0n,
+    change_nickname: isAdmin || (server & ServerPermissions.CHANGE_NICKNAME) !== 0n,
+    manage_nicknames: isAdmin || (server & ServerPermissions.MANAGE_NICKNAMES) !== 0n,
+    view_audit_log: isAdmin || (server & ServerPermissions.VIEW_AUDIT_LOG) !== 0n,
+    // Text permissions
+    view_channel: isAdmin || (text & TextPermissions.VIEW_CHANNEL) !== 0n,
+    send_messages: isAdmin || (text & TextPermissions.SEND_MESSAGES) !== 0n,
+    embed_links: isAdmin || (text & TextPermissions.EMBED_LINKS) !== 0n,
+    attach_files: isAdmin || (text & TextPermissions.ATTACH_FILES) !== 0n,
+    add_reactions: isAdmin || (text & TextPermissions.ADD_REACTIONS) !== 0n,
+    mention_everyone: isAdmin || (text & TextPermissions.MENTION_EVERYONE) !== 0n,
+    manage_messages: isAdmin || (text & TextPermissions.MANAGE_MESSAGES) !== 0n,
+    read_message_history: isAdmin || (text & TextPermissions.READ_MESSAGE_HISTORY) !== 0n,
+    // Voice permissions
+    connect: isAdmin || (voice & VoicePermissions.CONNECT) !== 0n,
+    speak: isAdmin || (voice & VoicePermissions.SPEAK) !== 0n,
+    video: isAdmin || (voice & VoicePermissions.VIDEO) !== 0n,
+    stream: isAdmin || (voice & VoicePermissions.STREAM) !== 0n,
+    mute_members: isAdmin || (voice & VoicePermissions.MUTE_MEMBERS) !== 0n,
+    deafen_members: isAdmin || (voice & VoicePermissions.DEAFEN_MEMBERS) !== 0n,
+    move_members: isAdmin || (voice & VoicePermissions.MOVE_MEMBERS) !== 0n,
+    disconnect_members: isAdmin || (voice & VoicePermissions.DISCONNECT_MEMBERS) !== 0n,
+    priority_speaker: isAdmin || (voice & VoicePermissions.PRIORITY_SPEAKER) !== 0n,
+    use_voice_activity: isAdmin || (voice & VoicePermissions.USE_VOICE_ACTIVITY) !== 0n,
+  };
+}

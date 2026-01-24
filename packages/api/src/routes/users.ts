@@ -3,10 +3,11 @@ import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
 import { storage } from '../lib/storage.js';
-import { UserStatus, usernameSchema, updateStatusSchema, updateCustomStatusSchema } from '@sgchat/shared';
+import { UserStatus, usernameSchema, updateStatusSchema, updateCustomStatusSchema, toNamedPermissions } from '@sgchat/shared';
 import { z } from 'zod';
 import { notFound, badRequest, unauthorized } from '../utils/errors.js';
 import argon2 from 'argon2';
+import { getDefaultServer } from './server.js';
 
 const updateProfileSchema = z.object({
   username: usernameSchema.optional(),
@@ -24,7 +25,7 @@ const changeEmailSchema = z.object({
 });
 
 export const userRoutes: FastifyPluginAsync = async (fastify) => {
-  // Get current user with roles and permissions per server
+  // Get current user with roles and permissions (single-tenant: flat structure)
   fastify.get('/me', {
     onRequest: [authenticate],
     handler: async (request, reply) => {
@@ -35,84 +36,89 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
 
       const { password_hash: _, ...safeUser } = user;
 
-      // Get user's server memberships with roles
-      const memberships = await db.sql`
-        SELECT 
-          m.server_id,
-          m.nickname,
-          m.joined_at,
-          s.name as server_name,
-          s.owner_id
-        FROM members m
-        JOIN servers s ON s.id = m.server_id
-        WHERE m.user_id = ${request.user!.id}
+      // Get the default server for single-tenant model
+      const server = await getDefaultServer();
+      
+      // If no server exists yet, return user without server info
+      if (!server) {
+        return {
+          ...safeUser,
+          roles: [],
+          permissions: toNamedPermissions(0, 0, 0),
+          is_owner: false,
+          nickname: null,
+        };
+      }
+
+      const isOwner = server.owner_id === request.user!.id;
+
+      // Check if user is a member of this server
+      const [membership] = await db.sql`
+        SELECT nickname, joined_at FROM members
+        WHERE user_id = ${request.user!.id} AND server_id = ${server.id}
       `;
 
-      // For each server, get roles and compute permissions
-      const servers = await Promise.all(memberships.map(async (membership: any) => {
-        const isOwner = membership.owner_id === request.user!.id;
-
-        // Get roles for this member
-        const roles = await db.sql`
-          SELECT r.id, r.name, r.color, r.position, 
-                 r.server_permissions, r.text_permissions, r.voice_permissions
-          FROM roles r
-          JOIN member_roles mr ON mr.role_id = r.id
-          WHERE mr.member_user_id = ${request.user!.id}
-            AND mr.member_server_id = ${membership.server_id}
-          ORDER BY r.position DESC
-        `;
-
-        // Include @everyone role
-        const [everyoneRole] = await db.sql`
-          SELECT id, name, color, position, 
-                 server_permissions, text_permissions, voice_permissions
-          FROM roles
-          WHERE server_id = ${membership.server_id} AND name = '@everyone'
-        `;
-
-        const allRoles = everyoneRole ? [...roles, everyoneRole] : roles;
-
-        // Compute combined permissions (owner has all perms)
-        let serverPerms = 0, textPerms = 0, voicePerms = 0;
-        
-        if (isOwner) {
-          // Owner has all permissions
-          serverPerms = 0xFFFFFFFF;
-          textPerms = 0xFFFFFFFF;
-          voicePerms = 0xFFFFFFFF;
-        } else {
-          // Combine all role permissions (bitwise OR)
-          for (const role of allRoles) {
-            serverPerms |= role.server_permissions || 0;
-            textPerms |= role.text_permissions || 0;
-            voicePerms |= role.voice_permissions || 0;
-          }
-        }
-
+      // If not a member, return basic info
+      if (!membership) {
         return {
-          server_id: membership.server_id,
-          server_name: membership.server_name,
-          nickname: membership.nickname,
-          joined_at: membership.joined_at,
-          is_owner: isOwner,
-          roles: allRoles.map((r: any) => ({
-            id: r.id,
-            name: r.name,
-            color: r.color,
-            position: r.position,
-          })),
-          permissions: {
-            server: serverPerms,
-            text: textPerms,
-            voice: voicePerms,
-          },
+          ...safeUser,
+          roles: [],
+          permissions: toNamedPermissions(0, 0, 0),
+          is_owner: false,
+          nickname: null,
         };
-      }));
+      }
+
+      // Get roles for this member
+      const memberRoles = await db.sql`
+        SELECT r.id, r.name, r.color, r.position, 
+               r.server_permissions, r.text_permissions, r.voice_permissions
+        FROM roles r
+        JOIN member_roles mr ON mr.role_id = r.id
+        WHERE mr.member_user_id = ${request.user!.id}
+          AND mr.member_server_id = ${server.id}
+        ORDER BY r.position DESC
+      `;
+
+      // Include @everyone role
+      const [everyoneRole] = await db.sql`
+        SELECT id, name, color, position, 
+               server_permissions, text_permissions, voice_permissions
+        FROM roles
+        WHERE server_id = ${server.id} AND name = '@everyone'
+      `;
+
+      const allRoles = everyoneRole ? [...memberRoles, everyoneRole] : memberRoles;
+
+      // Compute combined permissions (owner has all perms)
+      let serverPerms = 0, textPerms = 0, voicePerms = 0;
+      
+      if (isOwner) {
+        // Owner has all permissions
+        serverPerms = 0xFFFFFFFF;
+        textPerms = 0xFFFFFFFF;
+        voicePerms = 0xFFFFFFFF;
+      } else {
+        // Combine all role permissions (bitwise OR)
+        for (const role of allRoles) {
+          serverPerms |= role.server_permissions || 0;
+          textPerms |= role.text_permissions || 0;
+          voicePerms |= role.voice_permissions || 0;
+        }
+      }
 
       return {
         ...safeUser,
-        servers,
+        nickname: membership.nickname,
+        joined_at: membership.joined_at,
+        is_owner: isOwner,
+        roles: allRoles.map((r: any) => ({
+          id: r.id,
+          name: r.name,
+          color: r.color,
+          position: r.position,
+        })),
+        permissions: toNamedPermissions(serverPerms, textPerms, voicePerms),
       };
     },
   });
@@ -247,8 +253,40 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
     },
   });
 
+  // Alias: /me/preferences -> /me/settings (for client compatibility)
+  fastify.get('/me/preferences', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const [settings] = await db.sql`
+        SELECT * FROM user_settings
+        WHERE user_id = ${request.user!.id}
+      `;
+
+      return settings || {};
+    },
+  });
+
   // Update user settings
   fastify.patch('/me/settings', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const body = request.body as Record<string, any>;
+      
+      const updates: any = { ...body, user_id: request.user!.id };
+      updates.updated_at = new Date();
+
+      await db.sql`
+        INSERT INTO user_settings ${db.sql(updates)}
+        ON CONFLICT (user_id)
+        DO UPDATE SET ${db.sql(updates)}
+      `;
+
+      return { message: 'Settings updated' };
+    },
+  });
+
+  // Alias: PATCH /me/preferences -> /me/settings
+  fastify.patch('/me/preferences', {
     onRequest: [authenticate],
     handler: async (request, reply) => {
       const body = request.body as Record<string, any>;
