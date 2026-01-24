@@ -35,7 +35,7 @@ async function getDefaultServer() {
   return server;
 }
 
-export const serverRoutes: FastifyPluginAsync = async (fastify) => {
+export const globalServerRoutes: FastifyPluginAsync = async (fastify) => {
   /**
    * GET /server - Get instance/server info
    * Public info about this sgChat deployment
