@@ -3,6 +3,8 @@ import { AccessToken, TrackSource } from 'livekit-server-sdk';
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || '';
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || '';
 const LIVEKIT_URL = process.env.LIVEKIT_URL || 'ws://localhost:7880';
+// LIVEKIT_PUBLIC_URL is the browser-accessible URL (may differ from internal Docker URL)
+const LIVEKIT_PUBLIC_URL = process.env.LIVEKIT_PUBLIC_URL || LIVEKIT_URL;
 
 export interface LiveKitTokenOptions {
   identity: string;
@@ -54,8 +56,8 @@ export async function generateLiveKitToken(options: LiveKitTokenOptions): Promis
 }
 
 /**
- * Get LiveKit server URL
+ * Get LiveKit server URL (public-facing for browser access)
  */
 export function getLiveKitUrl(): string {
-  return LIVEKIT_URL;
+  return LIVEKIT_PUBLIC_URL;
 }
