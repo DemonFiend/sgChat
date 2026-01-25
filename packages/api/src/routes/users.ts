@@ -12,6 +12,10 @@ import { getDefaultServer } from './server.js';
 const updateProfileSchema = z.object({
   username: usernameSchema.optional(),
   avatar_url: z.string().url().nullable().optional(),
+  display_name: z.string().min(1).max(32).nullable().optional(),
+  status: z.enum(['online', 'idle', 'dnd', 'offline']).optional(),
+  custom_status: z.string().max(128).nullable().optional(),
+  custom_status_expires_at: z.string().datetime().nullable().optional(),
 });
 
 const changePasswordSchema = z.object({
@@ -123,7 +127,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
     },
   });
 
-  // Update profile
+  // Update profile (supports status, custom_status, and other profile fields)
   fastify.patch('/me', {
     onRequest: [authenticate],
     handler: async (request, reply) => {
@@ -140,7 +144,18 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
       const updates: any = {};
       if (body.username) updates.username = body.username;
       if ('avatar_url' in body) updates.avatar_url = body.avatar_url;
-      updates.updated_at = new Date();
+      if ('display_name' in body) updates.display_name = body.display_name;
+      if ('status' in body) updates.status = body.status;
+      if ('custom_status' in body) updates.custom_status = body.custom_status;
+      if ('custom_status_expires_at' in body) {
+        updates.status_expires_at = body.custom_status_expires_at 
+          ? new Date(body.custom_status_expires_at) 
+          : null;
+      }
+
+      if (Object.keys(updates).length === 0) {
+        return badRequest(reply, 'No updates provided');
+      }
 
       await db.sql`
         UPDATE users
@@ -148,9 +163,22 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
         WHERE id = ${request.user!.id}
       `;
 
-      // Broadcast profile update to all connected clients
       const user = await db.users.findById(request.user!.id);
       const { password_hash: _, ...safeUser } = user;
+
+      // If status-related fields changed, emit presence:update to all servers
+      if ('status' in body || 'custom_status' in body) {
+        const servers = await db.servers.findByUserId(request.user!.id);
+        for (const server of servers) {
+          fastify.io?.to(`server:${server.id}`).emit('presence:update', {
+            user_id: request.user!.id,
+            status: user.status,
+            custom_status: user.custom_status,
+          });
+        }
+      }
+
+      // Broadcast profile update to user's own room
       fastify.io?.to(`user:${request.user!.id}`).emit('user:update', safeUser);
 
       return safeUser;

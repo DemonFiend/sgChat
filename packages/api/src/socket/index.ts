@@ -49,17 +49,28 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       socket.join(`dm:${dm.id}`);
     }
 
-    // Set user online
-    await db.users.updateStatus(userId, 'active');
-    await redis.setPresence(userId, true);
+    // Get user's current stored status
+    const currentUser = await db.users.findById(userId);
+    const storedStatus = currentUser?.status || 'offline';
 
-    // Broadcast online status to all servers
-    for (const server of servers) {
-      io.to(`server:${server.id}`).emit('presence:update', {
-        user_id: userId,
-        status: 'active',
-        last_seen_at: new Date().toISOString(),
-      });
+    // Only set to online if user's stored status is NOT 'offline' (invisible mode)
+    // If user chose invisible, respect that choice
+    if (storedStatus !== 'offline') {
+      await db.users.updateStatus(userId, 'online');
+      await redis.setPresence(userId, true);
+
+      // Broadcast online status to all servers
+      for (const server of servers) {
+        io.to(`server:${server.id}`).emit('presence:update', {
+          user_id: userId,
+          status: 'online',
+          custom_status: currentUser?.custom_status || null,
+          last_seen_at: new Date().toISOString(),
+        });
+      }
+    } else {
+      // User is invisible - still track presence in Redis but don't update DB or broadcast
+      await redis.setPresence(userId, true);
     }
 
     // --- Message Events ---
@@ -175,17 +186,25 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         clearTimeout(typingTimeouts.get(key)!);
       }
 
-      // Broadcast typing
+      // Get user info for the full typing event
+      const user = await db.users.findById(userId);
+      const typingUser = user ? {
+        id: user.id,
+        username: user.username,
+        display_name: user.display_name || user.username,
+      } : { id: userId, username: 'Unknown', display_name: 'Unknown' };
+
+      // Broadcast typing with full user object
       socket.to(`channel:${data.channel_id}`).emit('typing:start', {
-        user_id: userId,
         channel_id: data.channel_id,
+        user: typingUser,
       });
 
       // Auto-stop after 5 seconds
       const timeout = setTimeout(() => {
         socket.to(`channel:${data.channel_id}`).emit('typing:stop', {
-          user_id: userId,
           channel_id: data.channel_id,
+          user_id: userId,
         });
         typingTimeouts.delete(key);
       }, 5000);
@@ -448,20 +467,29 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       }
       dmTypingTimeouts.clear();
 
-      // Set user offline
-      await db.users.updateStatus(userId, 'offline');
+      // Get user's current status to check if invisible
+      const currentUserStatus = await db.users.findById(userId);
+      const wasInvisible = currentUserStatus?.status === 'offline';
+
+      // Clear Redis presence
       await redis.setPresence(userId, false);
 
       // Clear voice state
       await redis.client.del(`voice:${userId}`);
 
-      // Broadcast offline status
-      for (const server of servers) {
-        io.to(`server:${server.id}`).emit('presence:update', {
-          user_id: userId,
-          status: 'offline',
-          last_seen_at: new Date().toISOString(),
-        });
+      // Only update status and broadcast if user wasn't already invisible
+      // If they were invisible, they're already showing as offline
+      if (!wasInvisible) {
+        await db.users.updateStatus(userId, 'offline');
+
+        // Broadcast offline status
+        for (const server of servers) {
+          io.to(`server:${server.id}`).emit('presence:update', {
+            user_id: userId,
+            status: 'offline',
+            last_seen_at: new Date().toISOString(),
+          });
+        }
       }
     });
   });

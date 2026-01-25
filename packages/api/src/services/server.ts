@@ -131,6 +131,21 @@ export async function handleMemberJoin(
     const [user] = await tx`SELECT * FROM users WHERE id = ${userId}`;
     const [server] = await tx`SELECT * FROM servers WHERE id = ${serverId}`;
 
+    // Emit member:join event to all connected clients in the server
+    if (io) {
+      io.to(`server:${serverId}`).emit('member:join', {
+        member: {
+          id: user.id,
+          username: user.username,
+          display_name: user.display_name || user.username,
+          avatar_url: user.avatar_url,
+          status: user.status || 'offline',
+          custom_status: user.custom_status,
+          role_color: null, // New members have no roles yet
+        },
+      });
+    }
+
     // Post system message to welcome channel if configured
     if (server.welcome_channel_id && server.announce_joins) {
       const [message] = await tx`
@@ -176,6 +191,13 @@ export async function handleMemberLeave(
     // Get user and server info before deletion
     const [user] = await tx`SELECT * FROM users WHERE id = ${userId}`;
     const [server] = await tx`SELECT * FROM servers WHERE id = ${serverId}`;
+
+    // Emit member:leave event to all connected clients in the server
+    if (io) {
+      io.to(`server:${serverId}`).emit('member:leave', {
+        user_id: userId,
+      });
+    }
 
     // Post leave message to welcome channel if configured
     if (server.welcome_channel_id && server.announce_leaves) {

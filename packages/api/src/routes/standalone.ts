@@ -270,27 +270,28 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
         total = parseInt(count, 10);
       }
 
-      // Get roles for each member
+      // Get roles for each member (including color for display)
       const membersWithRoles = await Promise.all(members.map(async (m: any) => {
         const roles = await db.sql`
-          SELECT r.id FROM roles r
+          SELECT r.id, r.color, r.position FROM roles r
           JOIN member_roles mr ON mr.role_id = r.id
           WHERE mr.member_user_id = ${m.user_id} AND mr.member_server_id = ${server.id}
+          ORDER BY r.position DESC
         `;
+        
+        // Get the highest-positioned role's color (first one since ordered DESC)
+        const roleColor = roles.length > 0 && roles[0].color ? roles[0].color : null;
+        
         return {
-          user: {
-            id: m.user_id,
-            username: m.username,
-            avatar_url: m.avatar_url,
-            status: m.status,
-            custom_status: m.custom_status ? {
-              text: m.custom_status,
-              emoji: m.custom_status_emoji,
-            } : null,
-          },
+          id: m.user_id,
+          username: m.username,
+          display_name: m.nickname || m.username,
+          avatar_url: m.avatar_url,
+          status: m.status,
+          custom_status: m.custom_status || null,
+          role_color: roleColor,
           roles: roles.map((r: any) => r.id),
           joined_at: m.joined_at,
-          nickname: m.nickname,
         };
       }));
 

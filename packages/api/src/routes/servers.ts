@@ -110,6 +110,20 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
         ...body,
       });
 
+      // Emit channel:create socket event to all server members
+      fastify.io?.to(`server:${id}`).emit('channel:create', {
+        channel: {
+          id: channel.id,
+          name: channel.name,
+          type: channel.type,
+          category_id: channel.category_id || null,
+          position: channel.position,
+          topic: channel.topic || null,
+          unread_count: 0,
+          has_mentions: false,
+        },
+      });
+
       return channel;
     },
   });

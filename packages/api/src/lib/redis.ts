@@ -107,4 +107,62 @@ export const redis = {
   async getOnlineUsers(): Promise<string[]> {
     return client.smembers('online_users');
   },
+
+  // Voice channel participant tracking
+  async joinVoiceChannel(userId: string, channelId: string) {
+    // Remove from any other voice channel first
+    const currentChannel = await client.get(`voice:user:${userId}`);
+    if (currentChannel) {
+      await client.srem(`voice:channel:${currentChannel}`, userId);
+    }
+    // Add to new channel
+    await client.sadd(`voice:channel:${channelId}`, userId);
+    await client.set(`voice:user:${userId}`, channelId);
+    await client.hset(`voice:state:${channelId}:${userId}`, {
+      joined_at: new Date().toISOString(),
+      is_muted: 'false',
+      is_deafened: 'false',
+    });
+  },
+
+  async leaveVoiceChannel(userId: string) {
+    const channelId = await client.get(`voice:user:${userId}`);
+    if (channelId) {
+      await client.srem(`voice:channel:${channelId}`, userId);
+      await client.del(`voice:state:${channelId}:${userId}`);
+    }
+    await client.del(`voice:user:${userId}`);
+    return channelId; // Return the channel they left for socket events
+  },
+
+  async getVoiceChannelParticipants(channelId: string): Promise<string[]> {
+    return client.smembers(`voice:channel:${channelId}`);
+  },
+
+  async getUserVoiceChannel(userId: string): Promise<string | null> {
+    return client.get(`voice:user:${userId}`);
+  },
+
+  async getVoiceState(channelId: string, userId: string): Promise<{
+    joined_at: string;
+    is_muted: boolean;
+    is_deafened: boolean;
+  } | null> {
+    const state = await client.hgetall(`voice:state:${channelId}:${userId}`);
+    if (!state || Object.keys(state).length === 0) return null;
+    return {
+      joined_at: state.joined_at,
+      is_muted: state.is_muted === 'true',
+      is_deafened: state.is_deafened === 'true',
+    };
+  },
+
+  async updateVoiceState(channelId: string, userId: string, updates: { is_muted?: boolean; is_deafened?: boolean }) {
+    const data: Record<string, string> = {};
+    if (updates.is_muted !== undefined) data.is_muted = updates.is_muted.toString();
+    if (updates.is_deafened !== undefined) data.is_deafened = updates.is_deafened.toString();
+    if (Object.keys(data).length > 0) {
+      await client.hset(`voice:state:${channelId}:${userId}`, data);
+    }
+  },
 };

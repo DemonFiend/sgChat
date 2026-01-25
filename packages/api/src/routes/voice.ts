@@ -7,7 +7,59 @@ import { VoicePermissions, hasPermission, RATE_LIMITS } from '@sgchat/shared';
 import { notFound, forbidden, badRequest } from '../utils/errors.js';
 
 export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
-  // Join voice channel (get LiveKit token)
+  // Get voice token for a channel (GET endpoint as specified in SERVER_HANDOFF.md)
+  fastify.get('/token', {
+    onRequest: [authenticate],
+    config: {
+      rateLimit: {
+        max: RATE_LIMITS.VOICE_JOIN.max,
+        timeWindow: `${RATE_LIMITS.VOICE_JOIN.window} seconds`,
+      },
+    },
+    handler: async (request, reply) => {
+      const { channel_id } = request.query as { channel_id: string };
+      
+      if (!channel_id) {
+        return badRequest(reply, 'channel_id is required');
+      }
+
+      const channel = await db.channels.findById(channel_id);
+      if (!channel) {
+        return notFound(reply, 'Voice channel');
+      }
+
+      if (channel.type !== 'voice') {
+        return badRequest(reply, 'Not a voice channel');
+      }
+
+      // Check permissions
+      const perms = await calculatePermissions(request.user!.id, channel.server_id, channel_id);
+      
+      if (!hasPermission(perms.voice, VoicePermissions.CONNECT)) {
+        return forbidden(reply, 'You don\'t have permission to join this voice channel');
+      }
+
+      const roomName = `voice:${channel_id}`;
+
+      // Generate LiveKit token with appropriate grants
+      const token = await generateLiveKitToken({
+        identity: request.user!.id,
+        room: roomName,
+        canPublish: hasPermission(perms.voice, VoicePermissions.SPEAK),
+        canPublishVideo: hasPermission(perms.voice, VoicePermissions.VIDEO),
+        canPublishScreen: hasPermission(perms.voice, VoicePermissions.STREAM),
+        canSubscribe: true,
+      });
+
+      return {
+        token,
+        url: getLiveKitUrl(),
+        room_name: roomName,
+      };
+    },
+  });
+
+  // Join voice channel (get LiveKit token) - POST version
   fastify.post('/join/:channelId', {
     onRequest: [authenticate],
     config: {

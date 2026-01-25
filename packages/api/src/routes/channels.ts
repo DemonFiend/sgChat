@@ -468,4 +468,54 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       };
     },
   });
+
+  /**
+   * GET /channels/:id/voice-participants - Get list of users in a voice channel
+   */
+  fastify.get<{ Params: { id: string } }>('/:id/voice-participants', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params;
+      
+      const channel = await db.channels.findById(id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+
+      if (channel.type !== 'voice') {
+        return badRequest(reply, 'Not a voice channel');
+      }
+
+      const canAccess = await canAccessChannel(request.user!.id, id);
+      if (!canAccess) {
+        return forbidden(reply, 'Cannot access this channel');
+      }
+
+      // Get participant user IDs from Redis
+      const { redis } = await import('../lib/redis.js');
+      const participantIds = await redis.getVoiceChannelParticipants(id);
+
+      if (participantIds.length === 0) {
+        return { participants: [] };
+      }
+
+      // Get user details and voice states for each participant
+      const participants = await Promise.all(participantIds.map(async (userId) => {
+        const user = await db.users.findById(userId);
+        const voiceState = await redis.getVoiceState(id, userId);
+        
+        return {
+          user_id: userId,
+          username: user?.username || 'Unknown',
+          display_name: user?.display_name || user?.username || 'Unknown',
+          avatar_url: user?.avatar_url || null,
+          is_muted: voiceState?.is_muted || false,
+          is_deafened: voiceState?.is_deafened || false,
+          joined_at: voiceState?.joined_at || new Date().toISOString(),
+        };
+      }));
+
+      return { participants };
+    },
+  });
 };
