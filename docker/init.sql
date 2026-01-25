@@ -17,7 +17,7 @@ CREATE TABLE users (
   avatar_url TEXT,
   
   -- Status
-  status TEXT DEFAULT 'offline' CHECK (status IN ('active', 'idle', 'busy', 'dnd', 'invisible', 'offline')),
+  status TEXT DEFAULT 'offline' CHECK (status IN ('online', 'idle', 'dnd', 'offline')),
   custom_status TEXT CHECK (length(custom_status) <= 128),
   custom_status_emoji TEXT CHECK (length(custom_status_emoji) <= 10),
   status_expires_at TIMESTAMPTZ,
