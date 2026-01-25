@@ -416,6 +416,38 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ============================================================
+-- FRIENDSHIPS
+-- ============================================================
+
+CREATE TABLE friendships (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user1_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user2_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  -- Ensure user1_id < user2_id to prevent duplicates
+  CONSTRAINT friendship_order CHECK (user1_id < user2_id),
+  UNIQUE(user1_id, user2_id)
+);
+
+CREATE INDEX idx_friendships_user1 ON friendships(user1_id);
+CREATE INDEX idx_friendships_user2 ON friendships(user2_id);
+
+-- ============================================================
+-- FRIEND REQUESTS
+-- ============================================================
+
+CREATE TABLE friend_requests (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  from_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  to_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(from_user_id, to_user_id)
+);
+
+CREATE INDEX idx_friend_requests_to ON friend_requests(to_user_id);
+CREATE INDEX idx_friend_requests_from ON friend_requests(from_user_id);
+
+-- ============================================================
 -- ADDITIONAL SCHEMA (Added for single-tenant upgrade)
 -- ============================================================
 

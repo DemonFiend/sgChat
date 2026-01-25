@@ -480,4 +480,68 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
       };
     },
   });
+
+  // Search users by username
+  fastify.get('/search', {
+    onRequest: [authenticate],
+    config: {
+      rateLimit: { max: 30, timeWindow: '1 minute' },
+    },
+    handler: async (request, reply) => {
+      const { q, limit = '20' } = request.query as { q?: string; limit?: string };
+
+      if (!q || q.trim().length < 2) {
+        return badRequest(reply, 'Search query must be at least 2 characters');
+      }
+
+      const searchTerm = q.trim();
+      const maxLimit = Math.min(parseInt(limit) || 20, 50);
+      const currentUserId = request.user!.id;
+
+      // Search users by username (case-insensitive), excluding current user
+      const users = await db.sql`
+        SELECT 
+          u.id,
+          u.username,
+          u.avatar_url,
+          u.status,
+          -- Check if friends
+          EXISTS (
+            SELECT 1 FROM friendships f 
+            WHERE (f.user1_id = ${currentUserId} AND f.user2_id = u.id)
+               OR (f.user1_id = u.id AND f.user2_id = ${currentUserId})
+          ) as is_friend,
+          -- Check for outgoing request
+          EXISTS (
+            SELECT 1 FROM friend_requests fr 
+            WHERE fr.from_user_id = ${currentUserId} AND fr.to_user_id = u.id
+          ) as has_outgoing_request,
+          -- Check for incoming request
+          EXISTS (
+            SELECT 1 FROM friend_requests fr 
+            WHERE fr.from_user_id = u.id AND fr.to_user_id = ${currentUserId}
+          ) as has_incoming_request
+        FROM users u
+        WHERE u.id != ${currentUserId}
+          AND (u.username ILIKE ${'%' + searchTerm + '%'})
+        ORDER BY 
+          -- Exact match first
+          CASE WHEN u.username ILIKE ${searchTerm} THEN 0 ELSE 1 END,
+          -- Then starts with
+          CASE WHEN u.username ILIKE ${searchTerm + '%'} THEN 0 ELSE 1 END,
+          u.username ASC
+        LIMIT ${maxLimit}
+      `;
+
+      return users.map((u: any) => ({
+        id: u.id,
+        username: u.username,
+        display_name: u.username,
+        avatar_url: u.avatar_url,
+        is_friend: u.is_friend,
+        request_pending: u.has_outgoing_request || u.has_incoming_request,
+        request_direction: u.has_outgoing_request ? 'outgoing' : u.has_incoming_request ? 'incoming' : null,
+      }));
+    },
+  });
 };

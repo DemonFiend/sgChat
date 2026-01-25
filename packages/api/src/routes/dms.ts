@@ -3,6 +3,7 @@ import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { sendMessageSchema } from '@sgchat/shared';
 import { notFound, forbidden, badRequest } from '../utils/errors.js';
+import { areFriends } from './friends.js';
 
 export const dmRoutes: FastifyPluginAsync = async (fastify) => {
   // Get user's DM channels
@@ -22,6 +23,17 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
       
       if (user_id === request.user!.id) {
         return badRequest(reply, 'Cannot DM yourself');
+      }
+
+      // Check if target user exists
+      const targetUser = await db.users.findById(user_id);
+      if (!targetUser) {
+        return notFound(reply, 'User');
+      }
+
+      // Check if users are friends
+      if (!await areFriends(request.user!.id, user_id)) {
+        return forbidden(reply, 'You must be friends to send direct messages');
       }
 
       // Check if DM already exists
@@ -82,6 +94,14 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
         return forbidden(reply, 'Not part of this DM');
       }
 
+      // Get recipient ID
+      const recipientId = dm.user1_id === request.user!.id ? dm.user2_id : dm.user1_id;
+
+      // Verify users are still friends
+      if (!await areFriends(request.user!.id, recipientId)) {
+        return forbidden(reply, 'You must be friends to send direct messages');
+      }
+
       const message = await db.messages.create({
         dm_channel_id: id,
         author_id: request.user!.id,
@@ -89,9 +109,6 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
         attachments: body.attachments,
         queued_at: body.queued_at ? new Date(body.queued_at) : undefined,
       });
-
-      // Get recipient ID
-      const recipientId = dm.user1_id === request.user!.id ? dm.user2_id : dm.user1_id;
       
       // Broadcast to both users via Socket.IO
       fastify.io?.to(`user:${request.user!.id}`).emit('dm:message', message);
@@ -133,7 +150,7 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
         // Count messages not authored by current user that are in 'sent' status (not 'received' or 'read')
         const result = await db.sql`
           SELECT COUNT(*) as count, MAX(created_at) as last_message_at
-          FROM dm_messages
+          FROM messages
           WHERE dm_channel_id = ${dm.id}
             AND author_id != ${request.user!.id}
             AND status = 'sent'

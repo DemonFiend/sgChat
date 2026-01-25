@@ -336,6 +336,75 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       }
     });
 
+    // --- DM Typing Indicators ---
+    
+    const dmTypingTimeouts = new Map<string, NodeJS.Timeout>();
+
+    socket.on('dm:typing:start', async (data: { user_id: string }) => {
+      const targetUserId = data.user_id;
+      const key = `dm:${userId}:${targetUserId}`;
+      
+      // Clear existing timeout
+      if (dmTypingTimeouts.has(key)) {
+        clearTimeout(dmTypingTimeouts.get(key)!);
+      }
+
+      // Get or verify DM channel exists
+      const dmChannel = await db.dmChannels.findByUsers(userId, targetUserId);
+      if (!dmChannel) return;
+
+      // Broadcast typing to the other user
+      io.to(`user:${targetUserId}`).emit('dm:typing:start', {
+        user_id: userId,
+      });
+
+      // Auto-stop after 5 seconds
+      const timeout = setTimeout(() => {
+        io.to(`user:${targetUserId}`).emit('dm:typing:stop', {
+          user_id: userId,
+        });
+        dmTypingTimeouts.delete(key);
+      }, 5000);
+
+      dmTypingTimeouts.set(key, timeout);
+    });
+
+    socket.on('dm:typing:stop', async (data: { user_id: string }) => {
+      const targetUserId = data.user_id;
+      const key = `dm:${userId}:${targetUserId}`;
+      
+      if (dmTypingTimeouts.has(key)) {
+        clearTimeout(dmTypingTimeouts.get(key)!);
+        dmTypingTimeouts.delete(key);
+      }
+
+      // Broadcast stop typing to the other user
+      io.to(`user:${targetUserId}`).emit('dm:typing:stop', {
+        user_id: userId,
+      });
+    });
+
+    // --- DM Room Management ---
+
+    socket.on('join:dm', async (data: { user_id: string }) => {
+      const targetUserId = data.user_id;
+      
+      // Get or create DM channel
+      let dmChannel = await db.dmChannels.findByUsers(userId, targetUserId);
+      if (dmChannel) {
+        socket.join(`dm:${dmChannel.id}`);
+      }
+    });
+
+    socket.on('leave:dm', async (data: { user_id: string }) => {
+      const targetUserId = data.user_id;
+      
+      const dmChannel = await db.dmChannels.findByUsers(userId, targetUserId);
+      if (dmChannel) {
+        socket.leave(`dm:${dmChannel.id}`);
+      }
+    });
+
     // --- Disconnect ---
 
     socket.on('disconnect', async () => {
@@ -346,6 +415,12 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         clearTimeout(timeout);
       }
       typingTimeouts.clear();
+
+      // Clean up DM typing indicators
+      for (const timeout of dmTypingTimeouts.values()) {
+        clearTimeout(timeout);
+      }
+      dmTypingTimeouts.clear();
 
       // Set user offline
       await db.users.updateStatus(userId, 'offline');

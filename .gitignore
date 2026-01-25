@@ -46,3 +46,6 @@ temp/
 # Database
 *.db
 *.sqlite
+
+# Client handoff docs (internal only)
+CLIENT_HANDOFF.md

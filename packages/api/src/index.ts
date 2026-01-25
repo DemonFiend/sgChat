@@ -18,6 +18,7 @@ import { serverRoutes } from './routes/servers.js';
 import { channelRoutes } from './routes/channels.js';
 import { messageRoutes } from './routes/messages.js';
 import { dmRoutes } from './routes/dms.js';
+import { friendRoutes } from './routes/friends.js';
 import { voiceRoutes } from './routes/voice.js';
 import { globalServerRoutes } from './routes/server.js';
 import { standaloneRoutes } from './routes/standalone.js';
@@ -89,6 +90,7 @@ async function start() {
   await fastify.register(channelRoutes, { prefix: '/channels' });
   await fastify.register(messageRoutes, { prefix: '/messages' });
   await fastify.register(dmRoutes, { prefix: '/dms' });
+  await fastify.register(friendRoutes, { prefix: '/friends' });
   await fastify.register(voiceRoutes, { prefix: '/voice' });
   
   // Single-tenant routes (no prefix - global endpoints)
