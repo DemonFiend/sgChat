@@ -700,17 +700,83 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
   // CHANNELS - Standalone endpoint
   // ============================================================
 
-  // List all channels in the server
+  // List all channels in the server with categories, unread counts, and mentions
   fastify.get('/channels', {
     onRequest: [authenticate],
     handler: async (request, reply) => {
       const server = await getDefaultServer();
       if (!server) {
-        return [];
+        return { channels: [], categories: [] };
       }
 
-      const channels = await db.channels.findByServerId(server.id);
-      return channels;
+      const userId = request.user!.id;
+
+      // Get channels with unread counts and mention detection
+      const channels = await db.sql`
+        SELECT 
+          c.id,
+          c.name,
+          c.type,
+          c.category_id,
+          c.position,
+          c.topic,
+          c.bitrate,
+          c.user_limit,
+          c.created_at,
+          -- Calculate unread count
+          COALESCE(
+            (SELECT COUNT(*)::int 
+             FROM messages m 
+             WHERE m.channel_id = c.id 
+               AND m.created_at > COALESCE(
+                 (SELECT last_read_at FROM channel_read_state 
+                  WHERE channel_id = c.id AND user_id = ${userId}),
+                 '1970-01-01'
+               )
+            ), 0
+          ) as unread_count,
+          -- Check for mentions (simple @username pattern)
+          EXISTS(
+            SELECT 1 FROM messages m
+            JOIN users u ON u.id = ${userId}
+            WHERE m.channel_id = c.id 
+              AND m.content ILIKE '%@' || u.username || '%'
+              AND m.created_at > COALESCE(
+                (SELECT last_read_at FROM channel_read_state 
+                 WHERE channel_id = c.id AND user_id = ${userId}),
+                '1970-01-01'
+              )
+          ) as has_mentions
+        FROM channels c
+        WHERE c.server_id = ${server.id}
+        ORDER BY c.position ASC, c.created_at ASC
+      `;
+
+      // Get categories
+      const categories = await db.sql`
+        SELECT id, name, position, created_at
+        FROM categories
+        WHERE server_id = ${server.id}
+        ORDER BY position ASC, created_at ASC
+      `;
+
+      return {
+        channels: channels.map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          type: c.type,
+          category_id: c.category_id,
+          position: c.position,
+          topic: c.topic,
+          unread_count: c.unread_count,
+          has_mentions: c.has_mentions,
+        })),
+        categories: categories.map((cat: any) => ({
+          id: cat.id,
+          name: cat.name,
+          position: cat.position,
+        })),
+      };
     },
   });
 };

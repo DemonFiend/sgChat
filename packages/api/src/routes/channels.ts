@@ -42,14 +42,15 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
     },
   });
 
-  // Get channel messages
+  // Get channel messages with full author info and reactions
   fastify.get('/:id/messages', {
     onRequest: [authenticate],
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
       const { limit, before } = request.query as { limit?: string; before?: string };
+      const currentUserId = request.user!.id;
       
-      const canAccess = await canAccessChannel(request.user!.id, id);
+      const canAccess = await canAccessChannel(currentUserId, id);
       if (!canAccess) {
         return forbidden(reply, 'Cannot access this channel');
       }
@@ -58,19 +59,106 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       if (!channel) {
         return notFound(reply, 'Channel');
       }
-      const perms = await calculatePermissions(request.user!.id, channel.server_id, id);
+      const perms = await calculatePermissions(currentUserId, channel.server_id, id);
       
       if (!hasPermission(perms.text, TextPermissions.READ_MESSAGE_HISTORY)) {
         return forbidden(reply, 'Missing READ_MESSAGE_HISTORY permission');
       }
 
-      const messages = await db.messages.findByChannelId(
-        id,
-        limit ? parseInt(limit) : 50,
-        before
-      );
+      // Get messages with full author info
+      const maxLimit = Math.min(parseInt(limit || '50') || 50, 100);
+      let messages;
       
-      return messages.reverse();
+      if (before) {
+        messages = await db.sql`
+          SELECT 
+            m.id,
+            m.content,
+            m.created_at,
+            m.edited_at,
+            m.attachments,
+            m.reply_to_id,
+            u.id as author_id,
+            u.username as author_username,
+            u.avatar_url as author_avatar_url
+          FROM messages m
+          LEFT JOIN users u ON m.author_id = u.id
+          WHERE m.channel_id = ${id}
+            AND m.created_at < (SELECT created_at FROM messages WHERE id = ${before})
+          ORDER BY m.created_at DESC
+          LIMIT ${maxLimit}
+        `;
+      } else {
+        messages = await db.sql`
+          SELECT 
+            m.id,
+            m.content,
+            m.created_at,
+            m.edited_at,
+            m.attachments,
+            m.reply_to_id,
+            u.id as author_id,
+            u.username as author_username,
+            u.avatar_url as author_avatar_url
+          FROM messages m
+          LEFT JOIN users u ON m.author_id = u.id
+          WHERE m.channel_id = ${id}
+          ORDER BY m.created_at DESC
+          LIMIT ${maxLimit}
+        `;
+      }
+
+      // Get reactions for all messages
+      const messageIds = messages.map((m: any) => m.id);
+      let reactionsMap: Map<string, any[]> = new Map();
+      
+      if (messageIds.length > 0) {
+        const reactions = await db.sql`
+          SELECT 
+            mr.message_id,
+            mr.emoji,
+            mr.user_id,
+            ${currentUserId} = mr.user_id as me
+          FROM message_reactions mr
+          WHERE mr.message_id = ANY(${messageIds})
+          ORDER BY mr.created_at ASC
+        `;
+
+        // Group reactions by message and emoji
+        for (const r of reactions) {
+          if (!reactionsMap.has(r.message_id)) {
+            reactionsMap.set(r.message_id, []);
+          }
+          const msgReactions = reactionsMap.get(r.message_id)!;
+          let emojiReaction = msgReactions.find(er => er.emoji === r.emoji);
+          if (!emojiReaction) {
+            emojiReaction = { emoji: r.emoji, count: 0, users: [], me: false };
+            msgReactions.push(emojiReaction);
+          }
+          emojiReaction.count++;
+          emojiReaction.users.push(r.user_id);
+          if (r.me) emojiReaction.me = true;
+        }
+      }
+
+      // Format response
+      const formattedMessages = messages.reverse().map((m: any) => ({
+        id: m.id,
+        content: m.content,
+        author: {
+          id: m.author_id,
+          username: m.author_username,
+          display_name: m.author_username, // Use username as display_name
+          avatar_url: m.author_avatar_url,
+        },
+        created_at: m.created_at,
+        edited_at: m.edited_at,
+        attachments: m.attachments || [],
+        reply_to_id: m.reply_to_id,
+        reactions: reactionsMap.get(m.id) || [],
+      }));
+      
+      return formattedMessages;
     },
   });
 
@@ -103,10 +191,29 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
         queued_at: body.queued_at ? new Date(body.queued_at) : undefined,
       });
 
-      // Broadcast via Socket.IO
-      fastify.io?.to(`channel:${id}`).emit('message:new', message);
+      // Get author info for response
+      const author = await db.users.findById(request.user!.id);
 
-      return message;
+      // Format response with full author object
+      const formattedMessage = {
+        id: message.id,
+        content: message.content,
+        author: {
+          id: author.id,
+          username: author.username,
+          display_name: author.username,
+          avatar_url: author.avatar_url,
+        },
+        created_at: message.created_at,
+        edited_at: message.edited_at,
+        attachments: message.attachments || [],
+        reactions: [],
+      };
+
+      // Broadcast via Socket.IO
+      fastify.io?.to(`channel:${id}`).emit('message:new', formattedMessage);
+
+      return formattedMessage;
     },
   });
 
