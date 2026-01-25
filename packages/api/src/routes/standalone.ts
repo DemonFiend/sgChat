@@ -7,6 +7,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
+import { redis } from '../lib/redis.js';
 import { getDefaultServer } from './server.js';
 import { calculatePermissions } from '../services/permissions.js';
 import { handleMemberLeave, generateInviteCode } from '../services/server.js';
@@ -270,6 +271,10 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
         total = parseInt(count, 10);
       }
 
+      // Get all online users from Redis for real-time presence
+      const onlineUserIds = await redis.getOnlineUsers();
+      const onlineSet = new Set(onlineUserIds);
+
       // Get roles for each member (including color for display)
       const membersWithRoles = await Promise.all(members.map(async (m: any) => {
         const roles = await db.sql`
@@ -282,12 +287,31 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
         // Get the highest-positioned role's color (first one since ordered DESC)
         const roleColor = roles.length > 0 && roles[0].color ? roles[0].color : null;
         
+        // Determine effective status:
+        // - If user is connected (in Redis), show 'online' unless they chose 'dnd' or 'idle'
+        // - If user chose 'offline' (invisible) in DB but is connected, still show 'offline' to others
+        // - If user is not connected, show 'offline'
+        const isConnected = onlineSet.has(m.user_id);
+        const dbStatus = m.status || 'offline';
+        
+        let effectiveStatus: string;
+        if (!isConnected) {
+          // User not connected - always show offline
+          effectiveStatus = 'offline';
+        } else if (dbStatus === 'offline') {
+          // User chose invisible - respect their choice, show offline to others
+          effectiveStatus = 'offline';
+        } else {
+          // User is connected and not invisible - show their chosen status
+          effectiveStatus = dbStatus;
+        }
+        
         return {
           id: m.user_id,
           username: m.username,
           display_name: m.nickname || m.username,
           avatar_url: m.avatar_url,
-          status: m.status,
+          status: effectiveStatus,
           custom_status: m.custom_status || null,
           role_color: roleColor,
           roles: roles.map((r: any) => r.id),

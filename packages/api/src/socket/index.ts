@@ -49,29 +49,28 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       socket.join(`dm:${dm.id}`);
     }
 
-    // Get user's current stored status
+    // Get user's current stored status (their chosen status preference)
     const currentUser = await db.users.findById(userId);
     const storedStatus = currentUser?.status || 'offline';
 
-    // Only set to online if user's stored status is NOT 'offline' (invisible mode)
-    // If user chose invisible, respect that choice
-    if (storedStatus !== 'offline') {
-      await db.users.updateStatus(userId, 'online');
-      await redis.setPresence(userId, true);
+    // Always track presence in Redis (user is connected)
+    await redis.setPresence(userId, true);
 
-      // Broadcast online status to all servers
+    // DO NOT change the user's status in the database on connect!
+    // The user's chosen status (online, idle, dnd, offline) should persist.
+    // We only broadcast presence:update if they're NOT invisible (offline)
+    if (storedStatus !== 'offline') {
+      // Broadcast the user's stored status (not forcing 'online')
       for (const server of servers) {
         io.to(`server:${server.id}`).emit('presence:update', {
           user_id: userId,
-          status: 'online',
+          status: storedStatus,
           custom_status: currentUser?.custom_status || null,
           last_seen_at: new Date().toISOString(),
         });
       }
-    } else {
-      // User is invisible - still track presence in Redis but don't update DB or broadcast
-      await redis.setPresence(userId, true);
     }
+    // If user is invisible (status = 'offline'), don't broadcast anything
 
     // --- Message Events ---
 
@@ -471,18 +470,20 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       const currentUserStatus = await db.users.findById(userId);
       const wasInvisible = currentUserStatus?.status === 'offline';
 
-      // Clear Redis presence
+      // Clear Redis presence (user is no longer connected)
       await redis.setPresence(userId, false);
 
       // Clear voice state
       await redis.client.del(`voice:${userId}`);
 
-      // Only update status and broadcast if user wasn't already invisible
+      // Update last_seen_at timestamp (but DO NOT change their status preference)
+      await db.sql`UPDATE users SET last_seen_at = NOW() WHERE id = ${userId}`;
+
+      // Only broadcast offline if user wasn't already invisible
       // If they were invisible, they're already showing as offline
       if (!wasInvisible) {
-        await db.users.updateStatus(userId, 'offline');
-
-        // Broadcast offline status
+        // Broadcast that user is now offline (disconnected)
+        // Note: We don't change their DB status - that's their preference for next connect
         for (const server of servers) {
           io.to(`server:${server.id}`).emit('presence:update', {
             user_id: userId,
