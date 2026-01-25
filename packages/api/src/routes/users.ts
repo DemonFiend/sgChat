@@ -201,9 +201,8 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
         UPDATE users
         SET 
           custom_status_emoji = ${body.emoji ?? null},
-          custom_status_text = ${body.text ?? null},
-          custom_status_expires_at = ${body.expires_at ? new Date(body.expires_at) : null},
-          updated_at = NOW()
+          custom_status = ${body.text ?? null},
+          status_expires_at = ${body.expires_at ? new Date(body.expires_at) : null}
         WHERE id = ${request.user!.id}
       `;
 
@@ -475,7 +474,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
         avatar_url: user.avatar_url,
         status: user.status,
         custom_status_emoji: user.custom_status_emoji,
-        custom_status_text: user.custom_status_text,
+        custom_status: user.custom_status,
         created_at: user.created_at,
       };
     },

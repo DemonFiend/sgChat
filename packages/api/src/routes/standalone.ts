@@ -239,7 +239,7 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
       if (search) {
         members = await db.sql`
           SELECT m.*, u.id as user_id, u.username, u.avatar_url, u.status,
-                 u.custom_status_text, u.custom_status_emoji
+                 u.custom_status, u.custom_status_emoji
           FROM members m
           JOIN users u ON u.id = m.user_id
           WHERE m.server_id = ${server.id}
@@ -257,7 +257,7 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
       } else {
         members = await db.sql`
           SELECT m.*, u.id as user_id, u.username, u.avatar_url, u.status,
-                 u.custom_status_text, u.custom_status_emoji
+                 u.custom_status, u.custom_status_emoji
           FROM members m
           JOIN users u ON u.id = m.user_id
           WHERE m.server_id = ${server.id}
@@ -283,8 +283,8 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
             username: m.username,
             avatar_url: m.avatar_url,
             status: m.status,
-            custom_status: m.custom_status_text ? {
-              text: m.custom_status_text,
+            custom_status: m.custom_status ? {
+              text: m.custom_status,
               emoji: m.custom_status_emoji,
             } : null,
           },
