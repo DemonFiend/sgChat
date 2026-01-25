@@ -40,7 +40,7 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
           u.avatar_url,
           u.status,
           u.custom_status_emoji,
-          u.custom_status_text,
+          u.custom_status,
           f.created_at as since
         FROM friendships f
         JOIN users u ON (

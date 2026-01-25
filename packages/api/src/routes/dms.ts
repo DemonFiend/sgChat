@@ -110,13 +110,124 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
         queued_at: body.queued_at ? new Date(body.queued_at) : undefined,
       });
       
-      // Broadcast to both users via Socket.IO
-      fastify.io?.to(`user:${request.user!.id}`).emit('dm:message', message);
-      fastify.io?.to(`user:${recipientId}`).emit('dm:message', message);
+      // Broadcast to both users via Socket.IO (use dm:message:create as client expects)
+      const dmEvent = {
+        from_user_id: request.user!.id,
+        message: message,
+      };
+      fastify.io?.to(`user:${request.user!.id}`).emit('dm:message:create', dmEvent);
+      fastify.io?.to(`user:${recipientId}`).emit('dm:message:create', dmEvent);
 
       // TODO: Handle offline user - send push notification
 
       return message;
+    },
+  });
+
+  // ============================================================
+  // User-ID based routes (client compatibility)
+  // These routes accept the friend's user ID instead of DM channel ID
+  // ============================================================
+
+  // Get DM messages by user ID (client-friendly route)
+  fastify.get('/user/:userId/messages', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { userId } = request.params as { userId: string };
+      const { limit, before, after } = request.query as { limit?: string; before?: string; after?: string };
+      
+      // Check if target user exists
+      const targetUser = await db.users.findById(userId);
+      if (!targetUser) {
+        return notFound(reply, 'User');
+      }
+
+      // Check if users are friends
+      if (!await areFriends(request.user!.id, userId)) {
+        return forbidden(reply, 'You must be friends to view messages');
+      }
+
+      // Find the DM channel between these users
+      const dm = await db.dmChannels.findByUsers(request.user!.id, userId);
+      if (!dm) {
+        // No messages yet - return empty array
+        return [];
+      }
+
+      const messages = await db.messages.findByDMChannelId(
+        dm.id,
+        limit ? parseInt(limit) : 50,
+        before
+      );
+      
+      // Transform to match expected format (sender_id instead of author_id)
+      return messages.reverse().map((m: any) => ({
+        id: m.id,
+        content: m.content,
+        sender_id: m.author_id,
+        created_at: m.created_at,
+        edited_at: m.edited_at,
+      }));
+    },
+  });
+
+  // Send DM message by user ID (client-friendly route)
+  fastify.post('/user/:userId/messages', {
+    onRequest: [authenticate],
+    config: {
+      rateLimit: { max: 5, timeWindow: '5 seconds' },
+    },
+    handler: async (request, reply) => {
+      const { userId } = request.params as { userId: string };
+      const body = sendMessageSchema.parse(request.body);
+      
+      // Check if target user exists
+      const targetUser = await db.users.findById(userId);
+      if (!targetUser) {
+        return notFound(reply, 'User');
+      }
+
+      // Check if users are friends
+      if (!await areFriends(request.user!.id, userId)) {
+        return forbidden(reply, 'You must be friends to send messages');
+      }
+
+      // Find or create DM channel
+      let dm = await db.dmChannels.findByUsers(request.user!.id, userId);
+      if (!dm) {
+        dm = await db.dmChannels.create(request.user!.id, userId);
+      }
+
+      const message = await db.messages.create({
+        dm_channel_id: dm.id,
+        author_id: request.user!.id,
+        content: body.content,
+        attachments: body.attachments,
+        queued_at: body.queued_at ? new Date(body.queued_at) : undefined,
+      });
+      
+      // Broadcast to both users via Socket.IO
+      const dmEvent = {
+        from_user_id: request.user!.id,
+        message: {
+          id: message.id,
+          content: message.content,
+          sender_id: message.author_id,
+          created_at: message.created_at,
+          edited_at: message.edited_at,
+        },
+      };
+      fastify.io?.to(`user:${request.user!.id}`).emit('dm:message:create', dmEvent);
+      fastify.io?.to(`user:${userId}`).emit('dm:message:create', dmEvent);
+
+      // Return in expected format
+      return {
+        id: message.id,
+        content: message.content,
+        sender_id: message.author_id,
+        created_at: message.created_at,
+        edited_at: message.edited_at,
+      };
     },
   });
 

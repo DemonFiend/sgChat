@@ -93,8 +93,8 @@ async function start() {
   await fastify.register(friendRoutes, { prefix: '/friends' });
   await fastify.register(voiceRoutes, { prefix: '/voice' });
   
-  // Single-tenant routes (no prefix - global endpoints)
-  await fastify.register(globalServerRoutes); // GET/PATCH /server
+  // Single-tenant routes
+  await fastify.register(globalServerRoutes, { prefix: '/server' }); // GET/PATCH /server
   await fastify.register(standaloneRoutes);   // /roles, /members, /invites, /bans, /audit-log
   await fastify.register(categoryRoutes);     // /categories
   await fastify.register(uploadRoutes);       // /upload, /upload/image

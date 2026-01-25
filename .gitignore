@@ -49,4 +49,5 @@ temp/
 
 # Internal docs (not for repo)
 CLIENT_HANDOFF.md
+SERVER_HANDOFF.md
 Publishing2Dev.md
