@@ -69,6 +69,12 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       reply_to_id?: string;
     }) => {
       try {
+        // Validate content
+        if (!data.content || data.content.trim().length === 0) {
+          socket.emit('error', { message: 'Message cannot be empty' });
+          return;
+        }
+
         const channel = await db.channels.findById(data.channel_id);
         if (!channel) return;
 
@@ -101,6 +107,12 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       content: string;
     }) => {
       try {
+        // Validate content
+        if (!data.content || data.content.trim().length === 0) {
+          socket.emit('error', { message: 'Message cannot be empty' });
+          return;
+        }
+
         const message = await db.messages.findById(data.message_id);
         if (!message || message.author_id !== userId) {
           socket.emit('error', { message: 'Cannot edit this message' });
@@ -282,6 +294,12 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       reply_to_id?: string;
     }) => {
       try {
+        // Validate content
+        if (!data.content || data.content.trim().length === 0) {
+          socket.emit('error', { message: 'Message cannot be empty' });
+          return;
+        }
+
         const dmChannel = await db.dmChannels.findById(data.dm_channel_id);
         if (!dmChannel) return;
 

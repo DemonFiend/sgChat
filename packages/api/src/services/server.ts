@@ -140,7 +140,7 @@ export async function handleMemberJoin(
         VALUES (
           ${server.welcome_channel_id},
           NULL,
-          '',
+          ${`${user.username} joined the server`},
           ${JSON.stringify({
             type: 'member_join',
             user_id: userId,
@@ -186,7 +186,7 @@ export async function handleMemberLeave(
         VALUES (
           ${server.welcome_channel_id},
           NULL,
-          '',
+          ${`${user.username} left the server`},
           ${JSON.stringify({
             type: 'member_leave',
             user_id: userId,
