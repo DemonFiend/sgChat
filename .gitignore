@@ -47,5 +47,6 @@ temp/
 *.db
 *.sqlite
 
-# Client handoff docs (internal only)
+# Internal docs (not for repo)
 CLIENT_HANDOFF.md
+Publishing2Dev.md
