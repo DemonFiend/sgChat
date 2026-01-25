@@ -83,7 +83,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         httpOnly: true,
         secure: isProduction,
         sameSite: isProduction ? 'none' : 'lax',
-        path: '/auth',
+        path: '/',
         maxAge: 7 * 24 * 60 * 60, // 7 days in seconds
       });
 
@@ -161,7 +161,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         httpOnly: true,
         secure: isProduction,
         sameSite: isProduction ? 'none' : 'lax',
-        path: '/auth',
+        path: '/',
         maxAge: 7 * 24 * 60 * 60, // 7 days in seconds
       });
 
@@ -192,7 +192,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       const session = await redis.getSessionByToken(refresh_token);
       if (!session) {
         // Clear invalid cookie
-        reply.clearCookie('refresh_token', { path: '/auth' });
+        reply.clearCookie('refresh_token', { path: '/' });
         return reply.status(401).send({
           statusCode: 401,
           error: 'Unauthorized',
@@ -204,7 +204,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       const user = await db.users.findById(session.userId);
       if (!user) {
         await redis.deleteSession(session.userId);
-        reply.clearCookie('refresh_token', { path: '/auth' });
+        reply.clearCookie('refresh_token', { path: '/' });
         return reply.status(401).send({
           statusCode: 401,
           error: 'Unauthorized',
@@ -231,13 +231,13 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         httpOnly: true,
         secure: isProduction,
         sameSite: isProduction ? 'none' : 'lax',
-        path: '/auth',
+        path: '/',
         maxAge: 7 * 24 * 60 * 60, // 7 days
       });
 
       return { access_token };
     } catch (err) {
-      reply.clearCookie('refresh_token', { path: '/auth' });
+      reply.clearCookie('refresh_token', { path: '/' });
       return reply.status(401).send({
         statusCode: 401,
         error: 'Unauthorized',
@@ -256,7 +256,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       await redis.deleteSession(userId);
       
       // Clear the refresh token cookie
-      reply.clearCookie('refresh_token', { path: '/auth' });
+      reply.clearCookie('refresh_token', { path: '/' });
       
       // Update user status to offline
       await db.users.updateStatus(userId, 'offline');
