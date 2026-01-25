@@ -239,7 +239,7 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
       if (search) {
         members = await db.sql`
           SELECT m.*, u.id as user_id, u.username, u.avatar_url, u.status,
-                 u.custom_status, u.custom_status_emoji
+                 u.custom_status, u.custom_status_emoji, u.last_seen_at
           FROM members m
           JOIN users u ON u.id = m.user_id
           WHERE m.server_id = ${server.id}
@@ -257,7 +257,7 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
       } else {
         members = await db.sql`
           SELECT m.*, u.id as user_id, u.username, u.avatar_url, u.status,
-                 u.custom_status, u.custom_status_emoji
+                 u.custom_status, u.custom_status_emoji, u.last_seen_at
           FROM members m
           JOIN users u ON u.id = m.user_id
           WHERE m.server_id = ${server.id}
@@ -292,6 +292,7 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
           role_color: roleColor,
           roles: roles.map((r: any) => r.id),
           joined_at: m.joined_at,
+          last_seen_at: m.last_seen_at || null,
         };
       }));
 
@@ -466,18 +467,38 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
         ORDER BY i.created_at DESC
       `;
 
-      return invites.map((inv: any) => ({
-        code: inv.code,
-        created_by: inv.creator_id ? {
-          id: inv.creator_id,
-          username: inv.created_by_username,
-          avatar_url: inv.created_by_avatar,
-        } : null,
-        created_at: inv.created_at,
-        expires_at: inv.expires_at,
-        max_uses: inv.max_uses,
-        uses: inv.uses,
+      // Get usage details for each invite
+      const invitesWithUsage = await Promise.all(invites.map(async (inv: any) => {
+        const usedBy = await db.sql`
+          SELECT iu.used_at, u.id, u.username, u.avatar_url
+          FROM invite_uses iu
+          JOIN users u ON iu.user_id = u.id
+          WHERE iu.invite_code = ${inv.code}
+          ORDER BY iu.used_at DESC
+          LIMIT 10
+        `;
+
+        return {
+          code: inv.code,
+          created_by: inv.creator_id ? {
+            id: inv.creator_id,
+            username: inv.created_by_username,
+            avatar_url: inv.created_by_avatar,
+          } : null,
+          created_at: inv.created_at,
+          expires_at: inv.expires_at,
+          max_uses: inv.max_uses,
+          uses: inv.uses,
+          used_by: usedBy.map((u: any) => ({
+            id: u.id,
+            username: u.username,
+            avatar_url: u.avatar_url,
+            used_at: u.used_at,
+          })),
+        };
       }));
+
+      return invitesWithUsage;
     },
   });
 
@@ -571,6 +592,13 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
       const { handleMemberJoin } = await import('../services/server.js');
       await handleMemberJoin(request.user!.id, invite.server_id);
       await db.invites.incrementUses(code);
+
+      // Track who used this invite
+      await db.sql`
+        INSERT INTO invite_uses (invite_code, user_id)
+        VALUES (${code}, ${request.user!.id})
+        ON CONFLICT (invite_code, user_id) DO NOTHING
+      `;
 
       const server = await db.servers.findById(invite.server_id);
       return { message: 'Joined server successfully', server };

@@ -308,6 +308,12 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
         DO UPDATE SET ${db.sql(updates)}
       `;
 
+      // Get updated settings and emit socket event for real-time sync
+      const [updatedSettings] = await db.sql`
+        SELECT * FROM user_settings WHERE user_id = ${request.user!.id}
+      `;
+      fastify.io?.to(`user:${request.user!.id}`).emit('user:settings:update', updatedSettings || {});
+
       return { message: 'Settings updated' };
     },
   });
@@ -326,6 +332,12 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
         ON CONFLICT (user_id)
         DO UPDATE SET ${db.sql(updates)}
       `;
+
+      // Get updated settings and emit socket event for real-time sync
+      const [updatedSettings] = await db.sql`
+        SELECT * FROM user_settings WHERE user_id = ${request.user!.id}
+      `;
+      fastify.io?.to(`user:${request.user!.id}`).emit('user:settings:update', updatedSettings || {});
 
       return { message: 'Settings updated' };
     },
@@ -629,15 +641,17 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
         return notFound(reply, 'User');
       }
 
-      // Return limited public profile
+      // Return limited public profile with last_seen_at
       return {
         id: user.id,
         username: user.username,
+        display_name: user.display_name || user.username,
         avatar_url: user.avatar_url,
         status: user.status,
         custom_status_emoji: user.custom_status_emoji,
         custom_status: user.custom_status,
         created_at: user.created_at,
+        last_seen_at: user.last_seen_at || null,
       };
     },
   });

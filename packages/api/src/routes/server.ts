@@ -93,6 +93,9 @@ export const globalServerRoutes: FastifyPluginAsync = async (fastify) => {
         member_count: parseInt(count, 10),
         admin_claimed: server.admin_claimed,
         features: ['voice', 'video', 'file_uploads'],
+        // Server time info for client sync
+        server_time: new Date().toISOString(),
+        timezone: server.timezone || 'UTC',
       };
 
       // Include MOTD if enabled
@@ -116,6 +119,33 @@ export const globalServerRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       return response;
+    },
+  });
+
+  /**
+   * GET /server/time - Get current server time and timezone
+   * Useful for client-side time synchronization
+   */
+  fastify.get('/time', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      const timezone = server?.timezone || 'UTC';
+      const now = new Date();
+      
+      // Calculate timezone offset (simplified - uses server's JS runtime timezone)
+      const offsetMinutes = now.getTimezoneOffset();
+      const offsetHours = Math.floor(Math.abs(offsetMinutes) / 60);
+      const offsetMins = Math.abs(offsetMinutes) % 60;
+      const offsetSign = offsetMinutes <= 0 ? '+' : '-';
+      const timezoneOffset = `${offsetSign}${String(offsetHours).padStart(2, '0')}:${String(offsetMins).padStart(2, '0')}`;
+
+      return {
+        server_time: now.toISOString(),
+        timezone: timezone,
+        timezone_offset: timezoneOffset,
+        unix_timestamp: Math.floor(now.getTime() / 1000),
+      };
     },
   });
 

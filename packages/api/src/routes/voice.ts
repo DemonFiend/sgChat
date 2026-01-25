@@ -1,6 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
+import { redis } from '../lib/redis.js';
 import { calculatePermissions } from '../services/permissions.js';
 import { generateLiveKitToken, getLiveKitUrl } from '../services/livekit.js';
 import { VoicePermissions, hasPermission, RATE_LIMITS } from '@sgchat/shared';
@@ -51,6 +52,23 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
         canSubscribe: true,
       });
 
+      // Track voice state in Redis
+      await redis.joinVoiceChannel(request.user!.id, channel_id);
+
+      // Get user info for socket event
+      const user = await db.users.findById(request.user!.id);
+
+      // Emit voice:user-joined to all server members
+      fastify.io?.to(`server:${channel.server_id}`).emit('voice:user-joined', {
+        channel_id,
+        user: {
+          id: user.id,
+          username: user.username,
+          display_name: user.display_name || user.username,
+          avatar_url: user.avatar_url,
+        },
+      });
+
       return {
         token,
         url: getLiveKitUrl(),
@@ -95,6 +113,23 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
         canPublishVideo: hasPermission(perms.voice, VoicePermissions.VIDEO),
         canPublishScreen: hasPermission(perms.voice, VoicePermissions.STREAM),
         canSubscribe: true, // Can always listen
+      });
+
+      // Track voice state in Redis
+      await redis.joinVoiceChannel(request.user!.id, channelId);
+
+      // Get user info for socket event
+      const user = await db.users.findById(request.user!.id);
+
+      // Emit voice:user-joined to all server members
+      fastify.io?.to(`server:${channel.server_id}`).emit('voice:user-joined', {
+        channel_id: channelId,
+        user: {
+          id: user.id,
+          username: user.username,
+          display_name: user.display_name || user.username,
+          avatar_url: user.avatar_url,
+        },
       });
 
       return {

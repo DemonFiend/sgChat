@@ -53,6 +53,7 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
           u.status,
           u.custom_status_emoji,
           u.custom_status,
+          u.last_seen_at,
           f.created_at as since
         FROM friendships f
         JOIN users u ON (
@@ -81,6 +82,7 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
         avatar_url: f.avatar_url,
         status: f.status,
         since: f.since,
+        last_seen_at: f.last_seen_at || null,
       }));
     },
   });

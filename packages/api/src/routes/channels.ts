@@ -518,4 +518,436 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       return { participants };
     },
   });
+
+  // ============================================================
+  // CHANNEL PERMISSION OVERRIDES
+  // ============================================================
+
+  /**
+   * GET /channels/:id/permissions - List permission overrides for a channel
+   */
+  fastify.get<{ Params: { id: string } }>('/:id/permissions', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params;
+      
+      const channel = await db.channels.findById(id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, channel.server_id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_CHANNELS)) {
+        return forbidden(reply, 'Missing MANAGE_CHANNELS permission');
+      }
+
+      const overrides = await db.sql`
+        SELECT 
+          cpo.id,
+          cpo.channel_id,
+          cpo.role_id,
+          cpo.user_id,
+          cpo.text_allow,
+          cpo.text_deny,
+          cpo.voice_allow,
+          cpo.voice_deny,
+          r.name as role_name,
+          r.color as role_color,
+          u.username as user_username,
+          u.avatar_url as user_avatar_url
+        FROM channel_permission_overrides cpo
+        LEFT JOIN roles r ON cpo.role_id = r.id
+        LEFT JOIN users u ON cpo.user_id = u.id
+        WHERE cpo.channel_id = ${id}
+        ORDER BY r.position DESC NULLS LAST, u.username ASC
+      `;
+
+      return {
+        overrides: overrides.map((o: any) => ({
+          id: o.id,
+          channel_id: o.channel_id,
+          type: o.role_id ? 'role' : 'user',
+          target_id: o.role_id || o.user_id,
+          target_name: o.role_name || o.user_username,
+          target_color: o.role_color || null,
+          target_avatar: o.user_avatar_url || null,
+          text_allow: o.text_allow,
+          text_deny: o.text_deny,
+          voice_allow: o.voice_allow,
+          voice_deny: o.voice_deny,
+        })),
+      };
+    },
+  });
+
+  /**
+   * PUT /channels/:id/permissions/roles/:roleId - Set role permission override
+   */
+  fastify.put<{ Params: { id: string; roleId: string } }>('/:id/permissions/roles/:roleId', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id, roleId } = request.params;
+      const body = request.body as {
+        text_allow?: string;
+        text_deny?: string;
+        voice_allow?: string;
+        voice_deny?: string;
+      };
+      
+      const channel = await db.channels.findById(id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, channel.server_id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_CHANNELS)) {
+        return forbidden(reply, 'Missing MANAGE_CHANNELS permission');
+      }
+
+      // Verify role exists and belongs to this server
+      const [role] = await db.sql`
+        SELECT id FROM roles WHERE id = ${roleId} AND server_id = ${channel.server_id}
+      `;
+      if (!role) {
+        return notFound(reply, 'Role');
+      }
+
+      // Upsert the override
+      const [override] = await db.sql`
+        INSERT INTO channel_permission_overrides (
+          channel_id, role_id, text_allow, text_deny, voice_allow, voice_deny
+        )
+        VALUES (
+          ${id}, 
+          ${roleId}, 
+          ${body.text_allow || '0'}, 
+          ${body.text_deny || '0'},
+          ${body.voice_allow || '0'},
+          ${body.voice_deny || '0'}
+        )
+        ON CONFLICT (channel_id, role_id)
+        DO UPDATE SET
+          text_allow = ${body.text_allow || '0'},
+          text_deny = ${body.text_deny || '0'},
+          voice_allow = ${body.voice_allow || '0'},
+          voice_deny = ${body.voice_deny || '0'}
+        RETURNING *
+      `;
+
+      // Emit socket event
+      fastify.io?.to(`server:${channel.server_id}`).emit('channel:permissions:update', {
+        channel_id: id,
+        type: 'role',
+        target_id: roleId,
+      });
+
+      return override;
+    },
+  });
+
+  /**
+   * PUT /channels/:id/permissions/users/:userId - Set user permission override
+   */
+  fastify.put<{ Params: { id: string; userId: string } }>('/:id/permissions/users/:userId', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id, userId } = request.params;
+      const body = request.body as {
+        text_allow?: string;
+        text_deny?: string;
+        voice_allow?: string;
+        voice_deny?: string;
+      };
+      
+      const channel = await db.channels.findById(id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, channel.server_id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_CHANNELS)) {
+        return forbidden(reply, 'Missing MANAGE_CHANNELS permission');
+      }
+
+      // Verify user is a member of this server
+      const member = await db.members.findByUserAndServer(userId, channel.server_id);
+      if (!member) {
+        return notFound(reply, 'Member');
+      }
+
+      // Upsert the override
+      const [override] = await db.sql`
+        INSERT INTO channel_permission_overrides (
+          channel_id, user_id, text_allow, text_deny, voice_allow, voice_deny
+        )
+        VALUES (
+          ${id}, 
+          ${userId}, 
+          ${body.text_allow || '0'}, 
+          ${body.text_deny || '0'},
+          ${body.voice_allow || '0'},
+          ${body.voice_deny || '0'}
+        )
+        ON CONFLICT (channel_id, user_id)
+        DO UPDATE SET
+          text_allow = ${body.text_allow || '0'},
+          text_deny = ${body.text_deny || '0'},
+          voice_allow = ${body.voice_allow || '0'},
+          voice_deny = ${body.voice_deny || '0'}
+        RETURNING *
+      `;
+
+      // Emit socket event
+      fastify.io?.to(`server:${channel.server_id}`).emit('channel:permissions:update', {
+        channel_id: id,
+        type: 'user',
+        target_id: userId,
+      });
+
+      return override;
+    },
+  });
+
+  /**
+   * DELETE /channels/:id/permissions/roles/:roleId - Remove role permission override
+   */
+  fastify.delete<{ Params: { id: string; roleId: string } }>('/:id/permissions/roles/:roleId', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id, roleId } = request.params;
+      
+      const channel = await db.channels.findById(id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, channel.server_id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_CHANNELS)) {
+        return forbidden(reply, 'Missing MANAGE_CHANNELS permission');
+      }
+
+      await db.sql`
+        DELETE FROM channel_permission_overrides
+        WHERE channel_id = ${id} AND role_id = ${roleId}
+      `;
+
+      // Emit socket event
+      fastify.io?.to(`server:${channel.server_id}`).emit('channel:permissions:delete', {
+        channel_id: id,
+        type: 'role',
+        target_id: roleId,
+      });
+
+      return { message: 'Permission override removed' };
+    },
+  });
+
+  /**
+   * DELETE /channels/:id/permissions/users/:userId - Remove user permission override
+   */
+  fastify.delete<{ Params: { id: string; userId: string } }>('/:id/permissions/users/:userId', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id, userId } = request.params;
+      
+      const channel = await db.channels.findById(id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, channel.server_id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_CHANNELS)) {
+        return forbidden(reply, 'Missing MANAGE_CHANNELS permission');
+      }
+
+      await db.sql`
+        DELETE FROM channel_permission_overrides
+        WHERE channel_id = ${id} AND user_id = ${userId}
+      `;
+
+      // Emit socket event
+      fastify.io?.to(`server:${channel.server_id}`).emit('channel:permissions:delete', {
+        channel_id: id,
+        type: 'user',
+        target_id: userId,
+      });
+
+      return { message: 'Permission override removed' };
+    },
+  });
+
+  // ============================================================
+  // PINNED MESSAGES
+  // ============================================================
+
+  /**
+   * GET /channels/:id/pinned - List pinned messages in a channel
+   */
+  fastify.get<{ Params: { id: string } }>('/:id/pinned', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params;
+      
+      const canAccess = await canAccessChannel(request.user!.id, id);
+      if (!canAccess) {
+        return forbidden(reply, 'Cannot access this channel');
+      }
+
+      const channel = await db.channels.findById(id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+
+      const pinnedMessages = await db.sql`
+        SELECT 
+          pm.id as pin_id,
+          pm.pinned_at,
+          pm.pinned_by,
+          m.id,
+          m.content,
+          m.created_at,
+          m.edited_at,
+          m.attachments,
+          u.id as author_id,
+          u.username as author_username,
+          u.avatar_url as author_avatar_url,
+          pinner.username as pinned_by_username
+        FROM pinned_messages pm
+        JOIN messages m ON pm.message_id = m.id
+        LEFT JOIN users u ON m.author_id = u.id
+        LEFT JOIN users pinner ON pm.pinned_by = pinner.id
+        WHERE pm.channel_id = ${id}
+        ORDER BY pm.pinned_at DESC
+      `;
+
+      return pinnedMessages.map((pm: any) => ({
+        id: pm.id,
+        content: pm.content,
+        author: {
+          id: pm.author_id,
+          username: pm.author_username,
+          display_name: pm.author_username,
+          avatar_url: pm.author_avatar_url,
+        },
+        created_at: pm.created_at,
+        edited_at: pm.edited_at,
+        attachments: pm.attachments || [],
+        pinned: true,
+        pinned_at: pm.pinned_at,
+        pinned_by: {
+          id: pm.pinned_by,
+          username: pm.pinned_by_username,
+        },
+      }));
+    },
+  });
+
+  /**
+   * POST /channels/:id/messages/:messageId/pin - Pin a message
+   */
+  fastify.post<{ Params: { id: string; messageId: string } }>('/:id/messages/:messageId/pin', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id, messageId } = request.params;
+      
+      const channel = await db.channels.findById(id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, channel.server_id, id);
+      if (!hasPermission(perms.text, TextPermissions.MANAGE_MESSAGES)) {
+        return forbidden(reply, 'Missing MANAGE_MESSAGES permission');
+      }
+
+      // Verify message exists and belongs to this channel
+      const [message] = await db.sql`
+        SELECT id, content, author_id, created_at FROM messages 
+        WHERE id = ${messageId} AND channel_id = ${id}
+      `;
+      if (!message) {
+        return notFound(reply, 'Message');
+      }
+
+      // Check if already pinned
+      const [existing] = await db.sql`
+        SELECT id FROM pinned_messages 
+        WHERE channel_id = ${id} AND message_id = ${messageId}
+      `;
+      if (existing) {
+        return badRequest(reply, 'Message already pinned');
+      }
+
+      // Pin the message
+      await db.sql`
+        INSERT INTO pinned_messages (channel_id, message_id, pinned_by)
+        VALUES (${id}, ${messageId}, ${request.user!.id})
+      `;
+
+      // Get author info for socket event
+      const [author] = await db.sql`SELECT id, username, avatar_url FROM users WHERE id = ${message.author_id}`;
+
+      // Emit socket event
+      fastify.io?.to(`channel:${id}`).emit('message:pin', {
+        channel_id: id,
+        message: {
+          id: message.id,
+          content: message.content,
+          author: {
+            id: author?.id,
+            username: author?.username,
+            avatar_url: author?.avatar_url,
+          },
+          created_at: message.created_at,
+        },
+        pinned_by: request.user!.id,
+      });
+
+      return { message: 'Message pinned' };
+    },
+  });
+
+  /**
+   * DELETE /channels/:id/messages/:messageId/pin - Unpin a message
+   */
+  fastify.delete<{ Params: { id: string; messageId: string } }>('/:id/messages/:messageId/pin', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id, messageId } = request.params;
+      
+      const channel = await db.channels.findById(id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, channel.server_id, id);
+      if (!hasPermission(perms.text, TextPermissions.MANAGE_MESSAGES)) {
+        return forbidden(reply, 'Missing MANAGE_MESSAGES permission');
+      }
+
+      // Check if message is pinned
+      const [pinned] = await db.sql`
+        SELECT id FROM pinned_messages 
+        WHERE channel_id = ${id} AND message_id = ${messageId}
+      `;
+      if (!pinned) {
+        return notFound(reply, 'Pinned message');
+      }
+
+      // Unpin the message
+      await db.sql`
+        DELETE FROM pinned_messages
+        WHERE channel_id = ${id} AND message_id = ${messageId}
+      `;
+
+      // Emit socket event
+      fastify.io?.to(`channel:${id}`).emit('message:unpin', {
+        channel_id: id,
+        message_id: messageId,
+        unpinned_by: request.user!.id,
+      });
+
+      return { message: 'Message unpinned' };
+    },
+  });
 };

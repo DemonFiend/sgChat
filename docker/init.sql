@@ -466,6 +466,37 @@ CREATE INDEX idx_blocked_users_blocker ON blocked_users(blocker_id);
 CREATE INDEX idx_blocked_users_blocked ON blocked_users(blocked_id);
 
 -- ============================================================
+-- PINNED MESSAGES
+-- ============================================================
+
+CREATE TABLE pinned_messages (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  channel_id UUID NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+  message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  pinned_by UUID NOT NULL REFERENCES users(id) ON DELETE SET NULL,
+  pinned_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(channel_id, message_id)
+);
+
+CREATE INDEX idx_pinned_messages_channel ON pinned_messages(channel_id, pinned_at DESC);
+CREATE INDEX idx_pinned_messages_message ON pinned_messages(message_id);
+
+-- ============================================================
+-- INVITE USAGE TRACKING
+-- ============================================================
+
+CREATE TABLE invite_uses (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  invite_code TEXT NOT NULL REFERENCES invites(code) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  used_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(invite_code, user_id)
+);
+
+CREATE INDEX idx_invite_uses_code ON invite_uses(invite_code);
+CREATE INDEX idx_invite_uses_user ON invite_uses(user_id);
+
+-- ============================================================
 -- ADDITIONAL SCHEMA (Added for single-tenant upgrade)
 -- ============================================================
 
