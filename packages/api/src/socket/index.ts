@@ -105,8 +105,29 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
           status: 'sent',
         });
 
+        // Get author info for the formatted message
+        const author = await db.users.findById(userId);
+        
+        // Format message with full author object (matching REST API format)
+        const formattedMessage = {
+          id: message.id,
+          channel_id: message.channel_id,
+          content: message.content,
+          author: {
+            id: author.id,
+            username: author.username,
+            display_name: author.display_name || author.username,
+            avatar_url: author.avatar_url,
+          },
+          created_at: message.created_at,
+          edited_at: message.edited_at,
+          attachments: message.attachments || [],
+          reactions: [],
+          reply_to_id: message.reply_to_id,
+        };
+
         // Broadcast to channel
-        io.to(`channel:${data.channel_id}`).emit('message:new', message);
+        io.to(`channel:${data.channel_id}`).emit('message:new', formattedMessage);
       } catch (err) {
         fastify.log.error(err);
         socket.emit('error', { message: 'Failed to send message' });
@@ -135,9 +156,28 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
           edited_at: new Date(),
         });
 
+        // Get author info for formatted message
+        const author = await db.users.findById(message.author_id);
+        
+        // Format with full author object
+        const formattedMessage = {
+          id: updated.id,
+          channel_id: updated.channel_id,
+          content: updated.content,
+          author: author ? {
+            id: author.id,
+            username: author.username,
+            display_name: author.display_name || author.username,
+            avatar_url: author.avatar_url,
+          } : null,
+          created_at: updated.created_at,
+          edited_at: updated.edited_at,
+          attachments: updated.attachments || [],
+        };
+
         // Broadcast to channel
         const room = message.channel_id ? `channel:${message.channel_id}` : `dm:${message.dm_channel_id}`;
-        io.to(room).emit('message:edit', updated);
+        io.to(room).emit('message:update', formattedMessage);
       } catch (err) {
         fastify.log.error(err);
         socket.emit('error', { message: 'Failed to edit message' });
@@ -249,59 +289,76 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       const channel = await db.channels.findById(data.channel_id);
       if (!channel) return;
 
-      // Store voice state in Redis
-      await redis.client.set(
-        `voice:${userId}`,
-        JSON.stringify({
-          channel_id: data.channel_id,
-          server_id: channel.server_id,
-          muted: data.muted || false,
-          deafened: data.deafened || false,
-          joined_at: new Date().toISOString(),
-        }),
-        'EX',
-        3600 // 1 hour expiry
-      );
+      if (channel.type !== 'voice') {
+        socket.emit('error', { message: 'Not a voice channel' });
+        return;
+      }
 
-      // Broadcast to server
-      io.to(`server:${channel.server_id}`).emit('voice:state', {
-        user_id: userId,
+      // Use unified Redis functions (same as API routes)
+      await redis.joinVoiceChannel(userId, data.channel_id);
+      
+      // Set initial mute/deafen state if provided
+      if (data.muted !== undefined || data.deafened !== undefined) {
+        await redis.updateVoiceState(data.channel_id, userId, {
+          is_muted: data.muted,
+          is_deafened: data.deafened,
+        });
+      }
+
+      // Get user info for the event
+      const user = await db.users.findById(userId);
+
+      // Broadcast voice:user-joined to all server members
+      io.to(`server:${channel.server_id}`).emit('voice:user-joined', {
         channel_id: data.channel_id,
-        muted: data.muted,
-        deafened: data.deafened,
+        user: {
+          id: user.id,
+          username: user.username,
+          display_name: user.display_name || user.username,
+          avatar_url: user.avatar_url,
+        },
       });
     });
 
     socket.on('voice:leave', async () => {
-      const voiceState = await redis.client.get(`voice:${userId}`);
-      if (!voiceState) return;
+      // Get current channel before leaving
+      const channelId = await redis.getUserVoiceChannel(userId);
+      if (!channelId) return;
 
-      const state = JSON.parse(voiceState);
-      await redis.client.del(`voice:${userId}`);
+      const channel = await db.channels.findById(channelId);
+      
+      // Clean up voice state using unified Redis function
+      await redis.leaveVoiceChannel(userId);
 
-      // Broadcast to server
-      io.to(`server:${state.server_id}`).emit('voice:state', {
-        user_id: userId,
-        channel_id: null,
-      });
+      // Broadcast voice:user-left to all server members
+      if (channel) {
+        io.to(`server:${channel.server_id}`).emit('voice:user-left', {
+          channel_id: channelId,
+          user_id: userId,
+        });
+      }
     });
 
     socket.on('voice:update', async (data: { muted?: boolean; deafened?: boolean }) => {
-      const voiceState = await redis.client.get(`voice:${userId}`);
-      if (!voiceState) return;
+      // Get current voice channel
+      const channelId = await redis.getUserVoiceChannel(userId);
+      if (!channelId) return;
 
-      const state = JSON.parse(voiceState);
-      state.muted = data.muted ?? state.muted;
-      state.deafened = data.deafened ?? state.deafened;
+      const channel = await db.channels.findById(channelId);
+      if (!channel) return;
 
-      await redis.client.set(`voice:${userId}`, JSON.stringify(state), 'EX', 3600);
+      // Update mute/deafen state using unified Redis function
+      await redis.updateVoiceState(channelId, userId, {
+        is_muted: data.muted,
+        is_deafened: data.deafened,
+      });
 
-      // Broadcast to server
-      io.to(`server:${state.server_id}`).emit('voice:state', {
+      // Broadcast voice:mute-update to all server members
+      io.to(`server:${channel.server_id}`).emit('voice:mute-update', {
+        channel_id: channelId,
         user_id: userId,
-        channel_id: state.channel_id,
-        muted: state.muted,
-        deafened: state.deafened,
+        is_muted: data.muted ?? false,
+        is_deafened: data.deafened ?? false,
       });
     });
 
@@ -343,8 +400,32 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
           status: 'sent',
         });
 
-        // Broadcast to both users
-        io.to(`dm:${data.dm_channel_id}`).emit('message:new', message);
+        // Get author info for formatted message
+        const author = await db.users.findById(userId);
+        
+        // Format message with full author object
+        const formattedMessage = {
+          id: message.id,
+          dm_channel_id: message.dm_channel_id,
+          content: message.content,
+          author: {
+            id: author.id,
+            username: author.username,
+            display_name: author.display_name || author.username,
+            avatar_url: author.avatar_url,
+          },
+          created_at: message.created_at,
+          edited_at: message.edited_at,
+          attachments: message.attachments || [],
+          reply_to_id: message.reply_to_id,
+          status: message.status,
+        };
+
+        // Broadcast to both users with correct event name per SERVER_HANDOFF
+        io.to(`dm:${data.dm_channel_id}`).emit('dm:message:create', {
+          from_user_id: userId,
+          message: formattedMessage,
+        });
 
         // Send push notification if recipient offline
         // recipientId already defined above
@@ -473,8 +554,19 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       // Clear Redis presence (user is no longer connected)
       await redis.setPresence(userId, false);
 
-      // Clear voice state
-      await redis.client.del(`voice:${userId}`);
+      // Clean up voice state and emit voice:user-left if they were in a channel
+      const voiceChannelId = await redis.getUserVoiceChannel(userId);
+      if (voiceChannelId) {
+        const voiceChannel = await db.channels.findById(voiceChannelId);
+        await redis.leaveVoiceChannel(userId);
+        
+        if (voiceChannel) {
+          io.to(`server:${voiceChannel.server_id}`).emit('voice:user-left', {
+            channel_id: voiceChannelId,
+            user_id: userId,
+          });
+        }
+      }
 
       // Update last_seen_at timestamp (but DO NOT change their status preference)
       await db.sql`UPDATE users SET last_seen_at = NOW() WHERE id = ${userId}`;
