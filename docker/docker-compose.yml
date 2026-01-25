@@ -27,7 +27,9 @@ services:
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
       - MINIO_BUCKET=${MINIO_BUCKET}
-      - NTFY_BASE_URL=http://ntfy:80
+      - MINIO_PUBLIC_URL=${MINIO_PUBLIC_URL:-}
+      - NTFY_URL=http://ntfy:80
+      - NTFY_BASE_URL=${NTFY_BASE_URL:-http://ntfy:80}
     depends_on:
       - postgres
       - redis
