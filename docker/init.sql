@@ -301,7 +301,9 @@ CREATE TABLE audit_log (
     'server_update', 'channel_create', 'channel_update', 'channel_delete',
     'role_create', 'role_update', 'role_delete',
     'member_kick', 'member_ban', 'member_unban',
-    'invite_create', 'invite_delete'
+    'invite_create', 'invite_delete',
+    'admin_claimed', 'ownership_transferred',
+    'category_create', 'category_update', 'category_delete'
   )),
   target_type TEXT CHECK (target_type IN ('server', 'channel', 'role', 'member', 'invite')),
   target_id TEXT, -- UUID as text for flexibility

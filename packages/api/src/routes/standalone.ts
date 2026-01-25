@@ -695,4 +695,22 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
       };
     },
   });
+
+  // ============================================================
+  // CHANNELS - Standalone endpoint
+  // ============================================================
+
+  // List all channels in the server
+  fastify.get('/channels', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) {
+        return [];
+      }
+
+      const channels = await db.channels.findByServerId(server.id);
+      return channels;
+    },
+  });
 };
