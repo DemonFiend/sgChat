@@ -4,6 +4,7 @@ import { db } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
 import { calculatePermissions } from '../services/permissions.js';
 import { TextPermissions, hasPermission } from '@sgchat/shared';
+import { isBlocked } from '../routes/friends.js';
 
 export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
   // Authentication middleware
@@ -306,6 +307,13 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         // Verify user is participant
         if (dmChannel.user1_id !== userId && dmChannel.user2_id !== userId) {
           socket.emit('error', { message: 'Not a participant' });
+          return;
+        }
+
+        // Get recipient ID and check if blocked
+        const recipientId = dmChannel.user1_id === userId ? dmChannel.user2_id : dmChannel.user1_id;
+        if (await isBlocked(userId, recipientId)) {
+          socket.emit('error', { message: 'Cannot message this user' });
           return;
         }
 

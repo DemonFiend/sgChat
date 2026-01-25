@@ -3,7 +3,7 @@ import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { sendMessageSchema } from '@sgchat/shared';
 import { notFound, forbidden, badRequest } from '../utils/errors.js';
-import { areFriends } from './friends.js';
+import { areFriends, isBlocked } from './friends.js';
 
 export const dmRoutes: FastifyPluginAsync = async (fastify) => {
   // Get user's DM channels
@@ -34,6 +34,11 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
       // Check if users are friends
       if (!await areFriends(request.user!.id, user_id)) {
         return forbidden(reply, 'You must be friends to send direct messages');
+      }
+
+      // Check if either user has blocked the other
+      if (await isBlocked(request.user!.id, user_id)) {
+        return forbidden(reply, 'Cannot message this user');
       }
 
       // Check if DM already exists
@@ -100,6 +105,11 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
       // Verify users are still friends
       if (!await areFriends(request.user!.id, recipientId)) {
         return forbidden(reply, 'You must be friends to send direct messages');
+      }
+
+      // Check if either user has blocked the other
+      if (await isBlocked(request.user!.id, recipientId)) {
+        return forbidden(reply, 'Cannot message this user');
       }
 
       const message = await db.messages.create({
@@ -190,6 +200,11 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
       // Check if users are friends
       if (!await areFriends(request.user!.id, userId)) {
         return forbidden(reply, 'You must be friends to send messages');
+      }
+
+      // Check if either user has blocked the other
+      if (await isBlocked(request.user!.id, userId)) {
+        return forbidden(reply, 'Cannot message this user');
       }
 
       // Find or create DM channel

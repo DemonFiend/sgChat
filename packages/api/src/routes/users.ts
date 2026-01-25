@@ -5,7 +5,7 @@ import { redis } from '../lib/redis.js';
 import { storage } from '../lib/storage.js';
 import { UserStatus, usernameSchema, updateStatusSchema, updateCustomStatusSchema, toNamedPermissions } from '@sgchat/shared';
 import { z } from 'zod';
-import { notFound, badRequest, unauthorized } from '../utils/errors.js';
+import { notFound, badRequest, unauthorized, forbidden } from '../utils/errors.js';
 import argon2 from 'argon2';
 import { getDefaultServer } from './server.js';
 
@@ -456,6 +456,140 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
     },
   });
 
+  // ============================================================
+  // BLOCKED USERS
+  // ============================================================
+
+  // Get blocked users list
+  fastify.get('/blocked', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const currentUserId = request.user!.id;
+
+      const blockedUsers = await db.sql`
+        SELECT 
+          u.id,
+          u.username,
+          u.avatar_url,
+          b.created_at as blocked_at
+        FROM blocked_users b
+        JOIN users u ON b.blocked_id = u.id
+        WHERE b.blocker_id = ${currentUserId}
+        ORDER BY b.created_at DESC
+      `;
+
+      return blockedUsers.map((u: any) => ({
+        id: u.id,
+        username: u.username,
+        display_name: u.username,
+        avatar_url: u.avatar_url,
+        blocked_at: u.blocked_at,
+      }));
+    },
+  });
+
+  // Block a user
+  fastify.post('/:userId/block', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { userId } = request.params as { userId: string };
+      const currentUserId = request.user!.id;
+
+      // Cannot block yourself
+      if (userId === currentUserId) {
+        return badRequest(reply, 'Cannot block yourself');
+      }
+
+      // Check if target user exists
+      const targetUser = await db.users.findById(userId);
+      if (!targetUser) {
+        return notFound(reply, 'User');
+      }
+
+      // Check if already blocked
+      const [existingBlock] = await db.sql`
+        SELECT 1 FROM blocked_users
+        WHERE blocker_id = ${currentUserId} AND blocked_id = ${userId}
+      `;
+
+      if (existingBlock) {
+        return badRequest(reply, 'User already blocked');
+      }
+
+      // Insert block record
+      await db.sql`
+        INSERT INTO blocked_users (blocker_id, blocked_id)
+        VALUES (${currentUserId}, ${userId})
+      `;
+
+      // Remove existing friendship (if any)
+      const [user1, user2] = currentUserId < userId 
+        ? [currentUserId, userId] 
+        : [userId, currentUserId];
+
+      await db.sql`
+        DELETE FROM friendships
+        WHERE user1_id = ${user1} AND user2_id = ${user2}
+      `;
+
+      // Cancel any pending friend requests (both directions)
+      await db.sql`
+        DELETE FROM friend_requests
+        WHERE (from_user_id = ${currentUserId} AND to_user_id = ${userId})
+           OR (from_user_id = ${userId} AND to_user_id = ${currentUserId})
+      `;
+
+      // Emit socket event to blocked user
+      fastify.io?.to(`user:${userId}`).emit('user:block', {
+        user_id: currentUserId,
+      });
+
+      // Get block timestamp
+      const [blockRecord] = await db.sql`
+        SELECT created_at FROM blocked_users
+        WHERE blocker_id = ${currentUserId} AND blocked_id = ${userId}
+      `;
+
+      return {
+        message: 'User blocked',
+        blocked_user: {
+          id: targetUser.id,
+          username: targetUser.username,
+          display_name: targetUser.username,
+          avatar_url: targetUser.avatar_url,
+          blocked_at: blockRecord.created_at,
+        },
+      };
+    },
+  });
+
+  // Unblock a user
+  fastify.delete('/:userId/block', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { userId } = request.params as { userId: string };
+      const currentUserId = request.user!.id;
+
+      // Check if user is blocked
+      const [existingBlock] = await db.sql`
+        SELECT 1 FROM blocked_users
+        WHERE blocker_id = ${currentUserId} AND blocked_id = ${userId}
+      `;
+
+      if (!existingBlock) {
+        return notFound(reply, 'User not blocked');
+      }
+
+      // Remove block record
+      await db.sql`
+        DELETE FROM blocked_users
+        WHERE blocker_id = ${currentUserId} AND blocked_id = ${userId}
+      `;
+
+      return { message: 'User unblocked' };
+    },
+  });
+
   // Get another user's profile (limited info)
   fastify.get('/:userId', {
     onRequest: [authenticate],
@@ -519,7 +653,12 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
           EXISTS (
             SELECT 1 FROM friend_requests fr 
             WHERE fr.from_user_id = u.id AND fr.to_user_id = ${currentUserId}
-          ) as has_incoming_request
+          ) as has_incoming_request,
+          -- Check if blocked by current user
+          EXISTS (
+            SELECT 1 FROM blocked_users b
+            WHERE b.blocker_id = ${currentUserId} AND b.blocked_id = u.id
+          ) as is_blocked
         FROM users u
         WHERE u.id != ${currentUserId}
           AND (u.username ILIKE ${'%' + searchTerm + '%'})
@@ -540,6 +679,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
         is_friend: u.is_friend,
         request_pending: u.has_outgoing_request || u.has_incoming_request,
         request_direction: u.has_outgoing_request ? 'outgoing' : u.has_incoming_request ? 'incoming' : null,
+        is_blocked: u.is_blocked,
       }));
     },
   });

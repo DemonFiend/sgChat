@@ -25,6 +25,18 @@ async function getPendingRequest(fromUserId: string, toUserId: string) {
   return request;
 }
 
+/**
+ * Helper to check if either user has blocked the other
+ */
+export async function isBlocked(userId1: string, userId2: string): Promise<boolean> {
+  const [result] = await db.sql`
+    SELECT 1 FROM blocked_users 
+    WHERE (blocker_id = ${userId1} AND blocked_id = ${userId2})
+       OR (blocker_id = ${userId2} AND blocked_id = ${userId1})
+  `;
+  return !!result;
+}
+
 export const friendRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /friends - List current user's friends
   fastify.get('/', {
@@ -97,6 +109,11 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
       // Check if already friends
       if (await areFriends(currentUserId, targetUserId)) {
         return badRequest(reply, 'Already friends with this user');
+      }
+
+      // Check if either user has blocked the other
+      if (await isBlocked(currentUserId, targetUserId)) {
+        return forbidden(reply, 'Cannot send friend request to this user');
       }
 
       // Check if there's already a pending request from current user

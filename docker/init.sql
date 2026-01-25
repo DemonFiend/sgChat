@@ -450,6 +450,22 @@ CREATE INDEX idx_friend_requests_to ON friend_requests(to_user_id);
 CREATE INDEX idx_friend_requests_from ON friend_requests(from_user_id);
 
 -- ============================================================
+-- BLOCKED USERS
+-- ============================================================
+
+CREATE TABLE blocked_users (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  blocker_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  blocked_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT blocked_not_self CHECK (blocker_id != blocked_id),
+  UNIQUE(blocker_id, blocked_id)
+);
+
+CREATE INDEX idx_blocked_users_blocker ON blocked_users(blocker_id);
+CREATE INDEX idx_blocked_users_blocked ON blocked_users(blocked_id);
+
+-- ============================================================
 -- ADDITIONAL SCHEMA (Added for single-tenant upgrade)
 -- ============================================================
 
