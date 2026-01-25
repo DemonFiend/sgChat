@@ -347,7 +347,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         io.to(`dm:${data.dm_channel_id}`).emit('message:new', message);
 
         // Send push notification if recipient offline
-        const recipientId = dmChannel.user1_id === userId ? dmChannel.user2_id : dmChannel.user1_id;
+        // recipientId already defined above
         const isOnline = await redis.getPresence(recipientId);
         
         if (!isOnline) {
