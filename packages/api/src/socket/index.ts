@@ -3,7 +3,7 @@ import { FastifyInstance } from 'fastify';
 import { db } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
 import { calculatePermissions } from '../services/permissions.js';
-import { TextPermissions, hasPermission } from '@sgchat/shared';
+import { TextPermissions, VoicePermissions, hasPermission } from '@sgchat/shared';
 import { isBlocked } from '../routes/friends.js';
 
 export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
@@ -286,12 +286,29 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       muted?: boolean;
       deafened?: boolean;
     }) => {
+      try {
       const channel = await db.channels.findById(data.channel_id);
       if (!channel) return;
 
       if (channel.type !== 'voice') {
         socket.emit('error', { message: 'Not a voice channel' });
         return;
+      }
+
+      // Check CONNECT permission
+      const perms = await calculatePermissions(userId, channel.server_id, data.channel_id);
+      if (!hasPermission(perms.voice, VoicePermissions.CONNECT)) {
+        socket.emit('error', { message: 'Missing CONNECT permission' });
+        return;
+      }
+
+      // Enforce user limit (0 = unlimited)
+      if (channel.user_limit && channel.user_limit > 0) {
+        const participants = await redis.getVoiceChannelParticipants(data.channel_id);
+        if (participants.length >= channel.user_limit && !hasPermission(perms.voice, VoicePermissions.MOVE_MEMBERS)) {
+          socket.emit('error', { message: 'Voice channel is full' });
+          return;
+        }
       }
 
       // Use unified Redis functions (same as API routes)
@@ -318,48 +335,60 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
           avatar_url: user.avatar_url,
         },
       });
+      } catch (err) {
+        fastify.log.error(err);
+        socket.emit('error', { message: 'Failed to join voice channel' });
+      }
     });
 
-    socket.on('voice:leave', async () => {
-      // Get current channel before leaving
-      const channelId = await redis.getUserVoiceChannel(userId);
-      if (!channelId) return;
+    socket.on('voice:leave', async (data?: { channel_id?: string }) => {
+      try {
+        // Get current channel before leaving
+        const channelId = data?.channel_id || await redis.getUserVoiceChannel(userId);
+        if (!channelId) return;
 
-      const channel = await db.channels.findById(channelId);
-      
-      // Clean up voice state using unified Redis function
-      await redis.leaveVoiceChannel(userId);
+        const channel = await db.channels.findById(channelId);
+        
+        // Clean up voice state using unified Redis function
+        await redis.leaveVoiceChannel(userId);
 
-      // Broadcast voice:user-left to all server members
-      if (channel) {
-        io.to(`server:${channel.server_id}`).emit('voice:user-left', {
-          channel_id: channelId,
-          user_id: userId,
-        });
+        // Broadcast voice:user-left to all server members
+        if (channel) {
+          io.to(`server:${channel.server_id}`).emit('voice:user-left', {
+            channel_id: channelId,
+            user_id: userId,
+          });
+        }
+      } catch (err) {
+        fastify.log.error(err);
       }
     });
 
     socket.on('voice:update', async (data: { muted?: boolean; deafened?: boolean }) => {
-      // Get current voice channel
-      const channelId = await redis.getUserVoiceChannel(userId);
-      if (!channelId) return;
+      try {
+        // Get current voice channel
+        const channelId = await redis.getUserVoiceChannel(userId);
+        if (!channelId) return;
 
-      const channel = await db.channels.findById(channelId);
-      if (!channel) return;
+        const channel = await db.channels.findById(channelId);
+        if (!channel) return;
 
-      // Update mute/deafen state using unified Redis function
-      await redis.updateVoiceState(channelId, userId, {
-        is_muted: data.muted,
-        is_deafened: data.deafened,
-      });
+        // Update mute/deafen state using unified Redis function
+        await redis.updateVoiceState(channelId, userId, {
+          is_muted: data.muted,
+          is_deafened: data.deafened,
+        });
 
-      // Broadcast voice:mute-update to all server members
-      io.to(`server:${channel.server_id}`).emit('voice:mute-update', {
-        channel_id: channelId,
-        user_id: userId,
-        is_muted: data.muted ?? false,
-        is_deafened: data.deafened ?? false,
-      });
+        // Broadcast voice:mute-update to all server members
+        io.to(`server:${channel.server_id}`).emit('voice:mute-update', {
+          channel_id: channelId,
+          user_id: userId,
+          is_muted: data.muted ?? false,
+          is_deafened: data.deafened ?? false,
+        });
+      } catch (err) {
+        fastify.log.error(err);
+      }
     });
 
     // --- DM Events ---

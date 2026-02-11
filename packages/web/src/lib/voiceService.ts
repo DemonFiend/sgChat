@@ -7,12 +7,16 @@ interface JoinVoiceResponse {
   token: string;
   url: string;
   room_name?: string;
+  bitrate?: number;
+  user_limit?: number;
   permissions?: {
     canSpeak: boolean;
     canVideo: boolean;
     canStream: boolean;
     canMuteMembers: boolean;
     canMoveMembers: boolean;
+    canDisconnectMembers: boolean;
+    canDeafenMembers: boolean;
   };
 }
 
@@ -56,9 +60,10 @@ class VoiceServiceClass {
 
       // 1. Get token from server
       const response = await api.post<JoinVoiceResponse>(`/voice/join/${channelId}`, {});
-      const { token, url, permissions } = response;
+      const { token, url, permissions, bitrate, user_limit } = response;
       
       console.log('[VoiceService] Got token, connecting to LiveKit at:', url);
+      console.log('[VoiceService] Channel bitrate:', bitrate || 64000, 'user_limit:', user_limit || 0);
 
       // 2. Fetch current participants
       try {
@@ -82,15 +87,21 @@ class VoiceServiceClass {
         console.warn('[VoiceService] Could not fetch participants:', err);
       }
 
-      // 3. Create and configure Room
+      // 3. Create and configure Room with channel bitrate
+      const channelBitrate = bitrate || 64000;
       this.room = new Room({
         adaptiveStream: true,
         dynacast: true,
-        // Audio settings
+        // Audio settings - apply channel bitrate
         audioCaptureDefaults: {
           autoGainControl: true,
           echoCancellation: true,
           noiseSuppression: true,
+        },
+        publishDefaults: {
+          audioBitrate: channelBitrate,
+          dtx: true, // Discontinuous Transmission - saves bandwidth when not speaking
+          red: true, // Redundant encoding for packet loss resilience
         },
       });
 
@@ -183,13 +194,12 @@ class VoiceServiceClass {
       await this.room.localParticipant.setMicrophoneEnabled(!muted);
       voiceStore.setMuted(muted);
       
-      // Notify server
+      // Notify server (server listens for 'voice:update')
       const channelId = voiceStore.currentChannelId();
       if (channelId) {
-        socketService.emit('voice:mute', {
-          channel_id: channelId,
-          is_muted: muted,
-          is_deafened: voiceStore.isDeafened(),
+        socketService.emit('voice:update', {
+          muted,
+          deafened: voiceStore.isDeafened(),
         });
       }
       
@@ -234,13 +244,12 @@ class VoiceServiceClass {
 
       voiceStore.setDeafened(deafened);
       
-      // Notify server
+      // Notify server (server listens for 'voice:update')
       const channelId = voiceStore.currentChannelId();
       if (channelId) {
-        socketService.emit('voice:mute', {
-          channel_id: channelId,
-          is_muted: voiceStore.isMuted(),
-          is_deafened: deafened,
+        socketService.emit('voice:update', {
+          muted: voiceStore.isMuted(),
+          deafened,
         });
       }
       

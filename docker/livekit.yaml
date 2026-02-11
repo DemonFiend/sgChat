@@ -2,11 +2,15 @@ port: 7880
 rtc:
   port_range_start: 50000
   port_range_end: 60000
-  use_external_ip: false
-  
+  use_external_ip: true
+  tcp_fallback_port: 7881
+
 redis:
   address: redis:6379
 
+# IMPORTANT: The key here must match LIVEKIT_API_KEY and LIVEKIT_API_SECRET
+# in your .env / Portainer environment variables.
+# Format: api_key: api_secret
 keys:
   e5f39c91e7a67a8eb3404ecda50a7e31: jaGcQ6wso+aQK4EGDOU+fSRBY1SPUVTQuSCKJ2X2bRQ=
 

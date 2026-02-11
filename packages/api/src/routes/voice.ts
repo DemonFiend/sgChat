@@ -105,6 +105,15 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
         return forbidden(reply, 'Missing CONNECT permission');
       }
 
+      // Enforce user limit (0 = unlimited)
+      if (channel.user_limit && channel.user_limit > 0) {
+        const participants = await redis.getVoiceChannelParticipants(channelId);
+        // Admins/move_members can bypass the limit
+        if (participants.length >= channel.user_limit && !hasPermission(perms.voice, VoicePermissions.MOVE_MEMBERS)) {
+          return badRequest(reply, 'Voice channel is full');
+        }
+      }
+
       // Generate LiveKit token with appropriate grants
       const token = await generateLiveKitToken({
         identity: request.user!.id,
@@ -135,12 +144,17 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
       return {
         token,
         url: getLiveKitUrl(),
+        room_name: `voice:${channelId}`,
+        bitrate: channel.bitrate || 64000,
+        user_limit: channel.user_limit || 0,
         permissions: {
           canSpeak: hasPermission(perms.voice, VoicePermissions.SPEAK),
           canVideo: hasPermission(perms.voice, VoicePermissions.VIDEO),
           canStream: hasPermission(perms.voice, VoicePermissions.STREAM),
           canMuteMembers: hasPermission(perms.voice, VoicePermissions.MUTE_MEMBERS),
           canMoveMembers: hasPermission(perms.voice, VoicePermissions.MOVE_MEMBERS),
+          canDisconnectMembers: hasPermission(perms.voice, VoicePermissions.DISCONNECT_MEMBERS),
+          canDeafenMembers: hasPermission(perms.voice, VoicePermissions.DEAFEN_MEMBERS),
         },
       };
     },
