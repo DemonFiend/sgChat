@@ -37,22 +37,41 @@ const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
 
 // Resolve the web client dist directory
-// In development: ../web/dist (relative to packages/api/src)
-// In production (Docker): /app/web-dist or the built web client location
 function getWebClientPath(): string | null {
+  const candidates: string[] = [];
+
   // Check environment override first
   if (process.env.WEB_CLIENT_PATH) {
-    const envPath = resolve(process.env.WEB_CLIENT_PATH);
-    if (existsSync(envPath)) return envPath;
+    candidates.push(resolve(process.env.WEB_CLIENT_PATH));
   }
 
-  // Check relative to this file (packages/api/src -> packages/web/dist)
-  const relativePath = join(__dirname, '..', '..', 'web', 'dist');
-  if (existsSync(relativePath)) return relativePath;
+  // Relative to compiled dist/index.js -> ../../web/dist
+  candidates.push(join(__dirname, '..', '..', 'web', 'dist'));
 
-  // Check Docker location
-  const dockerPath = '/app/web-dist';
-  if (existsSync(dockerPath)) return dockerPath;
+  // Relative to compiled dist/index.js -> ../../../web/dist (in case of nested dist/src/)
+  candidates.push(join(__dirname, '..', '..', '..', 'web', 'dist'));
+
+  // Docker explicit location
+  candidates.push('/app/packages/web/dist');
+  candidates.push('/app/web-dist');
+
+  // Relative to process.cwd()
+  candidates.push(join(process.cwd(), '..', 'web', 'dist'));
+
+  for (const candidate of candidates) {
+    const resolved = resolve(candidate);
+    const hasIndex = existsSync(join(resolved, 'index.html'));
+    if (hasIndex) {
+      return resolved;
+    }
+  }
+
+  // Log all attempted paths for debugging
+  console.warn('Web client not found. Searched paths:');
+  for (const candidate of candidates) {
+    const resolved = resolve(candidate);
+    console.warn(`  ${resolved} (exists: ${existsSync(resolved)}, has index.html: ${existsSync(join(resolved, 'index.html'))})`);
+  }
 
   return null;
 }
