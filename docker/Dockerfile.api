@@ -1,7 +1,7 @@
-FROM node:20-alpine
+FROM node:20-alpine AS base
 
 # Cache bust arg - increment to force rebuild
-ARG CACHE_BUST=2
+ARG CACHE_BUST=3
 
 WORKDIR /app
 
@@ -9,6 +9,7 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml ./
 COPY packages/shared/package.json ./packages/shared/package.json
 COPY packages/api/package.json ./packages/api/package.json
+COPY packages/web/package.json ./packages/web/package.json
 
 # Install pnpm and dependencies
 RUN npm install -g pnpm@8
@@ -17,11 +18,21 @@ RUN pnpm install --frozen-lockfile
 # Copy source code
 COPY packages/shared ./packages/shared
 COPY packages/api ./packages/api
+COPY packages/web ./packages/web
 COPY tsconfig.json ./tsconfig.json
 
-# Build both packages
+# Build shared types first
 RUN pnpm --filter @sgchat/shared build
+
+# Build the web client (produces packages/web/dist/)
+RUN pnpm --filter @sgchat/web build
+
+# Build the API server
 RUN pnpm --filter @sgchat/api build
+
+# Copy web client build to where the API server expects it
+# The API resolves: __dirname/../../web/dist -> packages/web/dist
+# Since WORKDIR will be /app/packages/api, the path resolves to /app/packages/web/dist
 
 # Expose port
 EXPOSE 3000

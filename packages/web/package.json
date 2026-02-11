@@ -1,0 +1,38 @@
+{
+  "name": "@sgchat/web",
+  "version": "1.0.0",
+  "description": "sgChat web client - served by the API server",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "solid-js": "^1.9.3",
+    "@solidjs/router": "^0.15.2",
+    "@tanstack/solid-query": "^5.62.7",
+    "@tanstack/solid-virtual": "^3.10.9",
+    "socket.io-client": "^4.8.1",
+    "livekit-client": "^2.6.2",
+    "dexie": "^4.0.10",
+    "marked": "^14.1.4",
+    "dompurify": "^3.2.3",
+    "clsx": "^2.1.1"
+  },
+  "devDependencies": {
+    "vite": "^6.0.7",
+    "vite-plugin-solid": "^2.10.2",
+    "@tailwindcss/vite": "^4.0.0",
+    "tailwindcss": "^4.0.0",
+    "vite-plugin-pwa": "^0.21.1",
+    "typescript": "^5.7.2",
+    "@types/dompurify": "^3.0.5",
+    "workbox-window": "^7.3.0"
+  },
+  "keywords": ["chat", "solidjs", "web-client"],
+  "author": "DemonFiend",
+  "license": "MIT"
+}
