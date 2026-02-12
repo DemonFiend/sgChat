@@ -170,8 +170,8 @@ export function MainLayout() {
       
       setMembers(normalizedMembers);
 
-      // Auto-navigate to first channel if none selected and we have channels
-      if (!params.channelId && fetchedChannels.length > 0) {
+      // Auto-navigate to first channel if none selected and we have channels (but not on DM route)
+      if (!params.channelId && !isDMRoute() && fetchedChannels.length > 0) {
         const firstTextChannel = fetchedChannels.find((c) => c.type === 'text');
         if (firstTextChannel) {
           console.log('[MainLayout] Auto-navigating to first text channel:', firstTextChannel.name);
@@ -592,7 +592,7 @@ export function MainLayout() {
   // Fetch channel data when channelId changes
   createEffect(async () => {
     const channelId = params.channelId;
-    if (!channelId || channelId === '@me') {
+    if (!channelId || channelId === '@me' || isDMRoute()) {
       setCurrentChannel(null);
       setMessages([]);
       return;
@@ -666,7 +666,7 @@ export function MainLayout() {
 
   const handleSendMessage = async (content: string) => {
     const channelId = params.channelId;
-    if (!channelId || channelId === '@me' || !content.trim()) return;
+    if (!channelId || channelId === '@me' || isDMRoute() || !content.trim()) return;
 
     try {
       const rawMessage = await api.post<any>(`/channels/${channelId}/messages`, { content });

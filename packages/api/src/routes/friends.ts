@@ -137,12 +137,17 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
           RETURNING *
         `;
 
+        // Fetch current user's full profile for socket event
+        const currentUserFull = await db.users.findById(currentUserId);
+
         // Notify both users via socket
         fastify.io?.to(`user:${targetUserId}`).emit('friend:accept', {
           friend: {
             id: currentUserId,
-            username: request.user!.username,
-            status: 'active',
+            username: currentUserFull.username,
+            display_name: currentUserFull.display_name || currentUserFull.username,
+            avatar_url: currentUserFull.avatar_url || null,
+            status: currentUserFull.status || 'online',
             since: friendship.created_at,
           },
         });
@@ -151,8 +156,9 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
           friend: {
             id: targetUser.id,
             username: targetUser.username,
-            avatar_url: targetUser.avatar_url,
-            status: targetUser.status,
+            display_name: targetUser.display_name || targetUser.username,
+            avatar_url: targetUser.avatar_url || null,
+            status: targetUser.status || 'online',
             since: friendship.created_at,
           },
         });
@@ -162,8 +168,9 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
           friend: {
             id: targetUser.id,
             username: targetUser.username,
-            avatar_url: targetUser.avatar_url,
-            status: targetUser.status,
+            display_name: targetUser.display_name || targetUser.username,
+            avatar_url: targetUser.avatar_url || null,
+            status: targetUser.status || 'online',
             since: friendship.created_at,
           },
         });
@@ -338,15 +345,18 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
         RETURNING *
       `;
 
-      // Get friend info
+      // Get both users' full info
       const friend = await db.users.findById(fromUserId);
+      const currentUserFull = await db.users.findById(currentUserId);
 
       // Notify the requester
       fastify.io?.to(`user:${fromUserId}`).emit('friend:accept', {
         friend: {
           id: currentUserId,
-          username: request.user!.username,
-          status: 'active',
+          username: currentUserFull.username,
+          display_name: currentUserFull.display_name || currentUserFull.username,
+          avatar_url: currentUserFull.avatar_url || null,
+          status: currentUserFull.status || 'online',
           since: friendship.created_at,
         },
       });
@@ -356,9 +366,9 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
         friend: {
           id: friend.id,
           username: friend.username,
-          display_name: friend.username,
-          avatar_url: friend.avatar_url,
-          status: friend.status,
+          display_name: friend.display_name || friend.username,
+          avatar_url: friend.avatar_url || null,
+          status: friend.status || 'online',
           since: friendship.created_at,
         },
       };
