@@ -21,7 +21,7 @@ services:
       - CORS_ORIGIN=${CORS_ORIGIN}
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
-      - LIVEKIT_URL=ws://livekit:7880
+      - LIVEKIT_URL=ws://host.docker.internal:7880
       - LIVEKIT_PUBLIC_URL=${LIVEKIT_PUBLIC_URL}
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
@@ -30,11 +30,12 @@ services:
       - MINIO_PUBLIC_URL=${MINIO_PUBLIC_URL:-}
       - NTFY_URL=http://ntfy:80
       - NTFY_BASE_URL=${NTFY_BASE_URL:-http://ntfy:80}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - postgres
       - redis
       - minio
-      - livekit
       - ntfy
     restart: unless-stopped
     networks:
@@ -111,15 +112,10 @@ services:
   livekit:
     image: livekit/livekit-server:latest
     command: --config /etc/livekit.yaml
-    ports:
-      - "3045:7880"   # WebSocket
-      - "3046:7881"   # WebRTC TCP
-      - "3047:7882/udp" # WebRTC UDP
+    network_mode: host
     volumes:
       - /opt/sgchat/livekit.yaml:/etc/livekit.yaml
     restart: unless-stopped
-    networks:
-      - sgchat
 
   # ============================================================
   # ntfy (Push Notifications)

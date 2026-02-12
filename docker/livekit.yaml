@@ -1,16 +1,28 @@
 port: 7880
+
 rtc:
   port_range_start: 50000
-  port_range_end: 60000
+  port_range_end: 55000
+  tcp_port: 7881
   use_external_ip: true
-  tcp_fallback_port: 7881
+  # Allow automatic fallback to TCP and TURN when UDP is unreliable
+  # This handles NAT hairpinning, strict firewalls, etc.
+  allow_tcp_fallback: true
+
+# Built-in TURN server - provides relay fallback for clients behind
+# strict NATs, firewalls, or on the same network as the server.
+# Uses integrated LiveKit authentication (no extra credentials needed).
+turn:
+  enabled: true
+  # UDP TURN relay - handles most NAT traversal issues
+  udp_port: 3478
 
 redis:
-  address: redis:6379
+  # LiveKit uses host networking, so reach Redis via its exposed host port
+  address: localhost:3042
 
 # IMPORTANT: The key here must match LIVEKIT_API_KEY and LIVEKIT_API_SECRET
 # in your .env / Portainer environment variables.
-# Format: api_key: api_secret
 keys:
   e5f39c91e7a67a8eb3404ecda50a7e31: jaGcQ6wso+aQK4EGDOU+fSRBY1SPUVTQuSCKJ2X2bRQ=
 

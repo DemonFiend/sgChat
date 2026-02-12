@@ -592,7 +592,7 @@ export function MainLayout() {
   // Fetch channel data when channelId changes
   createEffect(async () => {
     const channelId = params.channelId;
-    if (!channelId) {
+    if (!channelId || channelId === '@me') {
       setCurrentChannel(null);
       setMessages([]);
       return;
@@ -666,7 +666,7 @@ export function MainLayout() {
 
   const handleSendMessage = async (content: string) => {
     const channelId = params.channelId;
-    if (!channelId || !content.trim()) return;
+    if (!channelId || channelId === '@me' || !content.trim()) return;
 
     try {
       const rawMessage = await api.post<any>(`/channels/${channelId}/messages`, { content });

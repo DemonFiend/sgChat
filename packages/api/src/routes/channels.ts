@@ -22,12 +22,18 @@ const reorderChannelsSchema = z.object({
   })),
 });
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const channelRoutes: FastifyPluginAsync = async (fastify) => {
   // Get channel by ID
   fastify.get('/:id', {
     onRequest: [authenticate],
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
+
+      if (!UUID_REGEX.test(id)) {
+        return badRequest(reply, 'Invalid channel ID');
+      }
       
       const canAccess = await canAccessChannel(request.user!.id, id);
       if (!canAccess) {
@@ -49,6 +55,10 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       const { id } = request.params as { id: string };
       const { limit, before } = request.query as { limit?: string; before?: string };
       const currentUserId = request.user!.id;
+
+      if (!UUID_REGEX.test(id)) {
+        return badRequest(reply, 'Invalid channel ID');
+      }
       
       const canAccess = await canAccessChannel(currentUserId, id);
       if (!canAccess) {
