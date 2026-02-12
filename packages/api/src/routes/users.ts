@@ -3,11 +3,56 @@ import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
 import { storage } from '../lib/storage.js';
+import { publishEvent } from '../lib/eventBus.js';
 import { UserStatus, usernameSchema, updateStatusSchema, updateCustomStatusSchema, toNamedPermissions } from '@sgchat/shared';
 import { z } from 'zod';
 import { notFound, badRequest, unauthorized, forbidden } from '../utils/errors.js';
 import argon2 from 'argon2';
 import { getDefaultServer } from './server.js';
+
+// ── A2: Presence coalescing ─────────────────────────────────────
+// Prevents rapid-fire presence events by throttling per-user updates.
+// If a user changes status multiple times within the window, only the
+// last change is broadcast.
+const PRESENCE_COALESCE_MS = 2_000; // 2 seconds
+const presenceTimers = new Map<string, NodeJS.Timeout>();
+
+/**
+ * Broadcast a presence.update through the event bus with coalescing.
+ * If the user sends multiple status changes within PRESENCE_COALESCE_MS,
+ * only the final change is emitted.
+ */
+async function broadcastPresence(
+  userId: string,
+  payload: Record<string, unknown>,
+  immediate = false,
+) {
+  const emit = async () => {
+    presenceTimers.delete(userId);
+    const servers = await db.servers.findByUserId(userId);
+    for (const server of servers) {
+      await publishEvent({
+        type: 'presence.update',
+        actorId: userId,
+        resourceId: `server:${server.id}`,
+        payload: { user_id: userId, ...payload },
+      });
+    }
+  };
+
+  // Cancel any pending coalesced update
+  const existing = presenceTimers.get(userId);
+  if (existing) clearTimeout(existing);
+
+  if (immediate) {
+    await emit();
+  } else {
+    presenceTimers.set(
+      userId,
+      setTimeout(() => { emit().catch(() => {}); }, PRESENCE_COALESCE_MS),
+    );
+  }
+}
 
 const updateProfileSchema = z.object({
   username: usernameSchema.optional(),
@@ -163,20 +208,22 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
 
       const updatedUser = await db.users.findById(request.user!.id);
 
-      // If status-related fields changed, emit presence:update to all servers
+      // A2: If status-related fields changed, broadcast through event bus with coalescing
       if ('status' in body || 'custom_status' in body) {
-        const servers = await db.servers.findByUserId(request.user!.id);
-        for (const server of servers) {
-          fastify.io?.to(`server:${server.id}`).emit('presence:update', {
-            user_id: request.user!.id,
-            status: updatedUser.status,
-            custom_status: updatedUser.custom_status,
-          });
-        }
+        await broadcastPresence(request.user!.id, {
+          status: updatedUser.status,
+          custom_status: updatedUser.custom_status,
+          last_seen_at: new Date().toISOString(),
+        });
       }
 
       // Broadcast profile update to user's own room
-      fastify.io?.to(`user:${request.user!.id}`).emit('user:update', updatedUser);
+      await publishEvent({
+        type: 'presence.update',
+        actorId: request.user!.id,
+        resourceId: `user:${request.user!.id}`,
+        payload: updatedUser,
+      });
 
       return updatedUser;
     },
@@ -195,18 +242,51 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
       const { status } = updateStatusSchema.parse(request.body);
 
       await db.users.updateStatus(request.user!.id, status as UserStatus);
-      await redis.setPresence(request.user!.id, true); // Status update means user is online
+      // Mark online in Redis unless the user explicitly chose 'offline' (invisible)
+      await redis.setPresence(request.user!.id, status !== 'offline');
 
-      // Broadcast status update to all servers user is in
-      const servers = await db.servers.findByUserId(request.user!.id);
-      for (const server of servers) {
-        fastify.io?.to(`server:${server.id}`).emit('presence:update', {
-          user_id: request.user!.id,
-          status,
-        });
-      }
+      // A2: Broadcast through event bus with coalescing
+      await broadcastPresence(request.user!.id, {
+        status,
+        last_seen_at: new Date().toISOString(),
+      });
 
       return { status };
+    },
+  });
+
+  // ── A2: Dedicated presence endpoint (PATCH /users/me/presence) ──
+  // Allows clients to set their presence status explicitly.
+  // Mirrors the WS `presence:update` event for REST-only clients.
+  fastify.patch('/me/presence', {
+    onRequest: [authenticate],
+    config: {
+      rateLimit: {
+        max: 30,
+        timeWindow: '1 minute',
+      },
+    },
+    handler: async (request, reply) => {
+      const { status } = updateStatusSchema.parse(request.body);
+
+      await db.users.updateStatus(request.user!.id, status as UserStatus);
+      await redis.setPresence(request.user!.id, status !== 'offline');
+
+      const user = await db.users.findById(request.user!.id);
+
+      // A2: Broadcast presence with coalescing
+      await broadcastPresence(request.user!.id, {
+        status,
+        custom_status: user?.custom_status || null,
+        last_seen_at: new Date().toISOString(),
+      });
+
+      return {
+        user_id: request.user!.id,
+        status,
+        custom_status: user?.custom_status || null,
+        last_seen_at: new Date().toISOString(),
+      };
     },
   });
 
@@ -231,18 +311,16 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
         WHERE id = ${request.user!.id}
       `;
 
-      // Broadcast custom status update
-      const servers = await db.servers.findByUserId(request.user!.id);
-      for (const server of servers) {
-        fastify.io?.to(`server:${server.id}`).emit('presence:update', {
-          user_id: request.user!.id,
-          custom_status: {
-            emoji: body.emoji,
-            text: body.text,
-            expires_at: body.expires_at,
-          },
-        });
-      }
+      const user = await db.users.findById(request.user!.id);
+
+      // A2: Broadcast custom status through event bus with coalescing
+      await broadcastPresence(request.user!.id, {
+        status: user?.status || 'online',
+        custom_status: body.text,
+        custom_status_emoji: body.emoji,
+        status_expires_at: body.expires_at || null,
+        last_seen_at: new Date().toISOString(),
+      });
 
       return { message: 'Custom status updated' };
     },

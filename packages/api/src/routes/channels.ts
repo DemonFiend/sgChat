@@ -2,9 +2,22 @@ import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { canAccessChannel, calculatePermissions } from '../services/permissions.js';
+import { publishEvent } from '../lib/eventBus.js';
 import { ServerPermissions, TextPermissions, hasPermission, sendMessageSchema } from '@sgchat/shared';
 import { notFound, forbidden, badRequest } from '../utils/errors.js';
 import { z } from 'zod';
+
+// ── A1: Idempotency dedup cache (in-memory, per-process) ──────
+const idempotencyCache = new Map<string, { timestamp: number; result: any }>();
+const IDEMPOTENCY_TTL = 5 * 60 * 1000; // 5 minutes
+
+// Cleanup stale idempotency keys every minute
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of idempotencyCache) {
+    if (now - entry.timestamp > IDEMPOTENCY_TTL) idempotencyCache.delete(key);
+  }
+}, 60_000);
 
 const updateChannelSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -48,7 +61,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
     },
   });
 
-  // Get channel messages with full author info and reactions
+  // Get channel messages with full author info and reactions (A1: includes sequence metadata)
   fastify.get('/:id/messages', {
     onRequest: [authenticate],
     handler: async (request, reply) => {
@@ -75,7 +88,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
         return forbidden(reply, 'Missing READ_MESSAGE_HISTORY permission');
       }
 
-      // Get messages with full author info
+      // Get messages with full author info (include display_name)
       const maxLimit = Math.min(parseInt(limit || '50') || 50, 100);
       let messages;
       
@@ -90,6 +103,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
             m.reply_to_id,
             u.id as author_id,
             u.username as author_username,
+            u.display_name as author_display_name,
             u.avatar_url as author_avatar_url
           FROM messages m
           LEFT JOIN users u ON m.author_id = u.id
@@ -109,6 +123,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
             m.reply_to_id,
             u.id as author_id,
             u.username as author_username,
+            u.display_name as author_display_name,
             u.avatar_url as author_avatar_url
           FROM messages m
           LEFT JOIN users u ON m.author_id = u.id
@@ -154,11 +169,12 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       // Format response
       const formattedMessages = messages.reverse().map((m: any) => ({
         id: m.id,
+        channel_id: id,
         content: m.content,
         author: {
           id: m.author_id,
           username: m.author_username,
-          display_name: m.author_username, // Use username as display_name
+          display_name: m.author_display_name || m.author_username,
           avatar_url: m.author_avatar_url,
         },
         created_at: m.created_at,
@@ -172,7 +188,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
     },
   });
 
-  // Send message to channel
+  // Send message to channel (A1: publishEvent + Idempotency-Key)
   fastify.post('/:id/messages', {
     onRequest: [authenticate],
     config: {
@@ -181,6 +197,16 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
       const body = sendMessageSchema.parse(request.body);
+
+      // ── A1: Idempotency-Key header ──────────────────────────
+      const idempotencyKey = request.headers['idempotency-key'] as string | undefined;
+      if (idempotencyKey) {
+        const cached = idempotencyCache.get(idempotencyKey);
+        if (cached) {
+          // Return the original response for duplicate requests
+          return cached.result;
+        }
+      }
       
       const channel = await db.channels.findById(id);
       if (!channel) {
@@ -198,6 +224,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
         author_id: request.user!.id,
         content: body.content,
         attachments: body.attachments,
+        reply_to_id: body.reply_to_id,
         queued_at: body.queued_at ? new Date(body.queued_at) : undefined,
       });
 
@@ -207,21 +234,38 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       // Format response with full author object
       const formattedMessage = {
         id: message.id,
+        channel_id: id,
         content: message.content,
         author: {
           id: author.id,
           username: author.username,
-          display_name: author.username,
+          display_name: author.display_name || author.username,
           avatar_url: author.avatar_url,
         },
         created_at: message.created_at,
         edited_at: message.edited_at,
         attachments: message.attachments || [],
         reactions: [],
+        reply_to_id: message.reply_to_id || null,
       };
 
-      // Broadcast via Socket.IO
-      fastify.io?.to(`channel:${id}`).emit('message:new', formattedMessage);
+      // ── A1: Publish through event bus (envelope + durable stream + pub/sub)
+      // This replaces the direct fastify.io.emit call so that all delivery
+      // paths (WS, SSE, resync) receive the event with proper sequencing.
+      await publishEvent({
+        type: 'message.new',
+        actorId: request.user!.id,
+        resourceId: `channel:${id}`,
+        payload: formattedMessage,
+      });
+
+      // ── A1: Cache result for idempotency ────────────────────
+      if (idempotencyKey) {
+        idempotencyCache.set(idempotencyKey, {
+          timestamp: Date.now(),
+          result: formattedMessage,
+        });
+      }
 
       return formattedMessage;
     },

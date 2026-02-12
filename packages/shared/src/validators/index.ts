@@ -68,6 +68,7 @@ export const sendMessageSchema = z.object({
     width: z.number().optional(),
     height: z.number().optional(),
   })).optional(),
+  reply_to_id: z.string().uuid().optional(),
   queued_at: z.string().datetime().optional(),
 });
 

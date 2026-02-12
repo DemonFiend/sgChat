@@ -1,6 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
+import { publishEvent } from '../lib/eventBus.js';
 import { calculatePermissions } from '../services/permissions.js';
 import { TextPermissions, hasPermission } from '@sgchat/shared';
 import { notFound, forbidden } from '../utils/errors.js';
@@ -30,12 +31,36 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
         content,
         edited_at: new Date(),
       });
-      
-      // Broadcast edit via Socket.IO
-      const roomId = message.channel_id ? `channel:${message.channel_id}` : `dm:${message.dm_channel_id}`;
-      fastify.io?.to(roomId).emit('message:edit', updated);
 
-      return updated;
+      const author = await db.users.findById(message.author_id);
+
+      const formattedMessage = {
+        id: updated.id,
+        channel_id: updated.channel_id || null,
+        dm_channel_id: updated.dm_channel_id || null,
+        content: updated.content,
+        author: author ? {
+          id: author.id,
+          username: author.username,
+          display_name: author.display_name || author.username,
+          avatar_url: author.avatar_url,
+        } : null,
+        created_at: updated.created_at,
+        edited_at: updated.edited_at,
+        attachments: updated.attachments || [],
+      };
+      
+      // A1: Publish through event bus (replaces direct io.emit)
+      const resourceId = message.channel_id ? `channel:${message.channel_id}` : `dm:${message.dm_channel_id}`;
+      const eventType = message.channel_id ? 'message.update' : 'dm.message.update';
+      await publishEvent({
+        type: eventType,
+        actorId: request.user!.id,
+        resourceId,
+        payload: formattedMessage,
+      });
+
+      return formattedMessage;
     },
   });
 
@@ -72,9 +97,15 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
 
       await db.messages.delete(id);
       
-      // Broadcast deletion via Socket.IO
-      const roomId = message.channel_id ? `channel:${message.channel_id}` : `dm:${message.dm_channel_id}`;
-      fastify.io?.to(roomId).emit('message:delete', { id });
+      // A1: Publish through event bus (replaces direct io.emit)
+      const resourceId = message.channel_id ? `channel:${message.channel_id}` : `dm:${message.dm_channel_id}`;
+      const eventType = message.channel_id ? 'message.delete' : 'dm.message.delete';
+      await publishEvent({
+        type: eventType,
+        actorId: request.user!.id,
+        resourceId,
+        payload: { id, channel_id: message.channel_id, dm_channel_id: message.dm_channel_id },
+      });
 
       return { message: 'Message deleted' };
     },
@@ -133,14 +164,19 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
         GROUP BY emoji
       `;
 
-      // Broadcast reaction update
-      const roomId = message.channel_id ? `channel:${message.channel_id}` : `dm:${message.dm_channel_id}`;
-      fastify.io?.to(roomId).emit('message:reaction', {
-        message_id: id,
-        emoji: emojiDecoded,
-        user_id: request.user!.id,
-        action: 'add',
-        reactions,
+      // A1: Publish reaction through event bus
+      const resourceId = message.channel_id ? `channel:${message.channel_id}` : `dm:${message.dm_channel_id}`;
+      await publishEvent({
+        type: message.channel_id ? 'message.update' : 'dm.message.update',
+        actorId: request.user!.id,
+        resourceId,
+        payload: {
+          message_id: id,
+          emoji: emojiDecoded,
+          user_id: request.user!.id,
+          action: 'add',
+          reactions,
+        },
       });
 
       return { reactions };
@@ -180,14 +216,19 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
         GROUP BY emoji
       `;
 
-      // Broadcast reaction update
-      const roomId = message.channel_id ? `channel:${message.channel_id}` : `dm:${message.dm_channel_id}`;
-      fastify.io?.to(roomId).emit('message:reaction', {
-        message_id: id,
-        emoji: emojiDecoded,
-        user_id: request.user!.id,
-        action: 'remove',
-        reactions,
+      // A1: Publish reaction removal through event bus
+      const resourceId = message.channel_id ? `channel:${message.channel_id}` : `dm:${message.dm_channel_id}`;
+      await publishEvent({
+        type: message.channel_id ? 'message.update' : 'dm.message.update',
+        actorId: request.user!.id,
+        resourceId,
+        payload: {
+          message_id: id,
+          emoji: emojiDecoded,
+          user_id: request.user!.id,
+          action: 'remove',
+          reactions,
+        },
       });
 
       return { reactions };
