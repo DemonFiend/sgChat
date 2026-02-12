@@ -3,6 +3,7 @@ import { Show, lazy, Suspense, onMount, createEffect, createSignal, JSX } from '
 import { authStore } from '@/stores/auth';
 import { networkStore } from '@/stores/network';
 import { socketService } from '@/lib/socket';
+import { SessionExpiredOverlay } from '@/components/ui/SessionExpiredOverlay';
 
 // Lazy load pages for code splitting
 const LoginPage = lazy(() => import('@/features/auth/LoginPage').then((m) => ({ default: m.LoginPage })));
@@ -87,6 +88,10 @@ function RootLayout(props: { children?: JSX.Element }) {
 
   return (
     <Show when={initialized()} fallback={<LoadingScreen />}>
+      {/* Session expired / auth error overlay -- renders on top of everything */}
+      <Show when={authStore.authError()}>
+        <SessionExpiredOverlay />
+      </Show>
       <Suspense fallback={<LoadingScreen />}>
         {props.children}
       </Suspense>

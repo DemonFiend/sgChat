@@ -85,6 +85,8 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
 
       return retryResponse.json();
     } catch {
+      // refreshAccessToken already triggers authError in the auth store,
+      // so the SessionExpiredOverlay will appear automatically.
       throw new ApiError('Session expired', 401);
     }
   }

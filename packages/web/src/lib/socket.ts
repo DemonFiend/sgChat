@@ -70,8 +70,9 @@ function createSocketService() {
             socket.connect();
           }
         } catch {
-          // Refresh failed - let auth store handle redirect
-          console.error('[Socket] Token refresh failed');
+          // Refresh failed -- the auth store's refreshAccessToken already
+          // triggers the auth error overlay, so we just log here.
+          console.error('[Socket] Token refresh failed after server disconnect');
         }
       }
     });
@@ -92,6 +93,8 @@ function createSocketService() {
             socket.connect();
           }
         } catch {
+          // Refresh failed -- the auth store's refreshAccessToken already
+          // triggers the auth error overlay, so we just log here.
           console.error('[Socket] Token refresh failed on connect error');
         }
       }

@@ -17,3 +17,4 @@ export { BendyLine } from './BendyLine';
 export { VoiceConnectedBar } from './VoiceConnectedBar';
 export { VoiceParticipantsList, InlineParticipants } from './VoiceParticipantsList';
 export { MuteButton, DeafenButton, DisconnectButton, SpeakerIcon } from './VoiceControls';
+export { SessionExpiredOverlay } from './SessionExpiredOverlay';

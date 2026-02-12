@@ -53,6 +53,8 @@ interface AuthState {
   isLoading: boolean;
 }
 
+export type AuthErrorReason = 'session_expired' | 'server_unreachable' | 'token_invalid';
+
 // Memory-only token storage (secure - not in localStorage)
 let accessToken: string | null = null;
 let tokenExpiresAt: number = 0;
@@ -72,6 +74,26 @@ function createAuthStore() {
     isAuthenticated: false,
     isLoading: true,
   });
+
+  // Global auth error signal -- when set, the SessionExpiredOverlay takes over
+  const [authError, setAuthError] = createSignal<AuthErrorReason | null>(null);
+
+  /**
+   * Trigger a graceful auth failure. This sets the error reason which
+   * the SessionExpiredOverlay component uses to show a user-friendly
+   * message before redirecting back to the login page.
+   */
+  const triggerAuthError = (reason: AuthErrorReason) => {
+    // Only set if not already in error state (avoid spamming)
+    if (authError() === null) {
+      setAuthError(reason);
+    }
+  };
+
+  /** Clear the auth error (e.g. when user manually navigates to login) */
+  const clearAuthError = () => {
+    setAuthError(null);
+  };
 
   const getAccessToken = (): string | null => {
     // Check if token is expired (with 30s buffer)
@@ -193,14 +215,35 @@ function createAuthStore() {
       throw new Error('No network selected');
     }
 
-    const response = await fetch(`${apiUrl}/auth/refresh`, {
-      method: 'POST',
-      credentials: 'include',
-    });
+    // Snapshot auth state BEFORE any clearing so we know if user was logged in
+    const wasAuthenticated = state().isAuthenticated || accessToken !== null;
+
+    let response: Response;
+    try {
+      response = await fetch(`${apiUrl}/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch {
+      // Network error -- server is unreachable
+      clearTokens();
+      setState({ user: null, isAuthenticated: false, isLoading: false });
+      // Only show the overlay if the user was previously logged in
+      // (avoids showing it on first page load when server happens to be down)
+      if (wasAuthenticated) {
+        triggerAuthError('server_unreachable');
+      }
+      throw new Error('Server unreachable');
+    }
 
     if (!response.ok) {
       clearTokens();
       setState({ user: null, isAuthenticated: false, isLoading: false });
+      // Only trigger the overlay if we were previously authenticated
+      // (avoids showing it on initial page load when there's no session)
+      if (wasAuthenticated) {
+        triggerAuthError('session_expired');
+      }
       throw new Error('Session expired');
     }
 
@@ -346,6 +389,7 @@ function createAuthStore() {
 
   return {
     state,
+    authError,
     getAccessToken,
     login,
     loginWithRememberMe,
@@ -358,6 +402,8 @@ function createAuthStore() {
     updateStatus,
     updateCustomStatus,
     clearExpiredCustomStatus,
+    triggerAuthError,
+    clearAuthError,
   };
 }
 
