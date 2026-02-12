@@ -1,6 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
+import { publishEvent } from '../lib/eventBus.js';
 import { createNotification } from './notifications.js';
 import { notFound, badRequest, forbidden } from '../utils/errors.js';
 
@@ -137,33 +138,43 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
           RETURNING *
         `;
 
-        // Fetch current user's full profile for socket event
+        // Fetch current user's full profile for event payload
         const currentUserFull = await db.users.findById(currentUserId);
 
-        // Notify both users via socket
-        fastify.io?.to(`user:${targetUserId}`).emit('friend:accept', {
-          friend: {
-            id: currentUserId,
-            username: currentUserFull.username,
-            display_name: currentUserFull.display_name || currentUserFull.username,
-            avatar_url: currentUserFull.avatar_url || null,
-            status: currentUserFull.status || 'online',
-            since: friendship.created_at,
+        // A5: Publish friend.request.accepted via event bus to both users
+        await publishEvent({
+          type: 'friend.request.accepted',
+          actorId: currentUserId,
+          resourceId: `user:${targetUserId}`,
+          payload: {
+            friend: {
+              id: currentUserId,
+              username: currentUserFull.username,
+              display_name: currentUserFull.display_name || currentUserFull.username,
+              avatar_url: currentUserFull.avatar_url || null,
+              status: currentUserFull.status || 'online',
+              since: friendship.created_at,
+            },
           },
         });
 
-        fastify.io?.to(`user:${currentUserId}`).emit('friend:accept', {
-          friend: {
-            id: targetUser.id,
-            username: targetUser.username,
-            display_name: targetUser.display_name || targetUser.username,
-            avatar_url: targetUser.avatar_url || null,
-            status: targetUser.status || 'online',
-            since: friendship.created_at,
+        await publishEvent({
+          type: 'friend.request.accepted',
+          actorId: currentUserId,
+          resourceId: `user:${currentUserId}`,
+          payload: {
+            friend: {
+              id: targetUser.id,
+              username: targetUser.username,
+              display_name: targetUser.display_name || targetUser.username,
+              avatar_url: targetUser.avatar_url || null,
+              status: targetUser.status || 'online',
+              since: friendship.created_at,
+            },
           },
         });
 
-        // A4: Notify both users about the friendship
+        // A4/A5: Notify both users about the friendship
         await createNotification({
           userId: targetUserId,
           type: 'friend_accept',
@@ -210,20 +221,25 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
       // Fetch current user full profile for notification data
       const currentUserFull = await db.users.findById(currentUserId);
 
-      // Notify target user via socket
-      fastify.io?.to(`user:${targetUserId}`).emit('friend:request', {
-        request: {
-          id: friendRequest.id,
-          from_user: {
-            id: currentUserId,
-            username: currentUserFull?.username || request.user!.username,
-            avatar_url: currentUserFull?.avatar_url || null,
+      // A5: Publish friend.request.new via event bus for real-time delivery
+      await publishEvent({
+        type: 'friend.request.new',
+        actorId: currentUserId,
+        resourceId: `user:${targetUserId}`,
+        payload: {
+          request: {
+            id: friendRequest.id,
+            from_user: {
+              id: currentUserId,
+              username: currentUserFull?.username || request.user!.username,
+              avatar_url: currentUserFull?.avatar_url || null,
+            },
+            created_at: friendRequest.created_at,
           },
-          created_at: friendRequest.created_at,
         },
       });
 
-      // A4: Create a notification for the target user
+      // A4/A5: Create a notification for the target user
       await createNotification({
         userId: targetUserId,
         type: 'friend_request',
@@ -270,9 +286,20 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       if (deletedFriendship.length > 0) {
-        // Notify the other user
-        fastify.io?.to(`user:${targetUserId}`).emit('friend:remove', {
-          user_id: currentUserId,
+        // A5: Publish friend.removed via event bus
+        await publishEvent({
+          type: 'friend.removed',
+          actorId: currentUserId,
+          resourceId: `user:${targetUserId}`,
+          payload: { user_id: currentUserId },
+        });
+
+        // Also notify the actor so their other devices stay in sync
+        await publishEvent({
+          type: 'friend.removed',
+          actorId: currentUserId,
+          resourceId: `user:${currentUserId}`,
+          payload: { user_id: targetUserId },
         });
 
         return { message: 'Friend removed' };
@@ -286,6 +313,18 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       if (deletedRequest.length > 0) {
+        // A5: Notify target that the request was withdrawn
+        await publishEvent({
+          type: 'friend.request.declined',
+          actorId: currentUserId,
+          resourceId: `user:${targetUserId}`,
+          payload: {
+            request_id: deletedRequest[0].id,
+            user_id: currentUserId,
+            reason: 'cancelled',
+          },
+        });
+
         return { message: 'Friend request cancelled' };
       }
 
@@ -297,6 +336,18 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       if (deletedIncoming.length > 0) {
+        // A5: Publish friend.request.declined via event bus
+        await publishEvent({
+          type: 'friend.request.declined',
+          actorId: currentUserId,
+          resourceId: `user:${targetUserId}`,
+          payload: {
+            request_id: deletedIncoming[0].id,
+            user_id: currentUserId,
+            reason: 'rejected',
+          },
+        });
+
         return { message: 'Friend request rejected' };
       }
 
@@ -391,19 +442,40 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
       const friend = await db.users.findById(fromUserId);
       const currentUserFull = await db.users.findById(currentUserId);
 
-      // Notify the requester
-      fastify.io?.to(`user:${fromUserId}`).emit('friend:accept', {
-        friend: {
-          id: currentUserId,
-          username: currentUserFull.username,
-          display_name: currentUserFull.display_name || currentUserFull.username,
-          avatar_url: currentUserFull.avatar_url || null,
-          status: currentUserFull.status || 'online',
-          since: friendship.created_at,
+      // A5: Publish friend.request.accepted via event bus to both users
+      await publishEvent({
+        type: 'friend.request.accepted',
+        actorId: currentUserId,
+        resourceId: `user:${fromUserId}`,
+        payload: {
+          friend: {
+            id: currentUserId,
+            username: currentUserFull.username,
+            display_name: currentUserFull.display_name || currentUserFull.username,
+            avatar_url: currentUserFull.avatar_url || null,
+            status: currentUserFull.status || 'online',
+            since: friendship.created_at,
+          },
         },
       });
 
-      // A4: Notify the original requester that their request was accepted
+      await publishEvent({
+        type: 'friend.request.accepted',
+        actorId: currentUserId,
+        resourceId: `user:${currentUserId}`,
+        payload: {
+          friend: {
+            id: friend.id,
+            username: friend.username,
+            display_name: friend.display_name || friend.username,
+            avatar_url: friend.avatar_url || null,
+            status: friend.status || 'online',
+            since: friendship.created_at,
+          },
+        },
+      });
+
+      // A4/A5: Notify the original requester that their request was accepted
       await createNotification({
         userId: fromUserId,
         type: 'friend_accept',
@@ -447,6 +519,18 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
       if (deleted.length === 0) {
         return notFound(reply, 'No pending friend request from this user');
       }
+
+      // A5: Publish friend.request.declined via event bus
+      await publishEvent({
+        type: 'friend.request.declined',
+        actorId: currentUserId,
+        resourceId: `user:${fromUserId}`,
+        payload: {
+          request_id: deleted[0].id,
+          user_id: currentUserId,
+          reason: 'rejected',
+        },
+      });
 
       return { message: 'Friend request rejected' };
     },

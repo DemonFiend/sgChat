@@ -320,7 +320,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
           payload: formattedMessage,
         });
 
-        // A4: Detect @mentions and create notifications
+        // A6: Detect @mentions and create high-priority notifications
         const mentionRegex = /@(\w+)/g;
         let mentionMatch;
         const mentionedUsernames = new Set<string>();
@@ -328,18 +328,24 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
           mentionedUsernames.add(mentionMatch[1]);
         }
 
+        // Track who already got notified to avoid duplicates
+        const notifiedUserIds = new Set<string>();
+
         if (mentionedUsernames.size > 0) {
           // Look up mentioned users (limit to prevent abuse)
           const usernames = Array.from(mentionedUsernames).slice(0, 20);
           for (const username of usernames) {
             const mentionedUser = await db.users.findByUsername(username);
             if (mentionedUser && mentionedUser.id !== userId) {
+              notifiedUserIds.add(mentionedUser.id);
               await createNotification({
                 userId: mentionedUser.id,
                 type: 'mention',
                 priority: 'high',
                 data: {
                   channel_id: data.channel_id,
+                  channel_name: channel.name,
+                  server_id: channel.server_id,
                   message_id: message.id,
                   from_user: {
                     id: author.id,
@@ -350,6 +356,37 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
                 },
               });
             }
+          }
+        }
+
+        // A6: Notify the author of the message being replied to
+        if (data.reply_to_id) {
+          const repliedMessage = await db.messages.findById(data.reply_to_id);
+          if (
+            repliedMessage &&
+            repliedMessage.author_id &&
+            repliedMessage.author_id !== userId &&
+            !notifiedUserIds.has(repliedMessage.author_id)
+          ) {
+            notifiedUserIds.add(repliedMessage.author_id);
+            await createNotification({
+              userId: repliedMessage.author_id,
+              type: 'mention', // reply is treated as a mention-like notification
+              priority: 'high',
+              data: {
+                channel_id: data.channel_id,
+                channel_name: channel.name,
+                server_id: channel.server_id,
+                message_id: message.id,
+                reply_to_id: data.reply_to_id,
+                from_user: {
+                  id: author.id,
+                  username: author.username,
+                  avatar_url: author.avatar_url || null,
+                },
+                message_preview: data.content.slice(0, 100),
+              },
+            });
           }
         }
       } catch (err) {
@@ -757,15 +794,17 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
           },
         });
 
-        // A4: Create a notification for the DM recipient
+        // A4/A6: Create a notification for the DM recipient
         await createNotification({
           userId: recipientId,
           type: 'dm_message',
           data: {
             dm_channel_id: data.dm_channel_id,
+            message_id: message.id,
             from_user: {
               id: author.id,
               username: author.username,
+              display_name: author.display_name || author.username,
               avatar_url: author.avatar_url || null,
             },
             message_preview: data.content.slice(0, 100),

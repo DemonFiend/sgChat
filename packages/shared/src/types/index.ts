@@ -351,6 +351,7 @@ export type EventType =
   | 'friend.request.new'
   | 'friend.request.accepted'
   | 'friend.request.declined'
+  | 'friend.removed'
   // Server / channel admin
   | 'channel.create'
   | 'channel.update'
