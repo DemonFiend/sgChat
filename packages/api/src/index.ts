@@ -30,6 +30,7 @@ import { standaloneRoutes } from './routes/standalone.js';
 import { categoryRoutes } from './routes/categories.js';
 import { uploadRoutes } from './routes/upload.js';
 import { gatewayRoutes } from './routes/gateway.js';
+import { notificationRoutes } from './routes/notifications.js';
 import { initSocketIO } from './socket/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -155,6 +156,9 @@ async function start() {
     // A0: Gateway routes (SSE fallback, resync, sequence)
     await api.register(gatewayRoutes);
 
+    // A4: Notification routes
+    await api.register(notificationRoutes, { prefix: '/notifications' });
+
     // Health check with server info for client network discovery
     api.get('/health', async () => {
       return {
@@ -192,6 +196,7 @@ async function start() {
   await fastify.register(categoryRoutes);
   await fastify.register(uploadRoutes);
   await fastify.register(gatewayRoutes);
+  await fastify.register(notificationRoutes, { prefix: '/notifications' });
 
   // ============================================================
   // Web Client - serve built SPA from packages/web/dist

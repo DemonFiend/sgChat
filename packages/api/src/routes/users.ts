@@ -4,7 +4,7 @@ import { db } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
 import { storage } from '../lib/storage.js';
 import { publishEvent } from '../lib/eventBus.js';
-import { UserStatus, usernameSchema, updateStatusSchema, updateCustomStatusSchema, toNamedPermissions } from '@sgchat/shared';
+import { UserStatus, usernameSchema, updateStatusSchema, updateCustomStatusSchema, updateStatusCommentSchema, toNamedPermissions } from '@sgchat/shared';
 import { z } from 'zod';
 import { notFound, badRequest, unauthorized, forbidden } from '../utils/errors.js';
 import argon2 from 'argon2';
@@ -51,6 +51,29 @@ async function broadcastPresence(
       userId,
       setTimeout(() => { emit().catch(() => {}); }, PRESENCE_COALESCE_MS),
     );
+  }
+}
+
+// ── A3: Status comment broadcasting ──────────────────────────
+// Broadcasts status_comment.update events with the same coalescing
+// strategy as presence. Separate from presence to keep events semantically clear.
+async function broadcastStatusComment(
+  userId: string,
+  payload: { text: string | null; emoji: string | null; expires_at: string | null },
+) {
+  const servers = await db.servers.findByUserId(userId);
+  for (const server of servers) {
+    await publishEvent({
+      type: 'status_comment.update',
+      actorId: userId,
+      resourceId: `server:${server.id}`,
+      payload: {
+        user_id: userId,
+        text: payload.text,
+        emoji: payload.emoji,
+        expires_at: payload.expires_at,
+      },
+    });
   }
 }
 
@@ -313,7 +336,14 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
 
       const user = await db.users.findById(request.user!.id);
 
-      // A2: Broadcast custom status through event bus with coalescing
+      // A3: Broadcast as status_comment.update through event bus
+      await broadcastStatusComment(request.user!.id, {
+        text: body.text ?? null,
+        emoji: body.emoji ?? null,
+        expires_at: body.expires_at || null,
+      });
+
+      // A2: Also broadcast presence update for backward compat
       await broadcastPresence(request.user!.id, {
         status: user?.status || 'online',
         custom_status: body.text,
@@ -323,6 +353,57 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       return { message: 'Custom status updated' };
+    },
+  });
+
+  // ── A3: Dedicated status comment endpoint (PATCH /users/me/status_comment) ──
+  // Spec endpoint per workstream A3. Sets the short user status message
+  // ("AFK", "Coding", etc.) with live push via status_comment.update.
+  fastify.patch('/me/status_comment', {
+    onRequest: [authenticate],
+    config: {
+      rateLimit: {
+        max: 10,
+        timeWindow: '1 minute',
+      },
+    },
+    handler: async (request, reply) => {
+      const body = updateStatusCommentSchema.parse(request.body);
+
+      // Sanitize: strip HTML tags and excessive whitespace
+      const sanitizedText = body.text
+        ? body.text.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim()
+        : null;
+
+      // Length check after sanitization
+      if (sanitizedText && sanitizedText.length > 128) {
+        return badRequest(reply, 'Status comment too long (max 128 characters)');
+      }
+
+      await db.sql`
+        UPDATE users
+        SET
+          custom_status = ${sanitizedText},
+          custom_status_emoji = ${body.emoji ?? null},
+          status_expires_at = ${body.expires_at ? new Date(body.expires_at) : null},
+          updated_at = NOW()
+        WHERE id = ${request.user!.id}
+      `;
+
+      const user = await db.users.findById(request.user!.id);
+
+      // A3: Broadcast status_comment.update through event bus
+      await broadcastStatusComment(request.user!.id, {
+        text: sanitizedText,
+        emoji: body.emoji ?? null,
+        expires_at: body.expires_at || null,
+      });
+
+      return {
+        custom_status: sanitizedText,
+        custom_status_emoji: body.emoji ?? null,
+        status_expires_at: body.expires_at || null,
+      };
     },
   });
 

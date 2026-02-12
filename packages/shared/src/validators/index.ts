@@ -112,6 +112,30 @@ export const updateUserSettingsSchema = z.object({
   hide_online_announcements: z.boolean().optional(),
 });
 
+// A3: Status comment validator (dedicated endpoint)
+export const updateStatusCommentSchema = z.object({
+  text: z.string().max(128).nullable(),
+  emoji: z.string().max(10).nullable().optional(),
+  expires_at: z.string().datetime().nullable().optional(),
+});
+
+// A4: Notification validators
+export const notificationTypeSchema = z.enum([
+  'mention', 'reaction', 'role_change', 'invite',
+  'announcement', 'friend_request', 'friend_accept',
+  'dm_message', 'system',
+]);
+
+export const notificationPrioritySchema = z.enum(['low', 'normal', 'high']);
+
+export const markNotificationReadSchema = z.object({
+  read: z.boolean().default(true),
+});
+
+export const markAllNotificationsReadSchema = z.object({
+  before: z.string().datetime().optional(), // Mark all before this timestamp
+});
+
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type CreateServerInput = z.infer<typeof createServerSchema>;
@@ -119,6 +143,7 @@ export type CreateChannelInput = z.infer<typeof createChannelSchema>;
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
 export type UpdateStatusInput = z.infer<typeof updateStatusSchema>;
 export type UpdateCustomStatusInput = z.infer<typeof updateCustomStatusSchema>;
+export type UpdateStatusCommentInput = z.infer<typeof updateStatusCommentSchema>;
 export type CreateInviteInput = z.infer<typeof createInviteSchema>;
 export type CreateRoleInput = z.infer<typeof createRoleSchema>;
 export type UpdateUserSettingsInput = z.infer<typeof updateUserSettingsSchema>;

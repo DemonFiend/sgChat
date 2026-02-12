@@ -8,6 +8,7 @@ import { calculatePermissions } from '../services/permissions.js';
 import { TextPermissions, VoicePermissions, hasPermission } from '@sgchat/shared';
 import type { EventEnvelope, GatewayHello, GatewayReady, GatewayResume, GatewayResumed } from '@sgchat/shared';
 import { isBlocked } from '../routes/friends.js';
+import { createNotification } from '../routes/notifications.js';
 
 // ── Constants ──────────────────────────────────────────────────
 /** Heartbeat interval sent to client in gateway.hello (ms) */
@@ -318,6 +319,39 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
           resourceId: `channel:${data.channel_id}`,
           payload: formattedMessage,
         });
+
+        // A4: Detect @mentions and create notifications
+        const mentionRegex = /@(\w+)/g;
+        let mentionMatch;
+        const mentionedUsernames = new Set<string>();
+        while ((mentionMatch = mentionRegex.exec(data.content)) !== null) {
+          mentionedUsernames.add(mentionMatch[1]);
+        }
+
+        if (mentionedUsernames.size > 0) {
+          // Look up mentioned users (limit to prevent abuse)
+          const usernames = Array.from(mentionedUsernames).slice(0, 20);
+          for (const username of usernames) {
+            const mentionedUser = await db.users.findByUsername(username);
+            if (mentionedUser && mentionedUser.id !== userId) {
+              await createNotification({
+                userId: mentionedUser.id,
+                type: 'mention',
+                priority: 'high',
+                data: {
+                  channel_id: data.channel_id,
+                  message_id: message.id,
+                  from_user: {
+                    id: author.id,
+                    username: author.username,
+                    avatar_url: author.avatar_url || null,
+                  },
+                  message_preview: data.content.slice(0, 100),
+                },
+              });
+            }
+          }
+        }
       } catch (err) {
         fastify.log.error(err);
         socket.emit('error', { message: 'Failed to send message' });
@@ -490,6 +524,52 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
             status,
           },
         });
+      }
+    });
+
+    // ── A3: Status Comment Updates ─────────────────────────────
+
+    socket.on('status_comment:update', async (data: {
+      text: string | null;
+      emoji?: string | null;
+      expires_at?: string | null;
+    }) => {
+      try {
+        // Validate & sanitize
+        const sanitizedText = data.text
+          ? data.text.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().slice(0, 128)
+          : null;
+        const emoji = data.emoji ?? null;
+        const expiresAt = data.expires_at ? new Date(data.expires_at) : null;
+
+        // Persist to DB
+        await db.sql`
+          UPDATE users
+          SET
+            custom_status = ${sanitizedText},
+            custom_status_emoji = ${emoji},
+            status_expires_at = ${expiresAt},
+            updated_at = NOW()
+          WHERE id = ${userId}
+        `;
+
+        // Broadcast status_comment.update to all servers the user belongs to
+        for (const server of servers) {
+          await publishEvent({
+            type: 'status_comment.update',
+            actorId: userId,
+            resourceId: `server:${server.id}`,
+            payload: {
+              user_id: userId,
+              text: sanitizedText,
+              emoji,
+              expires_at: data.expires_at || null,
+            },
+          });
+        }
+      } catch (err) {
+        fastify.log.error(err);
+        socket.emit('error', { message: 'Failed to update status comment' });
       }
     });
 
@@ -677,12 +757,20 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
           },
         });
 
-        const isOnline = await redis.getPresence(recipientId);
-        
-        if (!isOnline) {
-          // TODO: Send push notification via ntfy
-          fastify.log.info(`Would send push notification to ${recipientId}`);
-        }
+        // A4: Create a notification for the DM recipient
+        await createNotification({
+          userId: recipientId,
+          type: 'dm_message',
+          data: {
+            dm_channel_id: data.dm_channel_id,
+            from_user: {
+              id: author.id,
+              username: author.username,
+              avatar_url: author.avatar_url || null,
+            },
+            message_preview: data.content.slice(0, 100),
+          },
+        });
       } catch (err) {
         fastify.log.error(err);
         socket.emit('error', { message: 'Failed to send DM' });

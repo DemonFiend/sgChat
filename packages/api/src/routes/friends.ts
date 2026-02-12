@@ -1,6 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
+import { createNotification } from './notifications.js';
 import { notFound, badRequest, forbidden } from '../utils/errors.js';
 
 /**
@@ -162,6 +163,30 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
           },
         });
 
+        // A4: Notify both users about the friendship
+        await createNotification({
+          userId: targetUserId,
+          type: 'friend_accept',
+          data: {
+            user: {
+              id: currentUserId,
+              username: currentUserFull.username,
+              avatar_url: currentUserFull.avatar_url || null,
+            },
+          },
+        });
+        await createNotification({
+          userId: currentUserId,
+          type: 'friend_accept',
+          data: {
+            user: {
+              id: targetUser.id,
+              username: targetUser.username,
+              avatar_url: targetUser.avatar_url || null,
+            },
+          },
+        });
+
         return reply.status(200).send({
           message: 'Friend request accepted (mutual request)',
           friend: {
@@ -182,16 +207,34 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
         RETURNING *
       `;
 
+      // Fetch current user full profile for notification data
+      const currentUserFull = await db.users.findById(currentUserId);
+
       // Notify target user via socket
       fastify.io?.to(`user:${targetUserId}`).emit('friend:request', {
         request: {
           id: friendRequest.id,
           from_user: {
             id: currentUserId,
-            username: request.user!.username,
-            avatar_url: null, // Would need to fetch
+            username: currentUserFull?.username || request.user!.username,
+            avatar_url: currentUserFull?.avatar_url || null,
           },
           created_at: friendRequest.created_at,
+        },
+      });
+
+      // A4: Create a notification for the target user
+      await createNotification({
+        userId: targetUserId,
+        type: 'friend_request',
+        priority: 'high',
+        data: {
+          request_id: friendRequest.id,
+          from_user: {
+            id: currentUserId,
+            username: currentUserFull?.username || request.user!.username,
+            avatar_url: currentUserFull?.avatar_url || null,
+          },
         },
       });
 
@@ -357,6 +400,19 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
           avatar_url: currentUserFull.avatar_url || null,
           status: currentUserFull.status || 'online',
           since: friendship.created_at,
+        },
+      });
+
+      // A4: Notify the original requester that their request was accepted
+      await createNotification({
+        userId: fromUserId,
+        type: 'friend_accept',
+        data: {
+          user: {
+            id: currentUserId,
+            username: currentUserFull.username,
+            avatar_url: currentUserFull.avatar_url || null,
+          },
         },
       });
 

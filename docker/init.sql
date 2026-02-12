@@ -551,3 +551,30 @@ CREATE TABLE IF NOT EXISTS channel_read_state (
 );
 
 CREATE INDEX IF NOT EXISTS idx_channel_read_user ON channel_read_state(user_id);
+
+-- ============================================================
+-- NOTIFICATIONS (A4: Live Notifications Core)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK (type IN (
+    'mention', 'reaction', 'role_change', 'invite',
+    'announcement', 'friend_request', 'friend_accept',
+    'dm_message', 'system'
+  )),
+  data JSONB NOT NULL DEFAULT '{}',
+  priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('low', 'normal', 'high')),
+  read_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(user_id, read_at) WHERE read_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_notifications_type ON notifications(user_id, type);
+
+-- Add notification preferences to user_settings
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS notification_sounds BOOLEAN DEFAULT true;
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS notification_toasts BOOLEAN DEFAULT true;
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS notification_dnd_override BOOLEAN DEFAULT false;

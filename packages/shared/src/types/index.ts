@@ -154,6 +154,50 @@ export interface DMReadState {
   last_read_at: Date;
 }
 
+// ============================================================
+// A4: Notification types
+// ============================================================
+
+export type NotificationType =
+  | 'mention'
+  | 'reaction'
+  | 'role_change'
+  | 'invite'
+  | 'announcement'
+  | 'friend_request'
+  | 'friend_accept'
+  | 'dm_message'
+  | 'system';
+
+export type NotificationPriority = 'low' | 'normal' | 'high';
+
+export interface Notification {
+  id: UUID;
+  user_id: UUID;
+  type: NotificationType;
+  data: Record<string, unknown>;
+  priority: NotificationPriority;
+  read_at: Date | null;
+  created_at: Date;
+}
+
+export interface CreateNotificationRequest {
+  type: NotificationType;
+  data: Record<string, unknown>;
+  priority?: NotificationPriority;
+}
+
+// ============================================================
+// A3: Status comment update payload
+// ============================================================
+
+export interface StatusCommentUpdatePayload {
+  user_id: UUID;
+  text: string | null;
+  emoji: string | null;
+  expires_at: string | null;
+}
+
 // API Request/Response types
 export interface LoginRequest {
   username: string;
