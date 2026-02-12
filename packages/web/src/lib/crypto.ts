@@ -1,12 +1,30 @@
 /**
  * Credential encryption utilities using Web Crypto API
  * Uses AES-GCM for authenticated encryption
+ * Includes client-side password hashing so plaintext passwords never appear in network requests
  */
 
 const STORAGE_KEY = 'sgchat-encryption-key';
 const ALGORITHM = 'AES-GCM';
 const KEY_LENGTH = 256;
 const IV_LENGTH = 12; // Recommended for AES-GCM
+
+/**
+ * Hash a password client-side using SHA-256 before sending to the server.
+ * This ensures the plaintext password never appears in network requests,
+ * browser DevTools, or server logs. The server then applies argon2 on top
+ * of this hash for storage.
+ * 
+ * Format: "sha256:<hex-encoded hash>" so the server can identify pre-hashed passwords.
+ */
+export async function hashPasswordForTransit(password: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  return `sha256:${hashHex}`;
+}
 
 export interface EncryptedCredential {
   ciphertext: string; // Base64-encoded encrypted password

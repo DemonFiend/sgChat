@@ -1,7 +1,7 @@
 export type UUID = string;
 
-// User status types
-export type UserStatus = 'active' | 'idle' | 'busy' | 'dnd' | 'invisible' | 'offline';
+// User status types (must match DB CHECK constraint)
+export type UserStatus = 'online' | 'idle' | 'dnd' | 'offline';
 
 // Message status types
 export type MessageStatus = 'sending' | 'sent' | 'received' | 'failed';

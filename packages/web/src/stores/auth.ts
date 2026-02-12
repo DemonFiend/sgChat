@@ -1,6 +1,6 @@
 import { createSignal, createRoot } from 'solid-js';
 import { networkStore, getEffectiveUrl } from './network';
-import { encryptPassword, decryptPassword } from '../lib/crypto';
+import { encryptPassword, decryptPassword, hashPasswordForTransit } from '../lib/crypto';
 
 export interface User {
   id: string;
@@ -97,11 +97,14 @@ function createAuthStore() {
       throw new Error('No network selected');
     }
 
+    // Hash password client-side so plaintext never appears in network requests
+    const hashedPassword = await hashPasswordForTransit(password);
+
     const response = await fetch(`${apiUrl}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password: hashedPassword }),
     });
 
     if (!response.ok) {
@@ -154,11 +157,14 @@ function createAuthStore() {
       throw new Error('No network selected');
     }
 
+    // Hash password client-side so plaintext never appears in network requests
+    const hashedPassword = await hashPasswordForTransit(password);
+
     const response = await fetch(`${apiUrl}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ email, username, password }),
+      body: JSON.stringify({ email, username, password: hashedPassword }),
     });
 
     if (!response.ok) {

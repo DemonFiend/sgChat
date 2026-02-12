@@ -65,12 +65,11 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
         WHERE f.user1_id = ${userId} OR f.user2_id = ${userId}
         ORDER BY 
           CASE u.status 
-            WHEN 'active' THEN 1 
+            WHEN 'online' THEN 1 
             WHEN 'idle' THEN 2 
-            WHEN 'busy' THEN 3
-            WHEN 'dnd' THEN 4
-            WHEN 'invisible' THEN 5
-            ELSE 6 
+            WHEN 'dnd' THEN 3
+            WHEN 'offline' THEN 4
+            ELSE 5 
           END,
           u.username ASC
       `;

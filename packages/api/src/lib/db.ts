@@ -19,24 +19,48 @@ export async function initDatabase() {
 }
 
 // Database helper functions
+// Safe user columns (excludes password_hash) - used by default to prevent accidental leaks
+const SAFE_USER_COLUMNS = sql`
+  id, username, display_name, email, avatar_url,
+  status, custom_status, custom_status_emoji, status_expires_at,
+  push_token, push_enabled, last_seen_at, created_at, updated_at
+`;
+
 export const db = {
   // Users
   users: {
+    /** Find user by ID - excludes password_hash for safety */
     async findById(id: string) {
       const [user] = await sql`
-        SELECT * FROM users WHERE id = ${id}
+        SELECT ${SAFE_USER_COLUMNS} FROM users WHERE id = ${id}
       `;
       return user;
     },
+    /** Find user by username - excludes password_hash for safety */
     async findByUsername(username: string) {
       const [user] = await sql`
-        SELECT * FROM users WHERE username = ${username}
+        SELECT ${SAFE_USER_COLUMNS} FROM users WHERE username = ${username}
       `;
       return user;
     },
+    /** Find user by email - excludes password_hash for safety */
     async findByEmail(email: string) {
       const [user] = await sql`
+        SELECT ${SAFE_USER_COLUMNS} FROM users WHERE email = ${email}
+      `;
+      return user;
+    },
+    /** Find user by email INCLUDING password_hash - only use for auth verification */
+    async findByEmailWithPassword(email: string) {
+      const [user] = await sql`
         SELECT * FROM users WHERE email = ${email}
+      `;
+      return user;
+    },
+    /** Find user by ID INCLUDING password_hash - only use for password change/verify */
+    async findByIdWithPassword(id: string) {
+      const [user] = await sql`
+        SELECT * FROM users WHERE id = ${id}
       `;
       return user;
     },
@@ -44,7 +68,7 @@ export const db = {
       const [user] = await sql`
         INSERT INTO users (username, email, password_hash)
         VALUES (${data.username}, ${data.email}, ${data.password_hash})
-        RETURNING *
+        RETURNING ${SAFE_USER_COLUMNS}
       `;
       return user;
     },

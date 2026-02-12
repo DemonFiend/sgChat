@@ -268,13 +268,17 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
     // --- Presence Updates ---
 
     socket.on('presence:update', async (data: { status: string }) => {
-      await db.users.updateStatus(userId, data.status as any);
+      // Validate status against allowed DB values
+      const validStatuses = ['online', 'idle', 'dnd', 'offline'];
+      const status = validStatuses.includes(data.status) ? data.status : 'online';
+      
+      await db.users.updateStatus(userId, status);
       
       // Broadcast to all servers
       for (const server of servers) {
         io.to(`server:${server.id}`).emit('presence:update', {
           user_id: userId,
-          status: data.status,
+          status,
         });
       }
     });

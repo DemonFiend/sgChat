@@ -38,15 +38,13 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
         return notFound(reply, 'User');
       }
 
-      const { password_hash: _, ...safeUser } = user;
-
       // Get the default server for single-tenant model
       const server = await getDefaultServer();
       
       // If no server exists yet, return user without server info
       if (!server) {
         return {
-          ...safeUser,
+          ...user,
           roles: [],
           permissions: toNamedPermissions(0, 0, 0),
           is_owner: false,
@@ -65,7 +63,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
       // If not a member, return basic info
       if (!membership) {
         return {
-          ...safeUser,
+          ...user,
           roles: [],
           permissions: toNamedPermissions(0, 0, 0),
           is_owner: false,
@@ -112,7 +110,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       return {
-        ...safeUser,
+        ...user,
         nickname: membership.nickname,
         joined_at: membership.joined_at,
         is_owner: isOwner,
@@ -163,8 +161,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
         WHERE id = ${request.user!.id}
       `;
 
-      const user = await db.users.findById(request.user!.id);
-      const { password_hash: _, ...safeUser } = user;
+      const updatedUser = await db.users.findById(request.user!.id);
 
       // If status-related fields changed, emit presence:update to all servers
       if ('status' in body || 'custom_status' in body) {
@@ -172,16 +169,16 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
         for (const server of servers) {
           fastify.io?.to(`server:${server.id}`).emit('presence:update', {
             user_id: request.user!.id,
-            status: user.status,
-            custom_status: user.custom_status,
+            status: updatedUser.status,
+            custom_status: updatedUser.custom_status,
           });
         }
       }
 
       // Broadcast profile update to user's own room
-      fastify.io?.to(`user:${request.user!.id}`).emit('user:update', safeUser);
+      fastify.io?.to(`user:${request.user!.id}`).emit('user:update', updatedUser);
 
-      return safeUser;
+      return updatedUser;
     },
   });
 
@@ -355,18 +352,18 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
     handler: async (request, reply) => {
       const { currentPassword, newPassword } = changePasswordSchema.parse(request.body);
 
-      const user = await db.users.findById(request.user!.id);
+      const user = await db.users.findByIdWithPassword(request.user!.id);
       if (!user) {
         return notFound(reply, 'User');
       }
 
-      // Verify current password
+      // Verify current password (client sends sha256-hashed password)
       const isValid = await argon2.verify(user.password_hash, currentPassword);
       if (!isValid) {
         return unauthorized(reply, 'Current password is incorrect');
       }
 
-      // Hash new password and update
+      // Hash new password and update (newPassword is already sha256-hashed by client)
       const newHash = await argon2.hash(newPassword);
       await db.sql`
         UPDATE users
@@ -393,12 +390,12 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
     handler: async (request, reply) => {
       const { email, password } = changeEmailSchema.parse(request.body);
 
-      const user = await db.users.findById(request.user!.id);
+      const user = await db.users.findByIdWithPassword(request.user!.id);
       if (!user) {
         return notFound(reply, 'User');
       }
 
-      // Verify password
+      // Verify password (client sends sha256-hashed password)
       const isValid = await argon2.verify(user.password_hash, password);
       if (!isValid) {
         return unauthorized(reply, 'Password is incorrect');
@@ -461,8 +458,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
 
       // Broadcast update
       const updatedUser = await db.users.findById(request.user!.id);
-      const { password_hash: _, ...safeUser } = updatedUser;
-      fastify.io?.to(`user:${request.user!.id}`).emit('user:update', safeUser);
+      fastify.io?.to(`user:${request.user!.id}`).emit('user:update', updatedUser);
 
       return { avatar_url: avatarUrl };
     },
@@ -489,8 +485,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
 
       // Broadcast update
       const updatedUser = await db.users.findById(request.user!.id);
-      const { password_hash: _, ...safeUser } = updatedUser;
-      fastify.io?.to(`user:${request.user!.id}`).emit('user:update', safeUser);
+      fastify.io?.to(`user:${request.user!.id}`).emit('user:update', updatedUser);
 
       return { message: 'Avatar deleted' };
     },

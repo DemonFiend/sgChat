@@ -71,8 +71,8 @@ export const sendMessageSchema = z.object({
   queued_at: z.string().datetime().optional(),
 });
 
-// Status validators
-export const userStatusSchema = z.enum(['active', 'idle', 'busy', 'dnd', 'invisible', 'offline']);
+// Status validators (must match DB CHECK constraint)
+export const userStatusSchema = z.enum(['online', 'idle', 'dnd', 'offline']);
 
 export const updateStatusSchema = z.object({
   status: userStatusSchema,

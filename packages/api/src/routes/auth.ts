@@ -87,12 +87,9 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         maxAge: 7 * 24 * 60 * 60, // 7 days in seconds
       });
 
-      // Remove sensitive data
-      const { password_hash: _, ...safeUser } = user;
-
       return {
         access_token,
-        user: safeUser,
+        user,
       };
     },
   });
@@ -109,9 +106,9 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     handler: async (request, reply) => {
       const body = loginSchema.parse(request.body);
 
-      // Find user by email
-      const user = await db.users.findByEmail(body.email);
-      if (!user) {
+      // Find user by email (with password hash for verification)
+      const userWithPassword = await db.users.findByEmailWithPassword(body.email);
+      if (!userWithPassword) {
         return reply.status(401).send({
           statusCode: 401,
           error: 'Unauthorized',
@@ -119,8 +116,8 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      // Verify password
-      const validPassword = await argon2.verify(user.password_hash, body.password);
+      // Verify password (client sends sha256-hashed password, argon2 verifies against stored hash)
+      const validPassword = await argon2.verify(userWithPassword.password_hash, body.password);
       if (!validPassword) {
         return reply.status(401).send({
           statusCode: 401,
@@ -131,16 +128,16 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 
       // Generate tokens
       const access_token = fastify.jwt.sign({
-        id: user.id,
-        username: user.username,
-        email: user.email,
+        id: userWithPassword.id,
+        username: userWithPassword.username,
+        email: userWithPassword.email,
       });
 
       const refresh_token = nanoid(32);
-      await redis.setSession(user.id, refresh_token);
+      await redis.setSession(userWithPassword.id, refresh_token);
 
       // Update last seen
-      await db.users.updateStatus(user.id, 'active');
+      await db.users.updateStatus(userWithPassword.id, 'online');
 
       // Single-tenant: Ensure user is a member of the server
       const [server] = await db.sql`
@@ -148,10 +145,10 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       `;
       if (server) {
         const [existingMember] = await db.sql`
-          SELECT 1 FROM members WHERE user_id = ${user.id} AND server_id = ${server.id}
+          SELECT 1 FROM members WHERE user_id = ${userWithPassword.id} AND server_id = ${server.id}
         `;
         if (!existingMember) {
-          await handleMemberJoin(user.id, server.id, fastify.io);
+          await handleMemberJoin(userWithPassword.id, server.id, fastify.io);
         }
       }
 
@@ -165,8 +162,8 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         maxAge: 7 * 24 * 60 * 60, // 7 days in seconds
       });
 
-      // Remove sensitive data
-      const { password_hash: _, ...safeUser } = user;
+      // Get safe user data (no password_hash)
+      const safeUser = await db.users.findById(userWithPassword.id);
 
       return {
         access_token,
