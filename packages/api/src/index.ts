@@ -12,6 +12,7 @@ import fastifyStatic from '@fastify/static';
 import { Server as SocketIOServer } from 'socket.io';
 import { db, initDatabase } from './lib/db.js';
 import { redis, initRedis } from './lib/redis.js';
+import { initEventBus, shutdownEventBus } from './lib/eventBus.js';
 import { initStorage } from './lib/storage.js';
 import { bootstrapServer } from './lib/bootstrap.js';
 import { rateLimitPlugin } from './plugins/rateLimit.js';
@@ -28,6 +29,7 @@ import { globalServerRoutes } from './routes/server.js';
 import { standaloneRoutes } from './routes/standalone.js';
 import { categoryRoutes } from './routes/categories.js';
 import { uploadRoutes } from './routes/upload.js';
+import { gatewayRoutes } from './routes/gateway.js';
 import { initSocketIO } from './socket/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -77,9 +79,10 @@ function getWebClientPath(): string | null {
 }
 
 async function start() {
-  // Initialize database, redis, and storage
+  // Initialize database, redis, event bus, and storage
   await initDatabase();
   await initRedis();
+  await initEventBus();
   await initStorage();
 
   // Bootstrap server (creates default server/channels on first run)
@@ -149,6 +152,9 @@ async function start() {
     await api.register(categoryRoutes);
     await api.register(uploadRoutes);
 
+    // A0: Gateway routes (SSE fallback, resync, sequence)
+    await api.register(gatewayRoutes);
+
     // Health check with server info for client network discovery
     api.get('/health', async () => {
       return {
@@ -185,6 +191,7 @@ async function start() {
   await fastify.register(standaloneRoutes);
   await fastify.register(categoryRoutes);
   await fastify.register(uploadRoutes);
+  await fastify.register(gatewayRoutes);
 
   // ============================================================
   // Web Client - serve built SPA from packages/web/dist
@@ -244,6 +251,7 @@ async function start() {
     fastify.log.info(`${signal} received, shutting down gracefully...`);
     
     await fastify.close();
+    await shutdownEventBus();
     await redis.client.quit();
     await db.end();
     

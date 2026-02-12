@@ -271,3 +271,165 @@ export interface VoiceState {
   last_active_at: Date;
   joined_at: Date;
 }
+
+// ============================================================
+// A0: Live SLOs & Transport Baseline — Event Envelope
+// ============================================================
+
+/**
+ * All real-time event types emitted through the gateway.
+ * Convention: `resource.action` (dot-separated).
+ */
+export type EventType =
+  // Messages
+  | 'message.new'
+  | 'message.update'
+  | 'message.delete'
+  // DMs
+  | 'dm.message.new'
+  | 'dm.message.update'
+  | 'dm.message.delete'
+  // Presence
+  | 'presence.update'
+  // Status comments
+  | 'status_comment.update'
+  // Typing
+  | 'typing.start'
+  | 'typing.stop'
+  // Voice
+  | 'voice.join'
+  | 'voice.leave'
+  | 'voice.state_update'
+  // Notifications
+  | 'notification.new'
+  | 'notification.read'
+  // Friend requests
+  | 'friend.request.new'
+  | 'friend.request.accepted'
+  | 'friend.request.declined'
+  // Server / channel admin
+  | 'channel.create'
+  | 'channel.update'
+  | 'channel.delete'
+  | 'member.join'
+  | 'member.leave'
+  | 'role.updated'
+  | 'channel.overwrite.updated'
+  // System
+  | 'gateway.hello'
+  | 'gateway.heartbeat'
+  | 'gateway.heartbeat_ack'
+  | 'gateway.resume'
+  | 'gateway.ready';
+
+/**
+ * Standard event envelope for all real-time events.
+ *
+ * Every event delivered over WebSocket (Socket.IO) or SSE MUST be
+ * wrapped in this envelope so clients can detect ordering gaps,
+ * de-duplicate via `id`, and request resync when needed.
+ *
+ * SLO targets:
+ *   P50 ≤ 200 ms, P95 ≤ 500 ms end-to-end delivery.
+ */
+export interface EventEnvelope<T = unknown> {
+  /** Globally unique event id (UUIDv4) */
+  id: string;
+  /** Dot-separated event type */
+  type: EventType;
+  /** ISO-8601 timestamp of when the event was created on the server */
+  timestamp: string;
+  /** User ID of the actor who caused the event (null for system events) */
+  actor_id: string | null;
+  /** The resource this event targets (channel id, dm id, user id, server id) */
+  resource_id: string;
+  /**
+   * Monotonically increasing sequence number scoped to `resource_id`.
+   * Clients MUST compare `sequence` with their last-seen value;
+   * if a gap is detected, request resync via `GET /api/events/resync`.
+   */
+  sequence: number;
+  /** Event-specific payload */
+  payload: T;
+  /** Optional trace id for distributed tracing (OpenTelemetry compatible) */
+  trace_id?: string;
+}
+
+/**
+ * Client resync request: sent when the client detects a sequence gap.
+ */
+export interface ResyncRequest {
+  /** The resource to resync (channel_id, dm_id, etc.) */
+  resource_id: string;
+  /** The last sequence number the client received */
+  last_sequence: number;
+  /** Maximum number of events to return */
+  limit?: number;
+}
+
+/**
+ * Server resync response: missed events since `last_sequence`.
+ */
+export interface ResyncResponse {
+  resource_id: string;
+  events: EventEnvelope[];
+  /** If true, there are more events — client should paginate */
+  has_more: boolean;
+}
+
+/**
+ * Gateway HELLO payload — sent on initial connection.
+ */
+export interface GatewayHello {
+  /** Recommended heartbeat interval in ms */
+  heartbeat_interval: number;
+  /** Session id for resume */
+  session_id: string;
+}
+
+/**
+ * Gateway READY payload — sent after auth + room setup.
+ */
+export interface GatewayReady {
+  user: {
+    id: string;
+    username: string;
+    status: UserStatus;
+  };
+  /** Mapping of resource_id → current sequence so client can detect gaps */
+  sequences: Record<string, number>;
+  /** Subscribed resource IDs (channels, servers, DMs) */
+  subscriptions: string[];
+}
+
+/**
+ * Gateway RESUME request — sent by client to resume a previous session
+ * after a brief disconnect (e.g. network blip).
+ *
+ * Instead of the full HELLO → READY flow, the server replays missed events
+ * from durable streams and re-joins rooms without re-fetching everything.
+ */
+export interface GatewayResume {
+  /** The session_id from the original gateway.hello */
+  session_id: string;
+  /**
+   * Mapping of resource_id → last sequence the client received.
+   * The server will replay events with sequence > this value.
+   */
+  last_sequences: Record<string, number>;
+}
+
+/**
+ * Gateway RESUMED response — sent after a successful resume.
+ * Contains the replayed (missed) events and current sequences.
+ */
+export interface GatewayResumed {
+  /** The session that was resumed */
+  session_id: string;
+  /** Events the client missed during the disconnect, ordered by resource + sequence */
+  missed_events: EventEnvelope[];
+  /** Updated sequence map so the client is fully caught up */
+  sequences: Record<string, number>;
+  /** Subscribed resource IDs (may have changed if channels were created/deleted) */
+  subscriptions: string[];
+}

@@ -1,13 +1,42 @@
+import { randomUUID } from 'crypto';
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { FastifyInstance } from 'fastify';
 import { db } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
+import { publishEvent, getSequences, resyncEvents, onEvent } from '../lib/eventBus.js';
 import { calculatePermissions } from '../services/permissions.js';
 import { TextPermissions, VoicePermissions, hasPermission } from '@sgchat/shared';
+import type { EventEnvelope, GatewayHello, GatewayReady, GatewayResume, GatewayResumed } from '@sgchat/shared';
 import { isBlocked } from '../routes/friends.js';
 
+// ── Constants ──────────────────────────────────────────────────
+/** Heartbeat interval sent to client in gateway.hello (ms) */
+const HEARTBEAT_INTERVAL = 30_000;
+/** If no heartbeat received in this window, server considers client dead */
+const HEARTBEAT_TIMEOUT = HEARTBEAT_INTERVAL * 1.5;
+
+// ── Idempotency dedup cache (in-memory, per-process) ──────────
+// Key = idempotency key, Value = timestamp of first seen
+const idempotencyCache = new Map<string, number>();
+const IDEMPOTENCY_TTL = 5 * 60 * 1000; // 5 minutes
+
+// Cleanup stale idempotency keys every minute
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, ts] of idempotencyCache) {
+    if (now - ts > IDEMPOTENCY_TTL) idempotencyCache.delete(key);
+  }
+}, 60_000);
+
+function checkIdempotency(key: string | undefined): boolean {
+  if (!key) return false; // no key → not a duplicate
+  if (idempotencyCache.has(key)) return true; // duplicate
+  idempotencyCache.set(key, Date.now());
+  return false;
+}
+
 export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
-  // Authentication middleware
+  // ── Auth middleware ──────────────────────────────────────────
   io.use(async (socket, next) => {
     try {
       const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.replace('Bearer ', '');
@@ -24,79 +53,237 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
     }
   });
 
+  // ── Subscribe to event bus and relay to Socket.IO rooms ─────
+  onEvent((envelope: EventEnvelope) => {
+    // Emit the envelope to the matching Socket.IO room.
+    // The resource_id doubles as the room name (channel:{id}, dm:{id}, user:{id}, server:{id}).
+    io.to(envelope.resource_id).emit('event', envelope);
+
+    // Also emit with the legacy event name for backward compat
+    // (clients that haven't upgraded to envelope-based listening)
+    io.to(envelope.resource_id).emit(envelope.type, envelope.payload);
+  });
+
+  // ── Connection handler ──────────────────────────────────────
   io.on('connection', async (socket: Socket) => {
     const userId = socket.data.user.id;
-    fastify.log.info(`Socket connected: ${socket.data.user.username} (${userId})`);
+    const sessionId = randomUUID();
+    fastify.log.info(`Socket connected: ${socket.data.user.username} (${userId}) session=${sessionId}`);
 
-    // Join user's personal room
+    // ── Room joins ────────────────────────────────────────────
     socket.join(`user:${userId}`);
 
-    // Join all server rooms user is a member of
     const servers = await db.servers.findByUserId(userId);
+    const subscriptions: string[] = [`user:${userId}`];
+
     for (const server of servers) {
       socket.join(`server:${server.id}`);
+      subscriptions.push(`server:${server.id}`);
       
-      // Join all channel rooms in this server
       const channels = await db.channels.findByServerId(server.id);
       for (const channel of channels) {
         socket.join(`channel:${channel.id}`);
+        subscriptions.push(`channel:${channel.id}`);
       }
     }
 
-    // Join DM rooms
     const dmChannels = await db.dmChannels.findByUserId(userId);
     for (const dm of dmChannels) {
       socket.join(`dm:${dm.id}`);
+      subscriptions.push(`dm:${dm.id}`);
     }
 
-    // Get user's current stored status (their chosen status preference)
+    // ── Send gateway.hello ────────────────────────────────────
+    const helloPayload: GatewayHello = {
+      heartbeat_interval: HEARTBEAT_INTERVAL,
+      session_id: sessionId,
+    };
+    socket.emit('gateway.hello', helloPayload);
+
+    // ── Send gateway.ready with current sequences ─────────────
+    const sequences = await getSequences(subscriptions);
     const currentUser = await db.users.findById(userId);
     const storedStatus = currentUser?.status || 'offline';
 
-    // Always track presence in Redis (user is connected)
+    const readyPayload: GatewayReady = {
+      user: {
+        id: userId,
+        username: socket.data.user.username,
+        status: storedStatus as any,
+      },
+      sequences,
+      subscriptions,
+    };
+    socket.emit('gateway.ready', readyPayload);
+
+    // ── Persist gateway session for resume support ────────────
+    await redis.setGatewaySession(sessionId, userId, subscriptions);
+
+    // ── Presence broadcast (existing behaviour) ───────────────
     await redis.setPresence(userId, true);
 
-    // DO NOT change the user's status in the database on connect!
-    // The user's chosen status (online, idle, dnd, offline) should persist.
-    // We only broadcast presence:update if they're NOT invisible (offline)
     if (storedStatus !== 'offline') {
-      // Broadcast the user's stored status (not forcing 'online')
       for (const server of servers) {
-        io.to(`server:${server.id}`).emit('presence:update', {
-          user_id: userId,
-          status: storedStatus,
-          custom_status: currentUser?.custom_status || null,
-          last_seen_at: new Date().toISOString(),
+        // Publish through event bus so it flows through envelopes
+        await publishEvent({
+          type: 'presence.update',
+          actorId: userId,
+          resourceId: `server:${server.id}`,
+          payload: {
+            user_id: userId,
+            status: storedStatus,
+            custom_status: currentUser?.custom_status || null,
+            last_seen_at: new Date().toISOString(),
+          },
         });
       }
     }
-    // If user is invisible (status = 'offline'), don't broadcast anything
 
-    // --- Message Events ---
+    // ── Heartbeat protocol ────────────────────────────────────
+    let heartbeatTimer: NodeJS.Timeout | null = null;
+
+    function resetHeartbeat() {
+      if (heartbeatTimer) clearTimeout(heartbeatTimer);
+      heartbeatTimer = setTimeout(() => {
+        fastify.log.warn(`Heartbeat timeout for ${socket.data.user.username} — disconnecting`);
+        socket.disconnect(true);
+      }, HEARTBEAT_TIMEOUT);
+    }
+
+    resetHeartbeat();
+
+    socket.on('gateway.heartbeat', () => {
+      socket.emit('gateway.heartbeat_ack', { timestamp: new Date().toISOString() });
+      resetHeartbeat();
+      // Keep the gateway session alive while the client is active
+      redis.refreshGatewaySession(sessionId).catch(() => {});
+    });
+
+    // ── Gateway Resume ────────────────────────────────────────
+    // Allows a client to resume a previous session after a brief
+    // disconnect. The server replays missed events from durable
+    // streams so the client doesn't need to refetch everything.
+
+    socket.on('gateway.resume', async (data: GatewayResume) => {
+      try {
+        const { session_id: resumeSessionId, last_sequences } = data;
+
+        // Validate the stored session exists and belongs to this user
+        const storedSession = await redis.getGatewaySession(resumeSessionId);
+        if (!storedSession || storedSession.userId !== userId) {
+          socket.emit('gateway.resume_failed', {
+            reason: 'invalid_session',
+            message: 'Session not found or expired. Please reconnect normally.',
+          });
+          return;
+        }
+
+        // Re-build current subscriptions (channels/DMs may have changed)
+        const freshSubscriptions = [...subscriptions]; // already computed on connect
+        const freshSubSet = new Set(freshSubscriptions);
+
+        // Also include the old session's subscriptions for resync
+        // (in case the client was subscribed to channels that still exist)
+        const oldSubs = storedSession.subscriptions || [];
+        for (const sub of oldSubs) {
+          if (!freshSubSet.has(sub)) {
+            freshSubscriptions.push(sub);
+            freshSubSet.add(sub);
+          }
+        }
+
+        // Re-join Socket.IO rooms for any subs not already joined
+        for (const sub of freshSubscriptions) {
+          socket.join(sub);
+        }
+
+        // Collect missed events from durable streams
+        const missedEvents: EventEnvelope[] = [];
+
+        // Only resync resources the client has last_sequences for
+        const resyncPromises = Object.entries(last_sequences).map(
+          async ([resourceId, lastSeq]) => {
+            // Only resync resources the user is subscribed to
+            if (!freshSubSet.has(resourceId)) return;
+            try {
+              const result = await resyncEvents({
+                resourceId,
+                afterSequence: lastSeq,
+                limit: 100, // cap per resource to avoid huge payloads
+              });
+              return result.events;
+            } catch {
+              return [];
+            }
+          }
+        );
+
+        const results = await Promise.all(resyncPromises);
+        for (const events of results) {
+          if (events) missedEvents.push(...events);
+        }
+
+        // Sort all missed events by timestamp for consistent delivery order
+        missedEvents.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
+        // Get current sequences for the client
+        const currentSequences = await getSequences(freshSubscriptions);
+
+        // Update the stored session with fresh subscriptions
+        await redis.setGatewaySession(sessionId, userId, freshSubscriptions);
+        // Clean up old session
+        if (resumeSessionId !== sessionId) {
+          await redis.deleteGatewaySession(resumeSessionId);
+        }
+
+        const resumedPayload: GatewayResumed = {
+          session_id: sessionId, // new session ID for future resumes
+          missed_events: missedEvents,
+          sequences: currentSequences,
+          subscriptions: freshSubscriptions,
+        };
+
+        socket.emit('gateway.resumed', resumedPayload);
+        fastify.log.info(
+          `Session resumed for ${socket.data.user.username}: replayed ${missedEvents.length} events`
+        );
+      } catch (err) {
+        fastify.log.error(err, 'Gateway resume failed');
+        socket.emit('gateway.resume_failed', {
+          reason: 'internal_error',
+          message: 'Resume failed due to server error. Please reconnect normally.',
+        });
+      }
+    });
+
+    // ── Message Events ────────────────────────────────────────
 
     socket.on('message:send', async (data: {
       channel_id: string;
       content: string;
       reply_to_id?: string;
+      idempotency_key?: string;
     }) => {
       try {
-        // Validate content
         if (!data.content || data.content.trim().length === 0) {
           socket.emit('error', { message: 'Message cannot be empty' });
           return;
         }
 
+        // Idempotency check
+        if (checkIdempotency(data.idempotency_key)) {
+          return; // duplicate — silently ignore
+        }
+
         const channel = await db.channels.findById(data.channel_id);
         if (!channel) return;
 
-        // Check permissions
         const perms = await calculatePermissions(userId, channel.server_id, data.channel_id);
         if (!hasPermission(perms.text, TextPermissions.SEND_MESSAGES)) {
           socket.emit('error', { message: 'Missing SEND_MESSAGES permission' });
           return;
         }
 
-        // Create message
         const message = await db.messages.create({
           channel_id: data.channel_id,
           author_id: userId,
@@ -105,10 +292,8 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
           status: 'sent',
         });
 
-        // Get author info for the formatted message
         const author = await db.users.findById(userId);
         
-        // Format message with full author object (matching REST API format)
         const formattedMessage = {
           id: message.id,
           channel_id: message.channel_id,
@@ -126,8 +311,13 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
           reply_to_id: message.reply_to_id,
         };
 
-        // Broadcast to channel
-        io.to(`channel:${data.channel_id}`).emit('message:new', formattedMessage);
+        // Publish through the event bus (envelope + durable stream + pub/sub)
+        await publishEvent({
+          type: 'message.new',
+          actorId: userId,
+          resourceId: `channel:${data.channel_id}`,
+          payload: formattedMessage,
+        });
       } catch (err) {
         fastify.log.error(err);
         socket.emit('error', { message: 'Failed to send message' });
@@ -139,7 +329,6 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       content: string;
     }) => {
       try {
-        // Validate content
         if (!data.content || data.content.trim().length === 0) {
           socket.emit('error', { message: 'Message cannot be empty' });
           return;
@@ -156,10 +345,8 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
           edited_at: new Date(),
         });
 
-        // Get author info for formatted message
         const author = await db.users.findById(message.author_id);
         
-        // Format with full author object
         const formattedMessage = {
           id: updated.id,
           channel_id: updated.channel_id,
@@ -175,9 +362,13 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
           attachments: updated.attachments || [],
         };
 
-        // Broadcast to channel
-        const room = message.channel_id ? `channel:${message.channel_id}` : `dm:${message.dm_channel_id}`;
-        io.to(room).emit('message:update', formattedMessage);
+        const resourceId = message.channel_id ? `channel:${message.channel_id}` : `dm:${message.dm_channel_id}`;
+        await publishEvent({
+          type: message.channel_id ? 'message.update' : 'dm.message.update',
+          actorId: userId,
+          resourceId,
+          payload: formattedMessage,
+        });
       } catch (err) {
         fastify.log.error(err);
         socket.emit('error', { message: 'Failed to edit message' });
@@ -189,7 +380,6 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         const message = await db.messages.findById(data.message_id);
         if (!message) return;
 
-        // Check ownership or MANAGE_MESSAGES permission
         let canDelete = message.author_id === userId;
         if (!canDelete && message.channel_id) {
           const channel = await db.channels.findById(message.channel_id);
@@ -204,28 +394,30 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
 
         await db.messages.delete(data.message_id);
 
-        // Broadcast to channel
-        const room = message.channel_id ? `channel:${message.channel_id}` : `dm:${message.dm_channel_id}`;
-        io.to(room).emit('message:delete', { id: data.message_id });
+        const resourceId = message.channel_id ? `channel:${message.channel_id}` : `dm:${message.dm_channel_id}`;
+        await publishEvent({
+          type: message.channel_id ? 'message.delete' : 'dm.message.delete',
+          actorId: userId,
+          resourceId,
+          payload: { id: data.message_id },
+        });
       } catch (err) {
         fastify.log.error(err);
         socket.emit('error', { message: 'Failed to delete message' });
       }
     });
 
-    // --- Typing Indicators ---
+    // ── Typing Indicators ─────────────────────────────────────
 
     const typingTimeouts = new Map<string, NodeJS.Timeout>();
 
     socket.on('typing:start', async (data: { channel_id: string }) => {
       const key = `${userId}:${data.channel_id}`;
       
-      // Clear existing timeout
       if (typingTimeouts.has(key)) {
         clearTimeout(typingTimeouts.get(key)!);
       }
 
-      // Get user info for the full typing event
       const user = await db.users.findById(userId);
       const typingUser = user ? {
         id: user.id,
@@ -233,17 +425,27 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         display_name: user.display_name || user.username,
       } : { id: userId, username: 'Unknown', display_name: 'Unknown' };
 
-      // Broadcast typing with full user object
-      socket.to(`channel:${data.channel_id}`).emit('typing:start', {
-        channel_id: data.channel_id,
-        user: typingUser,
+      // Typing events are ephemeral — no durable stream needed.
+      // We still use publishEvent so they get the envelope format.
+      await publishEvent({
+        type: 'typing.start',
+        actorId: userId,
+        resourceId: `channel:${data.channel_id}`,
+        payload: {
+          channel_id: data.channel_id,
+          user: typingUser,
+        },
       });
 
-      // Auto-stop after 5 seconds
-      const timeout = setTimeout(() => {
-        socket.to(`channel:${data.channel_id}`).emit('typing:stop', {
-          channel_id: data.channel_id,
-          user_id: userId,
+      const timeout = setTimeout(async () => {
+        await publishEvent({
+          type: 'typing.stop',
+          actorId: userId,
+          resourceId: `channel:${data.channel_id}`,
+          payload: {
+            channel_id: data.channel_id,
+            user_id: userId,
+          },
         });
         typingTimeouts.delete(key);
       }, 5000);
@@ -251,7 +453,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       typingTimeouts.set(key, timeout);
     });
 
-    socket.on('typing:stop', (data: { channel_id: string }) => {
+    socket.on('typing:stop', async (data: { channel_id: string }) => {
       const key = `${userId}:${data.channel_id}`;
       
       if (typingTimeouts.has(key)) {
@@ -259,31 +461,39 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         typingTimeouts.delete(key);
       }
 
-      socket.to(`channel:${data.channel_id}`).emit('typing:stop', {
-        user_id: userId,
-        channel_id: data.channel_id,
+      await publishEvent({
+        type: 'typing.stop',
+        actorId: userId,
+        resourceId: `channel:${data.channel_id}`,
+        payload: {
+          user_id: userId,
+          channel_id: data.channel_id,
+        },
       });
     });
 
-    // --- Presence Updates ---
+    // ── Presence Updates ──────────────────────────────────────
 
     socket.on('presence:update', async (data: { status: string }) => {
-      // Validate status against allowed DB values
       const validStatuses = ['online', 'idle', 'dnd', 'offline'];
       const status = validStatuses.includes(data.status) ? data.status : 'online';
       
       await db.users.updateStatus(userId, status);
       
-      // Broadcast to all servers
       for (const server of servers) {
-        io.to(`server:${server.id}`).emit('presence:update', {
-          user_id: userId,
-          status,
+        await publishEvent({
+          type: 'presence.update',
+          actorId: userId,
+          resourceId: `server:${server.id}`,
+          payload: {
+            user_id: userId,
+            status,
+          },
         });
       }
     });
 
-    // --- Voice State ---
+    // ── Voice State ───────────────────────────────────────────
 
     socket.on('voice:join', async (data: {
       channel_id: string;
@@ -299,14 +509,12 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         return;
       }
 
-      // Check CONNECT permission
       const perms = await calculatePermissions(userId, channel.server_id, data.channel_id);
       if (!hasPermission(perms.voice, VoicePermissions.CONNECT)) {
         socket.emit('error', { message: 'Missing CONNECT permission' });
         return;
       }
 
-      // Enforce user limit (0 = unlimited)
       if (channel.user_limit && channel.user_limit > 0) {
         const participants = await redis.getVoiceChannelParticipants(data.channel_id);
         if (participants.length >= channel.user_limit && !hasPermission(perms.voice, VoicePermissions.MOVE_MEMBERS)) {
@@ -315,10 +523,8 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         }
       }
 
-      // Use unified Redis functions (same as API routes)
       await redis.joinVoiceChannel(userId, data.channel_id);
       
-      // Set initial mute/deafen state if provided
       if (data.muted !== undefined || data.deafened !== undefined) {
         await redis.updateVoiceState(data.channel_id, userId, {
           is_muted: data.muted,
@@ -326,17 +532,20 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         });
       }
 
-      // Get user info for the event
       const user = await db.users.findById(userId);
 
-      // Broadcast voice:user-joined to all server members
-      io.to(`server:${channel.server_id}`).emit('voice:user-joined', {
-        channel_id: data.channel_id,
-        user: {
-          id: user.id,
-          username: user.username,
-          display_name: user.display_name || user.username,
-          avatar_url: user.avatar_url,
+      await publishEvent({
+        type: 'voice.join',
+        actorId: userId,
+        resourceId: `server:${channel.server_id}`,
+        payload: {
+          channel_id: data.channel_id,
+          user: {
+            id: user.id,
+            username: user.username,
+            display_name: user.display_name || user.username,
+            avatar_url: user.avatar_url,
+          },
         },
       });
       } catch (err) {
@@ -347,20 +556,22 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
 
     socket.on('voice:leave', async (data?: { channel_id?: string }) => {
       try {
-        // Get current channel before leaving
         const channelId = data?.channel_id || await redis.getUserVoiceChannel(userId);
         if (!channelId) return;
 
         const channel = await db.channels.findById(channelId);
         
-        // Clean up voice state using unified Redis function
         await redis.leaveVoiceChannel(userId);
 
-        // Broadcast voice:user-left to all server members
         if (channel) {
-          io.to(`server:${channel.server_id}`).emit('voice:user-left', {
-            channel_id: channelId,
-            user_id: userId,
+          await publishEvent({
+            type: 'voice.leave',
+            actorId: userId,
+            resourceId: `server:${channel.server_id}`,
+            payload: {
+              channel_id: channelId,
+              user_id: userId,
+            },
           });
         }
       } catch (err) {
@@ -370,55 +581,59 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
 
     socket.on('voice:update', async (data: { muted?: boolean; deafened?: boolean }) => {
       try {
-        // Get current voice channel
         const channelId = await redis.getUserVoiceChannel(userId);
         if (!channelId) return;
 
         const channel = await db.channels.findById(channelId);
         if (!channel) return;
 
-        // Update mute/deafen state using unified Redis function
         await redis.updateVoiceState(channelId, userId, {
           is_muted: data.muted,
           is_deafened: data.deafened,
         });
 
-        // Broadcast voice:mute-update to all server members
-        io.to(`server:${channel.server_id}`).emit('voice:mute-update', {
-          channel_id: channelId,
-          user_id: userId,
-          is_muted: data.muted ?? false,
-          is_deafened: data.deafened ?? false,
+        await publishEvent({
+          type: 'voice.state_update',
+          actorId: userId,
+          resourceId: `server:${channel.server_id}`,
+          payload: {
+            channel_id: channelId,
+            user_id: userId,
+            is_muted: data.muted ?? false,
+            is_deafened: data.deafened ?? false,
+          },
         });
       } catch (err) {
         fastify.log.error(err);
       }
     });
 
-    // --- DM Events ---
+    // ── DM Events ─────────────────────────────────────────────
 
     socket.on('dm:send', async (data: {
       dm_channel_id: string;
       content: string;
       reply_to_id?: string;
+      idempotency_key?: string;
     }) => {
       try {
-        // Validate content
         if (!data.content || data.content.trim().length === 0) {
           socket.emit('error', { message: 'Message cannot be empty' });
           return;
         }
 
+        if (checkIdempotency(data.idempotency_key)) {
+          return; // duplicate
+        }
+
         const dmChannel = await db.dmChannels.findById(data.dm_channel_id);
         if (!dmChannel) return;
 
-        // Verify user is participant
         if (dmChannel.user1_id !== userId && dmChannel.user2_id !== userId) {
           socket.emit('error', { message: 'Not a participant' });
           return;
         }
 
-        // Get recipient ID and check if blocked
         const recipientId = dmChannel.user1_id === userId ? dmChannel.user2_id : dmChannel.user1_id;
         if (await isBlocked(userId, recipientId)) {
           socket.emit('error', { message: 'Cannot message this user' });
@@ -433,10 +648,8 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
           status: 'sent',
         });
 
-        // Get author info for formatted message
         const author = await db.users.findById(userId);
         
-        // Format message with full author object
         const formattedMessage = {
           id: message.id,
           dm_channel_id: message.dm_channel_id,
@@ -454,14 +667,16 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
           status: message.status,
         };
 
-        // Broadcast to both users with correct event name per SERVER_HANDOFF
-        io.to(`dm:${data.dm_channel_id}`).emit('dm:message:create', {
-          from_user_id: userId,
-          message: formattedMessage,
+        await publishEvent({
+          type: 'dm.message.new',
+          actorId: userId,
+          resourceId: `dm:${data.dm_channel_id}`,
+          payload: {
+            from_user_id: userId,
+            message: formattedMessage,
+          },
         });
 
-        // Send push notification if recipient offline
-        // recipientId already defined above
         const isOnline = await redis.getPresence(recipientId);
         
         if (!isOnline) {
@@ -481,11 +696,15 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
           
           const message = await db.messages.findById(messageId);
           if (message) {
-            // Notify sender
-            io.to(`user:${message.author_id}`).emit('message:status', {
-              id: messageId,
-              status: 'received',
-              received_at: new Date().toISOString(),
+            await publishEvent({
+              type: 'dm.message.update',
+              actorId: userId,
+              resourceId: `user:${message.author_id}`,
+              payload: {
+                id: messageId,
+                status: 'received',
+                received_at: new Date().toISOString(),
+              },
             });
           }
         }
@@ -494,7 +713,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       }
     });
 
-    // --- DM Typing Indicators ---
+    // ── DM Typing Indicators ──────────────────────────────────
     
     const dmTypingTimeouts = new Map<string, NodeJS.Timeout>();
 
@@ -502,24 +721,26 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       const targetUserId = data.user_id;
       const key = `dm:${userId}:${targetUserId}`;
       
-      // Clear existing timeout
       if (dmTypingTimeouts.has(key)) {
         clearTimeout(dmTypingTimeouts.get(key)!);
       }
 
-      // Get or verify DM channel exists
       const dmChannel = await db.dmChannels.findByUsers(userId, targetUserId);
       if (!dmChannel) return;
 
-      // Broadcast typing to the other user
-      io.to(`user:${targetUserId}`).emit('dm:typing:start', {
-        user_id: userId,
+      await publishEvent({
+        type: 'typing.start',
+        actorId: userId,
+        resourceId: `user:${targetUserId}`,
+        payload: { user_id: userId },
       });
 
-      // Auto-stop after 5 seconds
-      const timeout = setTimeout(() => {
-        io.to(`user:${targetUserId}`).emit('dm:typing:stop', {
-          user_id: userId,
+      const timeout = setTimeout(async () => {
+        await publishEvent({
+          type: 'typing.stop',
+          actorId: userId,
+          resourceId: `user:${targetUserId}`,
+          payload: { user_id: userId },
         });
         dmTypingTimeouts.delete(key);
       }, 5000);
@@ -536,18 +757,19 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         dmTypingTimeouts.delete(key);
       }
 
-      // Broadcast stop typing to the other user
-      io.to(`user:${targetUserId}`).emit('dm:typing:stop', {
-        user_id: userId,
+      await publishEvent({
+        type: 'typing.stop',
+        actorId: userId,
+        resourceId: `user:${targetUserId}`,
+        payload: { user_id: userId },
       });
     });
 
-    // --- DM Room Management ---
+    // ── DM Room Management ────────────────────────────────────
 
     socket.on('join:dm', async (data: { user_id: string }) => {
       const targetUserId = data.user_id;
       
-      // Get or create DM channel
       let dmChannel = await db.dmChannels.findByUsers(userId, targetUserId);
       if (dmChannel) {
         socket.join(`dm:${dmChannel.id}`);
@@ -563,10 +785,13 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       }
     });
 
-    // --- Disconnect ---
+    // ── Disconnect ────────────────────────────────────────────
 
     socket.on('disconnect', async () => {
       fastify.log.info(`Socket disconnected: ${socket.data.user.username}`);
+
+      // Clear heartbeat timer
+      if (heartbeatTimer) clearTimeout(heartbeatTimer);
 
       // Clean up typing indicators
       for (const timeout of typingTimeouts.values()) {
@@ -574,46 +799,53 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       }
       typingTimeouts.clear();
 
-      // Clean up DM typing indicators
       for (const timeout of dmTypingTimeouts.values()) {
         clearTimeout(timeout);
       }
       dmTypingTimeouts.clear();
 
-      // Get user's current status to check if invisible
+      // NOTE: We intentionally do NOT delete the gateway session here.
+      // The session stays in Redis (with its TTL) so the client can
+      // resume via gateway.resume if they reconnect quickly.
+      // The session auto-expires after GATEWAY_SESSION_TTL (5 min).
+
       const currentUserStatus = await db.users.findById(userId);
       const wasInvisible = currentUserStatus?.status === 'offline';
 
-      // Clear Redis presence (user is no longer connected)
       await redis.setPresence(userId, false);
 
-      // Clean up voice state and emit voice:user-left if they were in a channel
+      // Clean up voice state
       const voiceChannelId = await redis.getUserVoiceChannel(userId);
       if (voiceChannelId) {
         const voiceChannel = await db.channels.findById(voiceChannelId);
         await redis.leaveVoiceChannel(userId);
         
         if (voiceChannel) {
-          io.to(`server:${voiceChannel.server_id}`).emit('voice:user-left', {
-            channel_id: voiceChannelId,
-            user_id: userId,
+          await publishEvent({
+            type: 'voice.leave',
+            actorId: userId,
+            resourceId: `server:${voiceChannel.server_id}`,
+            payload: {
+              channel_id: voiceChannelId,
+              user_id: userId,
+            },
           });
         }
       }
 
-      // Update last_seen_at timestamp (but DO NOT change their status preference)
       await db.sql`UPDATE users SET last_seen_at = NOW() WHERE id = ${userId}`;
 
-      // Only broadcast offline if user wasn't already invisible
-      // If they were invisible, they're already showing as offline
       if (!wasInvisible) {
-        // Broadcast that user is now offline (disconnected)
-        // Note: We don't change their DB status - that's their preference for next connect
         for (const server of servers) {
-          io.to(`server:${server.id}`).emit('presence:update', {
-            user_id: userId,
-            status: 'offline',
-            last_seen_at: new Date().toISOString(),
+          await publishEvent({
+            type: 'presence.update',
+            actorId: userId,
+            resourceId: `server:${server.id}`,
+            payload: {
+              user_id: userId,
+              status: 'offline',
+              last_seen_at: new Date().toISOString(),
+            },
           });
         }
       }

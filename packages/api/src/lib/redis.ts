@@ -165,4 +165,57 @@ export const redis = {
       await client.hset(`voice:state:${channelId}:${userId}`, data);
     }
   },
+
+  // ── Gateway session management (A0: resume support) ──────────
+  // Stores session metadata so clients can resume after brief disconnects
+  // without re-fetching all rooms and data from scratch.
+
+  /** TTL for gateway sessions — 5 minutes after disconnect */
+  GATEWAY_SESSION_TTL: 300,
+
+  /**
+   * Store a gateway session when a client connects.
+   * The session holds the user ID and their subscribed resource IDs.
+   */
+  async setGatewaySession(sessionId: string, userId: string, subscriptions: string[]) {
+    const data = JSON.stringify({ userId, subscriptions, connectedAt: Date.now() });
+    await client.setex(`gw:session:${sessionId}`, this.GATEWAY_SESSION_TTL, data);
+    // Index: userId → active session ID (for quick lookup)
+    await client.setex(`gw:user_session:${userId}`, this.GATEWAY_SESSION_TTL, sessionId);
+  },
+
+  /**
+   * Retrieve a stored gateway session (returns null if expired or not found).
+   */
+  async getGatewaySession(sessionId: string): Promise<{
+    userId: string;
+    subscriptions: string[];
+    connectedAt: number;
+  } | null> {
+    const raw = await client.get(`gw:session:${sessionId}`);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * Refresh the TTL of a gateway session (called on heartbeat / activity).
+   */
+  async refreshGatewaySession(sessionId: string) {
+    await client.expire(`gw:session:${sessionId}`, this.GATEWAY_SESSION_TTL);
+  },
+
+  /**
+   * Delete a gateway session (called on clean logout / long disconnect).
+   */
+  async deleteGatewaySession(sessionId: string) {
+    const session = await this.getGatewaySession(sessionId);
+    if (session) {
+      await client.del(`gw:user_session:${session.userId}`);
+    }
+    await client.del(`gw:session:${sessionId}`);
+  },
 };
