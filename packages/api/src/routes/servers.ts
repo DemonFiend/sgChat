@@ -192,31 +192,6 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
     },
   });
 
-  // Create role
-  fastify.post('/:id/roles', {
-    onRequest: [authenticate],
-    handler: async (request, reply) => {
-      const { id } = request.params as { id: string };
-      const body = createRoleSchema.parse(request.body);
-      
-      const perms = await calculatePermissions(request.user!.id, id);
-      if (!hasPermission(perms.server, ServerPermissions.MANAGE_ROLES)) {
-        return forbidden(reply, 'Missing MANAGE_ROLES permission');
-      }
-
-      const role = await db.roles.create({
-        server_id: id,
-        name: body.name,
-        color: body.color || undefined,
-        server_permissions: body.server_permissions?.toString(),
-        text_permissions: body.text_permissions?.toString(),
-        voice_permissions: body.voice_permissions?.toString(),
-      });
-
-      return role;
-    },
-  });
-
   // Create role from template
   fastify.post('/:id/roles/from-template', {
     onRequest: [authenticate],
