@@ -2,10 +2,10 @@ import { sql } from '../lib/db.js';
 import { db } from '../lib/db.js';
 import { nanoid } from 'nanoid';
 import { getDefaultPermissions } from './permissions.js';
-import { permissionToString, RoleTemplates } from '@sgchat/shared';
+import { permissionToString, RoleTemplates, ALL_PERMISSIONS } from '@sgchat/shared';
 
 /**
- * Create a new server with default channels and roles
+ * Create a new server with default channels, categories, and roles
  */
 export async function createServer(
   ownerId: string,
@@ -23,57 +23,160 @@ export async function createServer(
     // 2. Get default permissions from instance settings
     const defaultPerms = await getDefaultPermissions();
 
-    // 3. Create @everyone role
+    // 3. Create @everyone role (position 0 - lowest)
     const [everyoneRole] = await tx`
       INSERT INTO roles (
-        server_id, name, position,
-        server_permissions, text_permissions, voice_permissions
+        server_id, name, position, color,
+        server_permissions, text_permissions, voice_permissions,
+        is_hoisted, is_mentionable, description
       )
       VALUES (
         ${server.id},
         '@everyone',
         0,
+        NULL,
         ${permissionToString(defaultPerms.server)},
         ${permissionToString(defaultPerms.text)},
-        ${permissionToString(defaultPerms.voice)}
+        ${permissionToString(defaultPerms.voice)},
+        false,
+        false,
+        'Default role for all members'
       )
       RETURNING *
     `;
 
-    // 4. Create #welcome text channel
+    // 4. Create default Admin role (highest position)
+    const [adminRole] = await tx`
+      INSERT INTO roles (
+        server_id, name, position, color,
+        server_permissions, text_permissions, voice_permissions,
+        is_hoisted, is_mentionable, description
+      )
+      VALUES (
+        ${server.id},
+        ${RoleTemplates.ADMIN.name},
+        100,
+        ${RoleTemplates.ADMIN.color},
+        ${permissionToString(RoleTemplates.ADMIN.server)},
+        ${permissionToString(RoleTemplates.ADMIN.text)},
+        ${permissionToString(RoleTemplates.ADMIN.voice)},
+        ${RoleTemplates.ADMIN.hoist},
+        ${RoleTemplates.ADMIN.mentionable},
+        ${RoleTemplates.ADMIN.description}
+      )
+      RETURNING *
+    `;
+
+    // 5. Create default Moderator role
+    const [moderatorRole] = await tx`
+      INSERT INTO roles (
+        server_id, name, position, color,
+        server_permissions, text_permissions, voice_permissions,
+        is_hoisted, is_mentionable, description
+      )
+      VALUES (
+        ${server.id},
+        ${RoleTemplates.MODERATOR.name},
+        50,
+        ${RoleTemplates.MODERATOR.color},
+        ${permissionToString(RoleTemplates.MODERATOR.server)},
+        ${permissionToString(RoleTemplates.MODERATOR.text)},
+        ${permissionToString(RoleTemplates.MODERATOR.voice)},
+        ${RoleTemplates.MODERATOR.hoist},
+        ${RoleTemplates.MODERATOR.mentionable},
+        ${RoleTemplates.MODERATOR.description}
+      )
+      RETURNING *
+    `;
+
+    // 6. Create default Member role
+    const [memberRole] = await tx`
+      INSERT INTO roles (
+        server_id, name, position, color,
+        server_permissions, text_permissions, voice_permissions,
+        is_hoisted, is_mentionable, description
+      )
+      VALUES (
+        ${server.id},
+        ${RoleTemplates.MEMBER.name},
+        10,
+        ${RoleTemplates.MEMBER.color},
+        ${permissionToString(RoleTemplates.MEMBER.server)},
+        ${permissionToString(RoleTemplates.MEMBER.text)},
+        ${permissionToString(RoleTemplates.MEMBER.voice)},
+        ${RoleTemplates.MEMBER.hoist},
+        ${RoleTemplates.MEMBER.mentionable},
+        ${RoleTemplates.MEMBER.description}
+      )
+      RETURNING *
+    `;
+
+    // 7. Create default "Text Channels" category
+    const [textCategory] = await tx`
+      INSERT INTO categories (server_id, name, position)
+      VALUES (${server.id}, 'Text Channels', 0)
+      RETURNING *
+    `;
+
+    // 8. Create default "Voice Channels" category
+    const [voiceCategory] = await tx`
+      INSERT INTO categories (server_id, name, position)
+      VALUES (${server.id}, 'Voice Channels', 1)
+      RETURNING *
+    `;
+
+    // 9. Create #welcome text channel in Text Channels category
     const [welcomeChannel] = await tx`
       INSERT INTO channels (
-        server_id, name, type, topic, position
+        server_id, name, type, topic, position, category_id
       )
       VALUES (
         ${server.id},
         'welcome',
         'text',
         'Welcome new members! Join and leave messages appear here.',
-        0
+        0,
+        ${textCategory.id}
       )
       RETURNING *
     `;
 
-    // 5. Create General Voice channel
+    // 10. Create #general text channel
+    const [generalChannel] = await tx`
+      INSERT INTO channels (
+        server_id, name, type, topic, position, category_id
+      )
+      VALUES (
+        ${server.id},
+        'general',
+        'text',
+        'General discussion',
+        1,
+        ${textCategory.id}
+      )
+      RETURNING *
+    `;
+
+    // 11. Create General Voice channel in Voice Channels category
     const [generalVoice] = await tx`
       INSERT INTO channels (
-        server_id, name, type, position, bitrate
+        server_id, name, type, position, bitrate, category_id
       )
       VALUES (
         ${server.id},
         'General Voice',
         'voice',
         0,
-        64000
+        64000,
+        ${voiceCategory.id}
       )
       RETURNING *
     `;
 
-    // 6. Create AFK channel
+    // 12. Create AFK channel
     const [afkChannel] = await tx`
       INSERT INTO channels (
-        server_id, name, type, position, bitrate, is_afk_channel
+        server_id, name, type, position, bitrate, is_afk_channel, category_id
       )
       VALUES (
         ${server.id},
@@ -81,12 +184,13 @@ export async function createServer(
         'voice',
         999,
         8000,
-        true
+        true,
+        ${voiceCategory.id}
       )
       RETURNING *
     `;
 
-    // 7. Update server with special channel references
+    // 13. Update server with special channel references
     await tx`
       UPDATE servers
       SET welcome_channel_id = ${welcomeChannel.id},
@@ -94,19 +198,26 @@ export async function createServer(
       WHERE id = ${server.id}
     `;
 
-    // 8. Add owner as member
+    // 14. Add owner as member
     await tx`
       INSERT INTO members (user_id, server_id)
       VALUES (${ownerId}, ${server.id})
     `;
 
-    // Return server with channels
+    // 15. Assign Admin role to owner
+    await tx`
+      INSERT INTO member_roles (member_user_id, member_server_id, role_id)
+      VALUES (${ownerId}, ${server.id}, ${adminRole.id})
+    `;
+
+    // Return server with channels, categories, and roles
     return {
       ...server,
       welcome_channel_id: welcomeChannel.id,
       afk_channel_id: afkChannel.id,
-      channels: [welcomeChannel, generalVoice, afkChannel],
-      roles: [everyoneRole],
+      channels: [welcomeChannel, generalChannel, generalVoice, afkChannel],
+      categories: [textCategory, voiceCategory],
+      roles: [everyoneRole, adminRole, moderatorRole, memberRole],
     };
   });
 }
@@ -241,21 +352,47 @@ export async function handleMemberLeave(
  */
 export async function createRoleFromTemplate(
   serverId: string,
-  templateName: keyof typeof RoleTemplates
+  templateName: keyof typeof RoleTemplates,
+  position?: number
 ) {
   const template = RoleTemplates[templateName];
   if (!template) {
     throw new Error('Invalid template name');
   }
 
-  return db.roles.create({
-    server_id: serverId,
-    name: template.name,
-    color: template.color,
-    server_permissions: permissionToString(template.server),
-    text_permissions: permissionToString(template.text),
-    voice_permissions: permissionToString(template.voice),
-  });
+  // Get the next available position if not specified
+  let rolePosition = position;
+  if (rolePosition === undefined) {
+    const [maxPos] = await sql`
+      SELECT COALESCE(MAX(position), 0) + 1 as next_position
+      FROM roles
+      WHERE server_id = ${serverId}
+    `;
+    rolePosition = maxPos.next_position;
+  }
+
+  const [role] = await sql`
+    INSERT INTO roles (
+      server_id, name, position, color,
+      server_permissions, text_permissions, voice_permissions,
+      is_hoisted, is_mentionable, description
+    )
+    VALUES (
+      ${serverId},
+      ${template.name},
+      ${rolePosition},
+      ${template.color},
+      ${permissionToString(template.server)},
+      ${permissionToString(template.text)},
+      ${permissionToString(template.voice)},
+      ${template.hoist},
+      ${template.mentionable},
+      ${template.description}
+    )
+    RETURNING *
+  `;
+
+  return role;
 }
 
 /**

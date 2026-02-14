@@ -49,7 +49,26 @@ function RootLayout(props: { children?: JSX.Element }) {
   const [initialized, setInitialized] = createSignal(false);
 
   onMount(async () => {
-    // First, try normal auth check (refresh token via httpOnly cookie)
+    // For web client served from same origin, auto-connect to same-origin API
+    // This skips the network selection step since web is always same-origin
+    const isSameOrigin = !networkStore.currentUrl() || 
+      networkStore.currentUrl() === window.location.origin ||
+      networkStore.currentUrl() === '/api';
+    
+    if (isSameOrigin) {
+      // Auto-connect to same-origin server
+      const connected = await networkStore.testConnection(window.location.origin);
+      if (connected) {
+        // Add/update the same-origin network as default
+        networkStore.addOrUpdateNetwork(window.location.origin, {
+          name: networkStore.serverInfo()?.name || 'sgChat Server',
+          isDefault: true,
+          lastConnected: new Date().toISOString(),
+        });
+      }
+    }
+    
+    // Try normal auth check (refresh token via httpOnly cookie)
     const isAuthenticated = await authStore.checkAuth();
     
     if (isAuthenticated) {

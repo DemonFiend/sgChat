@@ -1,7 +1,9 @@
 import { createSignal, For, Show, JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
+import { useNavigate } from '@solidjs/router';
 import { clsx } from 'clsx';
 import { authStore } from '@/stores/auth';
+import { networkStore } from '@/stores/network';
 import { theme, setTheme, themeNames, type Theme } from '@/stores/theme';
 import { Avatar } from './Avatar';
 
@@ -136,7 +138,7 @@ export function UserSettingsModal(props: UserSettingsModalProps) {
             {/* Tab content */}
             <div class="flex-1 overflow-y-auto py-[60px] px-10 max-w-[740px]">
               <Show when={activeTab() === 'account'}>
-                <AccountTab user={user()} />
+                <AccountTab user={user()} onClose={props.onClose} />
               </Show>
               <Show when={activeTab() === 'profile'}>
                 <ProfileTab user={user()} />
@@ -159,7 +161,23 @@ export function UserSettingsModal(props: UserSettingsModalProps) {
 }
 
 // Account Tab
-function AccountTab(props: { user: ReturnType<typeof authStore.state>['user'] }) {
+function AccountTab(props: { user: ReturnType<typeof authStore.state>['user']; onClose: () => void }) {
+  const navigate = useNavigate();
+  const [loggingOut, setLoggingOut] = createSignal(false);
+
+  const handleLogout = async (forgetDevice: boolean) => {
+    setLoggingOut(true);
+    
+    try {
+      props.onClose(); // Close the settings modal first
+      await authStore.logout(forgetDevice);
+      networkStore.clearConnection();
+      navigate('/login', { replace: true });
+    } finally {
+      setLoggingOut(false);
+    }
+  };
+
   return (
     <div>
       <h2 class="text-xl font-bold text-text-primary mb-5">My Account</h2>
@@ -236,6 +254,36 @@ function AccountTab(props: { user: ReturnType<typeof authStore.state>['user'] })
           </button>
           <button class="px-4 py-2 border border-danger text-danger hover:bg-danger/10 text-sm font-medium rounded transition-colors">
             Delete Account
+          </button>
+        </div>
+      </div>
+
+      {/* Log Out */}
+      <div class="mt-10">
+        <h3 class="text-xs font-bold uppercase text-text-muted mb-4">Log Out</h3>
+        <p class="text-sm text-text-muted mb-4">
+          Log out of your account on this device.
+        </p>
+        <div class="flex gap-2">
+          <button 
+            onClick={() => handleLogout(false)}
+            disabled={loggingOut()}
+            class="px-4 py-2 bg-danger hover:bg-danger/90 text-white text-sm font-medium rounded transition-colors disabled:opacity-50 flex items-center gap-2"
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            {loggingOut() ? 'Logging out...' : 'Log Out'}
+          </button>
+          <button 
+            onClick={() => handleLogout(true)}
+            disabled={loggingOut()}
+            class="px-4 py-2 border border-danger text-danger hover:bg-danger/10 text-sm font-medium rounded transition-colors disabled:opacity-50 flex items-center gap-2"
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            Log Out & Forget Device
           </button>
         </div>
       </div>

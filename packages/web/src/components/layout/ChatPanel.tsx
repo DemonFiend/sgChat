@@ -8,6 +8,13 @@ export interface MessageAuthor {
   avatar_url: string | null;
 }
 
+export interface SystemEvent {
+  type: 'member_join' | 'member_leave' | string;
+  user_id?: string;
+  username?: string;
+  timestamp?: string;
+}
+
 export interface Message {
   id: string;
   content: string;
@@ -17,6 +24,8 @@ export interface Message {
   attachments?: any[];
   reply_to_id?: string | null;
   reactions?: Reaction[];
+  type?: 'system' | 'default';
+  system_event?: SystemEvent;
 }
 
 export interface ChannelInfo {
@@ -119,13 +128,24 @@ export function ChatPanel(props: ChatPanelProps) {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
+  // Check if a message is a system message
+  const isSystemMessage = (message: Message) => {
+    return message.type === 'system' || message.system_event != null;
+  };
+
   // Group messages by author for consecutive messages
   const shouldShowAuthor = (message: Message, index: number) => {
+    // System messages always get their own styling
+    if (isSystemMessage(message)) return true;
+    
     if (index === 0) return true;
     const prevMessage = props.messages[index - 1];
     
     // Defensive check: if either message has no author, show author header
     if (!prevMessage?.author?.id || !message?.author?.id) return true;
+    
+    // If previous was a system message, always show author for current
+    if (isSystemMessage(prevMessage)) return true;
     
     if (prevMessage.author.id !== message.author.id) return true;
     
@@ -306,6 +326,33 @@ function MessageItem(props: MessageItemProps) {
   const [showReactionPicker, setShowReactionPicker] = createSignal(false);
   const [actionMenuAnchor, setActionMenuAnchor] = createSignal<HTMLElement | null>(null);
   
+  // Check if this is a system message
+  const isSystem = () => props.message.type === 'system' || props.message.system_event != null;
+  
+  // Get system event icon based on type
+  const getSystemIcon = () => {
+    const eventType = props.message.system_event?.type;
+    if (eventType === 'member_join') {
+      return (
+        <svg class="w-5 h-5 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+        </svg>
+      );
+    } else if (eventType === 'member_leave') {
+      return (
+        <svg class="w-5 h-5 text-danger" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7a4 4 0 11-8 0 4 4 0 018 0zM9 14a6 6 0 00-6 6v1h12v-1a6 6 0 00-6-6zM21 12h-6" />
+        </svg>
+      );
+    }
+    // Default system icon
+    return (
+      <svg class="w-5 h-5 text-brand-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    );
+  };
+  
   // Safely get author with fallback
   const author = () => props.message.author || { id: 'unknown', username: 'Unknown User', display_name: null, avatar_url: null };
   const displayName = () => author().display_name || author().username;
@@ -323,6 +370,33 @@ function MessageItem(props: MessageItemProps) {
     props.onReactionAdd?.(emoji);
     setShowReactionPicker(false);
   };
+
+  // System message rendering (join/leave/etc)
+  if (isSystem()) {
+    return (
+      <div class="px-4 py-2 flex items-center gap-3">
+        {/* System icon */}
+        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-bg-tertiary flex items-center justify-center">
+          {getSystemIcon()}
+        </div>
+        
+        {/* Content */}
+        <div class="flex-1 min-w-0">
+          <div class="flex items-baseline gap-2">
+            <span class="text-sm font-medium text-text-muted italic">
+              System
+            </span>
+            <span class="text-xs text-text-muted">
+              {props.formatTime(props.message.created_at)}
+            </span>
+          </div>
+          <p class="text-sm text-text-muted italic">
+            {props.message.content}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (props.showAuthor) {
     // Full message with avatar and name

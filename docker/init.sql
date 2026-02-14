@@ -578,3 +578,158 @@ CREATE INDEX IF NOT EXISTS idx_notifications_type ON notifications(user_id, type
 ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS notification_sounds BOOLEAN DEFAULT true;
 ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS notification_toasts BOOLEAN DEFAULT true;
 ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS notification_dnd_override BOOLEAN DEFAULT false;
+
+-- ============================================================
+-- ENHANCED ROLE-BASED PERMISSIONS SYSTEM
+-- ============================================================
+
+-- Add new role metadata fields
+ALTER TABLE roles ADD COLUMN IF NOT EXISTS is_hoisted BOOLEAN DEFAULT false;
+ALTER TABLE roles ADD COLUMN IF NOT EXISTS is_mentionable BOOLEAN DEFAULT false;
+ALTER TABLE roles ADD COLUMN IF NOT EXISTS is_managed BOOLEAN DEFAULT false;
+ALTER TABLE roles ADD COLUMN IF NOT EXISTS description TEXT CHECK (length(description) <= 256);
+ALTER TABLE roles ADD COLUMN IF NOT EXISTS icon_url TEXT;
+ALTER TABLE roles ADD COLUMN IF NOT EXISTS unicode_emoji TEXT CHECK (length(unicode_emoji) <= 32);
+
+-- Add server_permissions to channel_permission_overrides for category-inherited permissions
+ALTER TABLE channel_permission_overrides ADD COLUMN IF NOT EXISTS server_allow TEXT DEFAULT '0';
+ALTER TABLE channel_permission_overrides ADD COLUMN IF NOT EXISTS server_deny TEXT DEFAULT '0';
+
+-- ============================================================
+-- CATEGORY PERMISSION OVERRIDES
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS category_permission_overrides (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  category_id UUID NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+  
+  -- Either role or user, not both
+  role_id UUID REFERENCES roles(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  
+  -- Permission modifications (bigint stored as text)
+  text_allow TEXT DEFAULT '0',
+  text_deny TEXT DEFAULT '0',
+  voice_allow TEXT DEFAULT '0',
+  voice_deny TEXT DEFAULT '0',
+  
+  CONSTRAINT category_override_target CHECK (
+    (role_id IS NOT NULL AND user_id IS NULL) OR
+    (role_id IS NULL AND user_id IS NOT NULL)
+  ),
+  
+  UNIQUE (category_id, role_id),
+  UNIQUE (category_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_cat_overrides_category ON category_permission_overrides(category_id);
+CREATE INDEX IF NOT EXISTS idx_cat_overrides_role ON category_permission_overrides(role_id) WHERE role_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_cat_overrides_user ON category_permission_overrides(user_id) WHERE user_id IS NOT NULL;
+
+-- ============================================================
+-- MEMBER TIMEOUTS
+-- ============================================================
+
+ALTER TABLE members ADD COLUMN IF NOT EXISTS timeout_until TIMESTAMPTZ;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS timeout_reason TEXT CHECK (length(timeout_reason) <= 512);
+
+-- Index for finding timed-out members
+CREATE INDEX IF NOT EXISTS idx_members_timeout ON members(timeout_until) WHERE timeout_until IS NOT NULL;
+
+-- ============================================================
+-- CHANNEL SLOWMODE
+-- ============================================================
+
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS slowmode_seconds INTEGER DEFAULT 0 CHECK (slowmode_seconds >= 0 AND slowmode_seconds <= 21600);
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS nsfw BOOLEAN DEFAULT false;
+
+-- ============================================================
+-- ROLE HIERARCHY ENFORCEMENT
+-- ============================================================
+
+-- Function to get highest role position for a user in a server
+CREATE OR REPLACE FUNCTION get_user_highest_role_position(p_user_id UUID, p_server_id UUID)
+RETURNS INTEGER AS $$
+DECLARE
+  max_position INTEGER;
+BEGIN
+  SELECT COALESCE(MAX(r.position), 0) INTO max_position
+  FROM roles r
+  INNER JOIN member_roles mr ON r.id = mr.role_id
+  WHERE mr.member_user_id = p_user_id 
+    AND mr.member_server_id = p_server_id;
+  
+  RETURN max_position;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to check if a user can manage a role (their position must be higher)
+CREATE OR REPLACE FUNCTION can_manage_role(p_user_id UUID, p_server_id UUID, p_role_id UUID)
+RETURNS BOOLEAN AS $$
+DECLARE
+  user_position INTEGER;
+  target_position INTEGER;
+  is_owner BOOLEAN;
+BEGIN
+  -- Check if user is server owner
+  SELECT (owner_id = p_user_id) INTO is_owner FROM servers WHERE id = p_server_id;
+  IF is_owner THEN
+    RETURN TRUE;
+  END IF;
+  
+  -- Get positions
+  user_position := get_user_highest_role_position(p_user_id, p_server_id);
+  SELECT position INTO target_position FROM roles WHERE id = p_role_id;
+  
+  -- User can only manage roles below their highest role
+  RETURN user_position > COALESCE(target_position, 0);
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================================
+-- AUDIT LOG EXTENSIONS
+-- ============================================================
+
+-- Add new audit log action types
+ALTER TABLE audit_log DROP CONSTRAINT IF EXISTS audit_log_action_check;
+ALTER TABLE audit_log ADD CONSTRAINT audit_log_action_check CHECK (action IN (
+  -- Existing actions
+  'server_update', 'channel_create', 'channel_update', 'channel_delete',
+  'role_create', 'role_update', 'role_delete',
+  'member_kick', 'member_ban', 'member_unban',
+  'invite_create', 'invite_delete',
+  'admin_claimed', 'ownership_transferred',
+  'category_create', 'category_update', 'category_delete',
+  -- New actions for enhanced permissions
+  'member_timeout', 'member_timeout_remove',
+  'member_role_add', 'member_role_remove',
+  'channel_permission_update', 'category_permission_update',
+  'message_pin', 'message_unpin', 'message_delete',
+  'webhook_create', 'webhook_update', 'webhook_delete',
+  'emoji_create', 'emoji_update', 'emoji_delete',
+  'sticker_create', 'sticker_update', 'sticker_delete',
+  'event_create', 'event_update', 'event_delete',
+  'thread_create', 'thread_update', 'thread_delete'
+));
+
+-- ============================================================
+-- UPDATE DEFAULT PERMISSIONS
+-- ============================================================
+
+-- Update default permissions to use new bitmask values
+-- Note: These values need to match the new permission bit positions
+UPDATE instance_settings 
+SET value = '{
+  "server": "6656",
+  "text": "16127",
+  "voice": "255"
+}'::jsonb,
+updated_at = NOW()
+WHERE key = 'default_everyone_permissions';
+
+-- ============================================================
+-- SYNC CHANNELS TO CATEGORIES
+-- ============================================================
+
+-- Add sync_permissions flag to channels to indicate if they inherit from category
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS sync_permissions_with_category BOOLEAN DEFAULT true;

@@ -5,7 +5,14 @@ import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
 import { handleMemberJoin } from '../services/server.js';
-import { registerSchema, loginSchema, ServerPermissions, TextPermissions, VoicePermissions } from '@sgchat/shared';
+import {
+  registerSchema,
+  loginSchema,
+  ServerPermissions,
+  ALL_PERMISSIONS,
+  permissionToString,
+  RoleTemplates,
+} from '@sgchat/shared';
 import { z } from 'zod';
 
 const claimAdminSchema = z.object({
@@ -332,64 +339,31 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         `;
       }
 
-      // Create Administrator role with ALL permissions
-      const ALL_SERVER_PERMS = (
-        ServerPermissions.ADMINISTRATOR |
-        ServerPermissions.MANAGE_SERVER |
-        ServerPermissions.MANAGE_CHANNELS |
-        ServerPermissions.MANAGE_ROLES |
-        ServerPermissions.KICK_MEMBERS |
-        ServerPermissions.BAN_MEMBERS |
-        ServerPermissions.CREATE_INVITES |
-        ServerPermissions.CHANGE_NICKNAME |
-        ServerPermissions.MANAGE_NICKNAMES |
-        ServerPermissions.VIEW_AUDIT_LOG
-      ).toString();
+      // Use the Admin role template for full Administrator permissions
+      const adminTemplate = RoleTemplates.ADMIN;
 
-      const ALL_TEXT_PERMS = (
-        TextPermissions.VIEW_CHANNEL |
-        TextPermissions.SEND_MESSAGES |
-        TextPermissions.EMBED_LINKS |
-        TextPermissions.ATTACH_FILES |
-        TextPermissions.ADD_REACTIONS |
-        TextPermissions.MENTION_EVERYONE |
-        TextPermissions.MANAGE_MESSAGES |
-        TextPermissions.READ_MESSAGE_HISTORY
-      ).toString();
-
-      const ALL_VOICE_PERMS = (
-        VoicePermissions.CONNECT |
-        VoicePermissions.SPEAK |
-        VoicePermissions.VIDEO |
-        VoicePermissions.STREAM |
-        VoicePermissions.MUTE_MEMBERS |
-        VoicePermissions.DEAFEN_MEMBERS |
-        VoicePermissions.MOVE_MEMBERS |
-        VoicePermissions.DISCONNECT_MEMBERS |
-        VoicePermissions.PRIORITY_SPEAKER |
-        VoicePermissions.USE_VOICE_ACTIVITY
-      ).toString();
-
-      // Check if Administrator role exists
+      // Check if Admin role exists (from server creation or previous claim)
       const [existingAdminRole] = await db.sql`
-        SELECT id FROM roles WHERE server_id = ${server.id} AND name = 'Administrator'
+        SELECT id FROM roles WHERE server_id = ${server.id} AND name = ${adminTemplate.name}
       `;
 
       let adminRoleId: string;
 
       if (existingAdminRole) {
         adminRoleId = existingAdminRole.id;
-        // Update permissions to ensure they're complete
+        // Update permissions to ensure they're complete (use ADMINISTRATOR which bypasses all)
         await db.sql`
           UPDATE roles
           SET 
-            server_permissions = ${ALL_SERVER_PERMS},
-            text_permissions = ${ALL_TEXT_PERMS},
-            voice_permissions = ${ALL_VOICE_PERMS}
+            server_permissions = ${permissionToString(ServerPermissions.ADMINISTRATOR)},
+            text_permissions = ${permissionToString(ALL_PERMISSIONS.text)},
+            voice_permissions = ${permissionToString(ALL_PERMISSIONS.voice)},
+            is_hoisted = true,
+            description = ${adminTemplate.description}
           WHERE id = ${adminRoleId}
         `;
       } else {
-        // Create Administrator role at highest position
+        // Create Admin role at highest position
         const [maxPos] = await db.sql`
           SELECT COALESCE(MAX(position), 0) + 1 as pos FROM roles WHERE server_id = ${server.id}
         `;
@@ -402,15 +376,21 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
             position,
             server_permissions,
             text_permissions,
-            voice_permissions
+            voice_permissions,
+            is_hoisted,
+            is_mentionable,
+            description
           ) VALUES (
             ${server.id},
-            'Administrator',
-            '#FF0000',
+            ${adminTemplate.name},
+            ${adminTemplate.color},
             ${maxPos.pos},
-            ${ALL_SERVER_PERMS},
-            ${ALL_TEXT_PERMS},
-            ${ALL_VOICE_PERMS}
+            ${permissionToString(ServerPermissions.ADMINISTRATOR)},
+            ${permissionToString(ALL_PERMISSIONS.text)},
+            ${permissionToString(ALL_PERMISSIONS.voice)},
+            true,
+            false,
+            ${adminTemplate.description}
           )
           RETURNING id
         `;

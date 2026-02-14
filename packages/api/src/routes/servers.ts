@@ -2,8 +2,25 @@ import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { createServer, handleMemberJoin, handleMemberLeave, createRoleFromTemplate, generateInviteCode } from '../services/server.js';
-import { calculatePermissions } from '../services/permissions.js';
-import { ServerPermissions, hasPermission, createServerSchema, createChannelSchema, createRoleSchema, createInviteSchema, RoleTemplates } from '@sgchat/shared';
+import {
+  calculatePermissions,
+  canManageMember,
+  canManageRole,
+  timeoutMember,
+  removeTimeout,
+  getUserRoles,
+} from '../services/permissions.js';
+import {
+  ServerPermissions,
+  hasPermission,
+  createServerSchema,
+  createChannelSchema,
+  createRoleSchema,
+  createInviteSchema,
+  RoleTemplates,
+  toNamedPermissions,
+  permissionToString,
+} from '@sgchat/shared';
 import { notFound, forbidden, conflict, badRequest, sendError } from '../utils/errors.js';
 import { z } from 'zod';
 
@@ -22,9 +39,15 @@ const updateRoleSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).nullable().optional(),
   position: z.number().min(0).optional(),
-  server_permissions: z.number().optional(),
-  text_permissions: z.number().optional(),
-  voice_permissions: z.number().optional(),
+  // Accept either number or string for bigint compatibility
+  server_permissions: z.union([z.number(), z.string()]).optional(),
+  text_permissions: z.union([z.number(), z.string()]).optional(),
+  voice_permissions: z.union([z.number(), z.string()]).optional(),
+  is_hoisted: z.boolean().optional(),
+  is_mentionable: z.boolean().optional(),
+  description: z.string().max(256).nullable().optional(),
+  icon_url: z.string().url().nullable().optional(),
+  unicode_emoji: z.string().max(32).nullable().optional(),
 });
 
 const kickMemberSchema = z.object({
@@ -33,6 +56,15 @@ const kickMemberSchema = z.object({
 
 const banMemberSchema = z.object({
   reason: z.string().max(512).optional(),
+});
+
+const timeoutMemberSchema = z.object({
+  duration: z.number().min(1).max(2419200), // 1 second to 28 days
+  reason: z.string().max(512).optional(),
+});
+
+const bulkRoleAssignSchema = z.object({
+  role_ids: z.array(z.string().uuid()),
 });
 
 export const serverRoutes: FastifyPluginAsync = async (fastify) => {
@@ -847,6 +879,700 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       fastify.io?.to(`server:${id}`).emit('server:update', updatedServer);
 
       return { message: 'Ownership transferred', new_owner_id: userId };
+    },
+  });
+
+  // ============================================================
+  // TIMEOUT MANAGEMENT
+  // ============================================================
+
+  // Timeout a member
+  fastify.post('/:id/members/:userId/timeout', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id, userId } = request.params as { id: string; userId: string };
+      const body = timeoutMemberSchema.parse(request.body);
+
+      const server = await db.servers.findById(id);
+      if (!server) {
+        return notFound(reply, 'Server');
+      }
+
+      // Can't timeout owner
+      if (userId === server.owner_id) {
+        return badRequest(reply, 'Cannot timeout the server owner');
+      }
+
+      // Can't timeout yourself
+      if (userId === request.user!.id) {
+        return badRequest(reply, 'Cannot timeout yourself');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, id);
+      if (!hasPermission(perms.server, ServerPermissions.TIMEOUT_MEMBERS)) {
+        return forbidden(reply, 'Missing TIMEOUT_MEMBERS permission');
+      }
+
+      // Check role hierarchy
+      const canManage = await canManageMember(request.user!.id, userId, id);
+      if (!canManage) {
+        return forbidden(reply, 'Cannot timeout members with equal or higher roles');
+      }
+
+      const member = await db.members.findByUserAndServer(userId, id);
+      if (!member) {
+        return notFound(reply, 'Member');
+      }
+
+      await timeoutMember(userId, id, body.duration, body.reason);
+
+      // Audit log
+      await db.sql`
+        INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, reason, changes)
+        VALUES (${id}, ${request.user!.id}, 'member_timeout', 'member', ${userId}, ${body.reason || null}, ${JSON.stringify({ duration: body.duration })})
+      `;
+
+      // Notify the timed out user
+      fastify.io?.to(`user:${userId}`).emit('member:timeout', {
+        server_id: id,
+        server_name: server.name,
+        duration: body.duration,
+        reason: body.reason,
+      });
+
+      return { message: 'Member timed out', duration: body.duration };
+    },
+  });
+
+  // Remove timeout from a member
+  fastify.delete('/:id/members/:userId/timeout', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id, userId } = request.params as { id: string; userId: string };
+
+      const perms = await calculatePermissions(request.user!.id, id);
+      if (!hasPermission(perms.server, ServerPermissions.TIMEOUT_MEMBERS)) {
+        return forbidden(reply, 'Missing TIMEOUT_MEMBERS permission');
+      }
+
+      const member = await db.members.findByUserAndServer(userId, id);
+      if (!member) {
+        return notFound(reply, 'Member');
+      }
+
+      await removeTimeout(userId, id);
+
+      // Audit log
+      await db.sql`
+        INSERT INTO audit_log (server_id, user_id, action, target_type, target_id)
+        VALUES (${id}, ${request.user!.id}, 'member_timeout_remove', 'member', ${userId})
+      `;
+
+      // Notify the user their timeout was removed
+      fastify.io?.to(`user:${userId}`).emit('member:timeout:remove', {
+        server_id: id,
+      });
+
+      return { message: 'Timeout removed' };
+    },
+  });
+
+  // ============================================================
+  // ENHANCED ROLE MANAGEMENT
+  // ============================================================
+
+  // Get a single role with full details
+  fastify.get('/:id/roles/:roleId', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id, roleId } = request.params as { id: string; roleId: string };
+
+      const member = await db.members.findByUserAndServer(request.user!.id, id);
+      if (!member) {
+        return forbidden(reply, 'You are not a member of this server');
+      }
+
+      const [role] = await db.sql`
+        SELECT * FROM roles WHERE id = ${roleId} AND server_id = ${id}
+      `;
+
+      if (!role) {
+        return notFound(reply, 'Role');
+      }
+
+      // Convert permissions to named object for easier client consumption
+      const namedPermissions = toNamedPermissions(
+        role.server_permissions || '0',
+        role.text_permissions || '0',
+        role.voice_permissions || '0'
+      );
+
+      return {
+        ...role,
+        permissions: namedPermissions,
+      };
+    },
+  });
+
+  // Create role with full options
+  fastify.post('/:id/roles', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const body = createRoleSchema.parse(request.body);
+
+      const perms = await calculatePermissions(request.user!.id, id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_ROLES)) {
+        return forbidden(reply, 'Missing MANAGE_ROLES permission');
+      }
+
+      // Get the next position
+      const [maxPos] = await db.sql`
+        SELECT COALESCE(MAX(position), 0) + 1 as next_position
+        FROM roles
+        WHERE server_id = ${id}
+      `;
+
+      const [role] = await db.sql`
+        INSERT INTO roles (
+          server_id, name, position, color,
+          server_permissions, text_permissions, voice_permissions,
+          is_hoisted, is_mentionable, description
+        )
+        VALUES (
+          ${id},
+          ${body.name},
+          ${maxPos.next_position},
+          ${body.color || null},
+          ${String(body.server_permissions || 0)},
+          ${String(body.text_permissions || 0)},
+          ${String(body.voice_permissions || 0)},
+          false,
+          false,
+          null
+        )
+        RETURNING *
+      `;
+
+      // Audit log
+      await db.sql`
+        INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
+        VALUES (${id}, ${request.user!.id}, 'role_create', 'role', ${role.id}, ${JSON.stringify({ created: role })})
+      `;
+
+      fastify.io?.to(`server:${id}`).emit('role:create', role);
+
+      return role;
+    },
+  });
+
+  // Bulk update role positions (reorder roles)
+  fastify.patch('/:id/roles/reorder', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const { roles } = request.body as { roles: { id: string; position: number }[] };
+
+      const perms = await calculatePermissions(request.user!.id, id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_ROLES)) {
+        return forbidden(reply, 'Missing MANAGE_ROLES permission');
+      }
+
+      // Verify all roles belong to this server and check hierarchy
+      for (const roleUpdate of roles) {
+        const [role] = await db.sql`SELECT * FROM roles WHERE id = ${roleUpdate.id} AND server_id = ${id}`;
+        if (!role) {
+          return badRequest(reply, `Role ${roleUpdate.id} not found in this server`);
+        }
+
+        // @everyone role must stay at position 0
+        if (role.name === '@everyone' && roleUpdate.position !== 0) {
+          return badRequest(reply, '@everyone role must stay at position 0');
+        }
+
+        // Check if user can manage this role
+        const canManage = await canManageRole(request.user!.id, id, roleUpdate.id);
+        if (!canManage) {
+          return forbidden(reply, `Cannot reorder role "${role.name}" - it is at or above your highest role`);
+        }
+      }
+
+      // Update positions
+      for (const roleUpdate of roles) {
+        await db.sql`
+          UPDATE roles
+          SET position = ${roleUpdate.position}
+          WHERE id = ${roleUpdate.id}
+        `;
+      }
+
+      const updatedRoles = await db.roles.findByServerId(id);
+      fastify.io?.to(`server:${id}`).emit('roles:reorder', updatedRoles);
+
+      return updatedRoles;
+    },
+  });
+
+  // Get member's roles
+  fastify.get('/:id/members/:userId/roles', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id, userId } = request.params as { id: string; userId: string };
+
+      const member = await db.members.findByUserAndServer(request.user!.id, id);
+      if (!member) {
+        return forbidden(reply, 'You are not a member of this server');
+      }
+
+      const roles = await getUserRoles(userId, id);
+      return roles;
+    },
+  });
+
+  // Bulk assign roles to member
+  fastify.put('/:id/members/:userId/roles', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id, userId } = request.params as { id: string; userId: string };
+      const body = bulkRoleAssignSchema.parse(request.body);
+
+      const perms = await calculatePermissions(request.user!.id, id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_ROLES)) {
+        return forbidden(reply, 'Missing MANAGE_ROLES permission');
+      }
+
+      // Check member exists
+      const member = await db.members.findByUserAndServer(userId, id);
+      if (!member) {
+        return notFound(reply, 'Member');
+      }
+
+      // Verify all roles exist and check hierarchy
+      for (const roleId of body.role_ids) {
+        const [role] = await db.sql`SELECT * FROM roles WHERE id = ${roleId} AND server_id = ${id}`;
+        if (!role) {
+          return badRequest(reply, `Role ${roleId} not found`);
+        }
+
+        const canManage = await canManageRole(request.user!.id, id, roleId);
+        if (!canManage) {
+          return forbidden(reply, `Cannot assign role "${role.name}" - it is at or above your highest role`);
+        }
+      }
+
+      // Remove all current roles
+      await db.sql`
+        DELETE FROM member_roles
+        WHERE member_user_id = ${userId} AND member_server_id = ${id}
+      `;
+
+      // Assign new roles
+      for (const roleId of body.role_ids) {
+        await db.sql`
+          INSERT INTO member_roles (member_user_id, member_server_id, role_id)
+          VALUES (${userId}, ${id}, ${roleId})
+        `;
+      }
+
+      // Audit log
+      await db.sql`
+        INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
+        VALUES (${id}, ${request.user!.id}, 'member_role_update', 'member', ${userId}, ${JSON.stringify({ role_ids: body.role_ids })})
+      `;
+
+      const updatedRoles = await getUserRoles(userId, id);
+
+      // Broadcast role update
+      fastify.io?.to(`server:${id}`).emit('member:roles:update', {
+        user_id: userId,
+        server_id: id,
+        roles: updatedRoles,
+      });
+
+      return updatedRoles;
+    },
+  });
+
+  // ============================================================
+  // PERMISSION INFORMATION
+  // ============================================================
+
+  // Get current user's permissions in this server
+  fastify.get('/:id/permissions', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const { channel_id } = request.query as { channel_id?: string };
+
+      const member = await db.members.findByUserAndServer(request.user!.id, id);
+      if (!member) {
+        return forbidden(reply, 'You are not a member of this server');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, id, channel_id);
+
+      // Convert to named permissions for client
+      const namedPermissions = toNamedPermissions(
+        perms.server,
+        perms.text,
+        perms.voice
+      );
+
+      return {
+        server: permissionToString(perms.server),
+        text: permissionToString(perms.text),
+        voice: permissionToString(perms.voice),
+        is_owner: perms.isOwner,
+        is_timed_out: perms.isTimedOut,
+        permissions: namedPermissions,
+      };
+    },
+  });
+
+  // Get a specific member's permissions (requires MANAGE_ROLES)
+  fastify.get('/:id/members/:userId/permissions', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id, userId } = request.params as { id: string; userId: string };
+      const { channel_id } = request.query as { channel_id?: string };
+
+      const actorPerms = await calculatePermissions(request.user!.id, id);
+      if (!hasPermission(actorPerms.server, ServerPermissions.MANAGE_ROLES)) {
+        return forbidden(reply, 'Missing MANAGE_ROLES permission');
+      }
+
+      const member = await db.members.findByUserAndServer(userId, id);
+      if (!member) {
+        return notFound(reply, 'Member');
+      }
+
+      const perms = await calculatePermissions(userId, id, channel_id);
+      const namedPermissions = toNamedPermissions(
+        perms.server,
+        perms.text,
+        perms.voice
+      );
+
+      return {
+        server: permissionToString(perms.server),
+        text: permissionToString(perms.text),
+        voice: permissionToString(perms.voice),
+        is_owner: perms.isOwner,
+        is_timed_out: perms.isTimedOut,
+        permissions: namedPermissions,
+      };
+    },
+  });
+
+  // ============================================================
+  // CATEGORY MANAGEMENT
+  // ============================================================
+
+  // Get server categories
+  fastify.get('/:id/categories', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params as { id: string };
+
+      const member = await db.members.findByUserAndServer(request.user!.id, id);
+      if (!member) {
+        return forbidden(reply, 'You are not a member of this server');
+      }
+
+      const categories = await db.sql`
+        SELECT * FROM categories
+        WHERE server_id = ${id}
+        ORDER BY position ASC
+      `;
+
+      return categories;
+    },
+  });
+
+  // Create category
+  fastify.post('/:id/categories', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const { name } = request.body as { name: string };
+
+      if (!name || name.length < 1 || name.length > 100) {
+        return badRequest(reply, 'Category name must be 1-100 characters');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_CATEGORIES)) {
+        return forbidden(reply, 'Missing MANAGE_CATEGORIES permission');
+      }
+
+      // Get next position
+      const [maxPos] = await db.sql`
+        SELECT COALESCE(MAX(position), -1) + 1 as next_position
+        FROM categories
+        WHERE server_id = ${id}
+      `;
+
+      const [category] = await db.sql`
+        INSERT INTO categories (server_id, name, position)
+        VALUES (${id}, ${name}, ${maxPos.next_position})
+        RETURNING *
+      `;
+
+      // Audit log
+      await db.sql`
+        INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
+        VALUES (${id}, ${request.user!.id}, 'category_create', 'channel', ${category.id}, ${JSON.stringify({ created: category })})
+      `;
+
+      fastify.io?.to(`server:${id}`).emit('category:create', category);
+
+      return category;
+    },
+  });
+
+  // Update category
+  fastify.patch('/:id/categories/:categoryId', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id, categoryId } = request.params as { id: string; categoryId: string };
+      const { name, position } = request.body as { name?: string; position?: number };
+
+      const perms = await calculatePermissions(request.user!.id, id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_CATEGORIES)) {
+        return forbidden(reply, 'Missing MANAGE_CATEGORIES permission');
+      }
+
+      const [category] = await db.sql`
+        SELECT * FROM categories WHERE id = ${categoryId} AND server_id = ${id}
+      `;
+
+      if (!category) {
+        return notFound(reply, 'Category');
+      }
+
+      const updates: Record<string, any> = {};
+      if (name !== undefined) updates.name = name;
+      if (position !== undefined) updates.position = position;
+
+      if (Object.keys(updates).length === 0) {
+        return badRequest(reply, 'No updates provided');
+      }
+
+      await db.sql`
+        UPDATE categories
+        SET ${db.sql(updates)}
+        WHERE id = ${categoryId}
+      `;
+
+      // Audit log
+      await db.sql`
+        INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
+        VALUES (${id}, ${request.user!.id}, 'category_update', 'channel', ${categoryId}, ${JSON.stringify({ updates })})
+      `;
+
+      const [updatedCategory] = await db.sql`SELECT * FROM categories WHERE id = ${categoryId}`;
+      fastify.io?.to(`server:${id}`).emit('category:update', updatedCategory);
+
+      return updatedCategory;
+    },
+  });
+
+  // Delete category
+  fastify.delete('/:id/categories/:categoryId', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id, categoryId } = request.params as { id: string; categoryId: string };
+
+      const perms = await calculatePermissions(request.user!.id, id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_CATEGORIES)) {
+        return forbidden(reply, 'Missing MANAGE_CATEGORIES permission');
+      }
+
+      const [category] = await db.sql`
+        SELECT * FROM categories WHERE id = ${categoryId} AND server_id = ${id}
+      `;
+
+      if (!category) {
+        return notFound(reply, 'Category');
+      }
+
+      // Remove category_id from channels (don't delete channels)
+      await db.sql`
+        UPDATE channels
+        SET category_id = NULL
+        WHERE category_id = ${categoryId}
+      `;
+
+      await db.sql`DELETE FROM categories WHERE id = ${categoryId}`;
+
+      // Audit log
+      await db.sql`
+        INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
+        VALUES (${id}, ${request.user!.id}, 'category_delete', 'channel', ${categoryId}, ${JSON.stringify({ deleted: category })})
+      `;
+
+      fastify.io?.to(`server:${id}`).emit('category:delete', { id: categoryId, server_id: id });
+
+      return { message: 'Category deleted' };
+    },
+  });
+
+  // ============================================================
+  // CATEGORY PERMISSION OVERRIDES
+  // ============================================================
+
+  // Get category permission overrides
+  fastify.get('/:id/categories/:categoryId/permissions', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id, categoryId } = request.params as { id: string; categoryId: string };
+
+      const perms = await calculatePermissions(request.user!.id, id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_CATEGORIES)) {
+        return forbidden(reply, 'Missing MANAGE_CATEGORIES permission');
+      }
+
+      const [category] = await db.sql`
+        SELECT * FROM categories WHERE id = ${categoryId} AND server_id = ${id}
+      `;
+
+      if (!category) {
+        return notFound(reply, 'Category');
+      }
+
+      const overrides = await db.sql`
+        SELECT 
+          cpo.id,
+          cpo.category_id,
+          cpo.role_id,
+          cpo.user_id,
+          cpo.text_allow,
+          cpo.text_deny,
+          cpo.voice_allow,
+          cpo.voice_deny,
+          r.name as role_name,
+          r.color as role_color,
+          u.username as user_username,
+          u.avatar_url as user_avatar_url
+        FROM category_permission_overrides cpo
+        LEFT JOIN roles r ON cpo.role_id = r.id
+        LEFT JOIN users u ON cpo.user_id = u.id
+        WHERE cpo.category_id = ${categoryId}
+        ORDER BY r.position DESC NULLS LAST, u.username ASC
+      `;
+
+      return {
+        overrides: overrides.map((o: any) => ({
+          id: o.id,
+          category_id: o.category_id,
+          type: o.role_id ? 'role' : 'user',
+          target_id: o.role_id || o.user_id,
+          target_name: o.role_name || o.user_username,
+          target_color: o.role_color || null,
+          target_avatar: o.user_avatar_url || null,
+          text_allow: o.text_allow,
+          text_deny: o.text_deny,
+          voice_allow: o.voice_allow,
+          voice_deny: o.voice_deny,
+        })),
+      };
+    },
+  });
+
+  // Set role permission override for category
+  fastify.put('/:id/categories/:categoryId/permissions/roles/:roleId', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id, categoryId, roleId } = request.params as { id: string; categoryId: string; roleId: string };
+      const body = request.body as {
+        text_allow?: string;
+        text_deny?: string;
+        voice_allow?: string;
+        voice_deny?: string;
+      };
+
+      const perms = await calculatePermissions(request.user!.id, id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_CATEGORIES)) {
+        return forbidden(reply, 'Missing MANAGE_CATEGORIES permission');
+      }
+
+      // Verify category exists
+      const [category] = await db.sql`
+        SELECT * FROM categories WHERE id = ${categoryId} AND server_id = ${id}
+      `;
+      if (!category) {
+        return notFound(reply, 'Category');
+      }
+
+      // Verify role exists
+      const [role] = await db.sql`
+        SELECT * FROM roles WHERE id = ${roleId} AND server_id = ${id}
+      `;
+      if (!role) {
+        return notFound(reply, 'Role');
+      }
+
+      // Upsert the override
+      const [override] = await db.sql`
+        INSERT INTO category_permission_overrides (
+          category_id, role_id, text_allow, text_deny, voice_allow, voice_deny
+        )
+        VALUES (
+          ${categoryId},
+          ${roleId},
+          ${body.text_allow || '0'},
+          ${body.text_deny || '0'},
+          ${body.voice_allow || '0'},
+          ${body.voice_deny || '0'}
+        )
+        ON CONFLICT (category_id, role_id)
+        DO UPDATE SET
+          text_allow = ${body.text_allow || '0'},
+          text_deny = ${body.text_deny || '0'},
+          voice_allow = ${body.voice_allow || '0'},
+          voice_deny = ${body.voice_deny || '0'}
+        RETURNING *
+      `;
+
+      // Audit log
+      await db.sql`
+        INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
+        VALUES (${id}, ${request.user!.id}, 'category_permission_update', 'channel', ${categoryId}, ${JSON.stringify({ role_id: roleId, ...body })})
+      `;
+
+      fastify.io?.to(`server:${id}`).emit('category:permissions:update', {
+        category_id: categoryId,
+        type: 'role',
+        target_id: roleId,
+      });
+
+      return override;
+    },
+  });
+
+  // Delete role permission override for category
+  fastify.delete('/:id/categories/:categoryId/permissions/roles/:roleId', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id, categoryId, roleId } = request.params as { id: string; categoryId: string; roleId: string };
+
+      const perms = await calculatePermissions(request.user!.id, id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_CATEGORIES)) {
+        return forbidden(reply, 'Missing MANAGE_CATEGORIES permission');
+      }
+
+      await db.sql`
+        DELETE FROM category_permission_overrides
+        WHERE category_id = ${categoryId} AND role_id = ${roleId}
+      `;
+
+      fastify.io?.to(`server:${id}`).emit('category:permissions:delete', {
+        category_id: categoryId,
+        type: 'role',
+        target_id: roleId,
+      });
+
+      return { message: 'Permission override removed' };
     },
   });
 };

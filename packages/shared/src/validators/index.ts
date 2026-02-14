@@ -95,9 +95,45 @@ export const createInviteSchema = z.object({
 export const createRoleSchema = z.object({
   name: z.string().min(1).max(100),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).nullable().optional(),
-  server_permissions: z.string().optional(),
-  text_permissions: z.string().optional(),
-  voice_permissions: z.string().optional(),
+  // Accept both string and number for bigint compatibility
+  server_permissions: z.union([z.string(), z.number()]).optional(),
+  text_permissions: z.union([z.string(), z.number()]).optional(),
+  voice_permissions: z.union([z.string(), z.number()]).optional(),
+  // New role metadata fields
+  is_hoisted: z.boolean().optional(),
+  is_mentionable: z.boolean().optional(),
+  description: z.string().max(256).nullable().optional(),
+  icon_url: z.string().url().nullable().optional(),
+  unicode_emoji: z.string().max(32).nullable().optional(),
+});
+
+// Update role validators
+export const updateRoleSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).nullable().optional(),
+  position: z.number().min(0).optional(),
+  server_permissions: z.union([z.string(), z.number()]).optional(),
+  text_permissions: z.union([z.string(), z.number()]).optional(),
+  voice_permissions: z.union([z.string(), z.number()]).optional(),
+  is_hoisted: z.boolean().optional(),
+  is_mentionable: z.boolean().optional(),
+  description: z.string().max(256).nullable().optional(),
+  icon_url: z.string().url().nullable().optional(),
+  unicode_emoji: z.string().max(32).nullable().optional(),
+});
+
+// Permission override validators
+export const permissionOverrideSchema = z.object({
+  text_allow: z.string().optional(),
+  text_deny: z.string().optional(),
+  voice_allow: z.string().optional(),
+  voice_deny: z.string().optional(),
+});
+
+// Timeout validators
+export const timeoutMemberSchema = z.object({
+  duration: z.number().min(1).max(2419200), // 1 second to 28 days
+  reason: z.string().max(512).optional(),
 });
 
 // Settings validators
@@ -146,4 +182,7 @@ export type UpdateCustomStatusInput = z.infer<typeof updateCustomStatusSchema>;
 export type UpdateStatusCommentInput = z.infer<typeof updateStatusCommentSchema>;
 export type CreateInviteInput = z.infer<typeof createInviteSchema>;
 export type CreateRoleInput = z.infer<typeof createRoleSchema>;
+export type UpdateRoleInput = z.infer<typeof updateRoleSchema>;
+export type PermissionOverrideInput = z.infer<typeof permissionOverrideSchema>;
+export type TimeoutMemberInput = z.infer<typeof timeoutMemberSchema>;
 export type UpdateUserSettingsInput = z.infer<typeof updateUserSettingsSchema>;

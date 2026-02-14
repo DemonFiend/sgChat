@@ -1,33 +1,23 @@
 /**
  * Server Bootstrap - Single-Tenant Initialization
- * 
+ *
  * On first startup, creates the default server with:
- * - 4 default channels (#welcome, #general, Voice Channel 1, Away Channel)
- * - @everyone role with basic permissions
+ * - Default categories (Text Channels, Voice Channels)
+ * - Default channels (#welcome, #general, General Voice, AFK)
+ * - Default roles (@everyone, Admin, Moderator, Member)
  * - Admin claim code for first user to claim ownership
  */
 import { nanoid } from 'nanoid';
 import { db } from './db.js';
-import { TextPermissions, VoicePermissions } from '@sgchat/shared';
-
-// Default permissions for @everyone role
-const DEFAULT_EVERYONE_TEXT = 
-  TextPermissions.VIEW_CHANNEL |
-  TextPermissions.SEND_MESSAGES |
-  TextPermissions.EMBED_LINKS |
-  TextPermissions.ATTACH_FILES |
-  TextPermissions.ADD_REACTIONS |
-  TextPermissions.READ_MESSAGE_HISTORY;
-
-const DEFAULT_EVERYONE_VOICE =
-  VoicePermissions.CONNECT |
-  VoicePermissions.SPEAK |
-  VoicePermissions.VIDEO |
-  VoicePermissions.USE_VOICE_ACTIVITY;
+import {
+  DEFAULT_EVERYONE_PERMISSIONS,
+  RoleTemplates,
+  permissionToString,
+} from '@sgchat/shared';
 
 /**
  * Bootstrap the server on first startup
- * Creates default server, channels, and generates admin claim code
+ * Creates default server, channels, categories, roles, and generates admin claim code
  */
 export async function bootstrapServer(): Promise<void> {
   // Check if a server already exists
@@ -76,86 +66,178 @@ export async function bootstrapServer(): Promise<void> {
 
   console.log(`✅ Created server with ID: ${server.id}`);
 
-  // Create @everyone role with basic permissions
-  const [everyoneRole] = await db.sql`
+  // ============================================================
+  // CREATE DEFAULT ROLES
+  // ============================================================
+
+  // Create @everyone role with default permissions (position 0 - lowest)
+  await db.sql`
     INSERT INTO roles (
-      server_id,
-      name,
-      color,
-      position,
-      server_permissions,
-      text_permissions,
-      voice_permissions
+      server_id, name, position, color,
+      server_permissions, text_permissions, voice_permissions,
+      is_hoisted, is_mentionable, description
     ) VALUES (
       ${server.id},
       '@everyone',
-      NULL,
       0,
-      '0',
-      ${DEFAULT_EVERYONE_TEXT.toString()},
-      ${DEFAULT_EVERYONE_VOICE.toString()}
+      NULL,
+      ${permissionToString(DEFAULT_EVERYONE_PERMISSIONS.server)},
+      ${permissionToString(DEFAULT_EVERYONE_PERMISSIONS.text)},
+      ${permissionToString(DEFAULT_EVERYONE_PERMISSIONS.voice)},
+      false,
+      false,
+      'Default role for all members'
     )
-    RETURNING id
   `;
 
   console.log(`✅ Created @everyone role`);
 
-  // Create default text channels
+  // Create Admin role (highest position - for when ownership is claimed)
+  await db.sql`
+    INSERT INTO roles (
+      server_id, name, position, color,
+      server_permissions, text_permissions, voice_permissions,
+      is_hoisted, is_mentionable, description
+    ) VALUES (
+      ${server.id},
+      ${RoleTemplates.ADMIN.name},
+      100,
+      ${RoleTemplates.ADMIN.color},
+      ${permissionToString(RoleTemplates.ADMIN.server)},
+      ${permissionToString(RoleTemplates.ADMIN.text)},
+      ${permissionToString(RoleTemplates.ADMIN.voice)},
+      ${RoleTemplates.ADMIN.hoist},
+      ${RoleTemplates.ADMIN.mentionable},
+      ${RoleTemplates.ADMIN.description}
+    )
+  `;
+
+  console.log(`✅ Created Admin role`);
+
+  // Create Moderator role
+  await db.sql`
+    INSERT INTO roles (
+      server_id, name, position, color,
+      server_permissions, text_permissions, voice_permissions,
+      is_hoisted, is_mentionable, description
+    ) VALUES (
+      ${server.id},
+      ${RoleTemplates.MODERATOR.name},
+      50,
+      ${RoleTemplates.MODERATOR.color},
+      ${permissionToString(RoleTemplates.MODERATOR.server)},
+      ${permissionToString(RoleTemplates.MODERATOR.text)},
+      ${permissionToString(RoleTemplates.MODERATOR.voice)},
+      ${RoleTemplates.MODERATOR.hoist},
+      ${RoleTemplates.MODERATOR.mentionable},
+      ${RoleTemplates.MODERATOR.description}
+    )
+  `;
+
+  console.log(`✅ Created Moderator role`);
+
+  // Create Member role
+  await db.sql`
+    INSERT INTO roles (
+      server_id, name, position, color,
+      server_permissions, text_permissions, voice_permissions,
+      is_hoisted, is_mentionable, description
+    ) VALUES (
+      ${server.id},
+      ${RoleTemplates.MEMBER.name},
+      10,
+      ${RoleTemplates.MEMBER.color},
+      ${permissionToString(RoleTemplates.MEMBER.server)},
+      ${permissionToString(RoleTemplates.MEMBER.text)},
+      ${permissionToString(RoleTemplates.MEMBER.voice)},
+      ${RoleTemplates.MEMBER.hoist},
+      ${RoleTemplates.MEMBER.mentionable},
+      ${RoleTemplates.MEMBER.description}
+    )
+  `;
+
+  console.log(`✅ Created Member role`);
+
+  // ============================================================
+  // CREATE DEFAULT CATEGORIES
+  // ============================================================
+
+  const [textCategory] = await db.sql`
+    INSERT INTO categories (server_id, name, position)
+    VALUES (${server.id}, 'Text Channels', 0)
+    RETURNING id
+  `;
+
+  const [voiceCategory] = await db.sql`
+    INSERT INTO categories (server_id, name, position)
+    VALUES (${server.id}, 'Voice Channels', 1)
+    RETURNING id
+  `;
+
+  console.log(`✅ Created categories: Text Channels, Voice Channels`);
+
+  // ============================================================
+  // CREATE DEFAULT CHANNELS
+  // ============================================================
+
+  // Create default text channels in Text Channels category
   const [welcomeChannel] = await db.sql`
-    INSERT INTO channels (server_id, name, type, topic, position)
+    INSERT INTO channels (server_id, name, type, topic, position, category_id)
     VALUES (
       ${server.id},
       'welcome',
       'text',
       'Welcome to the server! Introduce yourself here.',
-      0
+      0,
+      ${textCategory.id}
     )
     RETURNING id
   `;
 
-  const [generalChannel] = await db.sql`
-    INSERT INTO channels (server_id, name, type, topic, position)
+  await db.sql`
+    INSERT INTO channels (server_id, name, type, topic, position, category_id)
     VALUES (
       ${server.id},
       'general',
       'text',
       'General discussion channel',
-      1
+      1,
+      ${textCategory.id}
     )
-    RETURNING id
   `;
 
   console.log(`✅ Created text channels: #welcome, #general`);
 
-  // Create default voice channels
-  const [voiceChannel1] = await db.sql`
-    INSERT INTO channels (server_id, name, type, position, bitrate, user_limit)
+  // Create default voice channels in Voice Channels category
+  await db.sql`
+    INSERT INTO channels (server_id, name, type, position, bitrate, user_limit, category_id)
     VALUES (
       ${server.id},
-      'Voice Channel 1',
+      'General Voice',
       'voice',
       0,
       64000,
-      0
+      0,
+      ${voiceCategory.id}
     )
-    RETURNING id
   `;
 
   const [afkChannel] = await db.sql`
-    INSERT INTO channels (server_id, name, type, position, bitrate, user_limit, is_afk_channel)
+    INSERT INTO channels (server_id, name, type, position, bitrate, user_limit, is_afk_channel, category_id)
     VALUES (
       ${server.id},
-      'Away Channel',
+      'AFK',
       'voice',
       999,
       8000,
       0,
-      true
+      true,
+      ${voiceCategory.id}
     )
     RETURNING id
   `;
 
-  console.log(`✅ Created voice channels: Voice Channel 1, Away Channel (AFK)`);
+  console.log(`✅ Created voice channels: General Voice, AFK`);
 
   // Update server with default and AFK channel references
   await db.sql`

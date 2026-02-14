@@ -51,4 +51,14 @@ temp/
 CLIENT_HANDOFF.md
 SERVER_HANDOFF.md
 Publishing2Dev.md
-docs_sgChat-agent-workstreams.md
+agent-workstream.md
+
+# Beads local files and agent docs
+AGENTS.md
+.beads/
+beads/
+
+# Beads local files and agent docs
+AGENTS.md
+.beads/
+beads/
