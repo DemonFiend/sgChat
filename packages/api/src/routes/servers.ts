@@ -208,9 +208,9 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
         server_id: id,
         name: body.name,
         color: body.color || undefined,
-        server_permissions: body.server_permissions,
-        text_permissions: body.text_permissions,
-        voice_permissions: body.voice_permissions,
+        server_permissions: body.server_permissions?.toString(),
+        text_permissions: body.text_permissions?.toString(),
+        voice_permissions: body.voice_permissions?.toString(),
       });
 
       return role;

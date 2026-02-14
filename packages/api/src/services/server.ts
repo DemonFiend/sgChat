@@ -361,14 +361,14 @@ export async function createRoleFromTemplate(
   }
 
   // Get the next available position if not specified
-  let rolePosition = position;
-  if (rolePosition === undefined) {
+  let rolePosition: number = position ?? 0;
+  if (position === undefined) {
     const [maxPos] = await sql`
       SELECT COALESCE(MAX(position), 0) + 1 as next_position
       FROM roles
       WHERE server_id = ${serverId}
     `;
-    rolePosition = maxPos.next_position;
+    rolePosition = Number(maxPos.next_position) || 0;
   }
 
   const [role] = await sql`
@@ -381,13 +381,13 @@ export async function createRoleFromTemplate(
       ${serverId},
       ${template.name},
       ${rolePosition},
-      ${template.color},
+      ${template.color || null},
       ${permissionToString(template.server)},
       ${permissionToString(template.text)},
       ${permissionToString(template.voice)},
-      ${template.hoist},
-      ${template.mentionable},
-      ${template.description}
+      ${template.hoist ?? false},
+      ${template.mentionable ?? false},
+      ${template.description || null}
     )
     RETURNING *
   `;

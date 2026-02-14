@@ -389,7 +389,7 @@ export async function getUserRoles(
     ORDER BY r.position DESC
   `;
 
-  return roles;
+  return roles as unknown as RoleInfo[];
 }
 
 /**
