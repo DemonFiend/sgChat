@@ -120,13 +120,25 @@ This link will expire in 15 minutes.
 If you didn't request this, you can safely ignore this email. Your password will remain unchanged.
 `;
 
-  await transport.sendMail({
-    from: SMTP_FROM,
-    to,
-    subject: 'Reset Your Password',
-    text: textContent.trim(),
-    html: htmlContent,
-  });
-
-  console.log(`📧 Password reset email sent to ${to}`);
+  console.log(`📧 Attempting to send password reset email...`);
+  console.log(`   From: ${SMTP_FROM}`);
+  console.log(`   To: ${to}`);
+  console.log(`   SMTP Host: ${SMTP_HOST}:${SMTP_PORT}`);
+  console.log(`   SMTP User: ${SMTP_USER}`);
+  
+  try {
+    const result = await transport.sendMail({
+      from: SMTP_FROM,
+      to,
+      subject: 'Reset Your Password',
+      text: textContent.trim(),
+      html: htmlContent,
+    });
+    console.log(`📧 Password reset email sent successfully to ${to}`);
+    console.log(`   Message ID: ${result.messageId}`);
+    console.log(`   Response: ${result.response}`);
+  } catch (err) {
+    console.error(`❌ Failed to send email to ${to}:`, err);
+    throw err; // Re-throw so the caller can handle it
+  }
 }
