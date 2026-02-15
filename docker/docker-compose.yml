@@ -45,10 +45,12 @@ services:
       - sgchat
 
   # ============================================================
-  # PostgreSQL Database
+  # PostgreSQL Database (with pg_cron for scheduled jobs)
   # ============================================================
   postgres:
-    image: postgres:16-alpine
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -59,7 +61,10 @@ services:
       - /opt/sgchat/init.sql:/docker-entrypoint-initdb.d/init.sql
       - /opt/sgchat/postgres-entrypoint.sh:/usr/local/bin/sgchat-entrypoint.sh:ro
     entrypoint: [ "/bin/bash", "/usr/local/bin/sgchat-entrypoint.sh" ]
-    command: [ "postgres" ]
+    command: >
+      postgres
+      -c shared_preload_libraries=pg_cron
+      -c cron.database_name=${POSTGRES_DB}
     ports:
       - "3041:5432"
     restart: unless-stopped

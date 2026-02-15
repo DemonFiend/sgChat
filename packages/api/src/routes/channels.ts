@@ -7,6 +7,18 @@ import { createNotification } from './notifications.js';
 import { ServerPermissions, TextPermissions, hasPermission, sendMessageSchema } from '@sgchat/shared';
 import { notFound, forbidden, badRequest } from '../utils/errors.js';
 import { z } from 'zod';
+import { 
+  getChannelStorageStats, 
+  getSegmentsForChannel,
+  getOrCreateSegment,
+  onMessageCreated,
+} from '../services/segmentation.js';
+import { 
+  getEffectiveChannelRetention, 
+  applyRetentionPolicy,
+  applySizeLimitPolicy,
+} from '../services/trimming.js';
+import { loadArchivedMessages } from '../services/archive.js';
 
 // ── A1: Idempotency dedup cache (in-memory, per-process) ──────
 const idempotencyCache = new Map<string, { timestamp: number; result: any }>();
@@ -253,6 +265,16 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
         reply_to_id: body.reply_to_id,
         queued_at: body.queued_at ? new Date(body.queued_at) : undefined,
       });
+
+      // Assign message to a segment for history management
+      try {
+        const segment = await getOrCreateSegment(id, null, new Date(message.created_at));
+        await db.sql`UPDATE messages SET segment_id = ${segment.id} WHERE id = ${message.id}`;
+        await onMessageCreated(segment.id, body.content, body.attachments || []);
+      } catch (segmentError) {
+        // Log but don't fail the message creation
+        console.error('Failed to assign message to segment:', segmentError);
+      }
 
       // Get author info for response
       const author = await db.users.findById(request.user!.id);
@@ -1026,10 +1048,15 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
         return badRequest(reply, 'Message already pinned');
       }
 
-      // Pin the message
+      // Pin the message with exempt_from_trimming flag
       await db.sql`
-        INSERT INTO pinned_messages (channel_id, message_id, pinned_by)
-        VALUES (${id}, ${messageId}, ${request.user!.id})
+        INSERT INTO pinned_messages (channel_id, message_id, pinned_by, exempt_from_trimming)
+        VALUES (${id}, ${messageId}, ${request.user!.id}, true)
+      `;
+
+      // Also mark the message itself as exempt from trimming
+      await db.sql`
+        UPDATE messages SET exempt_from_trimming = true WHERE id = ${messageId}
       `;
 
       // Get author info for socket event
@@ -1088,6 +1115,13 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
         WHERE channel_id = ${id} AND message_id = ${messageId}
       `;
 
+      // Remove the exempt_from_trimming flag from the message
+      // (unless it was manually exempted separately)
+      await db.sql`
+        UPDATE messages SET exempt_from_trimming = false 
+        WHERE id = ${messageId} AND exempt_from_trimming = true
+      `;
+
       // Emit socket event
       fastify.io?.to(`channel:${id}`).emit('message.unpin', {
         channel_id: id,
@@ -1096,6 +1130,285 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       return { message: 'Message unpinned' };
+    },
+  });
+
+  // ============================================================
+  // RETENTION & STORAGE MANAGEMENT
+  // ============================================================
+
+  const retentionUpdateSchema = z.object({
+    retention_days: z.number().min(1).max(730).nullable().optional(), // 1 day to 2 years
+    retention_never: z.boolean().optional(),
+    size_limit_bytes: z.number().min(0).nullable().optional(),
+    pruning_enabled: z.boolean().optional(),
+  });
+
+  /**
+   * GET /channels/:id/retention - Get channel retention settings
+   */
+  fastify.get<{ Params: { id: string } }>('/:id/retention', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params;
+
+      const channel = await db.channels.findById(id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, channel.server_id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_CHANNELS)) {
+        return forbidden(reply, 'Missing MANAGE_CHANNELS permission');
+      }
+
+      const retention = await getEffectiveChannelRetention(id);
+      return retention;
+    },
+  });
+
+  /**
+   * PATCH /channels/:id/retention - Update channel retention settings
+   */
+  fastify.patch<{ Params: { id: string } }>('/:id/retention', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params;
+      const body = retentionUpdateSchema.parse(request.body);
+
+      const channel = await db.channels.findById(id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, channel.server_id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_CHANNELS)) {
+        return forbidden(reply, 'Missing MANAGE_CHANNELS permission');
+      }
+
+      // Update retention settings
+      await db.retention.updateChannelRetention(id, body);
+
+      // Audit log
+      await db.sql`
+        INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
+        VALUES (${channel.server_id}, ${request.user!.id}, 'channel_update', 'channel', ${id}, ${JSON.stringify({ retention: body })})
+      `;
+
+      const updated = await getEffectiveChannelRetention(id);
+      return updated;
+    },
+  });
+
+  /**
+   * GET /channels/:id/storage-stats - Get storage usage for channel
+   */
+  fastify.get<{ Params: { id: string } }>('/:id/storage-stats', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params;
+
+      const channel = await db.channels.findById(id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, channel.server_id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_CHANNELS)) {
+        return forbidden(reply, 'Missing MANAGE_CHANNELS permission');
+      }
+
+      const stats = await getChannelStorageStats(id);
+      const retention = await getEffectiveChannelRetention(id);
+
+      return {
+        ...stats,
+        size_limit_bytes: retention.size_limit_bytes,
+        usage_percent: retention.size_limit_bytes 
+          ? Math.round((stats.total_size_bytes / retention.size_limit_bytes) * 100) 
+          : null,
+      };
+    },
+  });
+
+  /**
+   * GET /channels/:id/segments - List message segments
+   */
+  fastify.get<{ Params: { id: string }; Querystring: { limit?: string; offset?: string; include_archived?: string } }>('/:id/segments', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params;
+      const { limit, offset, include_archived } = request.query;
+
+      const channel = await db.channels.findById(id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, channel.server_id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_CHANNELS)) {
+        return forbidden(reply, 'Missing MANAGE_CHANNELS permission');
+      }
+
+      const segments = await getSegmentsForChannel(id, {
+        limit: parseInt(limit || '50'),
+        offset: parseInt(offset || '0'),
+        includeArchived: include_archived !== 'false',
+      });
+
+      return { segments };
+    },
+  });
+
+  /**
+   * GET /channels/:id/segments/:segmentId/messages - Load messages from a segment (including archived)
+   */
+  fastify.get<{ Params: { id: string; segmentId: string } }>('/:id/segments/:segmentId/messages', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id, segmentId } = request.params;
+
+      const channel = await db.channels.findById(id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+
+      const canAccess = await canAccessChannel(request.user!.id, id);
+      if (!canAccess) {
+        return forbidden(reply, 'Cannot access this channel');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, channel.server_id, id);
+      if (!hasPermission(perms.text, TextPermissions.READ_MESSAGE_HISTORY)) {
+        return forbidden(reply, 'Missing READ_MESSAGE_HISTORY permission');
+      }
+
+      // Get segment info
+      const segment = await db.segments.findById(segmentId);
+      if (!segment) {
+        return notFound(reply, 'Segment');
+      }
+
+      // Verify segment belongs to this channel
+      if (segment.channel_id !== id) {
+        return badRequest(reply, 'Segment does not belong to this channel');
+      }
+
+      let messages;
+      if (segment.is_archived) {
+        // Load from archive
+        messages = await loadArchivedMessages(segmentId);
+        reply.header('X-Segment-Info', 'archived');
+      } else {
+        // Load from database
+        messages = await db.sql`
+          SELECT 
+            m.id, m.content, m.created_at, m.edited_at,
+            m.attachments, m.reply_to_id, m.system_event,
+            u.id as author_id, u.username as author_username,
+            u.display_name as author_display_name, u.avatar_url as author_avatar_url
+          FROM messages m
+          LEFT JOIN users u ON m.author_id = u.id
+          WHERE m.segment_id = ${segmentId}
+          ORDER BY m.created_at ASC
+        `;
+        reply.header('X-Segment-Info', 'active');
+      }
+
+      reply.header('X-Segment-Start', new Date(segment.segment_start).toISOString());
+      reply.header('X-Segment-End', new Date(segment.segment_end).toISOString());
+
+      return { messages, segment };
+    },
+  });
+
+  /**
+   * POST /channels/:id/cleanup - Manually trigger cleanup for a channel
+   */
+  fastify.post<{ Params: { id: string }; Body: { dry_run?: boolean } }>('/:id/cleanup', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params;
+      const { dry_run = false } = (request.body || {}) as { dry_run?: boolean };
+
+      const channel = await db.channels.findById(id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, channel.server_id);
+      if (!hasPermission(perms.server, ServerPermissions.ADMINISTRATOR)) {
+        return forbidden(reply, 'Administrator permission required');
+      }
+
+      // Run retention cleanup
+      const retentionResult = await applyRetentionPolicy(id, null, { dryRun: dry_run });
+      
+      // Run size limit cleanup
+      const sizeResult = await applySizeLimitPolicy(id, null, { dryRun: dry_run });
+
+      // Audit log (only if not dry run)
+      if (!dry_run) {
+        await db.sql`
+          INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
+          VALUES (${channel.server_id}, ${request.user!.id}, 'channel_update', 'channel', ${id}, 
+            ${JSON.stringify({ 
+              cleanup: { 
+                retention: retentionResult, 
+                size_limit: sizeResult 
+              } 
+            })})
+        `;
+      }
+
+      return {
+        dry_run,
+        retention_cleanup: retentionResult,
+        size_limit_cleanup: sizeResult,
+        total_messages_deleted: retentionResult.messages_deleted + sizeResult.messages_deleted,
+        total_bytes_freed: retentionResult.bytes_freed + sizeResult.bytes_freed,
+      };
+    },
+  });
+
+  /**
+   * PATCH /channels/:id/messages/:messageId/exempt - Toggle message exemption from trimming
+   */
+  fastify.patch<{ Params: { id: string; messageId: string } }>('/:id/messages/:messageId/exempt', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id, messageId } = request.params;
+      const { exempt } = (request.body || {}) as { exempt?: boolean };
+
+      const channel = await db.channels.findById(id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, channel.server_id, id);
+      if (!hasPermission(perms.text, TextPermissions.MANAGE_MESSAGES)) {
+        return forbidden(reply, 'Missing MANAGE_MESSAGES permission');
+      }
+
+      // Verify message exists and belongs to this channel
+      const [message] = await db.sql`
+        SELECT id, exempt_from_trimming FROM messages 
+        WHERE id = ${messageId} AND channel_id = ${id}
+      `;
+      if (!message) {
+        return notFound(reply, 'Message');
+      }
+
+      const newExemptStatus = exempt !== undefined ? exempt : !message.exempt_from_trimming;
+
+      await db.sql`
+        UPDATE messages SET exempt_from_trimming = ${newExemptStatus} WHERE id = ${messageId}
+      `;
+
+      return { 
+        message_id: messageId, 
+        exempt_from_trimming: newExemptStatus,
+      };
     },
   });
 };

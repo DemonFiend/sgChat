@@ -8,10 +8,19 @@ import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { toNamedPermissions, ServerPermissions, hasPermission, DEFAULT_AVATAR_LIMITS } from '@sgchat/shared';
-import type { AvatarLimits } from '@sgchat/shared';
+import type { AvatarLimits, ServerRetentionSettings } from '@sgchat/shared';
 import { calculatePermissions } from '../services/permissions.js';
 import { forbidden, notFound, badRequest } from '../utils/errors.js';
 import { z } from 'zod';
+import { getServerStorageStats } from '../services/segmentation.js';
+import { 
+  getServerRetentionSettings, 
+  updateServerRetentionSettings,
+  runCleanupJob,
+  checkStorageThresholds,
+  getTrimmingLogs,
+} from '../services/trimming.js';
+import { checkArchiveHealth } from '../services/archive.js';
 
 const updateServerSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -415,6 +424,232 @@ export const globalServerRoutes: FastifyPluginAsync = async (fastify) => {
       return {
         message: 'Avatar limits updated',
         limits: newLimits,
+      };
+    },
+  });
+
+  // ============================================================
+  // RETENTION & STORAGE SETTINGS
+  // ============================================================
+
+  const retentionSettingsSchema = z.object({
+    default_channel_retention_days: z.number().min(1).max(730).optional(),
+    default_dm_retention_days: z.number().min(1).max(730).optional(),
+    default_channel_size_limit_bytes: z.number().min(0).optional(),
+    storage_warning_threshold_percent: z.number().min(0).max(100).optional(),
+    storage_action_threshold_percent: z.number().min(0).max(100).optional(),
+    cleanup_schedule: z.enum(['daily', 'weekly', 'monthly']).optional(),
+    segment_duration_hours: z.number().min(1).max(168).optional(), // 1 hour to 1 week
+    min_retention_hours: z.number().min(1).max(168).optional(),
+    archive_enabled: z.boolean().optional(),
+  });
+
+  /**
+   * GET /server/storage - Get server-wide storage statistics
+   */
+  fastify.get('/storage', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) {
+        return notFound(reply, 'Server');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) || 
+                      server.owner_id === request.user!.id;
+
+      if (!isAdmin) {
+        return forbidden(reply, 'Only administrators can view storage statistics');
+      }
+
+      const stats = await getServerStorageStats(server.id);
+      const retentionSettings = await getServerRetentionSettings();
+      const archiveHealth = await checkArchiveHealth();
+      const thresholdAlerts = await checkStorageThresholds();
+
+      return {
+        stats,
+        archive: archiveHealth,
+        alerts: thresholdAlerts,
+        settings: {
+          default_size_limit_bytes: retentionSettings.default_channel_size_limit_bytes,
+          warning_threshold_percent: retentionSettings.storage_warning_threshold_percent,
+          action_threshold_percent: retentionSettings.storage_action_threshold_percent,
+        },
+      };
+    },
+  });
+
+  /**
+   * GET /server/settings/retention - Get default retention settings
+   */
+  fastify.get('/settings/retention', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) {
+        return notFound(reply, 'Server');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) || 
+                      server.owner_id === request.user!.id;
+
+      if (!isAdmin) {
+        return forbidden(reply, 'Only administrators can view retention settings');
+      }
+
+      const settings = await getServerRetentionSettings();
+      return settings;
+    },
+  });
+
+  /**
+   * PATCH /server/settings/retention - Update default retention settings
+   */
+  fastify.patch('/settings/retention', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) {
+        return notFound(reply, 'Server');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) || 
+                      server.owner_id === request.user!.id;
+
+      if (!isAdmin) {
+        return forbidden(reply, 'Only administrators can modify retention settings');
+      }
+
+      const updates = retentionSettingsSchema.parse(request.body);
+      const newSettings = await updateServerRetentionSettings(updates);
+
+      // Audit log
+      await db.sql`
+        INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
+        VALUES (${server.id}, ${request.user!.id}, 'server_update', 'server', ${server.id}, 
+          ${JSON.stringify({ retention_settings: updates })})
+      `;
+
+      console.log(`📦 Retention settings updated by ${request.user!.id}:`, updates);
+
+      return {
+        message: 'Retention settings updated',
+        settings: newSettings,
+      };
+    },
+  });
+
+  /**
+   * POST /server/cleanup/run - Manually trigger server-wide cleanup
+   */
+  fastify.post<{ Body: { dry_run?: boolean } }>('/cleanup/run', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) {
+        return notFound(reply, 'Server');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) || 
+                      server.owner_id === request.user!.id;
+
+      if (!isAdmin) {
+        return forbidden(reply, 'Only administrators can trigger cleanup');
+      }
+
+      const { dry_run = false } = request.body || {};
+      
+      const result = await runCleanupJob({ dryRun: dry_run });
+
+      // Audit log (only for actual cleanup)
+      if (!dry_run && result.totalMessagesDeleted > 0) {
+        await db.sql`
+          INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
+          VALUES (${server.id}, ${request.user!.id}, 'server_update', 'server', ${server.id}, 
+            ${JSON.stringify({ 
+              manual_cleanup: {
+                messages_deleted: result.totalMessagesDeleted,
+                bytes_freed: result.totalBytesFreed,
+                channels_affected: result.summaries.length,
+              }
+            })})
+        `;
+      }
+
+      console.log(`🧹 Manual cleanup ${dry_run ? '(dry run)' : ''} triggered by ${request.user!.id}:`, {
+        messages: result.totalMessagesDeleted,
+        bytes: result.totalBytesFreed,
+      });
+
+      return {
+        dry_run,
+        total_messages_deleted: result.totalMessagesDeleted,
+        total_bytes_freed: result.totalBytesFreed,
+        summaries: result.summaries,
+      };
+    },
+  });
+
+  /**
+   * GET /server/cleanup/logs - Get trimming/cleanup audit logs
+   */
+  fastify.get<{ Querystring: { limit?: string; offset?: string } }>('/cleanup/logs', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) {
+        return notFound(reply, 'Server');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) || 
+                      server.owner_id === request.user!.id;
+
+      if (!isAdmin) {
+        return forbidden(reply, 'Only administrators can view cleanup logs');
+      }
+
+      const { limit, offset } = request.query;
+      const logs = await getTrimmingLogs({
+        limit: parseInt(limit || '50'),
+        offset: parseInt(offset || '0'),
+      });
+
+      return { logs };
+    },
+  });
+
+  /**
+   * GET /server/storage/thresholds - Check which channels are approaching limits
+   */
+  fastify.get('/storage/thresholds', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) {
+        return notFound(reply, 'Server');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) || 
+                      server.owner_id === request.user!.id;
+
+      if (!isAdmin) {
+        return forbidden(reply, 'Only administrators can view storage thresholds');
+      }
+
+      const alerts = await checkStorageThresholds();
+      const settings = await getServerRetentionSettings();
+
+      return {
+        warning_threshold_percent: settings.storage_warning_threshold_percent,
+        action_threshold_percent: settings.storage_action_threshold_percent,
+        alerts,
       };
     },
   });

@@ -469,6 +469,318 @@ export const db = {
     },
   },
 
+  // Message Segments
+  segments: {
+    async findById(id: string) {
+      const [segment] = await sql`
+        SELECT * FROM message_segments WHERE id = ${id}
+      `;
+      return segment;
+    },
+
+    async findByChannelId(channelId: string, limit = 50, offset = 0) {
+      return sql`
+        SELECT * FROM message_segments
+        WHERE channel_id = ${channelId}
+        ORDER BY segment_start DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `;
+    },
+
+    async findByDMChannelId(dmChannelId: string, limit = 50, offset = 0) {
+      return sql`
+        SELECT * FROM message_segments
+        WHERE dm_channel_id = ${dmChannelId}
+        ORDER BY segment_start DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `;
+    },
+
+    async findByTimestamp(channelId: string | null, dmChannelId: string | null, timestamp: Date) {
+      if (channelId) {
+        const [segment] = await sql`
+          SELECT * FROM message_segments
+          WHERE channel_id = ${channelId}
+            AND segment_start <= ${timestamp}
+            AND segment_end > ${timestamp}
+        `;
+        return segment;
+      } else if (dmChannelId) {
+        const [segment] = await sql`
+          SELECT * FROM message_segments
+          WHERE dm_channel_id = ${dmChannelId}
+            AND segment_start <= ${timestamp}
+            AND segment_end > ${timestamp}
+        `;
+        return segment;
+      }
+      return null;
+    },
+
+    async findArchivedSegments(channelId: string | null, dmChannelId: string | null) {
+      if (channelId) {
+        return sql`
+          SELECT * FROM message_segments
+          WHERE channel_id = ${channelId} AND is_archived = true
+          ORDER BY segment_start DESC
+        `;
+      } else if (dmChannelId) {
+        return sql`
+          SELECT * FROM message_segments
+          WHERE dm_channel_id = ${dmChannelId} AND is_archived = true
+          ORDER BY segment_start DESC
+        `;
+      }
+      return [];
+    },
+
+    async create(data: {
+      channel_id?: string;
+      dm_channel_id?: string;
+      segment_start: Date;
+      segment_end: Date;
+    }) {
+      const [segment] = await sql`
+        INSERT INTO message_segments (channel_id, dm_channel_id, segment_start, segment_end)
+        VALUES (
+          ${data.channel_id || null},
+          ${data.dm_channel_id || null},
+          ${data.segment_start},
+          ${data.segment_end}
+        )
+        RETURNING *
+      `;
+      return segment;
+    },
+
+    async updateStats(id: string, messageCount: number, sizeBytes: number) {
+      await sql`
+        UPDATE message_segments
+        SET message_count = ${messageCount}, size_bytes = ${sizeBytes}
+        WHERE id = ${id}
+      `;
+    },
+
+    async incrementStats(id: string, messageCountDelta: number, sizeBytesDelta: number) {
+      await sql`
+        UPDATE message_segments
+        SET message_count = message_count + ${messageCountDelta},
+            size_bytes = size_bytes + ${sizeBytesDelta}
+        WHERE id = ${id}
+      `;
+    },
+
+    async markArchived(id: string, archivePath: string) {
+      await sql`
+        UPDATE message_segments
+        SET is_archived = true, archive_path = ${archivePath}
+        WHERE id = ${id}
+      `;
+    },
+
+    async markUnarchived(id: string) {
+      await sql`
+        UPDATE message_segments
+        SET is_archived = false, archive_path = NULL
+        WHERE id = ${id}
+      `;
+    },
+
+    async delete(id: string) {
+      await sql`DELETE FROM message_segments WHERE id = ${id}`;
+    },
+
+    async getChannelStorageStats(channelId: string) {
+      const [stats] = await sql`
+        SELECT 
+          COUNT(*)::int as segments_count,
+          SUM(CASE WHEN is_archived THEN 1 ELSE 0 END)::int as archived_segments_count,
+          COALESCE(SUM(message_count), 0)::int as total_messages,
+          COALESCE(SUM(size_bytes), 0)::bigint as total_size_bytes,
+          COALESCE(SUM(CASE WHEN is_archived THEN 0 ELSE size_bytes END), 0)::bigint as active_size_bytes,
+          COALESCE(SUM(CASE WHEN is_archived THEN size_bytes ELSE 0 END), 0)::bigint as archived_size_bytes,
+          MIN(segment_start) as oldest_segment_date
+        FROM message_segments
+        WHERE channel_id = ${channelId}
+      `;
+      return stats;
+    },
+
+    async getDMStorageStats(dmChannelId: string) {
+      const [stats] = await sql`
+        SELECT 
+          COUNT(*)::int as segments_count,
+          SUM(CASE WHEN is_archived THEN 1 ELSE 0 END)::int as archived_segments_count,
+          COALESCE(SUM(message_count), 0)::int as total_messages,
+          COALESCE(SUM(size_bytes), 0)::bigint as total_size_bytes,
+          COALESCE(SUM(CASE WHEN is_archived THEN 0 ELSE size_bytes END), 0)::bigint as active_size_bytes,
+          COALESCE(SUM(CASE WHEN is_archived THEN size_bytes ELSE 0 END), 0)::bigint as archived_size_bytes,
+          MIN(segment_start) as oldest_segment_date
+        FROM message_segments
+        WHERE dm_channel_id = ${dmChannelId}
+      `;
+      return stats;
+    },
+
+    async getServerStorageStats(serverId: string) {
+      const [stats] = await sql`
+        SELECT 
+          COUNT(*)::int as segments_count,
+          SUM(CASE WHEN ms.is_archived THEN 1 ELSE 0 END)::int as archived_segments_count,
+          COALESCE(SUM(ms.message_count), 0)::int as total_messages,
+          COALESCE(SUM(ms.size_bytes), 0)::bigint as total_size_bytes,
+          COALESCE(SUM(CASE WHEN ms.is_archived THEN 0 ELSE ms.size_bytes END), 0)::bigint as active_size_bytes,
+          COALESCE(SUM(CASE WHEN ms.is_archived THEN ms.size_bytes ELSE 0 END), 0)::bigint as archived_size_bytes,
+          MIN(ms.segment_start) as oldest_segment_date
+        FROM message_segments ms
+        INNER JOIN channels c ON ms.channel_id = c.id
+        WHERE c.server_id = ${serverId}
+      `;
+      return stats;
+    },
+
+    async getOldestUnarchived(channelId: string | null, dmChannelId: string | null, limit = 10) {
+      if (channelId) {
+        return sql`
+          SELECT * FROM message_segments
+          WHERE channel_id = ${channelId} AND is_archived = false
+          ORDER BY segment_start ASC
+          LIMIT ${limit}
+        `;
+      } else if (dmChannelId) {
+        return sql`
+          SELECT * FROM message_segments
+          WHERE dm_channel_id = ${dmChannelId} AND is_archived = false
+          ORDER BY segment_start ASC
+          LIMIT ${limit}
+        `;
+      }
+      return [];
+    },
+  },
+
+  // Retention settings helpers
+  retention: {
+    async getChannelRetention(channelId: string) {
+      const [result] = await sql`
+        SELECT retention_days, retention_never, size_limit_bytes, pruning_enabled
+        FROM channels
+        WHERE id = ${channelId}
+      `;
+      return result;
+    },
+
+    async updateChannelRetention(channelId: string, settings: {
+      retention_days?: number | null;
+      retention_never?: boolean;
+      size_limit_bytes?: number | null;
+      pruning_enabled?: boolean;
+    }) {
+      const updates: Record<string, any> = {};
+      if ('retention_days' in settings) updates.retention_days = settings.retention_days;
+      if ('retention_never' in settings) updates.retention_never = settings.retention_never;
+      if ('size_limit_bytes' in settings) updates.size_limit_bytes = settings.size_limit_bytes;
+      if ('pruning_enabled' in settings) updates.pruning_enabled = settings.pruning_enabled;
+
+      if (Object.keys(updates).length === 0) return;
+
+      await sql`
+        UPDATE channels
+        SET ${sql(updates)}
+        WHERE id = ${channelId}
+      `;
+    },
+
+    async getDMRetention(dmChannelId: string) {
+      const [result] = await sql`
+        SELECT retention_days, retention_never, size_limit_bytes
+        FROM dm_channels
+        WHERE id = ${dmChannelId}
+      `;
+      return result;
+    },
+
+    async updateDMRetention(dmChannelId: string, settings: {
+      retention_days?: number | null;
+      retention_never?: boolean;
+      size_limit_bytes?: number | null;
+    }) {
+      const updates: Record<string, any> = {};
+      if ('retention_days' in settings) updates.retention_days = settings.retention_days;
+      if ('retention_never' in settings) updates.retention_never = settings.retention_never;
+      if ('size_limit_bytes' in settings) updates.size_limit_bytes = settings.size_limit_bytes;
+
+      if (Object.keys(updates).length === 0) return;
+
+      await sql`
+        UPDATE dm_channels
+        SET ${sql(updates)}
+        WHERE id = ${dmChannelId}
+      `;
+    },
+  },
+
+  // Trimming log
+  trimmingLog: {
+    async create(data: {
+      channel_id?: string;
+      dm_channel_id?: string;
+      action: string;
+      messages_affected: number;
+      bytes_freed: number;
+      segment_ids?: string[];
+      triggered_by: string;
+      details?: Record<string, any>;
+    }) {
+      const [entry] = await sql`
+        INSERT INTO trimming_log (
+          channel_id, dm_channel_id, action, messages_affected, 
+          bytes_freed, segment_ids, triggered_by, details
+        )
+        VALUES (
+          ${data.channel_id || null},
+          ${data.dm_channel_id || null},
+          ${data.action},
+          ${data.messages_affected},
+          ${data.bytes_freed},
+          ${data.segment_ids || []},
+          ${data.triggered_by},
+          ${JSON.stringify(data.details || {})}
+        )
+        RETURNING *
+      `;
+      return entry;
+    },
+
+    async findByChannel(channelId: string, limit = 50, offset = 0) {
+      return sql`
+        SELECT * FROM trimming_log
+        WHERE channel_id = ${channelId}
+        ORDER BY created_at DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `;
+    },
+
+    async findByDMChannel(dmChannelId: string, limit = 50, offset = 0) {
+      return sql`
+        SELECT * FROM trimming_log
+        WHERE dm_channel_id = ${dmChannelId}
+        ORDER BY created_at DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `;
+    },
+
+    async findAll(limit = 100, offset = 0) {
+      return sql`
+        SELECT tl.*, c.name as channel_name, c.server_id
+        FROM trimming_log tl
+        LEFT JOIN channels c ON tl.channel_id = c.id
+        ORDER BY tl.created_at DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `;
+    },
+  },
+
   // Helper to run transactions
   transaction: sql.begin,
 

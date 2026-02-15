@@ -530,3 +530,161 @@ export interface GatewayResumed {
   /** Subscribed resource IDs (may have changed if channels were created/deleted) */
   subscriptions: string[];
 }
+
+// ============================================================
+// Message Segmentation & Retention Types
+// ============================================================
+
+/**
+ * A message segment represents a 50-hour chunk of messages
+ * for a channel or DM. Used for efficient history loading
+ * and archiving.
+ */
+export interface MessageSegment {
+  id: UUID;
+  channel_id: UUID | null;
+  dm_channel_id: UUID | null;
+  segment_start: Date;
+  segment_end: Date;
+  message_count: number;
+  size_bytes: number;
+  is_archived: boolean;
+  archive_path: string | null;
+  created_at: Date;
+}
+
+/**
+ * Retention settings for a channel.
+ * Controls how long messages are kept and size limits.
+ */
+export interface ChannelRetentionSettings {
+  /** Number of days to retain messages. null means use server default */
+  retention_days: number | null;
+  /** If true, messages are never automatically deleted */
+  retention_never: boolean;
+  /** Maximum storage size in bytes. null means no limit */
+  size_limit_bytes: number | null;
+  /** Whether pruning is enabled for this channel */
+  pruning_enabled: boolean;
+}
+
+/**
+ * Retention settings for a DM channel.
+ */
+export interface DMRetentionSettings {
+  /** Number of days to retain messages. null means use server default */
+  retention_days: number | null;
+  /** If true, messages are never automatically deleted */
+  retention_never: boolean;
+  /** Maximum storage size in bytes. null means no limit */
+  size_limit_bytes: number | null;
+}
+
+/**
+ * Server-wide default retention settings.
+ * Stored in instance_settings.
+ */
+export interface ServerRetentionSettings {
+  /** Default retention period for server channels */
+  default_channel_retention_days: number;
+  /** Default retention period for DM channels */
+  default_dm_retention_days: number;
+  /** Default size limit for channels in bytes */
+  default_channel_size_limit_bytes: number;
+  /** Warning threshold for storage usage (0-100) */
+  storage_warning_threshold_percent: number;
+  /** Action threshold for storage usage (0-100) */
+  storage_action_threshold_percent: number;
+  /** How often to run cleanup jobs */
+  cleanup_schedule: 'daily' | 'weekly' | 'monthly';
+  /** Duration of each segment in hours */
+  segment_duration_hours: number;
+  /** Minimum retention time in hours (messages younger than this are never deleted) */
+  min_retention_hours: number;
+  /** Whether archiving to cold storage is enabled */
+  archive_enabled: boolean;
+}
+
+/**
+ * Storage statistics for a channel or server.
+ */
+export interface StorageStats {
+  /** Total number of messages */
+  total_messages: number;
+  /** Total storage size in bytes */
+  total_size_bytes: number;
+  /** Size of active (non-archived) messages */
+  active_size_bytes: number;
+  /** Size of archived messages */
+  archived_size_bytes: number;
+  /** Total number of segments */
+  segments_count: number;
+  /** Number of archived segments */
+  archived_segments_count: number;
+  /** Date of the oldest message */
+  oldest_message_date: Date | null;
+}
+
+/**
+ * Summary of a cleanup operation.
+ */
+export interface CleanupSummary {
+  /** Type of target (channel or dm) */
+  channel_type: 'channel' | 'dm';
+  /** ID of the channel or DM */
+  target_id: UUID;
+  /** Number of messages deleted */
+  messages_deleted: number;
+  /** Number of bytes freed */
+  bytes_freed: number;
+  /** Number of segments affected */
+  segments_trimmed?: number;
+}
+
+/**
+ * Entry in the trimming audit log.
+ */
+export interface TrimmingLogEntry {
+  id: UUID;
+  channel_id: UUID | null;
+  dm_channel_id: UUID | null;
+  action: 'retention_cleanup' | 'size_limit_enforced' | 'segment_archived' | 'segment_deleted' | 'manual_cleanup';
+  messages_affected: number;
+  bytes_freed: number;
+  segment_ids: UUID[];
+  triggered_by: 'scheduled' | 'manual' | 'size_limit';
+  details: Record<string, unknown>;
+  created_at: Date;
+}
+
+/**
+ * Archived message format stored in MinIO.
+ * Includes additional metadata for cross-segment references.
+ */
+export interface ArchivedMessage {
+  id: UUID;
+  author_id: UUID | null;
+  content: string;
+  attachments: Attachment[];
+  created_at: string; // ISO date string
+  edited_at: string | null;
+  reply_to_id: UUID | null;
+  /** Preview of the replied-to message content (if archived) */
+  reply_preview?: string;
+  system_event: SystemEvent | null;
+}
+
+/**
+ * Format of an archived segment stored in MinIO.
+ */
+export interface ArchivedSegmentData {
+  segment_id: UUID;
+  channel_id: UUID | null;
+  dm_channel_id: UUID | null;
+  segment_start: string; // ISO date string
+  segment_end: string;
+  message_count: number;
+  messages: ArchivedMessage[];
+  archived_at: string;
+  compression: 'gzip' | 'none';
+}

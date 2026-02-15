@@ -1,10 +1,12 @@
 import { Client } from 'minio';
 import { nanoid } from 'nanoid';
+import { Readable } from 'stream';
 
 const MINIO_ENDPOINT = process.env.MINIO_ENDPOINT || 'localhost:9000';
 const MINIO_ACCESS_KEY = process.env.MINIO_ACCESS_KEY || 'minioadmin';
 const MINIO_SECRET_KEY = process.env.MINIO_SECRET_KEY || 'minioadmin';
 const MINIO_BUCKET = process.env.MINIO_BUCKET || 'sgchat-files';
+const MINIO_ARCHIVE_BUCKET = process.env.MINIO_ARCHIVE_BUCKET || 'sgchat-archives';
 
 // Parse endpoint (host:port)
 const [endpointHost, endpointPort] = MINIO_ENDPOINT.split(':');
@@ -19,6 +21,7 @@ const minioClient = new Client({
 
 export async function initStorage() {
   try {
+    // Initialize main bucket
     const exists = await minioClient.bucketExists(MINIO_BUCKET);
     if (!exists) {
       await minioClient.makeBucket(MINIO_BUCKET);
@@ -38,6 +41,14 @@ export async function initStorage() {
       };
       await minioClient.setBucketPolicy(MINIO_BUCKET, JSON.stringify(policy));
     }
+    
+    // Initialize archive bucket for message segments
+    const archiveExists = await minioClient.bucketExists(MINIO_ARCHIVE_BUCKET);
+    if (!archiveExists) {
+      await minioClient.makeBucket(MINIO_ARCHIVE_BUCKET);
+      console.log(`✅ Created MinIO archive bucket: ${MINIO_ARCHIVE_BUCKET}`);
+    }
+    
     console.log('✅ MinIO connected');
   } catch (error) {
     console.error('❌ MinIO connection failed:', error);
@@ -207,5 +218,136 @@ export const storage = {
     } catch {
       return null;
     }
+  },
+
+  // ============================================================
+  // Archive storage methods (for message segment archiving)
+  // ============================================================
+
+  /**
+   * Upload a compressed archive to the archive bucket.
+   * @param archivePath - Path within the archive bucket (e.g., "channels/{id}/segment-{date}.json.gz")
+   * @param data - Compressed data buffer
+   * @returns The full path of the archived object
+   */
+  async uploadArchive(archivePath: string, data: Buffer): Promise<string> {
+    await minioClient.putObject(MINIO_ARCHIVE_BUCKET, archivePath, data, data.length, {
+      'Content-Type': 'application/gzip',
+      'Content-Encoding': 'gzip',
+    });
+    return archivePath;
+  },
+
+  /**
+   * Download an archive from the archive bucket.
+   * @param archivePath - Path within the archive bucket
+   * @returns The archive data as a Buffer
+   */
+  async downloadArchive(archivePath: string): Promise<Buffer> {
+    const stream = await minioClient.getObject(MINIO_ARCHIVE_BUCKET, archivePath);
+    const chunks: Buffer[] = [];
+    
+    return new Promise((resolve, reject) => {
+      stream.on('data', (chunk: Buffer) => chunks.push(chunk));
+      stream.on('end', () => resolve(Buffer.concat(chunks)));
+      stream.on('error', reject);
+    });
+  },
+
+  /**
+   * Delete an archive from the archive bucket.
+   * @param archivePath - Path within the archive bucket
+   */
+  async deleteArchive(archivePath: string): Promise<void> {
+    try {
+      await minioClient.removeObject(MINIO_ARCHIVE_BUCKET, archivePath);
+    } catch (error) {
+      console.error('Failed to delete archive:', archivePath, error);
+    }
+  },
+
+  /**
+   * Check if an archive exists.
+   * @param archivePath - Path within the archive bucket
+   */
+  async archiveExists(archivePath: string): Promise<boolean> {
+    try {
+      await minioClient.statObject(MINIO_ARCHIVE_BUCKET, archivePath);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  /**
+   * Get the size of an archive.
+   * @param archivePath - Path within the archive bucket
+   */
+  async getArchiveSize(archivePath: string): Promise<number | null> {
+    try {
+      const stat = await minioClient.statObject(MINIO_ARCHIVE_BUCKET, archivePath);
+      return stat.size;
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * List all archives for a channel or DM.
+   * @param prefix - Prefix to filter (e.g., "channels/{id}/")
+   */
+  async listArchives(prefix: string): Promise<{ path: string; size: number; lastModified: Date }[]> {
+    const archives: { path: string; size: number; lastModified: Date }[] = [];
+    
+    const stream = minioClient.listObjects(MINIO_ARCHIVE_BUCKET, prefix, true);
+    
+    return new Promise((resolve, reject) => {
+      stream.on('data', (obj) => {
+        if (obj.name) {
+          archives.push({
+            path: obj.name,
+            size: obj.size,
+            lastModified: obj.lastModified,
+          });
+        }
+      });
+      stream.on('end', () => resolve(archives));
+      stream.on('error', reject);
+    });
+  },
+
+  /**
+   * Calculate total storage used in the archive bucket for a given prefix.
+   * @param prefix - Prefix to filter (e.g., "channels/{id}/")
+   */
+  async getArchiveStorageUsage(prefix?: string): Promise<number> {
+    let totalSize = 0;
+    
+    const stream = minioClient.listObjects(MINIO_ARCHIVE_BUCKET, prefix || '', true);
+    
+    return new Promise((resolve, reject) => {
+      stream.on('data', (obj) => {
+        totalSize += obj.size;
+      });
+      stream.on('end', () => resolve(totalSize));
+      stream.on('error', reject);
+    });
+  },
+
+  /**
+   * Generate the archive path for a segment.
+   * @param type - 'channel' or 'dm'
+   * @param targetId - Channel or DM channel ID
+   * @param segmentId - Segment ID
+   * @param segmentStart - Segment start date
+   */
+  generateArchivePath(
+    type: 'channel' | 'dm',
+    targetId: string,
+    segmentId: string,
+    segmentStart: Date
+  ): string {
+    const dateStr = segmentStart.toISOString().split('T')[0]; // YYYY-MM-DD
+    return `${type}s/${targetId}/segment-${dateStr}-${segmentId}.json.gz`;
   },
 };

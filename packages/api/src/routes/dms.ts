@@ -4,6 +4,10 @@ import { db } from '../lib/db.js';
 import { sendMessageSchema } from '@sgchat/shared';
 import { notFound, forbidden, badRequest } from '../utils/errors.js';
 import { areFriends, isBlocked } from './friends.js';
+import { z } from 'zod';
+import { getDMStorageStats, getSegmentsForDM, getOrCreateSegment, onMessageCreated } from '../services/segmentation.js';
+import { getEffectiveDMRetention, applyRetentionPolicy } from '../services/trimming.js';
+import { loadArchivedMessages } from '../services/archive.js';
 
 export const dmRoutes: FastifyPluginAsync = async (fastify) => {
   // Get user's DM channels
@@ -119,6 +123,15 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
         attachments: body.attachments,
         queued_at: body.queued_at ? new Date(body.queued_at) : undefined,
       });
+
+      // Assign message to a segment for history management
+      try {
+        const segment = await getOrCreateSegment(null, id, new Date(message.created_at));
+        await db.sql`UPDATE messages SET segment_id = ${segment.id} WHERE id = ${message.id}`;
+        await onMessageCreated(segment.id, body.content, body.attachments || []);
+      } catch (segmentError) {
+        console.error('Failed to assign DM message to segment:', segmentError);
+      }
       
       // Broadcast to both users via Socket.IO (use dm:message:create as client expects)
       const dmEvent = {
@@ -220,6 +233,15 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
         attachments: body.attachments,
         queued_at: body.queued_at ? new Date(body.queued_at) : undefined,
       });
+
+      // Assign message to a segment for history management
+      try {
+        const segment = await getOrCreateSegment(null, dm.id, new Date(message.created_at));
+        await db.sql`UPDATE messages SET segment_id = ${segment.id} WHERE id = ${message.id}`;
+        await onMessageCreated(segment.id, body.content, body.attachments || []);
+      } catch (segmentError) {
+        console.error('Failed to assign DM message to segment:', segmentError);
+      }
       
       // Broadcast to both users via Socket.IO
       const dmEvent = {
@@ -295,6 +317,184 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
       return {
         total: unreadCounts.reduce((sum, c) => sum + c.count, 0),
         channels: unreadCounts,
+      };
+    },
+  });
+
+  // ============================================================
+  // DM RETENTION & STORAGE MANAGEMENT
+  // ============================================================
+
+  const dmRetentionUpdateSchema = z.object({
+    retention_days: z.number().min(1).max(730).nullable().optional(),
+    retention_never: z.boolean().optional(),
+    size_limit_bytes: z.number().min(0).nullable().optional(),
+  });
+
+  /**
+   * Helper to verify user is part of a DM channel
+   */
+  async function verifyDMAccess(userId: string, dmId: string): Promise<boolean> {
+    const dm = await db.dmChannels.findById(dmId);
+    if (!dm) return false;
+    return dm.user1_id === userId || dm.user2_id === userId;
+  }
+
+  /**
+   * GET /dms/:id/retention - Get DM retention settings
+   */
+  fastify.get<{ Params: { id: string } }>('/:id/retention', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params;
+
+      if (!await verifyDMAccess(request.user!.id, id)) {
+        return forbidden(reply, 'Not part of this DM');
+      }
+
+      const retention = await getEffectiveDMRetention(id);
+      return retention;
+    },
+  });
+
+  /**
+   * PATCH /dms/:id/retention - Update DM retention settings
+   * Both users in the DM can update retention settings
+   */
+  fastify.patch<{ Params: { id: string } }>('/:id/retention', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params;
+      const body = dmRetentionUpdateSchema.parse(request.body);
+
+      if (!await verifyDMAccess(request.user!.id, id)) {
+        return forbidden(reply, 'Not part of this DM');
+      }
+
+      await db.retention.updateDMRetention(id, body);
+
+      const updated = await getEffectiveDMRetention(id);
+      return updated;
+    },
+  });
+
+  /**
+   * GET /dms/:id/storage-stats - Get storage usage for DM
+   */
+  fastify.get<{ Params: { id: string } }>('/:id/storage-stats', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params;
+
+      if (!await verifyDMAccess(request.user!.id, id)) {
+        return forbidden(reply, 'Not part of this DM');
+      }
+
+      const stats = await getDMStorageStats(id);
+      const retention = await getEffectiveDMRetention(id);
+
+      return {
+        ...stats,
+        size_limit_bytes: retention.size_limit_bytes,
+        usage_percent: retention.size_limit_bytes 
+          ? Math.round((stats.total_size_bytes / retention.size_limit_bytes) * 100) 
+          : null,
+      };
+    },
+  });
+
+  /**
+   * GET /dms/:id/segments - List message segments
+   */
+  fastify.get<{ Params: { id: string }; Querystring: { limit?: string; offset?: string; include_archived?: string } }>('/:id/segments', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params;
+      const { limit, offset, include_archived } = request.query;
+
+      if (!await verifyDMAccess(request.user!.id, id)) {
+        return forbidden(reply, 'Not part of this DM');
+      }
+
+      const segments = await getSegmentsForDM(id, {
+        limit: parseInt(limit || '50'),
+        offset: parseInt(offset || '0'),
+        includeArchived: include_archived !== 'false',
+      });
+
+      return { segments };
+    },
+  });
+
+  /**
+   * GET /dms/:id/segments/:segmentId/messages - Load messages from a segment
+   */
+  fastify.get<{ Params: { id: string; segmentId: string } }>('/:id/segments/:segmentId/messages', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id, segmentId } = request.params;
+
+      if (!await verifyDMAccess(request.user!.id, id)) {
+        return forbidden(reply, 'Not part of this DM');
+      }
+
+      // Get segment info
+      const segment = await db.segments.findById(segmentId);
+      if (!segment) {
+        return notFound(reply, 'Segment');
+      }
+
+      // Verify segment belongs to this DM
+      if (segment.dm_channel_id !== id) {
+        return badRequest(reply, 'Segment does not belong to this DM');
+      }
+
+      let messages;
+      if (segment.is_archived) {
+        // Load from archive
+        messages = await loadArchivedMessages(segmentId);
+        reply.header('X-Segment-Info', 'archived');
+      } else {
+        // Load from database
+        messages = await db.sql`
+          SELECT 
+            m.id, m.content, m.created_at, m.edited_at,
+            m.attachments, m.reply_to_id, m.system_event,
+            m.author_id as sender_id
+          FROM messages m
+          WHERE m.segment_id = ${segmentId}
+          ORDER BY m.created_at ASC
+        `;
+        reply.header('X-Segment-Info', 'active');
+      }
+
+      reply.header('X-Segment-Start', new Date(segment.segment_start).toISOString());
+      reply.header('X-Segment-End', new Date(segment.segment_end).toISOString());
+
+      return { messages, segment };
+    },
+  });
+
+  /**
+   * POST /dms/:id/cleanup - Manually trigger cleanup for a DM
+   */
+  fastify.post<{ Params: { id: string }; Body: { dry_run?: boolean } }>('/:id/cleanup', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params;
+      const { dry_run = false } = (request.body || {}) as { dry_run?: boolean };
+
+      if (!await verifyDMAccess(request.user!.id, id)) {
+        return forbidden(reply, 'Not part of this DM');
+      }
+
+      const result = await applyRetentionPolicy(null, id, { dryRun: dry_run });
+
+      return {
+        dry_run,
+        messages_deleted: result.messages_deleted,
+        bytes_freed: result.bytes_freed,
+        segments_trimmed: result.segments_trimmed,
       };
     },
   });
