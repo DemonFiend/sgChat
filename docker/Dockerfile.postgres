@@ -1,0 +1,11 @@
+# PostgreSQL 16 with pg_cron extension for scheduled jobs
+FROM postgres:16
+
+# Install pg_cron extension
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-16-cron \
+    && rm -rf /var/lib/apt/lists/*
+
+# pg_cron requires shared_preload_libraries configuration
+# This is set via command in docker-compose.yml:
+# postgres -c shared_preload_libraries=pg_cron -c cron.database_name=sgchat
