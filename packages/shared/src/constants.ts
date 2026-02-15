@@ -72,3 +72,12 @@ export const DEFAULT_THEME = 'dark';
 export const DEFAULT_ACCENT_COLOR = '#5865f2';
 export const DEFAULT_FONT_SIZE = 14;
 export const DEFAULT_CHAT_DENSITY = 'cozy';
+
+// Avatar defaults (can be overridden by instance_settings)
+export const DEFAULT_AVATAR_LIMITS = {
+  MAX_UPLOAD_SIZE: 5 * 1024 * 1024,    // 5MB upload limit
+  MAX_DIMENSION: 512,                   // Max resize dimension
+  DEFAULT_DIMENSION: 128,               // Default output size
+  OUTPUT_QUALITY: 85,                   // WebP quality
+  MAX_STORAGE_PER_USER: 5 * 1024 * 1024, // 5MB total per user
+} as const;

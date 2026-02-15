@@ -7,7 +7,8 @@
 import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
-import { toNamedPermissions, ServerPermissions, hasPermission } from '@sgchat/shared';
+import { toNamedPermissions, ServerPermissions, hasPermission, DEFAULT_AVATAR_LIMITS } from '@sgchat/shared';
+import type { AvatarLimits } from '@sgchat/shared';
 import { calculatePermissions } from '../services/permissions.js';
 import { forbidden, notFound, badRequest } from '../utils/errors.js';
 import { z } from 'zod';
@@ -308,6 +309,112 @@ export const globalServerRoutes: FastifyPluginAsync = async (fastify) => {
           id: newOwner.id,
           username: newOwner.username,
         },
+      };
+    },
+  });
+
+  // ============================================================
+  // ADMIN SETTINGS - Avatar Limits
+  // ============================================================
+
+  const avatarLimitsSchema = z.object({
+    max_upload_size_bytes: z.number().min(1024).max(50 * 1024 * 1024).optional(), // 1KB - 50MB
+    max_dimension: z.number().min(32).max(2048).optional(),
+    default_dimension: z.number().min(32).max(1024).optional(),
+    output_quality: z.number().min(1).max(100).optional(),
+    max_storage_per_user_bytes: z.number().min(1024).max(100 * 1024 * 1024).optional(), // 1KB - 100MB
+  });
+
+  /**
+   * GET /server/settings/avatar-limits - Get current avatar limits
+   * Requires ADMINISTRATOR permission or be server owner
+   */
+  fastify.get('/settings/avatar-limits', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) {
+        return notFound(reply, 'Server');
+      }
+
+      // Check if user is admin or owner
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) || 
+                      server.owner_id === request.user!.id;
+
+      if (!isAdmin) {
+        return forbidden(reply, 'Only administrators can view avatar limit settings');
+      }
+
+      // Get current settings or return defaults
+      const setting = await db.instanceSettings.get('avatar_limits');
+      if (setting?.value) {
+        return setting.value;
+      }
+
+      // Return defaults
+      return {
+        max_upload_size_bytes: DEFAULT_AVATAR_LIMITS.MAX_UPLOAD_SIZE,
+        max_dimension: DEFAULT_AVATAR_LIMITS.MAX_DIMENSION,
+        default_dimension: DEFAULT_AVATAR_LIMITS.DEFAULT_DIMENSION,
+        output_quality: DEFAULT_AVATAR_LIMITS.OUTPUT_QUALITY,
+        max_storage_per_user_bytes: DEFAULT_AVATAR_LIMITS.MAX_STORAGE_PER_USER,
+      };
+    },
+  });
+
+  /**
+   * PATCH /server/settings/avatar-limits - Update avatar limits
+   * Requires ADMINISTRATOR permission or be server owner
+   */
+  fastify.patch('/settings/avatar-limits', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) {
+        return notFound(reply, 'Server');
+      }
+
+      // Check if user is admin or owner
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) || 
+                      server.owner_id === request.user!.id;
+
+      if (!isAdmin) {
+        return forbidden(reply, 'Only administrators can modify avatar limit settings');
+      }
+
+      const updates = avatarLimitsSchema.parse(request.body);
+
+      // Get current settings
+      const setting = await db.instanceSettings.get('avatar_limits');
+      const currentLimits: AvatarLimits = setting?.value || {
+        max_upload_size_bytes: DEFAULT_AVATAR_LIMITS.MAX_UPLOAD_SIZE,
+        max_dimension: DEFAULT_AVATAR_LIMITS.MAX_DIMENSION,
+        default_dimension: DEFAULT_AVATAR_LIMITS.DEFAULT_DIMENSION,
+        output_quality: DEFAULT_AVATAR_LIMITS.OUTPUT_QUALITY,
+        max_storage_per_user_bytes: DEFAULT_AVATAR_LIMITS.MAX_STORAGE_PER_USER,
+      };
+
+      // Merge updates
+      const newLimits: AvatarLimits = {
+        ...currentLimits,
+        ...updates,
+      };
+
+      // Validate that default_dimension doesn't exceed max_dimension
+      if (newLimits.default_dimension > newLimits.max_dimension) {
+        return badRequest(reply, 'default_dimension cannot exceed max_dimension');
+      }
+
+      // Save updated settings
+      await db.instanceSettings.set('avatar_limits', newLimits);
+
+      console.log(`🖼️ Avatar limits updated by ${request.user!.id}:`, newLimits);
+
+      return {
+        message: 'Avatar limits updated',
+        limits: newLimits,
       };
     },
   });

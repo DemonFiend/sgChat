@@ -4,11 +4,13 @@ import { db } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
 import { storage } from '../lib/storage.js';
 import { publishEvent } from '../lib/eventBus.js';
-import { UserStatus, usernameSchema, updateStatusSchema, updateCustomStatusSchema, updateStatusCommentSchema, toNamedPermissions } from '@sgchat/shared';
+import { UserStatus, usernameSchema, updateStatusSchema, updateCustomStatusSchema, updateStatusCommentSchema, toNamedPermissions, DEFAULT_AVATAR_LIMITS } from '@sgchat/shared';
+import type { AvatarLimits, UserAvatar } from '@sgchat/shared';
 import { z } from 'zod';
 import { notFound, badRequest, unauthorized, forbidden } from '../utils/errors.js';
 import argon2 from 'argon2';
 import { getDefaultServer } from './server.js';
+import { processAvatarImage, validateImage } from '../lib/imageProcessor.js';
 
 // ── A2: Presence coalescing ─────────────────────────────────────
 // Prevents rapid-fire presence events by throttling per-user updates.
@@ -577,7 +579,46 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
     },
   });
 
-  // Upload avatar
+  // ============================================================
+  // AVATAR MANAGEMENT (with processing and history)
+  // ============================================================
+
+  /**
+   * Helper to get avatar limits from instance_settings or fallback to defaults.
+   */
+  async function getAvatarLimits(): Promise<AvatarLimits> {
+    const settings = await db.instanceSettings.get('avatar_limits');
+    if (settings) {
+      return settings as AvatarLimits;
+    }
+    return {
+      max_upload_size_bytes: DEFAULT_AVATAR_LIMITS.MAX_UPLOAD_SIZE,
+      max_dimension: DEFAULT_AVATAR_LIMITS.MAX_DIMENSION,
+      default_dimension: DEFAULT_AVATAR_LIMITS.DEFAULT_DIMENSION,
+      output_quality: DEFAULT_AVATAR_LIMITS.OUTPUT_QUALITY,
+      max_storage_per_user_bytes: DEFAULT_AVATAR_LIMITS.MAX_STORAGE_PER_USER,
+    };
+  }
+
+  /**
+   * Helper to broadcast avatar update to all servers the user is in.
+   */
+  async function broadcastAvatarUpdate(userId: string, avatarUrl: string | null) {
+    const user = await db.users.findById(userId);
+    if (!user) return;
+
+    // Broadcast to user's own room
+    fastify.io?.to(`user:${userId}`).emit('user.update', user);
+
+    // Broadcast presence.update to all servers the user is in
+    await broadcastPresence(userId, {
+      avatar_url: avatarUrl,
+      status: user.status,
+      last_seen_at: new Date().toISOString(),
+    }, true); // immediate = true for avatar changes
+  }
+
+  // Upload avatar (enhanced with processing and history)
   fastify.post('/me/avatar', {
     onRequest: [authenticate],
     config: {
@@ -587,39 +628,97 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
       },
     },
     handler: async (request, reply) => {
+      const userId = request.user!.id;
       const data = await request.file();
+      
       if (!data) {
         return badRequest(reply, 'No file uploaded');
       }
 
-      // Validate file type
-      const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-      if (!allowedTypes.includes(data.mimetype)) {
-        return badRequest(reply, 'Invalid file type. Allowed: JPEG, PNG, GIF, WebP');
-      }
+      // Get configurable limits
+      const limits = await getAvatarLimits();
 
-      // Get current user to delete old avatar if exists
-      const user = await db.users.findById(request.user!.id);
-      if (user?.avatar_url) {
-        await storage.deleteAvatar(user.avatar_url);
-      }
-
-      // Upload new avatar
+      // Read file buffer
       const buffer = await data.toBuffer();
-      const avatarUrl = await storage.uploadAvatar(request.user!.id, buffer, data.mimetype);
+
+      // Validate file size
+      if (buffer.length > limits.max_upload_size_bytes) {
+        const maxMB = (limits.max_upload_size_bytes / (1024 * 1024)).toFixed(1);
+        return badRequest(reply, `File too large. Maximum size: ${maxMB}MB`);
+      }
+
+      // Validate image format
+      try {
+        await validateImage(buffer);
+      } catch (error) {
+        return badRequest(reply, error instanceof Error ? error.message : 'Invalid image');
+      }
+
+      // Process image (resize + convert to WebP)
+      const processed = await processAvatarImage(
+        buffer,
+        limits.default_dimension,
+        limits.output_quality
+      );
+
+      // Check if user has a current avatar - move it to previous slot
+      const [existingCurrent] = await db.sql`
+        SELECT * FROM user_avatars WHERE user_id = ${userId} AND slot = 'current'
+      `;
+
+      if (existingCurrent) {
+        // Delete any existing previous avatar from storage and DB
+        const [existingPrevious] = await db.sql`
+          SELECT * FROM user_avatars WHERE user_id = ${userId} AND slot = 'previous'
+        `;
+        if (existingPrevious) {
+          await storage.deleteAvatarBySlot(userId, 'previous');
+          await db.sql`DELETE FROM user_avatars WHERE user_id = ${userId} AND slot = 'previous'`;
+        }
+
+        // Copy current to previous
+        const copyResult = await storage.copyAvatarSlot(userId, 'current', 'previous');
+        if (copyResult) {
+          await db.sql`
+            INSERT INTO user_avatars (user_id, slot, storage_path, file_size, width, height)
+            VALUES (${userId}, 'previous', ${copyResult.path}, ${existingCurrent.file_size}, ${existingCurrent.width}, ${existingCurrent.height})
+          `;
+        }
+
+        // Delete old current from storage
+        await storage.deleteAvatarBySlot(userId, 'current');
+        await db.sql`DELETE FROM user_avatars WHERE user_id = ${userId} AND slot = 'current'`;
+      }
+
+      // Upload new avatar to current slot
+      const { path: storagePath, url: avatarUrl } = await storage.uploadProcessedAvatar(
+        userId,
+        'current',
+        processed.buffer
+      );
+
+      // Save metadata to DB
+      await db.sql`
+        INSERT INTO user_avatars (user_id, slot, storage_path, file_size, width, height)
+        VALUES (${userId}, 'current', ${storagePath}, ${processed.buffer.length}, ${processed.width}, ${processed.height})
+      `;
 
       // Update user record
       await db.sql`
         UPDATE users
         SET avatar_url = ${avatarUrl}, updated_at = NOW()
-        WHERE id = ${request.user!.id}
+        WHERE id = ${userId}
       `;
 
-      // Broadcast update
-      const updatedUser = await db.users.findById(request.user!.id);
-      fastify.io?.to(`user:${request.user!.id}`).emit('user.update', updatedUser);
+      // Broadcast update to all connected clients
+      await broadcastAvatarUpdate(userId, avatarUrl);
 
-      return { avatar_url: avatarUrl };
+      return { 
+        avatar_url: avatarUrl,
+        width: processed.width,
+        height: processed.height,
+        file_size: processed.buffer.length,
+      };
     },
   });
 
@@ -627,26 +726,187 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.delete('/me/avatar', {
     onRequest: [authenticate],
     handler: async (request, reply) => {
-      const user = await db.users.findById(request.user!.id);
+      const userId = request.user!.id;
+      const user = await db.users.findById(userId);
+      
       if (!user?.avatar_url) {
         return badRequest(reply, 'No avatar to delete');
       }
 
-      // Delete from storage
-      await storage.deleteAvatar(user.avatar_url);
+      // Delete current avatar from storage
+      await storage.deleteAvatarBySlot(userId, 'current');
+      await db.sql`DELETE FROM user_avatars WHERE user_id = ${userId} AND slot = 'current'`;
+
+      // Check if there's a previous avatar to promote
+      const [previousAvatar] = await db.sql`
+        SELECT * FROM user_avatars WHERE user_id = ${userId} AND slot = 'previous'
+      `;
+
+      let newAvatarUrl: string | null = null;
+
+      if (previousAvatar) {
+        // Promote previous to current
+        const copyResult = await storage.copyAvatarSlot(userId, 'previous', 'current');
+        if (copyResult) {
+          await db.sql`
+            INSERT INTO user_avatars (user_id, slot, storage_path, file_size, width, height)
+            VALUES (${userId}, 'current', ${copyResult.path}, ${previousAvatar.file_size}, ${previousAvatar.width}, ${previousAvatar.height})
+          `;
+          newAvatarUrl = copyResult.url;
+        }
+
+        // Delete the previous slot
+        await storage.deleteAvatarBySlot(userId, 'previous');
+        await db.sql`DELETE FROM user_avatars WHERE user_id = ${userId} AND slot = 'previous'`;
+      }
 
       // Update user record
       await db.sql`
         UPDATE users
-        SET avatar_url = NULL, updated_at = NOW()
-        WHERE id = ${request.user!.id}
+        SET avatar_url = ${newAvatarUrl}, updated_at = NOW()
+        WHERE id = ${userId}
       `;
 
       // Broadcast update
-      const updatedUser = await db.users.findById(request.user!.id);
-      fastify.io?.to(`user:${request.user!.id}`).emit('user.update', updatedUser);
+      await broadcastAvatarUpdate(userId, newAvatarUrl);
 
-      return { message: 'Avatar deleted' };
+      return { 
+        message: 'Avatar deleted',
+        avatar_url: newAvatarUrl, // Will be the promoted previous or null
+      };
+    },
+  });
+
+  // Revert to previous avatar
+  fastify.post('/me/avatar/revert', {
+    onRequest: [authenticate],
+    config: {
+      rateLimit: {
+        max: 10,
+        timeWindow: '1 hour',
+      },
+    },
+    handler: async (request, reply) => {
+      const userId = request.user!.id;
+
+      // Check if previous avatar exists
+      const [previousAvatar] = await db.sql`
+        SELECT * FROM user_avatars WHERE user_id = ${userId} AND slot = 'previous'
+      `;
+
+      if (!previousAvatar) {
+        return badRequest(reply, 'No previous avatar to revert to');
+      }
+
+      // Get current avatar
+      const [currentAvatar] = await db.sql`
+        SELECT * FROM user_avatars WHERE user_id = ${userId} AND slot = 'current'
+      `;
+
+      // Swap the avatars:
+      // 1. Copy current to temp (we'll use a unique temp name)
+      // 2. Copy previous to current
+      // 3. Copy temp to previous
+      // 4. Delete temp
+
+      // For simplicity, we'll do this with DB updates and storage copies
+      // Delete existing current from storage and DB
+      if (currentAvatar) {
+        await storage.deleteAvatarBySlot(userId, 'current');
+        await db.sql`DELETE FROM user_avatars WHERE user_id = ${userId} AND slot = 'current'`;
+      }
+
+      // Copy previous to current
+      const copyResult = await storage.copyAvatarSlot(userId, 'previous', 'current');
+      if (!copyResult) {
+        return badRequest(reply, 'Failed to revert avatar');
+      }
+
+      // Insert new current record
+      await db.sql`
+        INSERT INTO user_avatars (user_id, slot, storage_path, file_size, width, height)
+        VALUES (${userId}, 'current', ${copyResult.path}, ${previousAvatar.file_size}, ${previousAvatar.width}, ${previousAvatar.height})
+      `;
+
+      // If there was a current avatar, make it the new previous
+      if (currentAvatar) {
+        // Delete previous from storage
+        await storage.deleteAvatarBySlot(userId, 'previous');
+        await db.sql`DELETE FROM user_avatars WHERE user_id = ${userId} AND slot = 'previous'`;
+
+        // We need to upload the old current as the new previous
+        // Since we deleted it, we need to handle this differently
+        // Actually, let's just delete the previous entirely since the old current is gone
+      } else {
+        // No current existed, just delete the previous
+        await storage.deleteAvatarBySlot(userId, 'previous');
+        await db.sql`DELETE FROM user_avatars WHERE user_id = ${userId} AND slot = 'previous'`;
+      }
+
+      // Update user record with new current avatar URL
+      await db.sql`
+        UPDATE users
+        SET avatar_url = ${copyResult.url}, updated_at = NOW()
+        WHERE id = ${userId}
+      `;
+
+      // Broadcast update
+      await broadcastAvatarUpdate(userId, copyResult.url);
+
+      return {
+        message: 'Avatar reverted',
+        avatar_url: copyResult.url,
+      };
+    },
+  });
+
+  // Get avatar history (current and previous)
+  fastify.get('/me/avatar/history', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const userId = request.user!.id;
+
+      const avatars = await db.sql`
+        SELECT * FROM user_avatars 
+        WHERE user_id = ${userId}
+        ORDER BY slot ASC
+      `;
+
+      const result: { current: UserAvatar | null; previous: UserAvatar | null } = {
+        current: null,
+        previous: null,
+      };
+
+      for (const avatar of avatars) {
+        const avatarData: UserAvatar = {
+          id: avatar.id,
+          user_id: avatar.user_id,
+          slot: avatar.slot,
+          storage_path: avatar.storage_path,
+          file_size: avatar.file_size,
+          width: avatar.width,
+          height: avatar.height,
+          url: storage.getAvatarUrl(userId, avatar.slot),
+          created_at: avatar.created_at,
+        };
+
+        if (avatar.slot === 'current') {
+          result.current = avatarData;
+        } else if (avatar.slot === 'previous') {
+          result.previous = avatarData;
+        }
+      }
+
+      return result;
+    },
+  });
+
+  // Get avatar limits (useful for frontend validation)
+  fastify.get('/me/avatar/limits', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const limits = await getAvatarLimits();
+      return limits;
     },
   });
 

@@ -216,11 +216,30 @@ export function DMPage(): JSX.Element {
       }
     };
 
-    // Presence updates for friends
-    const handlePresenceUpdate = (data: { user_id: string; status: 'online' | 'idle' | 'dnd' | 'offline' }) => {
-      setFriends(prev => prev.map(f => 
-        f.id === data.user_id ? { ...f, status: data.status } : f
-      ));
+    // Presence updates for friends (including avatar changes)
+    const handlePresenceUpdate = (data: { 
+      user_id: string; 
+      status: 'online' | 'idle' | 'dnd' | 'offline';
+      avatar_url?: string | null;
+    }) => {
+      setFriends(prev => prev.map(f => {
+        if (f.id !== data.user_id) return f;
+        return { 
+          ...f, 
+          status: data.status,
+          avatar_url: data.avatar_url !== undefined ? data.avatar_url : f.avatar_url,
+        };
+      }));
+      
+      // Update selected friend if it's them
+      const current = selectedFriend();
+      if (current?.id === data.user_id) {
+        setSelectedFriend({
+          ...current,
+          status: data.status,
+          avatar_url: data.avatar_url !== undefined ? data.avatar_url : current.avatar_url,
+        });
+      }
     };
 
     // User blocked us - remove them from friends and clear chat if open

@@ -6,6 +6,7 @@ import { authStore } from '@/stores/auth';
 import { networkStore } from '@/stores/network';
 import { theme, setTheme, themeNames, type Theme } from '@/stores/theme';
 import { Avatar } from './Avatar';
+import { AvatarPicker } from './AvatarPicker';
 import { api } from '@/api';
 
 type SettingsTab = 'account' | 'profile' | 'appearance' | 'notifications' | 'voice';
@@ -296,6 +297,47 @@ function AccountTab(props: { user: ReturnType<typeof authStore.state>['user']; o
 function ProfileTab(props: { user: ReturnType<typeof authStore.state>['user'] }) {
   const [displayName, setDisplayName] = createSignal(props.user?.display_name || '');
   const [customStatus, setCustomStatus] = createSignal(props.user?.custom_status || '');
+  const [avatarUrl, setAvatarUrl] = createSignal(props.user?.avatar_url || null);
+  const [saving, setSaving] = createSignal(false);
+  const [saveSuccess, setSaveSuccess] = createSignal(false);
+  const [saveError, setSaveError] = createSignal<string | null>(null);
+
+  // Track if profile fields have changed (not avatar - that saves immediately)
+  const hasChanges = () => {
+    return displayName() !== (props.user?.display_name || '') ||
+           customStatus() !== (props.user?.custom_status || '');
+  };
+
+  const handleSaveProfile = async () => {
+    if (!hasChanges() || saving()) return;
+    
+    setSaving(true);
+    setSaveError(null);
+    setSaveSuccess(false);
+    
+    try {
+      await api.patch('/users/me', {
+        display_name: displayName() || null,
+        custom_status: customStatus() || null,
+      });
+      
+      // Refresh user data in auth store
+      await authStore.refreshUser();
+      
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (err: any) {
+      setSaveError(err.message || 'Failed to save profile');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAvatarChange = (newUrl: string | null) => {
+    setAvatarUrl(newUrl);
+    // Refresh user data in auth store to sync avatar everywhere
+    authStore.refreshUser();
+  };
 
   return (
     <div>
@@ -334,26 +376,42 @@ function ProfileTab(props: { user: ReturnType<typeof authStore.state>['user'] })
             <label class="block text-xs font-bold uppercase text-text-muted mb-2">
               Avatar
             </label>
-            <div class="flex items-center gap-4">
-              <Avatar
-                src={props.user?.avatar_url}
-                alt={props.user?.display_name || props.user?.username || 'User'}
-                size="lg"
-              />
-              <div class="flex gap-2">
-                <button class="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors">
-                  Change Avatar
-                </button>
-                <button class="px-4 py-2 bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary text-sm font-medium rounded transition-colors">
-                  Remove
-                </button>
-              </div>
-            </div>
+            <AvatarPicker
+              currentAvatarUrl={avatarUrl()}
+              username={props.user?.username}
+              displayName={displayName() || props.user?.display_name}
+              onAvatarChange={handleAvatarChange}
+            />
           </div>
 
-          <button class="px-4 py-2 bg-success hover:bg-success/90 text-white text-sm font-medium rounded transition-colors">
-            Save Changes
-          </button>
+          {/* Save button with status */}
+          <div class="flex items-center gap-3">
+            <button 
+              onClick={handleSaveProfile}
+              disabled={!hasChanges() || saving()}
+              class={clsx(
+                "px-4 py-2 text-white text-sm font-medium rounded transition-colors",
+                hasChanges() 
+                  ? "bg-success hover:bg-success/90" 
+                  : "bg-bg-tertiary text-text-muted cursor-not-allowed"
+              )}
+            >
+              {saving() ? 'Saving...' : 'Save Changes'}
+            </button>
+            
+            <Show when={saveSuccess()}>
+              <span class="text-sm text-success flex items-center gap-1">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                </svg>
+                Saved!
+              </span>
+            </Show>
+            
+            <Show when={saveError()}>
+              <span class="text-sm text-danger">{saveError()}</span>
+            </Show>
+          </div>
         </div>
 
         {/* Preview */}
@@ -364,7 +422,7 @@ function ProfileTab(props: { user: ReturnType<typeof authStore.state>['user'] })
             <div class="px-4 pb-4">
               <div class="flex items-end gap-3 -mt-[30px]">
                 <Avatar
-                  src={props.user?.avatar_url}
+                  src={avatarUrl()}
                   alt={displayName() || props.user?.username || 'User'}
                   size="lg"
                   class="ring-4 ring-bg-secondary"

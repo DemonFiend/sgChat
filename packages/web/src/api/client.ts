@@ -104,6 +104,72 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   return response.json();
 }
 
+/**
+ * Upload a file using multipart/form-data
+ */
+async function uploadFile<T>(endpoint: string, file: File, fieldName: string = 'file'): Promise<T> {
+  const apiUrl = getApiUrl();
+  if (!apiUrl) {
+    throw new ApiError('No network selected', 0);
+  }
+
+  // Get access token, refresh if needed
+  let token = authStore.getAccessToken();
+  if (!token && authStore.state().isAuthenticated) {
+    try {
+      token = await authStore.refreshAccessToken();
+    } catch {
+      throw new ApiError('Session expired', 401);
+    }
+  }
+
+  const formData = new FormData();
+  formData.append(fieldName, file);
+
+  const requestHeaders: Record<string, string> = {};
+  if (token) {
+    requestHeaders['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${apiUrl}${endpoint}`, {
+    method: 'POST',
+    headers: requestHeaders,
+    credentials: 'include',
+    body: formData,
+  });
+
+  // Handle 401 - try refresh once
+  if (response.status === 401 && token) {
+    try {
+      const newToken = await authStore.refreshAccessToken();
+      requestHeaders['Authorization'] = `Bearer ${newToken}`;
+      
+      const retryResponse = await fetch(`${apiUrl}${endpoint}`, {
+        method: 'POST',
+        headers: requestHeaders,
+        credentials: 'include',
+        body: formData,
+      });
+
+      if (!retryResponse.ok) {
+        const error = await retryResponse.json().catch(() => ({}));
+        throw new ApiError(error.message || 'Upload failed', retryResponse.status, error);
+      }
+
+      return retryResponse.json();
+    } catch {
+      throw new ApiError('Session expired', 401);
+    }
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new ApiError(error.message || 'Upload failed', response.status, error);
+  }
+
+  return response.json();
+}
+
 // Convenience methods
 export const api = {
   get: <T>(endpoint: string, baseUrl?: string) => 
@@ -120,6 +186,12 @@ export const api = {
   
   delete: <T>(endpoint: string, baseUrl?: string) => 
     request<T>(endpoint, { method: 'DELETE', baseUrl }),
+
+  /**
+   * Upload a file using multipart/form-data
+   */
+  upload: <T>(endpoint: string, file: File, fieldName?: string) =>
+    uploadFile<T>(endpoint, file, fieldName),
 };
 
 export { ApiError };

@@ -387,6 +387,46 @@ function createAuthStore() {
     return false; // Not expired
   };
 
+  /**
+   * Refresh user data from the server.
+   * Useful after avatar changes or other profile updates.
+   */
+  const refreshUser = async (): Promise<User | null> => {
+    const apiUrl = getApiUrl();
+    const token = getAccessToken();
+    
+    if (!apiUrl || !token) {
+      return null;
+    }
+
+    try {
+      const response = await fetch(`${apiUrl}/users/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const user = await response.json();
+      setState(prev => ({ ...prev, user }));
+      return user;
+    } catch {
+      return null;
+    }
+  };
+
+  /**
+   * Update user avatar URL locally (used by real-time events).
+   */
+  const updateAvatarUrl = (avatar_url: string | null) => {
+    setState(prev => ({
+      ...prev,
+      user: prev.user ? { ...prev.user, avatar_url } : null
+    }));
+  };
+
   return {
     state,
     authError,
@@ -402,6 +442,8 @@ function createAuthStore() {
     updateStatus,
     updateCustomStatus,
     clearExpiredCustomStatus,
+    refreshUser,
+    updateAvatarUrl,
     triggerAuthError,
     clearAuthError,
   };

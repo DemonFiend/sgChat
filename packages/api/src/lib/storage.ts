@@ -120,4 +120,92 @@ export const storage = {
     
     return this.uploadFile(buffer, path, contentType);
   },
+
+  // ============================================================
+  // Avatar-specific methods (with slot-based storage)
+  // ============================================================
+
+  /**
+   * Upload a processed avatar to a specific slot (current or previous).
+   * Returns the storage path and public URL.
+   */
+  async uploadProcessedAvatar(
+    userId: string,
+    slot: 'current' | 'previous',
+    buffer: Buffer
+  ): Promise<{ path: string; url: string }> {
+    const path = `avatars/${userId}-${slot}.webp`;
+    const url = await this.uploadFile(buffer, path, 'image/webp');
+    return { path, url };
+  },
+
+  /**
+   * Delete avatar by slot.
+   */
+  async deleteAvatarBySlot(userId: string, slot: 'current' | 'previous'): Promise<void> {
+    const path = `avatars/${userId}-${slot}.webp`;
+    await this.deleteFile(path);
+  },
+
+  /**
+   * Copy avatar from one slot to another (used for moving current to previous).
+   * Returns the new path and URL, or null if source doesn't exist.
+   */
+  async copyAvatarSlot(
+    userId: string,
+    fromSlot: 'current' | 'previous',
+    toSlot: 'current' | 'previous'
+  ): Promise<{ path: string; url: string } | null> {
+    const sourcePath = `avatars/${userId}-${fromSlot}.webp`;
+    const destPath = `avatars/${userId}-${toSlot}.webp`;
+    
+    try {
+      // Copy object in MinIO
+      await minioClient.copyObject(
+        MINIO_BUCKET,
+        destPath,
+        `/${MINIO_BUCKET}/${sourcePath}`
+      );
+      
+      const url = `http://${MINIO_ENDPOINT}/${MINIO_BUCKET}/${destPath}`;
+      return { path: destPath, url };
+    } catch (error) {
+      // Source doesn't exist or copy failed
+      console.error('Failed to copy avatar slot:', error);
+      return null;
+    }
+  },
+
+  /**
+   * Check if an avatar exists at a given slot.
+   */
+  async avatarSlotExists(userId: string, slot: 'current' | 'previous'): Promise<boolean> {
+    const path = `avatars/${userId}-${slot}.webp`;
+    try {
+      await minioClient.statObject(MINIO_BUCKET, path);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  /**
+   * Get the public URL for an avatar slot.
+   */
+  getAvatarUrl(userId: string, slot: 'current' | 'previous'): string {
+    return `http://${MINIO_ENDPOINT}/${MINIO_BUCKET}/avatars/${userId}-${slot}.webp`;
+  },
+
+  /**
+   * Get file size of an avatar at a given slot.
+   */
+  async getAvatarFileSize(userId: string, slot: 'current' | 'previous'): Promise<number | null> {
+    const path = `avatars/${userId}-${slot}.webp`;
+    try {
+      const stat = await minioClient.statObject(MINIO_BUCKET, path);
+      return stat.size;
+    } catch {
+      return null;
+    }
+  },
 };

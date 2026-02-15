@@ -765,3 +765,33 @@ WHERE key = 'default_everyone_permissions';
 
 -- Add sync_permissions flag to channels to indicate if they inherit from category
 ALTER TABLE channels ADD COLUMN IF NOT EXISTS sync_permissions_with_category BOOLEAN DEFAULT true;
+
+-- ============================================================
+-- USER AVATARS (Avatar storage with history)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS user_avatars (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  slot TEXT NOT NULL CHECK (slot IN ('current', 'previous')),
+  storage_path TEXT NOT NULL,
+  file_size INTEGER NOT NULL,
+  width INTEGER NOT NULL,
+  height INTEGER NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, slot)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_avatars_user ON user_avatars(user_id);
+
+-- Insert default avatar limits configuration
+INSERT INTO instance_settings (key, value) VALUES (
+  'avatar_limits',
+  '{
+    "max_upload_size_bytes": 5242880,
+    "max_dimension": 512,
+    "default_dimension": 128,
+    "output_quality": 85,
+    "max_storage_per_user_bytes": 5242880
+  }'::jsonb
+) ON CONFLICT (key) DO NOTHING;

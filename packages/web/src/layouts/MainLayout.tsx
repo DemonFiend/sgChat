@@ -203,18 +203,32 @@ export function MainLayout() {
 
   // Socket event handler for presence updates
   createEffect(() => {
-    const handlePresenceUpdate = (data: { user_id: string; status: 'online' | 'idle' | 'dnd' | 'offline'; custom_status?: string | null }) => {
+    const handlePresenceUpdate = (data: { 
+      user_id: string; 
+      status: 'online' | 'idle' | 'dnd' | 'offline'; 
+      custom_status?: string | null;
+      avatar_url?: string | null;
+    }) => {
       // Update member list
-      setMembers(prev => prev.map(m => 
-        m.id === data.user_id ? { ...m, status: data.status, custom_status: data.custom_status ?? m.custom_status } : m
-      ));
+      setMembers(prev => prev.map(m => {
+        if (m.id !== data.user_id) return m;
+        return { 
+          ...m, 
+          status: data.status, 
+          custom_status: data.custom_status ?? m.custom_status,
+          avatar_url: data.avatar_url !== undefined ? data.avatar_url : m.avatar_url,
+        };
+      }));
       
-      // Update own status in auth store if it's the current user
+      // Update own status/avatar in auth store if it's the current user
       const currentUserId = authStore.state().user?.id;
       if (data.user_id === currentUserId) {
         authStore.updateStatus(data.status);
         if (data.custom_status !== undefined) {
           authStore.updateCustomStatus(data.custom_status, null);
+        }
+        if (data.avatar_url !== undefined) {
+          authStore.updateAvatarUrl(data.avatar_url);
         }
       }
     };

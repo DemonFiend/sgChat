@@ -319,6 +319,28 @@ export interface InstanceSettings {
   updated_at: Date;
 }
 
+// Avatar configuration limits (stored in instance_settings)
+export interface AvatarLimits {
+  max_upload_size_bytes: number;
+  max_dimension: number;
+  default_dimension: number;
+  output_quality: number;
+  max_storage_per_user_bytes: number;
+}
+
+// User avatar metadata
+export interface UserAvatar {
+  id: string;
+  user_id: string;
+  slot: 'current' | 'previous';
+  storage_path: string;
+  file_size: number;
+  width: number;
+  height: number;
+  url: string;
+  created_at: Date;
+}
+
 // Voice state (stored in Redis)
 export interface VoiceState {
   user_id: UUID;
