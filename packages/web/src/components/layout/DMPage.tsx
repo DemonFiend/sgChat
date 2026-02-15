@@ -100,7 +100,8 @@ export function DMPage(): JSX.Element {
   // Fetch messages for selected friend
   const fetchMessages = async (friendId: string) => {
     try {
-      const messagesData = await api.get<DMMessage[]>(`/dms/${friendId}/messages`);
+      // Use /dms/user/:userId/messages endpoint (by user ID, not DM channel ID)
+      const messagesData = await api.get<DMMessage[]>(`/dms/user/${friendId}/messages`);
       setMessages(messagesData || []);
     } catch (err) {
       console.error('Failed to fetch messages:', err);
@@ -403,7 +404,8 @@ export function DMPage(): JSX.Element {
     if (!friend || !content.trim()) return;
 
     try {
-      const newMessage = await api.post<DMMessage>(`/dms/${friend.id}/messages`, { content });
+      // Use /dms/user/:userId/messages endpoint (by user ID, not DM channel ID)
+      const newMessage = await api.post<DMMessage>(`/dms/user/${friend.id}/messages`, { content });
       setMessages(prev => [...prev, newMessage]);
     } catch (err) {
       console.error('Failed to send message:', err);

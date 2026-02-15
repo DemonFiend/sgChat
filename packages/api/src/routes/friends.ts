@@ -138,6 +138,12 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
           RETURNING *
         `;
 
+        // Create DM channel automatically for the new friendship
+        const existingDM = await db.dmChannels.findByUsers(currentUserId, targetUserId);
+        if (!existingDM) {
+          await db.dmChannels.create(currentUserId, targetUserId);
+        }
+
         // Fetch current user's full profile for event payload
         const currentUserFull = await db.users.findById(currentUserId);
 
@@ -437,6 +443,12 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
         VALUES (${min}, ${max})
         RETURNING *
       `;
+
+      // Create DM channel automatically for the new friendship
+      const existingDM = await db.dmChannels.findByUsers(currentUserId, fromUserId);
+      if (!existingDM) {
+        await db.dmChannels.create(currentUserId, fromUserId);
+      }
 
       // Get both users' full info
       const friend = await db.users.findById(fromUserId);
