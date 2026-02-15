@@ -5,6 +5,7 @@ import { DMChatPanel, type DMMessage } from './DMChatPanel';
 import { authStore } from '@/stores/auth';
 import { api } from '@/api';
 import { socketService } from '@/lib/socket';
+import { soundService } from '@/lib/soundService';
 
 // API response types
 interface FriendRequestsResponse {
@@ -166,13 +167,29 @@ export function DMPage(): JSX.Element {
       if (selectedFriend()?.id === data.from_user_id) {
         setMessages(prev => [...prev, data.message]);
       } else {
-        // Update unread count for this friend
+        // Update unread count for this friend and play notification sound
         setFriends(prev => prev.map(f => 
           f.id === data.from_user_id 
             ? { ...f, unread_count: (f.unread_count || 0) + 1 }
             : f
         ));
+        // Play notification sound for new DM
+        soundService.playNotification();
       }
+    };
+
+    // DM message updated (edited)
+    const handleDMMessageUpdate = (data: { id: string; content?: string; edited_at?: string; status?: string }) => {
+      setMessages(prev => prev.map(msg => 
+        msg.id === data.id 
+          ? { ...msg, ...data }
+          : msg
+      ));
+    };
+
+    // DM message deleted
+    const handleDMMessageDelete = (data: { id: string }) => {
+      setMessages(prev => prev.filter(msg => msg.id !== data.id));
     };
 
     // DM typing indicators
@@ -211,6 +228,8 @@ export function DMPage(): JSX.Element {
     socketService.on('friend.request.accepted', handleFriendAccept);
     socketService.on('friend.removed', handleFriendRemove);
     socketService.on('dm.message.new', handleDMMessage);
+    socketService.on('dm.message.update', handleDMMessageUpdate);
+    socketService.on('dm.message.delete', handleDMMessageDelete);
     socketService.on('dm.typing.start', handleDMTypingStart);
     socketService.on('dm.typing.stop', handleDMTypingStop);
     socketService.on('presence.update', handlePresenceUpdate);
@@ -221,6 +240,8 @@ export function DMPage(): JSX.Element {
       socketService.off('friend.request.accepted', handleFriendAccept);
       socketService.off('friend.removed', handleFriendRemove);
       socketService.off('dm.message.new', handleDMMessage);
+      socketService.off('dm.message.update', handleDMMessageUpdate);
+      socketService.off('dm.message.delete', handleDMMessageDelete);
       socketService.off('dm.typing.start', handleDMTypingStart);
       socketService.off('dm.typing.stop', handleDMTypingStop);
       socketService.off('presence.update', handlePresenceUpdate);
@@ -379,13 +400,13 @@ export function DMPage(): JSX.Element {
   const handleTypingStart = () => {
     const friend = selectedFriend();
     if (!friend) return;
-    socketService.emit('dm:typing:start', { user_id: friend.id });
+    socketService.emit('dm.typing.start', { user_id: friend.id });
   };
 
   const handleTypingStop = () => {
     const friend = selectedFriend();
     if (!friend) return;
-    socketService.emit('dm:typing:stop', { user_id: friend.id });
+    socketService.emit('dm.typing.stop', { user_id: friend.id });
   };
 
   const pendingRequestCount = () => incomingRequests().length;

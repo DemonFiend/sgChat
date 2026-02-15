@@ -75,14 +75,64 @@ export const redis = {
     await client.del(`session:${userId}`);
   },
 
-  // Presence tracking
+  // ── Multi-session presence tracking ──────────────────────────
+  // Tracks individual socket sessions per user to properly handle
+  // multiple tabs/devices. User only goes offline when ALL sessions disconnect.
+
+  /**
+   * Add a socket session for a user (call on connect).
+   * Returns true if this is the user's first session (they just came online).
+   */
+  async addSession(userId: string, sessionId: string): Promise<boolean> {
+    const wasOnline = await client.sismember('online_users', userId);
+    await client.sadd(`user_sessions:${userId}`, sessionId);
+    await client.sadd('online_users', userId);
+    await client.setex(`presence:${userId}`, 300, 'online'); // 5 min TTL
+    return wasOnline === 0;
+  },
+
+  /**
+   * Remove a socket session for a user (call on disconnect).
+   * Returns true if this was the user's last session (they are now offline).
+   */
+  async removeSession(userId: string, sessionId: string): Promise<boolean> {
+    await client.srem(`user_sessions:${userId}`, sessionId);
+    const remaining = await client.scard(`user_sessions:${userId}`);
+    if (remaining === 0) {
+      await client.srem('online_users', userId);
+      await client.del(`presence:${userId}`);
+      await client.del(`user_sessions:${userId}`);
+      return true;
+    }
+    return false;
+  },
+
+  /**
+   * Get all active session IDs for a user.
+   */
+  async getUserSessions(userId: string): Promise<string[]> {
+    return client.smembers(`user_sessions:${userId}`);
+  },
+
+  /**
+   * Get the count of active sessions for a user.
+   */
+  async getSessionCount(userId: string): Promise<number> {
+    return client.scard(`user_sessions:${userId}`);
+  },
+
+  // Legacy presence functions (kept for backwards compatibility)
   async setPresence(userId: string, online: boolean) {
     if (online) {
       await client.sadd('online_users', userId);
       await client.setex(`presence:${userId}`, 300, 'online'); // 5 min TTL
     } else {
-      await client.srem('online_users', userId);
-      await client.del(`presence:${userId}`);
+      // Only remove if no active sessions
+      const sessionCount = await this.getSessionCount(userId);
+      if (sessionCount === 0) {
+        await client.srem('online_users', userId);
+        await client.del(`presence:${userId}`);
+      }
     }
   },
 
@@ -96,8 +146,12 @@ export const redis = {
   },
 
   async setUserOffline(userId: string) {
-    await client.srem('online_users', userId);
-    await client.del(`presence:${userId}`);
+    // Only remove if no active sessions
+    const sessionCount = await this.getSessionCount(userId);
+    if (sessionCount === 0) {
+      await client.srem('online_users', userId);
+      await client.del(`presence:${userId}`);
+    }
   },
 
   async isUserOnline(userId: string): Promise<boolean> {
@@ -169,6 +223,7 @@ export const redis = {
   // ── Gateway session management (A0: resume support) ──────────
   // Stores session metadata so clients can resume after brief disconnects
   // without re-fetching all rooms and data from scratch.
+  // Now supports multiple sessions per user (multi-tab/device).
 
   /** TTL for gateway sessions — 5 minutes after disconnect */
   GATEWAY_SESSION_TTL: 300,
@@ -176,12 +231,14 @@ export const redis = {
   /**
    * Store a gateway session when a client connects.
    * The session holds the user ID and their subscribed resource IDs.
+   * Supports multiple sessions per user.
    */
   async setGatewaySession(sessionId: string, userId: string, subscriptions: string[]) {
     const data = JSON.stringify({ userId, subscriptions, connectedAt: Date.now() });
     await client.setex(`gw:session:${sessionId}`, this.GATEWAY_SESSION_TTL, data);
-    // Index: userId → active session ID (for quick lookup)
-    await client.setex(`gw:user_session:${userId}`, this.GATEWAY_SESSION_TTL, sessionId);
+    // Track all active sessions for this user (Set instead of single value)
+    await client.sadd(`gw:user_sessions:${userId}`, sessionId);
+    await client.expire(`gw:user_sessions:${userId}`, this.GATEWAY_SESSION_TTL);
   },
 
   /**
@@ -202,10 +259,22 @@ export const redis = {
   },
 
   /**
+   * Get all gateway session IDs for a user.
+   */
+  async getUserGatewaySessions(userId: string): Promise<string[]> {
+    return client.smembers(`gw:user_sessions:${userId}`);
+  },
+
+  /**
    * Refresh the TTL of a gateway session (called on heartbeat / activity).
    */
   async refreshGatewaySession(sessionId: string) {
     await client.expire(`gw:session:${sessionId}`, this.GATEWAY_SESSION_TTL);
+    // Also refresh the user sessions set TTL
+    const session = await this.getGatewaySession(sessionId);
+    if (session) {
+      await client.expire(`gw:user_sessions:${session.userId}`, this.GATEWAY_SESSION_TTL);
+    }
   },
 
   /**
@@ -214,7 +283,13 @@ export const redis = {
   async deleteGatewaySession(sessionId: string) {
     const session = await this.getGatewaySession(sessionId);
     if (session) {
-      await client.del(`gw:user_session:${session.userId}`);
+      // Remove this session from the user's session set
+      await client.srem(`gw:user_sessions:${session.userId}`, sessionId);
+      // Clean up the set if empty
+      const remaining = await client.scard(`gw:user_sessions:${session.userId}`);
+      if (remaining === 0) {
+        await client.del(`gw:user_sessions:${session.userId}`);
+      }
     }
     await client.del(`gw:session:${sessionId}`);
   },

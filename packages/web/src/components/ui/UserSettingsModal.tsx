@@ -1,4 +1,4 @@
-import { createSignal, For, Show, JSX } from 'solid-js';
+import { createSignal, createEffect, onMount, onCleanup, For, Show, JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { useNavigate } from '@solidjs/router';
 import { clsx } from 'clsx';
@@ -6,6 +6,7 @@ import { authStore } from '@/stores/auth';
 import { networkStore } from '@/stores/network';
 import { theme, setTheme, themeNames, type Theme } from '@/stores/theme';
 import { Avatar } from './Avatar';
+import { api } from '@/api';
 
 type SettingsTab = 'account' | 'profile' | 'appearance' | 'notifications' | 'voice';
 
@@ -501,63 +502,440 @@ function NotificationsTab() {
 
 // Voice & Video Tab
 function VoiceTab() {
+  const [inputDevices, setInputDevices] = createSignal<MediaDeviceInfo[]>([]);
+  const [outputDevices, setOutputDevices] = createSignal<MediaDeviceInfo[]>([]);
+  const [selectedInputDevice, setSelectedInputDevice] = createSignal<string>('');
+  const [selectedOutputDevice, setSelectedOutputDevice] = createSignal<string>('');
+  const [inputVolume, setInputVolume] = createSignal(100);
+  const [outputVolume, setOutputVolume] = createSignal(100);
+  const [inputSensitivity, setInputSensitivity] = createSignal(50);
+  const [autoGainControl, setAutoGainControl] = createSignal(true);
+  const [echoCancellation, setEchoCancellation] = createSignal(true);
+  const [noiseSuppression, setNoiseSuppression] = createSignal(true);
+  const [voiceActivityDetection, setVoiceActivityDetection] = createSignal(true);
+  const [enableVoiceJoinSounds, setEnableVoiceJoinSounds] = createSignal(true);
+  const [isTesting, setIsTesting] = createSignal(false);
+  const [micLevel, setMicLevel] = createSignal(0);
+  const [saving, setSaving] = createSignal(false);
+  
+  let testStream: MediaStream | null = null;
+  let audioContext: AudioContext | null = null;
+  let analyser: AnalyserNode | null = null;
+  let animationFrame: number | null = null;
+
+  // Load saved settings
+  onMount(async () => {
+    try {
+      const settings = await api.get<any>('/users/me/settings');
+      if (settings) {
+        setSelectedInputDevice(settings.audio_input_device_id || '');
+        setSelectedOutputDevice(settings.audio_output_device_id || '');
+        setInputVolume(settings.audio_input_volume ?? 100);
+        setOutputVolume(settings.audio_output_volume ?? 100);
+        setInputSensitivity(settings.audio_input_sensitivity ?? 50);
+        setAutoGainControl(settings.audio_auto_gain_control ?? true);
+        setEchoCancellation(settings.audio_echo_cancellation ?? true);
+        setNoiseSuppression(settings.audio_noise_suppression ?? true);
+        setVoiceActivityDetection(settings.voice_activity_detection ?? true);
+        setEnableVoiceJoinSounds(settings.enable_voice_join_sounds ?? true);
+      }
+    } catch (err) {
+      console.error('Failed to load voice settings:', err);
+    }
+    
+    await enumerateDevices();
+  });
+
+  onCleanup(() => {
+    stopMicTest();
+  });
+
+  const enumerateDevices = async () => {
+    try {
+      // Request permission first to get device labels
+      await navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+        stream.getTracks().forEach(track => track.stop());
+      }).catch(() => {
+        // Permission denied, but we can still try to enumerate
+      });
+      
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      setInputDevices(devices.filter(d => d.kind === 'audioinput'));
+      setOutputDevices(devices.filter(d => d.kind === 'audiooutput'));
+    } catch (err) {
+      console.error('Failed to enumerate devices:', err);
+    }
+  };
+
+  const saveSettings = async (updates: Record<string, any>) => {
+    setSaving(true);
+    try {
+      await api.patch('/users/me/settings', updates);
+    } catch (err) {
+      console.error('Failed to save voice settings:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleInputDeviceChange = (deviceId: string) => {
+    setSelectedInputDevice(deviceId);
+    saveSettings({ audio_input_device_id: deviceId || null });
+  };
+
+  const handleOutputDeviceChange = (deviceId: string) => {
+    setSelectedOutputDevice(deviceId);
+    saveSettings({ audio_output_device_id: deviceId || null });
+  };
+
+  const handleInputVolumeChange = (value: number) => {
+    setInputVolume(value);
+    saveSettings({ audio_input_volume: value });
+  };
+
+  const handleOutputVolumeChange = (value: number) => {
+    setOutputVolume(value);
+    saveSettings({ audio_output_volume: value });
+  };
+
+  const handleSensitivityChange = (value: number) => {
+    setInputSensitivity(value);
+    saveSettings({ audio_input_sensitivity: value });
+  };
+
+  const toggleSetting = (
+    getter: () => boolean,
+    setter: (v: boolean) => void,
+    settingKey: string
+  ) => {
+    const newValue = !getter();
+    setter(newValue);
+    saveSettings({ [settingKey]: newValue });
+  };
+
+  const startMicTest = async () => {
+    try {
+      const constraints: MediaStreamConstraints = {
+        audio: {
+          deviceId: selectedInputDevice() ? { exact: selectedInputDevice() } : undefined,
+          autoGainControl: autoGainControl(),
+          echoCancellation: echoCancellation(),
+          noiseSuppression: noiseSuppression(),
+        }
+      };
+      
+      testStream = await navigator.mediaDevices.getUserMedia(constraints);
+      audioContext = new AudioContext();
+      const source = audioContext.createMediaStreamSource(testStream);
+      analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      
+      setIsTesting(true);
+      updateMicLevel();
+    } catch (err) {
+      console.error('Failed to start mic test:', err);
+    }
+  };
+
+  const stopMicTest = () => {
+    if (animationFrame) {
+      cancelAnimationFrame(animationFrame);
+      animationFrame = null;
+    }
+    if (testStream) {
+      testStream.getTracks().forEach(track => track.stop());
+      testStream = null;
+    }
+    if (audioContext) {
+      audioContext.close();
+      audioContext = null;
+    }
+    analyser = null;
+    setIsTesting(false);
+    setMicLevel(0);
+  };
+
+  const updateMicLevel = () => {
+    if (!analyser) return;
+    
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(dataArray);
+    
+    // Calculate average level
+    const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+    const normalizedLevel = Math.min(100, (average / 128) * 100 * (inputVolume() / 100));
+    setMicLevel(normalizedLevel);
+    
+    animationFrame = requestAnimationFrame(updateMicLevel);
+  };
+
+  const testSpeakers = async () => {
+    try {
+      // Create a test tone
+      const ctx = new AudioContext();
+      const oscillator = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      
+      oscillator.type = 'sine';
+      oscillator.frequency.value = 440; // A4 note
+      gainNode.gain.value = (outputVolume() / 100) * 0.3;
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      
+      oscillator.start();
+      
+      // Stop after 1 second
+      setTimeout(() => {
+        oscillator.stop();
+        ctx.close();
+      }, 1000);
+    } catch (err) {
+      console.error('Failed to test speakers:', err);
+    }
+  };
+
   return (
     <div>
       <h2 class="text-xl font-bold text-text-primary mb-5">Voice & Video</h2>
       
       <div class="space-y-6">
+        {/* Input Device Selection */}
         <div>
           <label class="block text-xs font-bold uppercase text-text-muted mb-2">
             Input Device
           </label>
-          <select class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary">
-            <option>Default</option>
+          <select 
+            class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
+            value={selectedInputDevice()}
+            onChange={(e) => handleInputDeviceChange(e.currentTarget.value)}
+          >
+            <option value="">Default</option>
+            <For each={inputDevices()}>
+              {(device) => (
+                <option value={device.deviceId}>
+                  {device.label || `Microphone ${device.deviceId.slice(0, 8)}`}
+                </option>
+              )}
+            </For>
           </select>
         </div>
 
+        {/* Output Device Selection */}
         <div>
           <label class="block text-xs font-bold uppercase text-text-muted mb-2">
             Output Device
           </label>
-          <select class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary">
-            <option>Default</option>
+          <select 
+            class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
+            value={selectedOutputDevice()}
+            onChange={(e) => handleOutputDeviceChange(e.currentTarget.value)}
+          >
+            <option value="">Default</option>
+            <For each={outputDevices()}>
+              {(device) => (
+                <option value={device.deviceId}>
+                  {device.label || `Speaker ${device.deviceId.slice(0, 8)}`}
+                </option>
+              )}
+            </For>
           </select>
         </div>
 
+        {/* Input Volume */}
         <div>
           <label class="block text-xs font-bold uppercase text-text-muted mb-2">
-            Input Volume
+            Input Volume - {inputVolume()}%
+          </label>
+          <input
+            type="range"
+            min="0"
+            max="200"
+            value={inputVolume()}
+            onInput={(e) => handleInputVolumeChange(parseInt(e.currentTarget.value))}
+            class="w-full accent-brand-primary"
+          />
+          {/* Mic level indicator */}
+          <Show when={isTesting()}>
+            <div class="mt-2 h-2 bg-bg-tertiary rounded-full overflow-hidden">
+              <div 
+                class="h-full bg-success transition-all duration-75"
+                style={{ width: `${micLevel()}%` }}
+              />
+            </div>
+          </Show>
+        </div>
+
+        {/* Output Volume */}
+        <div>
+          <label class="block text-xs font-bold uppercase text-text-muted mb-2">
+            Output Volume - {outputVolume()}%
+          </label>
+          <input
+            type="range"
+            min="0"
+            max="200"
+            value={outputVolume()}
+            onInput={(e) => handleOutputVolumeChange(parseInt(e.currentTarget.value))}
+            class="w-full accent-brand-primary"
+          />
+        </div>
+
+        {/* Input Sensitivity */}
+        <div>
+          <label class="block text-xs font-bold uppercase text-text-muted mb-2">
+            Input Sensitivity - {inputSensitivity()}%
           </label>
           <input
             type="range"
             min="0"
             max="100"
-            value="100"
-            class="w-full"
+            value={inputSensitivity()}
+            onInput={(e) => handleSensitivityChange(parseInt(e.currentTarget.value))}
+            class="w-full accent-brand-primary"
           />
+          <p class="text-xs text-text-muted mt-1">
+            Adjusts the threshold for voice activity detection
+          </p>
         </div>
 
-        <div>
-          <label class="block text-xs font-bold uppercase text-text-muted mb-2">
-            Output Volume
-          </label>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value="100"
-            class="w-full"
-          />
-        </div>
-
+        {/* Test Buttons */}
         <div class="flex gap-3">
-          <button class="px-4 py-2 bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary text-sm font-medium rounded transition-colors">
-            Test Microphone
+          <button 
+            onClick={() => isTesting() ? stopMicTest() : startMicTest()}
+            class={clsx(
+              "px-4 py-2 text-sm font-medium rounded transition-colors",
+              isTesting() 
+                ? "bg-danger hover:bg-danger/90 text-white" 
+                : "bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary"
+            )}
+          >
+            {isTesting() ? 'Stop Testing' : 'Test Microphone'}
           </button>
-          <button class="px-4 py-2 bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary text-sm font-medium rounded transition-colors">
+          <button 
+            onClick={testSpeakers}
+            class="px-4 py-2 bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary text-sm font-medium rounded transition-colors"
+          >
             Test Speakers
           </button>
         </div>
+
+        {/* Audio Processing Toggles */}
+        <div class="border-t border-border-subtle pt-6">
+          <h3 class="text-sm font-bold text-text-primary mb-4">Audio Processing</h3>
+          
+          <div class="space-y-4">
+            {/* Echo Cancellation */}
+            <div class="flex items-center justify-between">
+              <div>
+                <div class="text-text-primary font-medium">Echo Cancellation</div>
+                <div class="text-sm text-text-muted">Reduces echo from speakers</div>
+              </div>
+              <button
+                onClick={() => toggleSetting(echoCancellation, setEchoCancellation, 'audio_echo_cancellation')}
+                class={clsx(
+                  "relative w-12 h-6 rounded-full transition-colors",
+                  echoCancellation() ? 'bg-success' : 'bg-bg-tertiary'
+                )}
+              >
+                <div class={clsx(
+                  "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
+                  echoCancellation() ? 'left-7' : 'left-1'
+                )} />
+              </button>
+            </div>
+
+            {/* Noise Suppression */}
+            <div class="flex items-center justify-between">
+              <div>
+                <div class="text-text-primary font-medium">Noise Suppression</div>
+                <div class="text-sm text-text-muted">Reduces background noise</div>
+              </div>
+              <button
+                onClick={() => toggleSetting(noiseSuppression, setNoiseSuppression, 'audio_noise_suppression')}
+                class={clsx(
+                  "relative w-12 h-6 rounded-full transition-colors",
+                  noiseSuppression() ? 'bg-success' : 'bg-bg-tertiary'
+                )}
+              >
+                <div class={clsx(
+                  "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
+                  noiseSuppression() ? 'left-7' : 'left-1'
+                )} />
+              </button>
+            </div>
+
+            {/* Auto Gain Control */}
+            <div class="flex items-center justify-between">
+              <div>
+                <div class="text-text-primary font-medium">Automatic Gain Control</div>
+                <div class="text-sm text-text-muted">Automatically adjusts microphone volume</div>
+              </div>
+              <button
+                onClick={() => toggleSetting(autoGainControl, setAutoGainControl, 'audio_auto_gain_control')}
+                class={clsx(
+                  "relative w-12 h-6 rounded-full transition-colors",
+                  autoGainControl() ? 'bg-success' : 'bg-bg-tertiary'
+                )}
+              >
+                <div class={clsx(
+                  "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
+                  autoGainControl() ? 'left-7' : 'left-1'
+                )} />
+              </button>
+            </div>
+
+            {/* Voice Activity Detection */}
+            <div class="flex items-center justify-between">
+              <div>
+                <div class="text-text-primary font-medium">Voice Activity Detection</div>
+                <div class="text-sm text-text-muted">Automatically detect when you're speaking</div>
+              </div>
+              <button
+                onClick={() => toggleSetting(voiceActivityDetection, setVoiceActivityDetection, 'voice_activity_detection')}
+                class={clsx(
+                  "relative w-12 h-6 rounded-full transition-colors",
+                  voiceActivityDetection() ? 'bg-success' : 'bg-bg-tertiary'
+                )}
+              >
+                <div class={clsx(
+                  "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
+                  voiceActivityDetection() ? 'left-7' : 'left-1'
+                )} />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Sound Settings */}
+        <div class="border-t border-border-subtle pt-6">
+          <h3 class="text-sm font-bold text-text-primary mb-4">Sounds</h3>
+          
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-text-primary font-medium">Voice Channel Sounds</div>
+              <div class="text-sm text-text-muted">Play sounds when joining/leaving voice channels</div>
+            </div>
+            <button
+              onClick={() => toggleSetting(enableVoiceJoinSounds, setEnableVoiceJoinSounds, 'enable_voice_join_sounds')}
+              class={clsx(
+                "relative w-12 h-6 rounded-full transition-colors",
+                enableVoiceJoinSounds() ? 'bg-success' : 'bg-bg-tertiary'
+              )}
+            >
+              <div class={clsx(
+                "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
+                enableVoiceJoinSounds() ? 'left-7' : 'left-1'
+              )} />
+            </button>
+          </div>
+        </div>
+
+        {/* Saving indicator */}
+        <Show when={saving()}>
+          <p class="text-xs text-text-muted">Saving...</p>
+        </Show>
       </div>
     </div>
   );

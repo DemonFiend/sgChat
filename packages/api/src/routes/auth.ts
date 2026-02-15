@@ -1,5 +1,6 @@
 import { FastifyPluginAsync } from 'fastify';
 import argon2 from 'argon2';
+import crypto from 'crypto';
 import { nanoid } from 'nanoid';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
@@ -14,6 +15,16 @@ import {
   RoleTemplates,
 } from '@sgchat/shared';
 import { z } from 'zod';
+
+// Password reset schemas
+const forgotPasswordSchema = z.object({
+  email: z.string().email(),
+});
+
+const resetPasswordSchema = z.object({
+  token: z.string().min(32).max(128),
+  password: z.string().min(1), // Already client-side hashed
+});
 
 const claimAdminSchema = z.object({
   code: z.string().min(1).max(64),
@@ -440,6 +451,211 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
           owner_id: updatedServer.owner_id,
         },
       };
+    },
+  });
+
+  // ============================================================
+  // PASSWORD RESET (A12)
+  // ============================================================
+
+  /**
+   * POST /auth/forgot-password - Request password reset
+   * 
+   * Sends a password reset token. For security, always returns success
+   * even if the email doesn't exist (prevents user enumeration).
+   */
+  fastify.post('/forgot-password', {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: '15 minutes',
+        keyGenerator: (req) => req.ip,
+      },
+    },
+    handler: async (request, reply) => {
+      const { email } = forgotPasswordSchema.parse(request.body);
+
+      // Always respond with success to prevent user enumeration
+      const genericResponse = {
+        message: 'If an account exists with that email, a reset link has been sent.',
+      };
+
+      try {
+        // Find user by email
+        const user = await db.users.findByEmail(email);
+        if (!user) {
+          // Don't reveal that email doesn't exist
+          return genericResponse;
+        }
+
+        // Generate a secure token
+        const token = crypto.randomBytes(32).toString('hex');
+        const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+        // Set expiration to 15 minutes from now
+        const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+        // Delete any existing tokens for this user
+        await db.sql`
+          DELETE FROM password_reset_tokens WHERE user_id = ${user.id}
+        `;
+
+        // Store the hashed token
+        await db.sql`
+          INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+          VALUES (${user.id}, ${tokenHash}, ${expiresAt})
+        `;
+
+        // Log the token for now (in production, send via email)
+        // TODO: Integrate with email service or ntfy
+        console.log(`🔑 Password reset token for ${email}: ${token}`);
+        console.log(`   Reset link: /reset-password?token=${token}`);
+
+        return genericResponse;
+      } catch (err) {
+        fastify.log.error(err, 'Password reset request failed');
+        // Still return generic response to prevent information leakage
+        return genericResponse;
+      }
+    },
+  });
+
+  /**
+   * POST /auth/reset-password - Complete password reset
+   * 
+   * Validates the reset token and updates the user's password.
+   * Invalidates all existing sessions after reset.
+   */
+  fastify.post('/reset-password', {
+    config: {
+      rateLimit: {
+        max: 10,
+        timeWindow: '15 minutes',
+        keyGenerator: (req) => req.ip,
+      },
+    },
+    handler: async (request, reply) => {
+      const { token, password } = resetPasswordSchema.parse(request.body);
+
+      // Hash the provided token to compare with stored hash
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+      // Find a valid, unused token
+      const [resetToken] = await db.sql`
+        SELECT id, user_id, expires_at, used_at
+        FROM password_reset_tokens
+        WHERE token_hash = ${tokenHash}
+        LIMIT 1
+      `;
+
+      if (!resetToken) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: 'Invalid or expired reset token',
+        });
+      }
+
+      // Check if token has already been used
+      if (resetToken.used_at) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: 'This reset token has already been used',
+        });
+      }
+
+      // Check if token has expired
+      if (new Date(resetToken.expires_at) < new Date()) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: 'This reset token has expired',
+        });
+      }
+
+      try {
+        // Hash the new password (client sends pre-hashed, we hash again)
+        const hashedPassword = await argon2.hash(password);
+
+        // Update the user's password
+        await db.sql`
+          UPDATE users
+          SET password_hash = ${hashedPassword}, updated_at = NOW()
+          WHERE id = ${resetToken.user_id}
+        `;
+
+        // Mark the token as used
+        await db.sql`
+          UPDATE password_reset_tokens
+          SET used_at = NOW()
+          WHERE id = ${resetToken.id}
+        `;
+
+        // Invalidate all sessions for this user
+        await redis.deleteSession(resetToken.user_id);
+
+        // Clean up old tokens for this user
+        await db.sql`
+          DELETE FROM password_reset_tokens
+          WHERE user_id = ${resetToken.user_id}
+            AND (used_at IS NOT NULL OR expires_at < NOW())
+        `;
+
+        console.log(`✅ Password reset completed for user ${resetToken.user_id}`);
+
+        return {
+          message: 'Password reset successfully. Please log in with your new password.',
+        };
+      } catch (err) {
+        fastify.log.error(err, 'Password reset failed');
+        return reply.status(500).send({
+          statusCode: 500,
+          error: 'Internal Server Error',
+          message: 'Failed to reset password. Please try again.',
+        });
+      }
+    },
+  });
+
+  /**
+   * GET /auth/verify-reset-token - Check if a reset token is valid
+   * 
+   * Allows the client to validate a token before showing the reset form.
+   */
+  fastify.get('/verify-reset-token', {
+    handler: async (request, reply) => {
+      const { token } = request.query as { token?: string };
+
+      if (!token || token.length < 32) {
+        return reply.status(400).send({
+          valid: false,
+          message: 'Invalid token format',
+        });
+      }
+
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+      const [resetToken] = await db.sql`
+        SELECT expires_at, used_at
+        FROM password_reset_tokens
+        WHERE token_hash = ${tokenHash}
+        LIMIT 1
+      `;
+
+      if (!resetToken) {
+        return { valid: false, message: 'Token not found' };
+      }
+
+      if (resetToken.used_at) {
+        return { valid: false, message: 'Token has already been used' };
+      }
+
+      if (new Date(resetToken.expires_at) < new Date()) {
+        return { valid: false, message: 'Token has expired' };
+      }
+
+      return { valid: true };
     },
   });
 };

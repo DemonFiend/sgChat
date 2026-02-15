@@ -8,6 +8,8 @@ import { SessionExpiredOverlay } from '@/components/ui/SessionExpiredOverlay';
 // Lazy load pages for code splitting
 const LoginPage = lazy(() => import('@/features/auth/LoginPage').then((m) => ({ default: m.LoginPage })));
 const RegisterPage = lazy(() => import('@/features/auth/RegisterPage').then((m) => ({ default: m.RegisterPage })));
+const ForgotPasswordPage = lazy(() => import('@/features/auth/ForgotPasswordPage').then((m) => ({ default: m.ForgotPasswordPage })));
+const ResetPasswordPage = lazy(() => import('@/features/auth/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage })));
 const MainLayout = lazy(() => import('@/layouts/MainLayout').then((m) => ({ default: m.MainLayout })));
 
 function LoadingScreen() {
@@ -130,6 +132,18 @@ export function App() {
       <Route path="/register" component={() => (
         <PublicRoute>
           <RegisterPage />
+        </PublicRoute>
+      )} />
+
+      <Route path="/forgot-password" component={() => (
+        <PublicRoute>
+          <ForgotPasswordPage />
+        </PublicRoute>
+      )} />
+
+      <Route path="/reset-password" component={() => (
+        <PublicRoute>
+          <ResetPasswordPage />
         </PublicRoute>
       )} />
 

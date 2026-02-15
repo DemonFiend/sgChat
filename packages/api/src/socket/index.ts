@@ -119,10 +119,12 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
     // ── Persist gateway session for resume support ────────────
     await redis.setGatewaySession(sessionId, userId, subscriptions);
 
-    // ── Presence broadcast (existing behaviour) ───────────────
-    await redis.setPresence(userId, true);
+    // ── Multi-session presence tracking ─────────────────────────
+    // Track this socket session. Only broadcast online if this is the first session.
+    const isFirstSession = await redis.addSession(userId, sessionId);
 
-    if (storedStatus !== 'offline') {
+    if (storedStatus !== 'offline' && isFirstSession) {
+      // Only broadcast presence.update when user first comes online
       for (const server of servers) {
         // Publish through event bus so it flows through envelopes
         await publishEvent({
@@ -481,7 +483,8 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
 
     const typingTimeouts = new Map<string, NodeJS.Timeout>();
 
-    socket.on('typing:start', async (data: { channel_id: string }) => {
+    // Handler for typing start (supports both dot and colon notation for backwards compat)
+    const handleTypingStart = async (data: { channel_id: string }) => {
       const key = `${userId}:${data.channel_id}`;
       
       if (typingTimeouts.has(key)) {
@@ -521,9 +524,10 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       }, 5000);
 
       typingTimeouts.set(key, timeout);
-    });
+    };
 
-    socket.on('typing:stop', async (data: { channel_id: string }) => {
+    // Handler for typing stop (supports both dot and colon notation for backwards compat)
+    const handleTypingStop = async (data: { channel_id: string }) => {
       const key = `${userId}:${data.channel_id}`;
       
       if (typingTimeouts.has(key)) {
@@ -540,7 +544,13 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
           channel_id: data.channel_id,
         },
       });
-    });
+    };
+
+    // Register both event name formats for backwards compatibility
+    socket.on('typing.start', handleTypingStart);
+    socket.on('typing:start', handleTypingStart);
+    socket.on('typing.stop', handleTypingStop);
+    socket.on('typing:stop', handleTypingStop);
 
     // ── Presence Updates ──────────────────────────────────────
 
@@ -843,7 +853,8 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
     
     const dmTypingTimeouts = new Map<string, NodeJS.Timeout>();
 
-    socket.on('dm:typing:start', async (data: { user_id: string }) => {
+    // Handler for DM typing start (supports both dot and colon notation)
+    const handleDmTypingStart = async (data: { user_id: string }) => {
       const targetUserId = data.user_id;
       const key = `dm:${userId}:${targetUserId}`;
       
@@ -855,7 +866,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       if (!dmChannel) return;
 
       await publishEvent({
-        type: 'typing.start',
+        type: 'dm.typing.start',
         actorId: userId,
         resourceId: `user:${targetUserId}`,
         payload: { user_id: userId },
@@ -863,7 +874,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
 
       const timeout = setTimeout(async () => {
         await publishEvent({
-          type: 'typing.stop',
+          type: 'dm.typing.stop',
           actorId: userId,
           resourceId: `user:${targetUserId}`,
           payload: { user_id: userId },
@@ -872,9 +883,10 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       }, 5000);
 
       dmTypingTimeouts.set(key, timeout);
-    });
+    };
 
-    socket.on('dm:typing:stop', async (data: { user_id: string }) => {
+    // Handler for DM typing stop (supports both dot and colon notation)
+    const handleDmTypingStop = async (data: { user_id: string }) => {
       const targetUserId = data.user_id;
       const key = `dm:${userId}:${targetUserId}`;
       
@@ -884,12 +896,18 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       }
 
       await publishEvent({
-        type: 'typing.stop',
+        type: 'dm.typing.stop',
         actorId: userId,
         resourceId: `user:${targetUserId}`,
         payload: { user_id: userId },
       });
-    });
+    };
+
+    // Register both event name formats for backwards compatibility
+    socket.on('dm.typing.start', handleDmTypingStart);
+    socket.on('dm:typing:start', handleDmTypingStart);
+    socket.on('dm.typing.stop', handleDmTypingStop);
+    socket.on('dm:typing:stop', handleDmTypingStop);
 
     // ── DM Room Management ────────────────────────────────────
 
@@ -914,7 +932,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
     // ── Disconnect ────────────────────────────────────────────
 
     socket.on('disconnect', async () => {
-      fastify.log.info(`Socket disconnected: ${socket.data.user.username}`);
+      fastify.log.info(`Socket disconnected: ${socket.data.user.username} session=${sessionId}`);
 
       // Clear heartbeat timer
       if (heartbeatTimer) clearTimeout(heartbeatTimer);
@@ -938,7 +956,9 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       const currentUserStatus = await db.users.findById(userId);
       const wasInvisible = currentUserStatus?.status === 'offline';
 
-      await redis.setPresence(userId, false);
+      // Remove this session from presence tracking.
+      // Only broadcast offline if this was the user's LAST session.
+      const isLastSession = await redis.removeSession(userId, sessionId);
 
       // Clean up voice state
       const voiceChannelId = await redis.getUserVoiceChannel(userId);
@@ -961,7 +981,8 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
 
       await db.sql`UPDATE users SET last_seen_at = NOW() WHERE id = ${userId}`;
 
-      if (!wasInvisible) {
+      // Only broadcast offline status if this was the last session
+      if (!wasInvisible && isLastSession) {
         for (const server of servers) {
           await publishEvent({
             type: 'presence.update',

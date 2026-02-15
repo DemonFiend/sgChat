@@ -136,6 +136,7 @@ export interface Invite {
 
 export interface UserSettings {
   user_id: UUID;
+  // Theme settings
   theme_id: string;
   theme_variables: Record<string, string>;
   accent_color: string;
@@ -143,7 +144,22 @@ export interface UserSettings {
   chat_density: 'compact' | 'cozy' | 'comfortable';
   saturation: number;
   custom_css: string | null;
+  // Privacy settings
   hide_online_announcements: boolean;
+  // Voice & Audio settings (A8-A11)
+  audio_input_device_id: string | null;
+  audio_output_device_id: string | null;
+  audio_input_volume: number;
+  audio_output_volume: number;
+  audio_input_sensitivity: number;
+  audio_auto_gain_control: boolean;
+  audio_echo_cancellation: boolean;
+  audio_noise_suppression: boolean;
+  voice_activity_detection: boolean;
+  push_to_talk_key: string | null;
+  // Notification sounds
+  enable_sounds: boolean;
+  enable_voice_join_sounds: boolean;
   updated_at: Date;
 }
 

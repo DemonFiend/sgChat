@@ -337,6 +337,22 @@ CREATE TABLE user_settings (
   -- Privacy
   hide_online_announcements BOOLEAN DEFAULT true,
   
+  -- Voice & Audio Settings (A8-A11)
+  audio_input_device_id TEXT,                                     -- Selected microphone device ID
+  audio_output_device_id TEXT,                                    -- Selected speaker device ID
+  audio_input_volume INTEGER DEFAULT 100 CHECK (audio_input_volume >= 0 AND audio_input_volume <= 200),
+  audio_output_volume INTEGER DEFAULT 100 CHECK (audio_output_volume >= 0 AND audio_output_volume <= 200),
+  audio_input_sensitivity INTEGER DEFAULT 50 CHECK (audio_input_sensitivity >= 0 AND audio_input_sensitivity <= 100),
+  audio_auto_gain_control BOOLEAN DEFAULT true,
+  audio_echo_cancellation BOOLEAN DEFAULT true,
+  audio_noise_suppression BOOLEAN DEFAULT true,
+  voice_activity_detection BOOLEAN DEFAULT true,                  -- VAD vs push-to-talk
+  push_to_talk_key TEXT,                                          -- Key binding for PTT
+  
+  -- Notification Sounds
+  enable_sounds BOOLEAN DEFAULT true,
+  enable_voice_join_sounds BOOLEAN DEFAULT true,
+  
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -354,6 +370,22 @@ CREATE TABLE dm_read_state (
 );
 
 CREATE INDEX idx_dm_read_state_user ON dm_read_state(user_id);
+
+-- ============================================================
+-- PASSWORD RESET TOKENS (A12)
+-- ============================================================
+
+CREATE TABLE password_reset_tokens (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL,                                       -- Hashed token (never store plaintext)
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at TIMESTAMPTZ,                                            -- Set when token is consumed
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_password_reset_user ON password_reset_tokens(user_id);
+CREATE INDEX idx_password_reset_expires ON password_reset_tokens(expires_at) WHERE used_at IS NULL;
 
 -- ============================================================
 -- INSTANCE SETTINGS

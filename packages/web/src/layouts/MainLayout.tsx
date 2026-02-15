@@ -18,6 +18,7 @@ import { authStore } from '@/stores/auth';
 import { permissions, voiceStore } from '@/stores';
 import { socketService } from '@/lib/socket';
 import { voiceService } from '@/lib/voiceService';
+import { soundService } from '@/lib/soundService';
 
 interface Server {
   id: string;
@@ -259,6 +260,12 @@ export function MainLayout() {
       
       console.log('[MainLayout] Adding message to chat:', message.id, 'author:', message.author.username);
       setMessages(prev => [...prev, message]);
+
+      // Play notification sound if user is mentioned
+      const currentUsername = authStore.state().user?.username;
+      if (currentUsername && message.content?.includes(`@${currentUsername}`)) {
+        soundService.playNotification();
+      }
     };
 
     socketService.on('message.new', handleNewMessage);
@@ -787,13 +794,13 @@ export function MainLayout() {
   const handleTypingStart = () => {
     const channelId = params.channelId;
     if (!channelId) return;
-    socketService.emit('typing:start', { channel_id: channelId });
+    socketService.emit('typing.start', { channel_id: channelId });
   };
 
   const handleTypingStop = () => {
     const channelId = params.channelId;
     if (!channelId) return;
-    socketService.emit('typing:stop', { channel_id: channelId });
+    socketService.emit('typing.stop', { channel_id: channelId });
   };
 
   // Group members by status and add owner info

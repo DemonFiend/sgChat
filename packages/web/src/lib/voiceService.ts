@@ -2,6 +2,7 @@ import { Room, RoomEvent, Track, RemoteTrack, RemoteParticipant, LocalParticipan
 import { api } from '@/api';
 import { voiceStore, type VoicePermissions, type VoiceParticipant } from '@/stores/voice';
 import { socketService } from './socket';
+import { soundService } from './soundService';
 
 interface JoinVoiceResponse {
   token: string;
@@ -32,16 +33,80 @@ interface VoiceParticipantResponse {
   }>;
 }
 
+interface VoiceSettings {
+  audio_input_device_id: string | null;
+  audio_output_device_id: string | null;
+  audio_input_volume: number;
+  audio_output_volume: number;
+  audio_input_sensitivity: number;
+  audio_auto_gain_control: boolean;
+  audio_echo_cancellation: boolean;
+  audio_noise_suppression: boolean;
+  voice_activity_detection: boolean;
+  enable_voice_join_sounds: boolean;
+}
+
 class VoiceServiceClass {
   private room: Room | null = null;
   private audioElements: Map<string, HTMLAudioElement> = new Map();
   private audioContainer: HTMLElement | null = null;
+  private voiceSettings: VoiceSettings | null = null;
+  private outputVolume: number = 100;
 
   /**
    * Set the container element for audio elements
    */
   setAudioContainer(container: HTMLElement) {
     this.audioContainer = container;
+  }
+
+  /**
+   * Fetch user's voice settings from the server
+   */
+  private async loadVoiceSettings(): Promise<VoiceSettings> {
+    try {
+      const settings = await api.get<any>('/users/me/settings');
+      this.voiceSettings = {
+        audio_input_device_id: settings?.audio_input_device_id || null,
+        audio_output_device_id: settings?.audio_output_device_id || null,
+        audio_input_volume: settings?.audio_input_volume ?? 100,
+        audio_output_volume: settings?.audio_output_volume ?? 100,
+        audio_input_sensitivity: settings?.audio_input_sensitivity ?? 50,
+        audio_auto_gain_control: settings?.audio_auto_gain_control ?? true,
+        audio_echo_cancellation: settings?.audio_echo_cancellation ?? true,
+        audio_noise_suppression: settings?.audio_noise_suppression ?? true,
+        voice_activity_detection: settings?.voice_activity_detection ?? true,
+        enable_voice_join_sounds: settings?.enable_voice_join_sounds ?? true,
+      };
+      this.outputVolume = this.voiceSettings.audio_output_volume;
+      return this.voiceSettings;
+    } catch (err) {
+      console.warn('[VoiceService] Could not load voice settings:', err);
+      // Return defaults
+      return {
+        audio_input_device_id: null,
+        audio_output_device_id: null,
+        audio_input_volume: 100,
+        audio_output_volume: 100,
+        audio_input_sensitivity: 50,
+        audio_auto_gain_control: true,
+        audio_echo_cancellation: true,
+        audio_noise_suppression: true,
+        voice_activity_detection: true,
+        enable_voice_join_sounds: true,
+      };
+    }
+  }
+
+  /**
+   * Play a sound effect (if enabled)
+   */
+  private playSound(type: 'join' | 'leave'): void {
+    if (type === 'join') {
+      soundService.playVoiceJoin();
+    } else {
+      soundService.playVoiceLeave();
+    }
   }
 
   /**
@@ -57,6 +122,9 @@ class VoiceServiceClass {
       // Set connecting state
       voiceStore.setConnecting(channelId, channelName);
       console.log('[VoiceService] Joining voice channel:', channelId, channelName);
+
+      // 0. Load user's voice settings
+      const settings = await this.loadVoiceSettings();
 
       // 1. Get token from server
       const response = await api.post<JoinVoiceResponse>(`/voice/join/${channelId}`, {});
@@ -87,16 +155,17 @@ class VoiceServiceClass {
         console.warn('[VoiceService] Could not fetch participants:', err);
       }
 
-      // 3. Create and configure Room with channel bitrate
+      // 3. Create and configure Room with user's audio settings
       const channelBitrate = bitrate || 64000;
       this.room = new Room({
         adaptiveStream: true,
         dynacast: true,
-        // Audio settings - apply channel bitrate
+        // Audio settings - apply user's preferences
         audioCaptureDefaults: {
-          autoGainControl: true,
-          echoCancellation: true,
-          noiseSuppression: true,
+          deviceId: settings.audio_input_device_id || undefined,
+          autoGainControl: settings.audio_auto_gain_control,
+          echoCancellation: settings.audio_echo_cancellation,
+          noiseSuppression: settings.audio_noise_suppression,
         },
         publishDefaults: {
           audioBitrate: channelBitrate,
@@ -104,6 +173,9 @@ class VoiceServiceClass {
           red: true, // Redundant encoding for packet loss resilience
         },
       });
+
+      // Play join sound
+      this.playSound('join');
 
       // 4. Set up event listeners
       this.setupRoomEventListeners();
@@ -152,6 +224,9 @@ class VoiceServiceClass {
     try {
       console.log('[VoiceService] Leaving voice channel:', channelId);
 
+      // Play leave sound before disconnecting
+      this.playSound('leave');
+
       // Emit socket event before disconnecting
       if (channelId) {
         socketService.emit('voice:leave', { channel_id: channelId });
@@ -174,6 +249,23 @@ class VoiceServiceClass {
       this.room = null;
       voiceStore.setDisconnected();
     }
+  }
+
+  /**
+   * Update output volume for all audio elements
+   */
+  setOutputVolume(volume: number): void {
+    this.outputVolume = volume;
+    this.audioElements.forEach(audio => {
+      audio.volume = volume / 100;
+    });
+  }
+
+  /**
+   * Reload voice settings (call after settings change)
+   */
+  async reloadSettings(): Promise<void> {
+    await this.loadVoiceSettings();
   }
 
   /**
@@ -387,6 +479,9 @@ class VoiceServiceClass {
     // Create audio element
     const audio = document.createElement('audio');
     audio.autoplay = true;
+    
+    // Apply output volume from settings
+    audio.volume = this.outputVolume / 100;
     
     // Apply deafen state
     if (voiceStore.isDeafened()) {
