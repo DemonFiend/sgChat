@@ -540,11 +540,25 @@ export function MainLayout() {
     }) => {
       console.log('[MainLayout] Voice user joined:', data.user.username, 'in channel:', data.channel_id);
       voiceStore.addParticipant(data.channel_id, data.user);
+      
+      // Play join sound if we're in the same channel and it's not us
+      const currentUserId = authStore.state().user?.id;
+      const currentChannelId = voiceStore.currentChannelId();
+      if (currentChannelId === data.channel_id && data.user.id !== currentUserId) {
+        soundService.playVoiceJoin();
+      }
     };
 
     const handleVoiceUserLeft = (data: { channel_id: string; user_id: string }) => {
       console.log('[MainLayout] Voice user left:', data.user_id, 'from channel:', data.channel_id);
       voiceStore.removeParticipant(data.channel_id, data.user_id);
+      
+      // Play leave sound if we're in the same channel and it's not us
+      const currentUserId = authStore.state().user?.id;
+      const currentChannelId = voiceStore.currentChannelId();
+      if (currentChannelId === data.channel_id && data.user_id !== currentUserId) {
+        soundService.playVoiceLeave();
+      }
     };
 
     const handleVoiceMuteUpdate = (data: { 
