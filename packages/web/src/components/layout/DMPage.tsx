@@ -329,7 +329,8 @@ export function DMPage(): JSX.Element {
 
   const handleAcceptRequest = async (userId: string) => {
     try {
-      const response = await api.post<{ message: string; friend: Friend }>(`/friends/requests/${userId}/accept`);
+      // Send empty object as body - server requires body when Content-Type is application/json
+      const response = await api.post<{ message: string; friend: Friend }>(`/friends/requests/${userId}/accept`, {});
       
       // Add to friends list
       setFriends(prev => [...prev, response.friend]);
@@ -343,7 +344,8 @@ export function DMPage(): JSX.Element {
 
   const handleRejectRequest = async (userId: string) => {
     try {
-      await api.post(`/friends/requests/${userId}/reject`);
+      // Send empty object as body - server requires body when Content-Type is application/json
+      await api.post(`/friends/requests/${userId}/reject`, {});
       
       setIncomingRequests(prev => prev.filter(r => r.user.id !== userId));
     } catch (err) {
