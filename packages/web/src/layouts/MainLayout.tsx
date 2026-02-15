@@ -899,12 +899,14 @@ export function MainLayout() {
         </Show>
       </div>
 
-      {/* Floating User Panel (bottom-right) */}
-      <FloatingUserPanel
-        onSettingsClick={handleSettingsClick}
-        onDMClick={handleDMClick}
-        serverTimeOffset={serverTimeOffset()}
-      />
+      {/* Floating User Panel (bottom-right) - hidden on DM route */}
+      <Show when={!isDMRoute()}>
+        <FloatingUserPanel
+          onSettingsClick={handleSettingsClick}
+          onDMClick={handleDMClick}
+          serverTimeOffset={serverTimeOffset()}
+        />
+      </Show>
 
       {/* Settings Modals */}
       <UserSettingsModal

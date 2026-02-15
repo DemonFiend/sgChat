@@ -15,6 +15,7 @@ interface DMChatPanelProps {
   friend: Friend | null;
   messages: DMMessage[];
   currentUserId: string;
+  currentUserAvatar?: string | null;
   onSendMessage: (content: string) => void;
   onTypingStart?: () => void;
   onTypingStop?: () => void;
@@ -23,10 +24,74 @@ interface DMChatPanelProps {
 
 export function DMChatPanel(props: DMChatPanelProps): JSX.Element {
   const [messageInput, setMessageInput] = createSignal('');
+  const [friendLocalTime, setFriendLocalTime] = createSignal<string | null>(null);
+  const [showTimeTooltip, setShowTimeTooltip] = createSignal(false);
   let messagesEndRef: HTMLDivElement | undefined;
   let inputRef: HTMLTextAreaElement | undefined;
   let typingTimeout: ReturnType<typeof setTimeout> | null = null;
   let isTyping = false;
+  let timeUpdateInterval: ReturnType<typeof setInterval> | null = null;
+
+  // Calculate friend's local time from their timezone
+  // If DST is disabled, we calculate using standard time (January date to avoid DST)
+  const updateFriendTime = () => {
+    const friend = props.friend;
+    if (friend?.timezone_public && friend?.timezone) {
+      try {
+        const now = new Date();
+        
+        if (friend.timezone_dst_enabled !== false) {
+          // DST enabled (default) - use current time with automatic DST adjustment
+          const time = now.toLocaleTimeString('en-US', {
+            timeZone: friend.timezone,
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true,
+          });
+          setFriendLocalTime(time);
+        } else {
+          // DST disabled - calculate standard time offset
+          // Get the standard time offset (using January 1st which is always standard time in northern hemisphere)
+          const jan = new Date(now.getFullYear(), 0, 1);
+          const janInTz = new Date(jan.toLocaleString('en-US', { timeZone: friend.timezone }));
+          const janLocal = new Date(jan.toLocaleString('en-US', { timeZone: 'UTC' }));
+          const standardOffset = janInTz.getTime() - janLocal.getTime();
+          
+          // Apply standard offset to current UTC time
+          const utcNow = now.getTime() + (now.getTimezoneOffset() * 60000);
+          const standardTime = new Date(utcNow + standardOffset);
+          
+          const time = standardTime.toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true,
+          });
+          setFriendLocalTime(time);
+        }
+      } catch {
+        setFriendLocalTime(null);
+      }
+    } else {
+      setFriendLocalTime(null);
+    }
+  };
+
+  // Update friend's local time when friend changes and every minute
+  createEffect(() => {
+    // Clear previous interval
+    if (timeUpdateInterval) {
+      clearInterval(timeUpdateInterval);
+      timeUpdateInterval = null;
+    }
+    
+    // Update immediately
+    updateFriendTime();
+    
+    // Update every minute
+    if (props.friend?.timezone_public && props.friend?.timezone) {
+      timeUpdateInterval = setInterval(updateFriendTime, 60000);
+    }
+  });
 
   // Auto-scroll to bottom when new messages arrive
   createEffect(() => {
@@ -35,13 +100,16 @@ export function DMChatPanel(props: DMChatPanelProps): JSX.Element {
     }
   });
 
-  // Cleanup typing timeout on unmount
+  // Cleanup typing timeout and time interval on unmount
   onCleanup(() => {
     if (typingTimeout) {
       clearTimeout(typingTimeout);
     }
     if (isTyping) {
       props.onTypingStop?.();
+    }
+    if (timeUpdateInterval) {
+      clearInterval(timeUpdateInterval);
     }
   });
 
@@ -127,12 +195,38 @@ export function DMChatPanel(props: DMChatPanelProps): JSX.Element {
           {/* Header with Bendy Line */}
           <div class="relative">
             <header class="h-16 px-4 flex items-center gap-4 bg-bg-primary border-b border-bg-tertiary">
-              {/* Friend Username */}
+              {/* Friend Info */}
               <div class="flex-1">
                 <h2 class="text-lg font-semibold text-text-primary">
                   {friend().display_name || friend().username}
                 </h2>
-                <p class="text-xs text-text-muted">@{friend().username}</p>
+                <p class="text-xs text-text-muted">
+                  {friend().custom_status || `@${friend().username}`}
+                </p>
+              </div>
+
+              {/* Friend's Local Time */}
+              <div class="relative">
+                <div 
+                  class="flex items-center gap-1 px-2 py-1 bg-bg-tertiary rounded-md cursor-default"
+                  onMouseEnter={() => setShowTimeTooltip(true)}
+                  onMouseLeave={() => setShowTimeTooltip(false)}
+                >
+                  <svg class="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span class="text-sm text-text-muted">
+                    {friendLocalTime() || 'Hidden'}
+                  </span>
+                  <svg class="w-3 h-3 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <Show when={showTimeTooltip()}>
+                  <div class="absolute top-full mt-1 left-1/2 -translate-x-1/2 bg-bg-floating text-text-primary text-xs px-2 py-1 rounded shadow-lg whitespace-nowrap border border-bg-tertiary z-10">
+                    {friendLocalTime() ? "User's Local Time" : "User's timezone is hidden"}
+                  </div>
+                </Show>
               </div>
 
               {/* Large Avatar on right */}
@@ -211,6 +305,17 @@ export function DMChatPanel(props: DMChatPanelProps): JSX.Element {
                         {formatTime(message.created_at)}
                       </div>
                     </div>
+
+                    {/* Avatar for sent messages (own) */}
+                    <Show when={isMe}>
+                      <div class="flex-shrink-0 ml-2">
+                        <Avatar
+                          src={props.currentUserAvatar}
+                          alt="You"
+                          size="sm"
+                        />
+                      </div>
+                    </Show>
                   </div>
                 );
               }}

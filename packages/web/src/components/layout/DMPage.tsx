@@ -527,6 +527,7 @@ export function DMPage(): JSX.Element {
             friend={selectedFriend()}
             messages={messages()}
             currentUserId={currentUserId()}
+            currentUserAvatar={authStore.state().user?.avatar_url}
             onSendMessage={handleSendMessage}
             onTypingStart={handleTypingStart}
             onTypingStop={handleTypingStop}

@@ -336,6 +336,9 @@ CREATE TABLE user_settings (
   
   -- Privacy
   hide_online_announcements BOOLEAN DEFAULT true,
+  timezone VARCHAR(50) DEFAULT NULL,                              -- User's IANA timezone (e.g., "America/New_York")
+  timezone_public BOOLEAN DEFAULT false,                          -- Whether to show timezone publicly to friends
+  timezone_dst_enabled BOOLEAN DEFAULT true,                      -- Whether to apply daylight saving time adjustments
   
   -- Voice & Audio Settings (A8-A11)
   audio_input_device_id TEXT,                                     -- Selected microphone device ID

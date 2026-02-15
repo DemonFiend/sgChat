@@ -47,16 +47,21 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
       const userId = request.user!.id;
 
       // Get all friendships where user is either user1 or user2
+      // Include timezone info from user_settings (only expose if timezone_public is true)
       const friends = await db.sql`
         SELECT 
           u.id,
           u.username,
+          u.display_name,
           u.avatar_url,
           u.status,
           u.custom_status_emoji,
           u.custom_status,
           u.last_seen_at,
-          f.created_at as since
+          f.created_at as since,
+          CASE WHEN us.timezone_public = true THEN us.timezone ELSE NULL END as timezone,
+          COALESCE(us.timezone_public, false) as timezone_public,
+          CASE WHEN us.timezone_public = true THEN COALESCE(us.timezone_dst_enabled, true) ELSE NULL END as timezone_dst_enabled
         FROM friendships f
         JOIN users u ON (
           CASE 
@@ -64,6 +69,7 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
             ELSE f.user1_id = u.id
           END
         )
+        LEFT JOIN user_settings us ON us.user_id = u.id
         WHERE f.user1_id = ${userId} OR f.user2_id = ${userId}
         ORDER BY 
           CASE u.status 
@@ -79,11 +85,15 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
       return friends.map((f: any) => ({
         id: f.id,
         username: f.username,
-        display_name: f.username, // Use username as display_name for now
+        display_name: f.display_name || f.username,
         avatar_url: f.avatar_url,
         status: f.status,
+        custom_status: f.custom_status || null,
         since: f.since,
         last_seen_at: f.last_seen_at || null,
+        timezone: f.timezone || null,
+        timezone_public: f.timezone_public || false,
+        timezone_dst_enabled: f.timezone_dst_enabled ?? true,
       }));
     },
   });

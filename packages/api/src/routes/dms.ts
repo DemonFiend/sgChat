@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { getDMStorageStats, getSegmentsForDM, getOrCreateSegment, onMessageCreated } from '../services/segmentation.js';
 import { getEffectiveDMRetention, applyRetentionPolicy } from '../services/trimming.js';
 import { loadArchivedMessages } from '../services/archive.js';
+import { publishEvent } from '../lib/eventBus.js';
 
 export const dmRoutes: FastifyPluginAsync = async (fastify) => {
   // Get user's DM channels
@@ -133,13 +134,36 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
         console.error('Failed to assign DM message to segment:', segmentError);
       }
       
-      // Broadcast to both users via Socket.IO (use dm:message:create as client expects)
-      const dmEvent = {
-        from_user_id: request.user!.id,
-        message: message,
+      // Get author info for the formatted message
+      const author = await db.users.findById(request.user!.id);
+      
+      const formattedMessage = {
+        id: message.id,
+        dm_channel_id: message.dm_channel_id,
+        content: message.content,
+        author: {
+          id: author.id,
+          username: author.username,
+          display_name: author.display_name || author.username,
+          avatar_url: author.avatar_url,
+        },
+        created_at: message.created_at,
+        edited_at: message.edited_at,
+        attachments: message.attachments || [],
+        reply_to_id: message.reply_to_id,
+        status: message.status,
       };
-      fastify.io?.to(`user:${request.user!.id}`).emit('dm.message.new', dmEvent);
-      fastify.io?.to(`user:${recipientId}`).emit('dm.message.new', dmEvent);
+
+      // Broadcast via event bus (consistent with Socket.IO handler)
+      await publishEvent({
+        type: 'dm.message.new',
+        actorId: request.user!.id,
+        resourceId: `dm:${id}`,
+        payload: {
+          from_user_id: request.user!.id,
+          message: formattedMessage,
+        },
+      });
 
       // TODO: Handle offline user - send push notification
 
@@ -243,19 +267,36 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
         console.error('Failed to assign DM message to segment:', segmentError);
       }
       
-      // Broadcast to both users via Socket.IO
-      const dmEvent = {
-        from_user_id: request.user!.id,
-        message: {
-          id: message.id,
-          content: message.content,
-          sender_id: message.author_id,
-          created_at: message.created_at,
-          edited_at: message.edited_at,
+      // Get author info for the formatted message
+      const author = await db.users.findById(request.user!.id);
+      
+      const formattedMessage = {
+        id: message.id,
+        dm_channel_id: dm.id,
+        content: message.content,
+        author: {
+          id: author.id,
+          username: author.username,
+          display_name: author.display_name || author.username,
+          avatar_url: author.avatar_url,
         },
+        created_at: message.created_at,
+        edited_at: message.edited_at,
+        attachments: message.attachments || [],
+        reply_to_id: message.reply_to_id,
+        status: message.status,
       };
-      fastify.io?.to(`user:${request.user!.id}`).emit('dm.message.new', dmEvent);
-      fastify.io?.to(`user:${userId}`).emit('dm.message.new', dmEvent);
+
+      // Broadcast via event bus (consistent with Socket.IO handler)
+      await publishEvent({
+        type: 'dm.message.new',
+        actorId: request.user!.id,
+        resourceId: `dm:${dm.id}`,
+        payload: {
+          from_user_id: request.user!.id,
+          message: formattedMessage,
+        },
+      });
 
       // Return in expected format
       return {

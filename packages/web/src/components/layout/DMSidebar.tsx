@@ -10,6 +10,9 @@ export interface Friend {
   since?: string;
   unread_count?: number;
   custom_status?: string | null;
+  timezone?: string | null;
+  timezone_public?: boolean;
+  timezone_dst_enabled?: boolean;
 }
 
 export interface FriendRequest {

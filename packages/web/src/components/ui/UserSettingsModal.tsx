@@ -294,6 +294,44 @@ function AccountTab(props: { user: ReturnType<typeof authStore.state>['user']; o
 }
 
 // Profile Tab
+// Common IANA timezones for the dropdown
+const COMMON_TIMEZONES = [
+  { value: '', label: 'Hidden' },
+  { value: 'America/New_York', label: 'Eastern Time (US & Canada)' },
+  { value: 'America/Chicago', label: 'Central Time (US & Canada)' },
+  { value: 'America/Denver', label: 'Mountain Time (US & Canada)' },
+  { value: 'America/Los_Angeles', label: 'Pacific Time (US & Canada)' },
+  { value: 'America/Anchorage', label: 'Alaska' },
+  { value: 'Pacific/Honolulu', label: 'Hawaii' },
+  { value: 'America/Toronto', label: 'Toronto' },
+  { value: 'America/Vancouver', label: 'Vancouver' },
+  { value: 'America/Mexico_City', label: 'Mexico City' },
+  { value: 'America/Sao_Paulo', label: 'Sao Paulo' },
+  { value: 'America/Argentina/Buenos_Aires', label: 'Buenos Aires' },
+  { value: 'Europe/London', label: 'London' },
+  { value: 'Europe/Paris', label: 'Paris' },
+  { value: 'Europe/Berlin', label: 'Berlin' },
+  { value: 'Europe/Madrid', label: 'Madrid' },
+  { value: 'Europe/Rome', label: 'Rome' },
+  { value: 'Europe/Amsterdam', label: 'Amsterdam' },
+  { value: 'Europe/Stockholm', label: 'Stockholm' },
+  { value: 'Europe/Moscow', label: 'Moscow' },
+  { value: 'Africa/Cairo', label: 'Cairo' },
+  { value: 'Africa/Johannesburg', label: 'Johannesburg' },
+  { value: 'Asia/Dubai', label: 'Dubai' },
+  { value: 'Asia/Kolkata', label: 'India (Kolkata)' },
+  { value: 'Asia/Bangkok', label: 'Bangkok' },
+  { value: 'Asia/Singapore', label: 'Singapore' },
+  { value: 'Asia/Hong_Kong', label: 'Hong Kong' },
+  { value: 'Asia/Shanghai', label: 'Shanghai' },
+  { value: 'Asia/Tokyo', label: 'Tokyo' },
+  { value: 'Asia/Seoul', label: 'Seoul' },
+  { value: 'Australia/Sydney', label: 'Sydney' },
+  { value: 'Australia/Melbourne', label: 'Melbourne' },
+  { value: 'Australia/Perth', label: 'Perth' },
+  { value: 'Pacific/Auckland', label: 'Auckland' },
+];
+
 function ProfileTab(props: { user: ReturnType<typeof authStore.state>['user'] }) {
   const [displayName, setDisplayName] = createSignal(props.user?.display_name || '');
   const [customStatus, setCustomStatus] = createSignal(props.user?.custom_status || '');
@@ -301,11 +339,47 @@ function ProfileTab(props: { user: ReturnType<typeof authStore.state>['user'] })
   const [saving, setSaving] = createSignal(false);
   const [saveSuccess, setSaveSuccess] = createSignal(false);
   const [saveError, setSaveError] = createSignal<string | null>(null);
+  
+  // Privacy settings (from user_settings)
+  const [timezone, setTimezone] = createSignal('');
+  const [timezonePublic, setTimezonePublic] = createSignal(false);
+  const [timezoneDstEnabled, setTimezoneDstEnabled] = createSignal(true);
+  const [privacyLoaded, setPrivacyLoaded] = createSignal(false);
+  const [savingPrivacy, setSavingPrivacy] = createSignal(false);
+  
+  // Load privacy settings on mount
+  onMount(async () => {
+    try {
+      const settings = await api.get<any>('/users/me/settings');
+      setTimezone(settings.timezone || '');
+      setTimezonePublic(settings.timezone_public || false);
+      setTimezoneDstEnabled(settings.timezone_dst_enabled !== false); // Default true
+      setPrivacyLoaded(true);
+    } catch (err) {
+      console.error('Failed to load privacy settings:', err);
+      setPrivacyLoaded(true);
+    }
+  });
 
   // Track if profile fields have changed (not avatar - that saves immediately)
   const hasChanges = () => {
     return displayName() !== (props.user?.display_name || '') ||
            customStatus() !== (props.user?.custom_status || '');
+  };
+  
+  const handleSavePrivacy = async () => {
+    setSavingPrivacy(true);
+    try {
+      await api.patch('/users/me/settings', {
+        timezone: timezone() || null,
+        timezone_public: timezonePublic(),
+        timezone_dst_enabled: timezoneDstEnabled(),
+      });
+    } catch (err) {
+      console.error('Failed to save privacy settings:', err);
+    } finally {
+      setSavingPrivacy(false);
+    }
   };
 
   const handleSaveProfile = async () => {
@@ -410,6 +484,98 @@ function ProfileTab(props: { user: ReturnType<typeof authStore.state>['user'] })
             
             <Show when={saveError()}>
               <span class="text-sm text-danger">{saveError()}</span>
+            </Show>
+          </div>
+          
+          {/* Privacy Settings */}
+          <div class="mt-8 pt-6 border-t border-border-subtle">
+            <h3 class="text-sm font-bold uppercase text-text-muted mb-4">Privacy</h3>
+            
+            <Show when={privacyLoaded()} fallback={<div class="text-text-muted text-sm">Loading...</div>}>
+              <div class="space-y-4">
+                <div>
+                  <label class="block text-xs font-bold uppercase text-text-muted mb-2">
+                    Your Timezone
+                  </label>
+                  <select
+                    value={timezone()}
+                    onChange={(e) => {
+                      setTimezone(e.currentTarget.value);
+                      handleSavePrivacy();
+                    }}
+                    class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
+                  >
+                    <For each={COMMON_TIMEZONES}>
+                      {(tz) => (
+                        <option value={tz.value}>{tz.label}</option>
+                      )}
+                    </For>
+                  </select>
+                  <p class="text-xs text-text-muted mt-1">
+                    Select "Hidden" to show "Hidden" to friends instead of your time
+                  </p>
+                </div>
+                
+                <div class="flex items-center justify-between">
+                  <div>
+                    <label class="text-sm font-medium text-text-primary">
+                      Show timezone publicly
+                    </label>
+                    <p class="text-xs text-text-muted">
+                      Allow friends to see your local time
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setTimezonePublic(!timezonePublic());
+                      handleSavePrivacy();
+                    }}
+                    disabled={savingPrivacy()}
+                    class={clsx(
+                      "relative w-11 h-6 rounded-full transition-colors",
+                      timezonePublic() ? "bg-brand-primary" : "bg-bg-tertiary"
+                    )}
+                  >
+                    <span
+                      class={clsx(
+                        "absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm",
+                        timezonePublic() && "translate-x-5"
+                      )}
+                    />
+                  </button>
+                </div>
+                
+                <Show when={timezone()}>
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <label class="text-sm font-medium text-text-primary">
+                        Adjust for daylight saving time
+                      </label>
+                      <p class="text-xs text-text-muted">
+                        Automatically adjust displayed time for DST
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setTimezoneDstEnabled(!timezoneDstEnabled());
+                        handleSavePrivacy();
+                      }}
+                      disabled={savingPrivacy()}
+                      class={clsx(
+                        "relative w-11 h-6 rounded-full transition-colors",
+                        timezoneDstEnabled() ? "bg-brand-primary" : "bg-bg-tertiary"
+                      )}
+                    >
+                      <span
+                        class={clsx(
+                          "absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm",
+                          timezoneDstEnabled() && "translate-x-5"
+                        )}
+                      />
+                    </button>
+                  </div>
+                </Show>
+              </div>
             </Show>
           </div>
         </div>
