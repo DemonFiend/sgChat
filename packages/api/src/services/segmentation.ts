@@ -74,11 +74,12 @@ export async function getSegmentsForChannel(
 ): Promise<MessageSegment[]> {
   const { limit = 50, offset = 0 } = options;
   
-  let segments = await db.segments.findByChannelId(channelId, limit, offset);
+  const rawSegments = await db.segments.findByChannelId(channelId, limit, offset);
+  let segments: MessageSegment[] = [...rawSegments] as MessageSegment[];
   
   // Filter by date range if specified
   if (options.startDate || options.endDate) {
-    segments = segments.filter((s: any) => {
+    segments = segments.filter((s) => {
       const start = new Date(s.segment_start);
       const end = new Date(s.segment_end);
       
@@ -90,10 +91,10 @@ export async function getSegmentsForChannel(
   
   // Filter archived if needed
   if (options.includeArchived === false) {
-    segments = segments.filter((s: any) => !s.is_archived);
+    segments = segments.filter((s) => !s.is_archived);
   }
   
-  return segments as MessageSegment[];
+  return segments;
 }
 
 /**
@@ -111,11 +112,12 @@ export async function getSegmentsForDM(
 ): Promise<MessageSegment[]> {
   const { limit = 50, offset = 0 } = options;
   
-  let segments = await db.segments.findByDMChannelId(dmChannelId, limit, offset);
+  const rawSegments = await db.segments.findByDMChannelId(dmChannelId, limit, offset);
+  let segments: MessageSegment[] = [...rawSegments] as MessageSegment[];
   
   // Filter by date range if specified
   if (options.startDate || options.endDate) {
-    segments = segments.filter((s: any) => {
+    segments = segments.filter((s) => {
       const start = new Date(s.segment_start);
       const end = new Date(s.segment_end);
       
@@ -127,10 +129,10 @@ export async function getSegmentsForDM(
   
   // Filter archived if needed
   if (options.includeArchived === false) {
-    segments = segments.filter((s: any) => !s.is_archived);
+    segments = segments.filter((s) => !s.is_archived);
   }
   
-  return segments as MessageSegment[];
+  return segments;
 }
 
 /**

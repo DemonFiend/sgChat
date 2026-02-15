@@ -6,6 +6,9 @@
 
 A modern, self-hosted chat platform that combines the best features of Discord, Revolt, and Guilded with real-time messaging capabilities.
 
+## 🚀 Live Demo
+
+[![Deploy](https://img.shields.io/badge/Deploy-Click%20Here-blue)](https://sgchat.vercel.app)
 
 ## 🔧 Technologies Used
 
@@ -37,46 +40,41 @@ A modern, self-hosted chat platform that combines the best features of Discord, 
 
 ## 🔮 Planned Features (TODO List)
 
-### 💬 Messaging Improvements (Planned V1)
+### 💬 Messaging Improvements
 - [ ] Message search functionality with filters
 - [ ] Message pinning and archiving
 - [ ] Rich text formatting (bold, italic, etc.)
 - [ ] Custom emoji support
 - [ ] Sticker packs and GIFs
 - [ ] Message scheduling and reminders
-- [ ] Message History Segmentation. 
-- [ ] Message History Archiving/pruning.
-- [ ] Server Message History Customizable.
-- [ ] Server DM Message History Customizable. 
 
-### 🔐 Security & Privacy (Planned V1)
+### 📱 Mobile Experience
+- [ ] Native mobile app improvements for iOS/Android
+- [ ] Push notification optimization for mobile
+- [ ] Offline message sync capabilities
+- [ ] Mobile-specific UI enhancements
+
+### 🔐 Security & Privacy
 - [ ] Two-factor authentication (2FA)
 - [ ] Session management and device tracking
 - [ ] Message encryption at rest
 - [ ] Data export and account deletion features
 
-### 🎨 User Experience (Planned V1)
+### 🎨 User Experience
 - [ ] Customizable user status and presence indicators
 - [ ] Chat theme customization with preview
 - [ ] Keyboard shortcuts for desktop client
-- [ ] Client side CSS Themes.
+- [ ] Accessibility improvements (screen readers, etc.)
 - [ ] Language localization support
-- [ ] Avatar/Image/DM Storage Configurable. 
 
-### 🏗️ Infrastructure & Performance (V2)
+### 🏗️ Infrastructure & Performance
 - [ ] Load balancing and horizontal scaling
 - [ ] Database optimization and indexing
 - [ ] Caching strategy improvements
 - [ ] CDN integration for media files
 - [ ] Analytics dashboard for server metrics
 
-### 📱 Mobile Experience ( V3 )
-- [ ] Native mobile app improvements for iOS/Android
-- [ ] Push notification optimization for mobile
-- [ ] Offline message sync capabilities
-- [ ] Mobile-specific UI enhancements
-
-### 🎤 Voice & Video Features (Planned V1)
+### 🎤 Voice & Video Features (Planned)
 - [ ] Voice chat capabilities with LiveKit
 - [ ] Screen sharing functionality  
 - [ ] End-to-end encryption for voice/video calls
@@ -102,10 +100,11 @@ pnpm dev
 
 # Build all packages
 pnpm build
-```
-# Production Deployment
+Production Deployment
 
-```
+bash
+
+Copy block
 
 
 # Configure environment
@@ -115,11 +114,10 @@ cp docker/.env.example docker/.env
 # Start all services
 cd docker
 docker-compose up -d
-```
-# 📁 Project Structure
+📁 Project Structure
 
 
-```
+Copy block
 
 
 sgchat/
@@ -134,18 +132,15 @@ sgchat/
 ├── docker/              # Docker compose and configs
 ├── themes/              # Bundled themes
 └── docs/                # Documentation
-```
+🤝 Contributing
+Contributions are welcome! Please follow these steps:
 
-# 🤝 Contributing
-Contributions are welcome! (Save me tokens on features you vibe coded cause you wanted!) Please follow these steps:
-
-1. Fork the repository
-2. Create a feature branch (git checkout -b feature/AmazingFeature)
-3. Commit your changes (git commit -m 'Add some AmazingFeature')
-4. Push to the branch (git push origin feature/AmazingFeature)
-5. Open a Pull Request
-
-# 📄 License
+Fork the repository
+Create a feature branch (git checkout -b feature/AmazingFeature)
+Commit your changes (git commit -m 'Add some AmazingFeature')
+Push to the branch (git push origin feature/AmazingFeature)
+Open a Pull Request
+📄 License
 This project is licensed under the MIT License - see the LICENSE file for details.
 
 🙏 Acknowledgments

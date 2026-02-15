@@ -303,7 +303,7 @@ export const storage = {
     
     return new Promise((resolve, reject) => {
       stream.on('data', (obj) => {
-        if (obj.name) {
+        if (obj.name && obj.size !== undefined && obj.lastModified) {
           archives.push({
             path: obj.name,
             size: obj.size,
@@ -327,7 +327,7 @@ export const storage = {
     
     return new Promise((resolve, reject) => {
       stream.on('data', (obj) => {
-        totalSize += obj.size;
+        totalSize += obj.size || 0;
       });
       stream.on('end', () => resolve(totalSize));
       stream.on('error', reject);
