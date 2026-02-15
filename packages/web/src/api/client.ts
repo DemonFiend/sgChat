@@ -50,9 +50,13 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   }
 
   const requestHeaders: Record<string, string> = {
-    'Content-Type': 'application/json',
     ...headers,
   };
+
+  // Only set Content-Type for requests with a body
+  if (body !== undefined) {
+    requestHeaders['Content-Type'] = 'application/json';
+  }
 
   if (token) {
     requestHeaders['Authorization'] = `Bearer ${token}`;
@@ -62,7 +66,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
     method,
     headers: requestHeaders,
     credentials: 'include',
-    body: body ? JSON.stringify(body) : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
   // Handle 401 - try refresh once
@@ -75,7 +79,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
         method,
         headers: requestHeaders,
         credentials: 'include',
-        body: body ? JSON.stringify(body) : undefined,
+        body: body !== undefined ? JSON.stringify(body) : undefined,
       });
 
       if (!retryResponse.ok) {
