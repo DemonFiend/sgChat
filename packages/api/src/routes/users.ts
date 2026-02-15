@@ -587,9 +587,9 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
    * Helper to get avatar limits from instance_settings or fallback to defaults.
    */
   async function getAvatarLimits(): Promise<AvatarLimits> {
-    const settings = await db.instanceSettings.get('avatar_limits');
-    if (settings) {
-      return settings as AvatarLimits;
+    const setting = await db.instanceSettings.get('avatar_limits');
+    if (setting?.value) {
+      return setting.value as AvatarLimits;
     }
     return {
       max_upload_size_bytes: DEFAULT_AVATAR_LIMITS.MAX_UPLOAD_SIZE,
