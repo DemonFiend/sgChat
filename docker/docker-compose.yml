@@ -49,9 +49,7 @@ services:
   # PostgreSQL Database (with pg_cron for scheduled jobs)
   # ============================================================
   postgres:
-    build:
-      context: .
-      dockerfile: Dockerfile.postgres
+    image: sgchat-postgres:latest
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
