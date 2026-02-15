@@ -2,6 +2,7 @@ import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
+import { publishEvent } from '../lib/eventBus.js';
 import { calculatePermissions } from '../services/permissions.js';
 import { generateLiveKitToken, getLiveKitUrl } from '../services/livekit.js';
 import { VoicePermissions, hasPermission, RATE_LIMITS } from '@sgchat/shared';
@@ -58,14 +59,19 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
       // Get user info for socket event
       const user = await db.users.findById(request.user!.id);
 
-      // Emit voice:user-joined to all server members
-      fastify.io?.to(`server:${channel.server_id}`).emit('voice:user-joined', {
-        channel_id,
-        user: {
-          id: user.id,
-          username: user.username,
-          display_name: user.display_name || user.username,
-          avatar_url: user.avatar_url,
+      // Publish voice.join event through event bus
+      await publishEvent({
+        type: 'voice.join',
+        actorId: request.user!.id,
+        resourceId: `server:${channel.server_id}`,
+        payload: {
+          channel_id,
+          user: {
+            id: user.id,
+            username: user.username,
+            display_name: user.display_name || user.username,
+            avatar_url: user.avatar_url,
+          },
         },
       });
 
@@ -130,14 +136,19 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
       // Get user info for socket event
       const user = await db.users.findById(request.user!.id);
 
-      // Emit voice:user-joined to all server members
-      fastify.io?.to(`server:${channel.server_id}`).emit('voice:user-joined', {
-        channel_id: channelId,
-        user: {
-          id: user.id,
-          username: user.username,
-          display_name: user.display_name || user.username,
-          avatar_url: user.avatar_url,
+      // Publish voice.join event through event bus
+      await publishEvent({
+        type: 'voice.join',
+        actorId: request.user!.id,
+        resourceId: `server:${channel.server_id}`,
+        payload: {
+          channel_id: channelId,
+          user: {
+            id: user.id,
+            username: user.username,
+            display_name: user.display_name || user.username,
+            avatar_url: user.avatar_url,
+          },
         },
       });
 
@@ -224,11 +235,16 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
         return forbidden(reply, 'Missing MOVE_MEMBERS permission');
       }
 
-      // Notify user via Socket.IO to switch channels
-      fastify.io?.to(`user:${user_id}`).emit('voice:force-move', {
-        from_channel_id,
-        to_channel_id,
-        moved_by: request.user!.id,
+      // Notify user via event bus to switch channels
+      await publishEvent({
+        type: 'voice.force_move',
+        actorId: request.user!.id,
+        resourceId: `user:${user_id}`,
+        payload: {
+          from_channel_id,
+          to_channel_id,
+          moved_by: request.user!.id,
+        },
       });
 
       return { message: 'Move requested' };
@@ -260,10 +276,15 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
         return forbidden(reply, 'Missing DISCONNECT_MEMBERS permission');
       }
 
-      // Notify user via Socket.IO to disconnect
-      fastify.io?.to(`user:${user_id}`).emit('voice:force-disconnect', {
-        channel_id,
-        disconnected_by: request.user!.id,
+      // Notify user via event bus to disconnect
+      await publishEvent({
+        type: 'voice.force_disconnect',
+        actorId: request.user!.id,
+        resourceId: `user:${user_id}`,
+        payload: {
+          channel_id,
+          disconnected_by: request.user!.id,
+        },
       });
 
       return { message: 'Disconnect requested' };

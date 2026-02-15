@@ -468,7 +468,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
       const [updatedSettings] = await db.sql`
         SELECT * FROM user_settings WHERE user_id = ${request.user!.id}
       `;
-      fastify.io?.to(`user:${request.user!.id}`).emit('user:settings:update', updatedSettings || {});
+      fastify.io?.to(`user:${request.user!.id}`).emit('user.settings.update', updatedSettings || {});
 
       return { message: 'Settings updated' };
     },
@@ -493,7 +493,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
       const [updatedSettings] = await db.sql`
         SELECT * FROM user_settings WHERE user_id = ${request.user!.id}
       `;
-      fastify.io?.to(`user:${request.user!.id}`).emit('user:settings:update', updatedSettings || {});
+      fastify.io?.to(`user:${request.user!.id}`).emit('user.settings.update', updatedSettings || {});
 
       return { message: 'Settings updated' };
     },
@@ -617,7 +617,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
 
       // Broadcast update
       const updatedUser = await db.users.findById(request.user!.id);
-      fastify.io?.to(`user:${request.user!.id}`).emit('user:update', updatedUser);
+      fastify.io?.to(`user:${request.user!.id}`).emit('user.update', updatedUser);
 
       return { avatar_url: avatarUrl };
     },
@@ -644,7 +644,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
 
       // Broadcast update
       const updatedUser = await db.users.findById(request.user!.id);
-      fastify.io?.to(`user:${request.user!.id}`).emit('user:update', updatedUser);
+      fastify.io?.to(`user:${request.user!.id}`).emit('user.update', updatedUser);
 
       return { message: 'Avatar deleted' };
     },
@@ -734,7 +734,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Emit socket event to blocked user
-      fastify.io?.to(`user:${userId}`).emit('user:block', {
+      fastify.io?.to(`user:${userId}`).emit('user.block', {
         user_id: currentUserId,
       });
 

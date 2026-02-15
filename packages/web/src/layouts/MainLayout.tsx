@@ -218,10 +218,10 @@ export function MainLayout() {
       }
     };
 
-    socketService.on('presence:update', handlePresenceUpdate);
+    socketService.on('presence.update', handlePresenceUpdate);
 
     onCleanup(() => {
-      socketService.off('presence:update', handlePresenceUpdate as any);
+      socketService.off('presence.update', handlePresenceUpdate as any);
     });
   });
 
@@ -261,10 +261,10 @@ export function MainLayout() {
       setMessages(prev => [...prev, message]);
     };
 
-    socketService.on('message:new', handleNewMessage);
+    socketService.on('message.new', handleNewMessage);
 
     onCleanup(() => {
-      socketService.off('message:new', handleNewMessage);
+      socketService.off('message.new', handleNewMessage);
     });
   });
 
@@ -299,12 +299,12 @@ export function MainLayout() {
       setTypingUsers(prev => prev.filter(u => u.id !== data.user_id));
     };
 
-    socketService.on('typing:start', handleTypingStart);
-    socketService.on('typing:stop', handleTypingStop);
+    socketService.on('typing.start', handleTypingStart);
+    socketService.on('typing.stop', handleTypingStop);
 
     onCleanup(() => {
-      socketService.off('typing:start', handleTypingStart as any);
-      socketService.off('typing:stop', handleTypingStop as any);
+      socketService.off('typing.start', handleTypingStart as any);
+      socketService.off('typing.stop', handleTypingStop as any);
       setTypingUsers([]);
     });
   });
@@ -316,10 +316,10 @@ export function MainLayout() {
       setCurrentServer(data.server);
     };
 
-    socketService.on('server:update', handleServerUpdate);
+    socketService.on('server.update', handleServerUpdate);
 
     onCleanup(() => {
-      socketService.off('server:update', handleServerUpdate as any);
+      socketService.off('server.update', handleServerUpdate as any);
     });
   });
 
@@ -361,14 +361,14 @@ export function MainLayout() {
       }
     };
 
-    socketService.on('channel:create', handleChannelCreate);
-    socketService.on('channel:update', handleChannelUpdate);
-    socketService.on('channel:delete', handleChannelDelete);
+    socketService.on('channel.create', handleChannelCreate);
+    socketService.on('channel.update', handleChannelUpdate);
+    socketService.on('channel.delete', handleChannelDelete);
 
     onCleanup(() => {
-      socketService.off('channel:create', handleChannelCreate as any);
-      socketService.off('channel:update', handleChannelUpdate as any);
-      socketService.off('channel:delete', handleChannelDelete as any);
+      socketService.off('channel.create', handleChannelCreate as any);
+      socketService.off('channel.update', handleChannelUpdate as any);
+      socketService.off('channel.delete', handleChannelDelete as any);
     });
   });
 
@@ -391,14 +391,14 @@ export function MainLayout() {
       setCategories(prev => prev.filter(c => c.id !== data.category_id));
     };
 
-    socketService.on('category:create', handleCategoryCreate);
-    socketService.on('category:update', handleCategoryUpdate);
-    socketService.on('category:delete', handleCategoryDelete);
+    socketService.on('category.create', handleCategoryCreate);
+    socketService.on('category.update', handleCategoryUpdate);
+    socketService.on('category.delete', handleCategoryDelete);
 
     onCleanup(() => {
-      socketService.off('category:create', handleCategoryCreate as any);
-      socketService.off('category:update', handleCategoryUpdate as any);
-      socketService.off('category:delete', handleCategoryDelete as any);
+      socketService.off('category.create', handleCategoryCreate as any);
+      socketService.off('category.update', handleCategoryUpdate as any);
+      socketService.off('category.delete', handleCategoryDelete as any);
     });
   });
 
@@ -425,14 +425,14 @@ export function MainLayout() {
       ));
     };
 
-    socketService.on('member:join', handleMemberJoin);
-    socketService.on('member:leave', handleMemberLeave);
-    socketService.on('member:update', handleMemberUpdate);
+    socketService.on('member.join', handleMemberJoin);
+    socketService.on('member.leave', handleMemberLeave);
+    socketService.on('member.update', handleMemberUpdate);
 
     onCleanup(() => {
-      socketService.off('member:join', handleMemberJoin as any);
-      socketService.off('member:leave', handleMemberLeave as any);
-      socketService.off('member:update', handleMemberUpdate as any);
+      socketService.off('member.join', handleMemberJoin as any);
+      socketService.off('member.leave', handleMemberLeave as any);
+      socketService.off('member.update', handleMemberUpdate as any);
     });
   });
 
@@ -509,14 +509,14 @@ export function MainLayout() {
       }));
     };
 
-    socketService.on('message:update', handleMessageUpdate);
-    socketService.on('message:delete', handleMessageDelete);
-    socketService.on('message:reaction', handleMessageReaction);
+    socketService.on('message.update', handleMessageUpdate);
+    socketService.on('message.delete', handleMessageDelete);
+    socketService.on('message.reaction', handleMessageReaction);
 
     onCleanup(() => {
-      socketService.off('message:update', handleMessageUpdate as any);
-      socketService.off('message:delete', handleMessageDelete as any);
-      socketService.off('message:reaction', handleMessageReaction as any);
+      socketService.off('message.update', handleMessageUpdate as any);
+      socketService.off('message.delete', handleMessageDelete as any);
+      socketService.off('message.reaction', handleMessageReaction as any);
     });
   });
 
@@ -564,18 +564,18 @@ export function MainLayout() {
       voiceService.leave();
     };
 
-    socketService.on('voice:user-joined', handleVoiceUserJoined);
-    socketService.on('voice:user-left', handleVoiceUserLeft);
-    socketService.on('voice:mute-update', handleVoiceMuteUpdate);
-    socketService.on('voice:force-move', handleVoiceForceMove);
-    socketService.on('voice:force-disconnect', handleVoiceForceDisconnect);
+    socketService.on('voice.join', handleVoiceUserJoined);
+    socketService.on('voice.leave', handleVoiceUserLeft);
+    socketService.on('voice.state_update', handleVoiceMuteUpdate);
+    socketService.on('voice.force_move', handleVoiceForceMove);
+    socketService.on('voice.force_disconnect', handleVoiceForceDisconnect);
 
     onCleanup(() => {
-      socketService.off('voice:user-joined', handleVoiceUserJoined as any);
-      socketService.off('voice:user-left', handleVoiceUserLeft as any);
-      socketService.off('voice:mute-update', handleVoiceMuteUpdate as any);
-      socketService.off('voice:force-move', handleVoiceForceMove as any);
-      socketService.off('voice:force-disconnect', handleVoiceForceDisconnect as any);
+      socketService.off('voice.join', handleVoiceUserJoined as any);
+      socketService.off('voice.leave', handleVoiceUserLeft as any);
+      socketService.off('voice.state_update', handleVoiceMuteUpdate as any);
+      socketService.off('voice.force_move', handleVoiceForceMove as any);
+      socketService.off('voice.force_disconnect', handleVoiceForceDisconnect as any);
     });
   });
 

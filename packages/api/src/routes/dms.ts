@@ -125,8 +125,8 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
         from_user_id: request.user!.id,
         message: message,
       };
-      fastify.io?.to(`user:${request.user!.id}`).emit('dm:message:create', dmEvent);
-      fastify.io?.to(`user:${recipientId}`).emit('dm:message:create', dmEvent);
+      fastify.io?.to(`user:${request.user!.id}`).emit('dm.message.new', dmEvent);
+      fastify.io?.to(`user:${recipientId}`).emit('dm.message.new', dmEvent);
 
       // TODO: Handle offline user - send push notification
 
@@ -232,8 +232,8 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
           edited_at: message.edited_at,
         },
       };
-      fastify.io?.to(`user:${request.user!.id}`).emit('dm:message:create', dmEvent);
-      fastify.io?.to(`user:${userId}`).emit('dm:message:create', dmEvent);
+      fastify.io?.to(`user:${request.user!.id}`).emit('dm.message.new', dmEvent);
+      fastify.io?.to(`user:${userId}`).emit('dm.message.new', dmEvent);
 
       // Return in expected format
       return {

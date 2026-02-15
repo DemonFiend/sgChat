@@ -230,7 +230,7 @@ export const globalServerRoutes: FastifyPluginAsync = async (fastify) => {
 
       // Broadcast update
       const updated = await getDefaultServer();
-      fastify.io?.to(`server:${server.id}`).emit('server:update', updated);
+      fastify.io?.to(`server:${server.id}`).emit('server.update', updated);
 
       return updated;
     },
@@ -297,7 +297,7 @@ export const globalServerRoutes: FastifyPluginAsync = async (fastify) => {
       console.log(`🔄 Server ownership transferred from ${request.user!.id} to ${newOwnerId}`);
 
       // Broadcast update
-      fastify.io?.to(`server:${server.id}`).emit('server:ownership_transferred', {
+      fastify.io?.to(`server:${server.id}`).emit('server.ownership_transferred', {
         previous_owner_id: request.user!.id,
         new_owner_id: newOwnerId,
       });

@@ -207,24 +207,24 @@ export function DMPage(): JSX.Element {
     };
 
     // Register socket listeners
-    socketService.on('friend:request', handleFriendRequest);
-    socketService.on('friend:accept', handleFriendAccept);
-    socketService.on('friend:remove', handleFriendRemove);
-    socketService.on('dm:message:create', handleDMMessage);
-    socketService.on('dm:typing:start', handleDMTypingStart);
-    socketService.on('dm:typing:stop', handleDMTypingStop);
-    socketService.on('presence:update', handlePresenceUpdate);
-    socketService.on('user:block', handleUserBlock);
+    socketService.on('friend.request.new', handleFriendRequest);
+    socketService.on('friend.request.accepted', handleFriendAccept);
+    socketService.on('friend.removed', handleFriendRemove);
+    socketService.on('dm.message.new', handleDMMessage);
+    socketService.on('dm.typing.start', handleDMTypingStart);
+    socketService.on('dm.typing.stop', handleDMTypingStop);
+    socketService.on('presence.update', handlePresenceUpdate);
+    socketService.on('user.block', handleUserBlock);
 
     onCleanup(() => {
-      socketService.off('friend:request', handleFriendRequest);
-      socketService.off('friend:accept', handleFriendAccept);
-      socketService.off('friend:remove', handleFriendRemove);
-      socketService.off('dm:message:create', handleDMMessage);
-      socketService.off('dm:typing:start', handleDMTypingStart);
-      socketService.off('dm:typing:stop', handleDMTypingStop);
-      socketService.off('presence:update', handlePresenceUpdate);
-      socketService.off('user:block', handleUserBlock);
+      socketService.off('friend.request.new', handleFriendRequest);
+      socketService.off('friend.request.accepted', handleFriendAccept);
+      socketService.off('friend.removed', handleFriendRemove);
+      socketService.off('dm.message.new', handleDMMessage);
+      socketService.off('dm.typing.start', handleDMTypingStart);
+      socketService.off('dm.typing.stop', handleDMTypingStop);
+      socketService.off('presence.update', handlePresenceUpdate);
+      socketService.off('user.block', handleUserBlock);
     });
   });
 

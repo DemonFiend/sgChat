@@ -104,7 +104,7 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
         VALUES (${server.id}, ${request.user!.id}, 'role_create', 'role', ${role.id}, ${JSON.stringify({ created: role })})
       `;
 
-      fastify.io?.to(`server:${server.id}`).emit('role:create', role);
+      fastify.io?.to(`server:${server.id}`).emit('role.create', role);
       return role;
     },
   });
@@ -149,7 +149,7 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
       await db.sql`UPDATE roles SET ${db.sql(updates)} WHERE id = ${roleId}`;
 
       const [updated] = await db.sql`SELECT * FROM roles WHERE id = ${roleId}`;
-      fastify.io?.to(`server:${server.id}`).emit('role:update', updated);
+      fastify.io?.to(`server:${server.id}`).emit('role.update', updated);
       return updated;
     },
   });
@@ -178,7 +178,7 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
         VALUES (${server.id}, ${request.user!.id}, 'role_delete', 'role', ${roleId})
       `;
 
-      fastify.io?.to(`server:${server.id}`).emit('role:delete', { id: roleId });
+      fastify.io?.to(`server:${server.id}`).emit('role.delete', { id: roleId });
       return { message: 'Role deleted' };
     },
   });
@@ -209,7 +209,7 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       const roles = await db.sql`SELECT * FROM roles WHERE server_id = ${server.id} ORDER BY position DESC`;
-      fastify.io?.to(`server:${server.id}`).emit('roles:reorder', roles);
+      fastify.io?.to(`server:${server.id}`).emit('roles.reorder', roles);
       return roles;
     },
   });
@@ -411,7 +411,7 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
         VALUES (${server.id}, ${request.user!.id}, 'member_kick', 'member', ${userId}, ${body.reason || null})
       `;
 
-      fastify.io?.to(`user:${userId}`).emit('server:kicked', { 
+      fastify.io?.to(`user:${userId}`).emit('server.kicked', { 
         server_id: server.id, 
         server_name: server.name,
         reason: body.reason 
@@ -457,7 +457,7 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
         VALUES (${server.id}, ${request.user!.id}, 'member_ban', 'member', ${userId}, ${body.reason || null})
       `;
 
-      fastify.io?.to(`user:${userId}`).emit('server:banned', { 
+      fastify.io?.to(`user:${userId}`).emit('server.banned', { 
         server_id: server.id, 
         server_name: server.name,
         reason: body.reason 

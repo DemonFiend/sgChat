@@ -244,7 +244,7 @@ export async function handleMemberJoin(
 
     // Emit member:join event to all connected clients in the server
     if (io) {
-      io.to(`server:${serverId}`).emit('member:join', {
+      io.to(`server:${serverId}`).emit('member.join', {
         member: {
           id: user.id,
           username: user.username,
@@ -279,7 +279,7 @@ export async function handleMemberJoin(
 
       // Broadcast to channel via Socket.IO
       if (io) {
-        io.to(`channel:${server.welcome_channel_id}`).emit('message:new', {
+        io.to(`channel:${server.welcome_channel_id}`).emit('message.new', {
           ...message,
           type: 'system',
         });
@@ -305,7 +305,7 @@ export async function handleMemberLeave(
 
     // Emit member:leave event to all connected clients in the server
     if (io) {
-      io.to(`server:${serverId}`).emit('member:leave', {
+      io.to(`server:${serverId}`).emit('member.leave', {
         user_id: userId,
       });
     }
@@ -332,7 +332,7 @@ export async function handleMemberLeave(
 
       // Broadcast to channel via Socket.IO
       if (io) {
-        io.to(`channel:${server.welcome_channel_id}`).emit('message:new', {
+        io.to(`channel:${server.welcome_channel_id}`).emit('message.new', {
           ...message,
           type: 'system',
         });

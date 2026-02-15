@@ -143,7 +143,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       // Emit channel:create socket event to all server members
-      fastify.io?.to(`server:${id}`).emit('channel:create', {
+      fastify.io?.to(`server:${id}`).emit('channel.create', {
         channel: {
           id: channel.id,
           name: channel.name,
@@ -358,7 +358,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
 
       // Broadcast update
       const updatedServer = await db.servers.findById(id);
-      fastify.io?.to(`server:${id}`).emit('server:update', updatedServer);
+      fastify.io?.to(`server:${id}`).emit('server.update', updatedServer);
 
       return updatedServer;
     },
@@ -383,7 +383,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       await db.sql`DELETE FROM servers WHERE id = ${id}`;
 
       // Broadcast deletion
-      fastify.io?.to(`server:${id}`).emit('server:delete', { id });
+      fastify.io?.to(`server:${id}`).emit('server.delete', { id });
 
       return { message: 'Server deleted' };
     },
@@ -447,7 +447,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       const [updatedRole] = await db.sql`SELECT * FROM roles WHERE id = ${roleId}`;
-      fastify.io?.to(`server:${id}`).emit('role:update', updatedRole);
+      fastify.io?.to(`server:${id}`).emit('role.update', updatedRole);
 
       return updatedRole;
     },
@@ -481,7 +481,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
         VALUES (${id}, ${request.user!.id}, 'role_delete', 'role', ${roleId}, ${JSON.stringify({ deleted: role })})
       `;
 
-      fastify.io?.to(`server:${id}`).emit('role:delete', { id: roleId });
+      fastify.io?.to(`server:${id}`).emit('role.delete', { id: roleId });
 
       return { message: 'Role deleted' };
     },
@@ -527,7 +527,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Broadcast role assignment
-      fastify.io?.to(`server:${id}`).emit('member:role:add', { 
+      fastify.io?.to(`server:${id}`).emit('member.role.add', { 
         user_id: userId, 
         server_id: id, 
         role_id: roleId,
@@ -568,7 +568,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Broadcast role removal
-      fastify.io?.to(`server:${id}`).emit('member:role:remove', { 
+      fastify.io?.to(`server:${id}`).emit('member.role.remove', { 
         user_id: userId, 
         server_id: id, 
         role_id: roleId 
@@ -623,7 +623,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Notify kicked user
-      fastify.io?.to(`user:${userId}`).emit('server:kicked', { 
+      fastify.io?.to(`user:${userId}`).emit('server.kicked', { 
         server_id: id, 
         server_name: server.name,
         reason: body.reason 
@@ -687,7 +687,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Notify banned user
-      fastify.io?.to(`user:${userId}`).emit('server:banned', { 
+      fastify.io?.to(`user:${userId}`).emit('server.banned', { 
         server_id: id, 
         server_name: server.name,
         reason: body.reason 
@@ -851,7 +851,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       const updatedServer = await db.servers.findById(id);
-      fastify.io?.to(`server:${id}`).emit('server:update', updatedServer);
+      fastify.io?.to(`server:${id}`).emit('server.update', updatedServer);
 
       return { message: 'Ownership transferred', new_owner_id: userId };
     },
@@ -908,7 +908,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Notify the timed out user
-      fastify.io?.to(`user:${userId}`).emit('member:timeout', {
+      fastify.io?.to(`user:${userId}`).emit('member.timeout', {
         server_id: id,
         server_name: server.name,
         duration: body.duration,
@@ -944,7 +944,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Notify the user their timeout was removed
-      fastify.io?.to(`user:${userId}`).emit('member:timeout:remove', {
+      fastify.io?.to(`user:${userId}`).emit('member.timeout.remove', {
         server_id: id,
       });
 
@@ -1035,7 +1035,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
         VALUES (${id}, ${request.user!.id}, 'role_create', 'role', ${role.id}, ${JSON.stringify({ created: role })})
       `;
 
-      fastify.io?.to(`server:${id}`).emit('role:create', role);
+      fastify.io?.to(`server:${id}`).emit('role.create', role);
 
       return role;
     },
@@ -1082,7 +1082,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       const updatedRoles = await db.roles.findByServerId(id);
-      fastify.io?.to(`server:${id}`).emit('roles:reorder', updatedRoles);
+      fastify.io?.to(`server:${id}`).emit('roles.reorder', updatedRoles);
 
       return updatedRoles;
     },
@@ -1158,7 +1158,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       const updatedRoles = await getUserRoles(userId, id);
 
       // Broadcast role update
-      fastify.io?.to(`server:${id}`).emit('member:roles:update', {
+      fastify.io?.to(`server:${id}`).emit('member.roles.update', {
         user_id: userId,
         server_id: id,
         roles: updatedRoles,
@@ -1299,7 +1299,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
         VALUES (${id}, ${request.user!.id}, 'category_create', 'channel', ${category.id}, ${JSON.stringify({ created: category })})
       `;
 
-      fastify.io?.to(`server:${id}`).emit('category:create', category);
+      fastify.io?.to(`server:${id}`).emit('category.create', category);
 
       return category;
     },
@@ -1346,7 +1346,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       const [updatedCategory] = await db.sql`SELECT * FROM categories WHERE id = ${categoryId}`;
-      fastify.io?.to(`server:${id}`).emit('category:update', updatedCategory);
+      fastify.io?.to(`server:${id}`).emit('category.update', updatedCategory);
 
       return updatedCategory;
     },
@@ -1386,7 +1386,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
         VALUES (${id}, ${request.user!.id}, 'category_delete', 'channel', ${categoryId}, ${JSON.stringify({ deleted: category })})
       `;
 
-      fastify.io?.to(`server:${id}`).emit('category:delete', { id: categoryId, server_id: id });
+      fastify.io?.to(`server:${id}`).emit('category.delete', { id: categoryId, server_id: id });
 
       return { message: 'Category deleted' };
     },
@@ -1515,7 +1515,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
         VALUES (${id}, ${request.user!.id}, 'category_permission_update', 'channel', ${categoryId}, ${JSON.stringify({ role_id: roleId, ...body })})
       `;
 
-      fastify.io?.to(`server:${id}`).emit('category:permissions:update', {
+      fastify.io?.to(`server:${id}`).emit('category.permissions.update', {
         category_id: categoryId,
         type: 'role',
         target_id: roleId,
@@ -1541,7 +1541,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
         WHERE category_id = ${categoryId} AND role_id = ${roleId}
       `;
 
-      fastify.io?.to(`server:${id}`).emit('category:permissions:delete', {
+      fastify.io?.to(`server:${id}`).emit('category.permissions.delete', {
         category_id: categoryId,
         type: 'role',
         target_id: roleId,

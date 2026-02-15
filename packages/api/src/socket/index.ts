@@ -60,8 +60,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
     // The resource_id doubles as the room name (channel:{id}, dm:{id}, user:{id}, server:{id}).
     io.to(envelope.resource_id).emit('event', envelope);
 
-    // Also emit with the legacy event name for backward compat
-    // (clients that haven't upgraded to envelope-based listening)
+    // Also emit with the event type name for direct listeners
     io.to(envelope.resource_id).emit(envelope.type, envelope.payload);
   });
 

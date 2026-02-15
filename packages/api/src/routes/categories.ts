@@ -117,7 +117,7 @@ export const categoryRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Emit socket event
-      fastify.io?.to(`server:${server.id}`).emit('category:create', category);
+      fastify.io?.to(`server:${server.id}`).emit('category.create', category);
 
       reply.code(201);
       return category;
@@ -169,7 +169,7 @@ export const categoryRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Emit socket event
-      fastify.io?.to(`server:${server.id}`).emit('category:update', category);
+      fastify.io?.to(`server:${server.id}`).emit('category.update', category);
 
       return category;
     },
@@ -216,7 +216,7 @@ export const categoryRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Emit socket event
-      fastify.io?.to(`server:${server.id}`).emit('category:delete', { id });
+      fastify.io?.to(`server:${server.id}`).emit('category.delete', { id });
 
       return { message: 'Category deleted' };
     },
@@ -258,7 +258,7 @@ export const categoryRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Emit socket event
-      fastify.io?.to(`server:${server.id}`).emit('categories:reorder', categories);
+      fastify.io?.to(`server:${server.id}`).emit('categories.reorder', categories);
 
       return categories;
     },

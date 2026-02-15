@@ -344,6 +344,8 @@ export type EventType =
   | 'voice.join'
   | 'voice.leave'
   | 'voice.state_update'
+  | 'voice.force_move'
+  | 'voice.force_disconnect'
   // Notifications
   | 'notification.new'
   | 'notification.read'
@@ -353,13 +355,25 @@ export type EventType =
   | 'friend.request.declined'
   | 'friend.removed'
   // Server / channel admin
+  | 'server.update'
   | 'channel.create'
   | 'channel.update'
   | 'channel.delete'
+  | 'category.create'
+  | 'category.update'
+  | 'category.delete'
   | 'member.join'
   | 'member.leave'
+  | 'member.update'
   | 'role.updated'
   | 'channel.overwrite.updated'
+  // Message reactions
+  | 'message.reaction'
+  // DM typing
+  | 'dm.typing.start'
+  | 'dm.typing.stop'
+  // User events
+  | 'user.block'
   // System
   | 'gateway.hello'
   | 'gateway.heartbeat'
