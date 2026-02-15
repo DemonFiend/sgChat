@@ -101,21 +101,16 @@ export function LoginPage() {
               disabled={isFormDisabled()}
             />
 
-            <div class="flex items-center justify-between">
-              <label class="flex items-center gap-2 text-sm text-text-muted cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={rememberMe()}
-                  onChange={(e) => setRememberMe(e.currentTarget.checked)}
-                  disabled={isFormDisabled()}
-                  class="w-4 h-4 rounded border-border-primary bg-bg-secondary text-accent-primary focus:ring-accent-primary focus:ring-offset-0"
-                />
-                Remember me
-              </label>
-              <A href="/forgot-password" class="text-sm text-text-link hover:underline">
-                Forgot your password?
-              </A>
-            </div>
+            <label class="flex items-center gap-2 text-sm text-text-muted cursor-pointer">
+              <input
+                type="checkbox"
+                checked={rememberMe()}
+                onChange={(e) => setRememberMe(e.currentTarget.checked)}
+                disabled={isFormDisabled()}
+                class="w-4 h-4 rounded border-border-primary bg-bg-secondary text-accent-primary focus:ring-accent-primary focus:ring-offset-0"
+              />
+              Remember me
+            </label>
 
             <Button
               type="submit"
@@ -127,12 +122,17 @@ export function LoginPage() {
             </Button>
           </form>
 
-          <p class="mt-4 text-sm text-text-muted">
-            Need an account?{' '}
-            <A href="/register" class="text-text-link hover:underline">
-              Register
+          <div class="mt-4 flex justify-between items-center text-sm text-text-muted">
+            <A href="/forgot-password" class="text-text-link hover:underline">
+              Forgot your password?
             </A>
-          </p>
+            <span>
+              Need an account?{' '}
+              <A href="/register" class="text-text-link hover:underline">
+                Register
+              </A>
+            </span>
+          </div>
         </div>
       </div>
     </div>

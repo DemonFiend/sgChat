@@ -36,6 +36,16 @@ function ProtectedRoute(props: { children: JSX.Element }) {
 
 function PublicRoute(props: { children: JSX.Element }) {
   const state = authStore.state;
+  
+  // Debug: log auth state on public routes
+  createEffect(() => {
+    console.log('[PublicRoute] Auth state:', { 
+      isLoading: state().isLoading, 
+      isAuthenticated: state().isAuthenticated,
+      path: window.location.pathname 
+    });
+  });
+  
   return (
     <Show when={!state().isLoading} fallback={<LoadingScreen />}>
       <Show when={!state().isAuthenticated} fallback={<Navigate href="/channels/@me" />}>
@@ -51,6 +61,7 @@ function RootLayout(props: { children?: JSX.Element }) {
   const [initialized, setInitialized] = createSignal(false);
 
   onMount(async () => {
+    console.log('[RootLayout] onMount starting, path:', window.location.pathname);
     // For web client served from same origin, auto-connect to same-origin API
     // This skips the network selection step since web is always same-origin
     const isSameOrigin = !networkStore.currentUrl() || 
@@ -95,6 +106,7 @@ function RootLayout(props: { children?: JSX.Element }) {
       }
     }
     
+    console.log('[RootLayout] Initialization complete, path:', window.location.pathname);
     setInitialized(true);
   });
 
@@ -168,8 +180,9 @@ export function App() {
         </ProtectedRoute>
       )} />
 
+      {/* Catch-all routes - must be last */}
       <Route path="/" component={() => <Navigate href="/channels/@me" />} />
-      <Route path="*" component={() => <Navigate href="/login" />} />
+      <Route path="/*" component={() => <Navigate href="/login" />} />
     </Router>
   );
 }
