@@ -177,8 +177,8 @@ export const giphyRoutes: FastifyPluginAsync = async (fastify) => {
           gifs,
           pagination: json.pagination,
         };
-      } catch (error) {
-        fastify.log.error('Giphy API error:', error);
+      } catch (err) {
+        fastify.log.error({ err }, 'Giphy API error');
         return reply.code(502).send({
           error: 'Failed to fetch GIFs',
           message: 'Unable to connect to Giphy API.',
@@ -247,8 +247,8 @@ export const giphyRoutes: FastifyPluginAsync = async (fastify) => {
           gifs,
           pagination: json.pagination,
         };
-      } catch (error) {
-        fastify.log.error('Giphy API error:', error);
+      } catch (err) {
+        fastify.log.error({ err }, 'Giphy API error');
         return reply.code(502).send({
           error: 'Failed to fetch GIFs',
           message: 'Unable to connect to Giphy API.',
