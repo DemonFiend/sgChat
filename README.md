@@ -6,9 +6,6 @@
 
 A modern, self-hosted chat platform that combines the best features of Discord, Revolt, and Guilded with real-time messaging capabilities.
 
-## 🚀 Live Demo
-
-[![Deploy](https://img.shields.io/badge/Deploy-Click%20Here-blue)](https://sgchat.vercel.app)
 
 ## 🔧 Technologies Used
 
