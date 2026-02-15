@@ -30,6 +30,12 @@ services:
       - MINIO_PUBLIC_URL=${MINIO_PUBLIC_URL:-}
       - NTFY_URL=http://ntfy:80
       - NTFY_BASE_URL=${NTFY_BASE_URL:-http://ntfy:80}
+      - SMTP_HOST=${SMTP_HOST:-smtp.mailgun.org}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM=${SMTP_FROM:-noreply@sgchat.local}
+      - APP_URL=${APP_URL:-http://localhost:3040}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

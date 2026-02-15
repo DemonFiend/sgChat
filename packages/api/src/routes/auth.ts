@@ -5,6 +5,7 @@ import { nanoid } from 'nanoid';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
+import { sendPasswordResetEmail } from '../lib/email.js';
 import { handleMemberJoin } from '../services/server.js';
 import {
   registerSchema,
@@ -260,22 +261,31 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     }
   });
 
-  // Logout
+  // Logout - validate via refresh token cookie (not JWT)
+  // This ensures logout works even if the access token is expired
   fastify.post('/logout', {
-    onRequest: [authenticate],
     handler: async (request, reply) => {
-      const userId = request.user.id;
+      const refresh_token = request.cookies.refresh_token;
       
-      // Delete refresh token from Redis
-      await redis.deleteSession(userId);
+      if (!refresh_token) {
+        // Already logged out or no session
+        return { message: 'Already logged out' };
+      }
       
-      // Clear the refresh token cookie
+      // Look up session by token
+      const session = await redis.getSessionByToken(refresh_token);
+      
+      if (session) {
+        // Delete refresh token from Redis
+        await redis.deleteSession(session.userId);
+        // Update user status to offline
+        await db.users.updateStatus(session.userId, 'offline');
+        await redis.setUserOffline(session.userId);
+      }
+      
+      // Always clear the cookie
       reply.clearCookie('refresh_token', getRefreshTokenCookieOptions());
       
-      // Update user status to offline
-      await db.users.updateStatus(userId, 'offline');
-      await redis.setUserOffline(userId);
-
       return { message: 'Logged out successfully' };
     },
   });
@@ -505,10 +515,16 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
           VALUES (${user.id}, ${tokenHash}, ${expiresAt})
         `;
 
-        // Log the token for now (in production, send via email)
-        // TODO: Integrate with email service or ntfy
-        console.log(`🔑 Password reset token for ${email}: ${token}`);
-        console.log(`   Reset link: /reset-password?token=${token}`);
+        // Build reset link and send email
+        const appUrl = process.env.APP_URL || 'http://localhost:3040';
+        const resetLink = `${appUrl}/reset-password?token=${token}`;
+        
+        try {
+          await sendPasswordResetEmail(user.email, resetLink, user.username);
+        } catch (emailErr) {
+          fastify.log.error(emailErr, 'Failed to send password reset email');
+          // Continue anyway - user can try again
+        }
 
         return genericResponse;
       } catch (err) {
