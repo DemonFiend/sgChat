@@ -6,6 +6,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-16-cron \
     && rm -rf /var/lib/apt/lists/*
 
+# Copy initialization SQL and custom entrypoint
+COPY init.sql /docker-entrypoint-initdb.d/init.sql
+COPY postgres-entrypoint.sh /usr/local/bin/sgchat-entrypoint.sh
+RUN chmod +x /usr/local/bin/sgchat-entrypoint.sh
+
+# Set custom entrypoint
+ENTRYPOINT ["/bin/bash", "/usr/local/bin/sgchat-entrypoint.sh"]
+
 # pg_cron requires shared_preload_libraries configuration
 # This is set via command in docker-compose.yml:
 # postgres -c shared_preload_libraries=pg_cron -c cron.database_name=sgchat

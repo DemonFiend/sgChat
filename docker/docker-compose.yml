@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # ============================================================
   # API Server
@@ -37,10 +35,14 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      - postgres
-      - redis
-      - minio
-      - ntfy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      ntfy:
+        condition: service_started
     restart: unless-stopped
     networks:
       - sgchat
@@ -49,7 +51,7 @@ services:
   # PostgreSQL Database (with pg_cron for scheduled jobs)
   # ============================================================
   postgres:
-    image: sgchat-postgres:latest
+    image: sosiagaming/sgchat-postgres:latest
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -57,9 +59,6 @@ services:
       - RESET_DB_ON_STARTUP=${RESET_DB_ON_STARTUP:-false}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - /opt/sgchat/init.sql:/docker-entrypoint-initdb.d/init.sql
-      - /opt/sgchat/postgres-entrypoint.sh:/usr/local/bin/sgchat-entrypoint.sh:ro
-    entrypoint: [ "/bin/bash", "/usr/local/bin/sgchat-entrypoint.sh" ]
     command: >
       postgres
       -c shared_preload_libraries=pg_cron
