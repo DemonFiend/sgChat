@@ -126,10 +126,16 @@ export function GifPicker(props: GifPickerProps) {
   const getPosition = () => {
     if (props.anchorRef) {
       const rect = props.anchorRef.getBoundingClientRect();
-      // Position above the button
+      // Position above the button, ensuring it doesn't go off-screen to the right
+      // The picker is 384px wide (w-96), so we need to ensure it fits
+      const pickerWidth = 384;
+      const rightEdge = rect.left + pickerWidth;
+      const maxLeft = window.innerWidth - pickerWidth - 16; // 16px margin from right edge
+      const left = Math.max(16, Math.min(rect.left - pickerWidth / 2, maxLeft));
+      
       return {
         bottom: `${window.innerHeight - rect.top + 8}px`,
-        left: `${Math.max(8, rect.left - 160)}px`,
+        left: `${left}px`,
       };
     }
     return { bottom: '80px', left: '50%', transform: 'translateX(-50%)' };
