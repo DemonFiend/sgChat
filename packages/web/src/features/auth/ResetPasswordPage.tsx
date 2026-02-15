@@ -3,7 +3,7 @@ import { A, useSearchParams, useNavigate } from '@solidjs/router';
 import { Button, Input, NetworkSelector } from '@/components/ui';
 import { api } from '@/api';
 import { networkStore } from '@/stores/network';
-import { hashPassword } from '@/lib/crypto';
+import { hashPasswordForTransit } from '@/lib/crypto';
 
 export function ResetPasswordPage() {
   const navigate = useNavigate();
@@ -74,7 +74,7 @@ export function ResetPasswordPage() {
 
     try {
       // Hash password client-side before sending
-      const hashedPassword = await hashPassword(password());
+      const hashedPassword = await hashPasswordForTransit(password());
 
       await api.post('/auth/reset-password', {
         token: token(),
