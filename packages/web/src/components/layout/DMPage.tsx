@@ -7,11 +7,11 @@ import { api } from '@/api';
 import { socketService } from '@/lib/socket';
 import { soundService } from '@/lib/soundService';
 
-// API response types
+// API response types - the API returns from_user for incoming and to_user for outgoing
 interface FriendRequestsResponse {
   incoming: Array<{
     id: string;
-    user: {
+    from_user: {
       id: string;
       username: string;
       display_name: string | null;
@@ -21,7 +21,7 @@ interface FriendRequestsResponse {
   }>;
   outgoing: Array<{
     id: string;
-    user: {
+    to_user: {
       id: string;
       username: string;
       display_name: string | null;
@@ -76,17 +76,17 @@ export function DMPage(): JSX.Element {
     try {
       const requestsData = await api.get<FriendRequestsResponse>('/friends/requests');
       
-      // Transform incoming requests
+      // Transform incoming requests - API returns from_user, we normalize to user
       const incoming: FriendRequest[] = (requestsData.incoming || []).map(req => ({
         id: req.id,
-        user: req.user,
+        user: req.from_user,
         created_at: req.created_at,
       }));
       
-      // Transform outgoing requests
+      // Transform outgoing requests - API returns to_user, we normalize to user
       const outgoing: FriendRequest[] = (requestsData.outgoing || []).map(req => ({
         id: req.id,
-        user: req.user,
+        user: req.to_user,
         created_at: req.created_at,
       }));
       
@@ -140,9 +140,19 @@ export function DMPage(): JSX.Element {
 
   // Socket event handlers
   createEffect(() => {
-    // Friend request received
-    const handleFriendRequest = (data: { request: FriendRequest }) => {
-      setIncomingRequests(prev => [...prev, data.request]);
+    // Friend request received - socket event sends from_user, we normalize to user
+    const handleFriendRequest = (data: { request: { id: string; from_user: { id: string; username: string; avatar_url: string | null }; created_at: string } }) => {
+      const normalizedRequest: FriendRequest = {
+        id: data.request.id,
+        user: {
+          id: data.request.from_user.id,
+          username: data.request.from_user.username,
+          display_name: data.request.from_user.username, // API doesn't send display_name in socket event
+          avatar_url: data.request.from_user.avatar_url,
+        },
+        created_at: data.request.created_at,
+      };
+      setIncomingRequests(prev => [...prev, normalizedRequest]);
     };
 
     // Friend request accepted (by someone we sent request to)
@@ -285,12 +295,13 @@ export function DMPage(): JSX.Element {
   const handleAddFriend = async (userId: string) => {
     try {
       // Send empty object as body - server requires body when Content-Type is application/json
-      const response = await api.post<{ message: string; request: { id: string; user: any; created_at: string } }>(`/friends/${userId}`, {});
+      // API returns to_user for outgoing requests, we normalize to user
+      const response = await api.post<{ message: string; request: { id: string; to_user: { id: string; username: string; display_name: string; avatar_url: string | null }; created_at: string } }>(`/friends/${userId}`, {});
       
-      // Add to outgoing requests
+      // Add to outgoing requests - normalize to_user to user
       setOutgoingRequests(prev => [...prev, {
         id: response.request.id,
-        user: response.request.user,
+        user: response.request.to_user,
         created_at: response.request.created_at,
       }]);
       

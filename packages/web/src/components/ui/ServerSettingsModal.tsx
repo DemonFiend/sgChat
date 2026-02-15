@@ -608,6 +608,7 @@ interface Role {
   position: number;
   permissions: Record<string, boolean>;
   member_count?: number;
+  is_hoisted?: boolean;
 }
 
 function RolesTab() {
@@ -623,6 +624,7 @@ function RolesTab() {
   const [editName, setEditName] = createSignal('');
   const [editColor, setEditColor] = createSignal('');
   const [editPermissions, setEditPermissions] = createSignal<Record<string, boolean>>({});
+  const [editHoisted, setEditHoisted] = createSignal(false);
 
   const permissionGroups = [
     {
@@ -692,6 +694,7 @@ function RolesTab() {
     setEditName(role.name);
     setEditColor(role.color || '');
     setEditPermissions({ ...role.permissions });
+    setEditHoisted(role.is_hoisted ?? false);
   };
 
   const handleCreateRole = async () => {
@@ -720,6 +723,7 @@ function RolesTab() {
         name: editName(),
         color: editColor() || null,
         permissions: editPermissions(),
+        is_hoisted: editHoisted(),
       });
       setRoles(prev => prev.map(r => r.id === role.id ? updated : r));
       setSelectedRole(updated);
@@ -749,9 +753,9 @@ function RolesTab() {
   };
 
   return (
-    <div class="flex gap-4 h-[calc(100vh-200px)] min-h-[400px]">
+    <div class="flex gap-6 h-[calc(100vh-120px)] min-h-[500px] ml-4">
       {/* Role List */}
-      <div class="w-48 flex-shrink-0">
+      <div class="w-56 flex-shrink-0">
         <div class="flex items-center justify-between mb-3">
           <h3 class="text-sm font-semibold text-text-muted uppercase">Roles</h3>
         </div>
@@ -869,6 +873,22 @@ function RolesTab() {
                   </div>
                 </div>
               </div>
+              
+              {/* Display Settings */}
+              <div class="border-t border-border-subtle pt-4">
+                <label class="flex items-center justify-between cursor-pointer hover:bg-bg-modifier-hover p-2 rounded transition-colors">
+                  <div>
+                    <div class="text-sm font-medium text-text-primary">Display separately in member list</div>
+                    <div class="text-xs text-text-muted">Show members with this role grouped separately</div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={editHoisted()}
+                    onChange={(e) => setEditHoisted(e.currentTarget.checked)}
+                    class="w-5 h-5 rounded border-border-subtle bg-bg-tertiary"
+                  />
+                </label>
+              </div>
             </div>
 
             {/* Permissions */}
@@ -921,11 +941,14 @@ interface ServerMember {
 function MembersTab() {
   const [searchQuery, setSearchQuery] = createSignal('');
   const [members, setMembers] = createSignal<ServerMember[]>([]);
-  const [roles, setRoles] = createSignal<{ id: string; name: string; color: string | null }[]>([]);
+  const [roles, setRoles] = createSignal<{ id: string; name: string; color: string | null; position?: number }[]>([]);
   const [isLoading, setIsLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
   const [selectedMember, setSelectedMember] = createSignal<ServerMember | null>(null);
   const [actionInProgress, setActionInProgress] = createSignal<string | null>(null);
+  const [editingRoles, setEditingRoles] = createSignal<string[]>([]);
+  const [isEditingRoles, setIsEditingRoles] = createSignal(false);
+  const [savingRoles, setSavingRoles] = createSignal(false);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -994,6 +1017,47 @@ function MembersTab() {
   };
 
   const getRoleById = (roleId: string) => roles().find(r => r.id === roleId);
+
+  const startEditingRoles = (member: ServerMember) => {
+    setEditingRoles([...member.roles]);
+    setIsEditingRoles(true);
+  };
+
+  const cancelEditingRoles = () => {
+    setIsEditingRoles(false);
+    setEditingRoles([]);
+  };
+
+  const toggleRole = (roleId: string) => {
+    setEditingRoles(prev => 
+      prev.includes(roleId) 
+        ? prev.filter(id => id !== roleId)
+        : [...prev, roleId]
+    );
+  };
+
+  const handleSaveRoles = async () => {
+    const member = selectedMember();
+    if (!member) return;
+
+    setSavingRoles(true);
+    try {
+      await api.patch(`/members/${member.id}`, { roles: editingRoles() });
+      // Update the member in local state
+      setMembers(prev => prev.map(m => 
+        m.id === member.id ? { ...m, roles: editingRoles() } : m
+      ));
+      setSelectedMember({ ...member, roles: editingRoles() });
+      setIsEditingRoles(false);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to update roles');
+    } finally {
+      setSavingRoles(false);
+    }
+  };
+
+  // Get assignable roles (exclude @everyone which has position 0)
+  const assignableRoles = () => roles().filter(r => (r.position ?? 0) > 0).sort((a, b) => (b.position ?? 0) - (a.position ?? 0));
 
   return (
     <div>
@@ -1084,25 +1148,107 @@ function MembersTab() {
 
         {/* Member Actions */}
         <Show when={selectedMember()}>
-          <div class="mt-4 p-4 bg-bg-secondary rounded-lg">
-            <h4 class="text-sm font-semibold text-text-muted uppercase mb-3">
-              Actions for {selectedMember()!.username}
-            </h4>
-            <div class="flex gap-2">
-              <button
-                onClick={() => handleKick(selectedMember()!)}
-                disabled={actionInProgress() === selectedMember()!.id}
-                class="px-3 py-1.5 bg-warning/20 text-warning text-sm font-medium rounded hover:bg-warning/30 transition-colors disabled:opacity-50"
-              >
-                {actionInProgress() === selectedMember()!.id ? 'Processing...' : 'Kick'}
-              </button>
-              <button
-                onClick={() => handleBan(selectedMember()!)}
-                disabled={actionInProgress() === selectedMember()!.id}
-                class="px-3 py-1.5 bg-danger/20 text-danger text-sm font-medium rounded hover:bg-danger/30 transition-colors disabled:opacity-50"
-              >
-                {actionInProgress() === selectedMember()!.id ? 'Processing...' : 'Ban'}
-              </button>
+          <div class="mt-4 p-4 bg-bg-secondary rounded-lg space-y-4">
+            {/* Role Management */}
+            <div>
+              <div class="flex items-center justify-between mb-3">
+                <h4 class="text-sm font-semibold text-text-muted uppercase">Roles</h4>
+                <Show when={!isEditingRoles()}>
+                  <button
+                    onClick={() => startEditingRoles(selectedMember()!)}
+                    class="text-xs text-brand-primary hover:text-brand-primary-hover transition-colors"
+                  >
+                    Edit Roles
+                  </button>
+                </Show>
+              </div>
+
+              <Show when={isEditingRoles()}>
+                <div class="space-y-2 mb-3">
+                  <For each={assignableRoles()}>
+                    {(role) => (
+                      <label 
+                        class="flex items-center gap-3 p-2 rounded hover:bg-bg-modifier-hover cursor-pointer transition-colors"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={editingRoles().includes(role.id)}
+                          onChange={() => toggleRole(role.id)}
+                          class="w-4 h-4 rounded border-border-subtle bg-bg-tertiary"
+                        />
+                        <div 
+                          class="w-3 h-3 rounded-full flex-shrink-0"
+                          style={{ background: role.color || '#99aab5' }}
+                        />
+                        <span class="text-sm text-text-primary">{role.name}</span>
+                      </label>
+                    )}
+                  </For>
+                </div>
+                <div class="flex gap-2">
+                  <button
+                    onClick={handleSaveRoles}
+                    disabled={savingRoles()}
+                    class="px-3 py-1.5 bg-success text-white text-sm font-medium rounded hover:bg-success/90 transition-colors disabled:opacity-50"
+                  >
+                    {savingRoles() ? 'Saving...' : 'Save Roles'}
+                  </button>
+                  <button
+                    onClick={cancelEditingRoles}
+                    disabled={savingRoles()}
+                    class="px-3 py-1.5 bg-bg-tertiary text-text-muted text-sm font-medium rounded hover:bg-bg-modifier-hover transition-colors disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </Show>
+
+              <Show when={!isEditingRoles()}>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <Show when={selectedMember()!.roles.length === 0}>
+                    <span class="text-sm text-text-muted">No roles assigned</span>
+                  </Show>
+                  <For each={selectedMember()!.roles}>
+                    {(roleId) => {
+                      const role = getRoleById(roleId);
+                      return role ? (
+                        <span 
+                          class="text-xs px-2 py-1 rounded"
+                          style={{ 
+                            background: role.color ? `${role.color}20` : 'var(--color-bg-tertiary)',
+                            color: role.color || 'var(--color-text-muted)'
+                          }}
+                        >
+                          {role.name}
+                        </span>
+                      ) : null;
+                    }}
+                  </For>
+                </div>
+              </Show>
+            </div>
+
+            {/* Moderation Actions */}
+            <div class="border-t border-border-subtle pt-4">
+              <h4 class="text-sm font-semibold text-text-muted uppercase mb-3">
+                Moderation
+              </h4>
+              <div class="flex gap-2">
+                <button
+                  onClick={() => handleKick(selectedMember()!)}
+                  disabled={actionInProgress() === selectedMember()!.id}
+                  class="px-3 py-1.5 bg-warning/20 text-warning text-sm font-medium rounded hover:bg-warning/30 transition-colors disabled:opacity-50"
+                >
+                  {actionInProgress() === selectedMember()!.id ? 'Processing...' : 'Kick'}
+                </button>
+                <button
+                  onClick={() => handleBan(selectedMember()!)}
+                  disabled={actionInProgress() === selectedMember()!.id}
+                  class="px-3 py-1.5 bg-danger/20 text-danger text-sm font-medium rounded hover:bg-danger/30 transition-colors disabled:opacity-50"
+                >
+                  {actionInProgress() === selectedMember()!.id ? 'Processing...' : 'Ban'}
+                </button>
+              </div>
             </div>
           </div>
         </Show>

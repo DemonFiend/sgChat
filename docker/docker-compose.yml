@@ -5,9 +5,6 @@ services:
   # API Server
   # ============================================================
   api:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.api
     image: sosiagaming/sgchat-api:latest
     ports:
       - "3040:3000"
@@ -61,15 +58,15 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - /opt/sgchat/init.sql:/docker-entrypoint-initdb.d/init.sql
       - /opt/sgchat/postgres-entrypoint.sh:/usr/local/bin/sgchat-entrypoint.sh:ro
-    entrypoint: ["/bin/bash", "/usr/local/bin/sgchat-entrypoint.sh"]
-    command: ["postgres"]
+    entrypoint: [ "/bin/bash", "/usr/local/bin/sgchat-entrypoint.sh" ]
+    command: [ "postgres" ]
     ports:
       - "3041:5432"
     restart: unless-stopped
     networks:
       - sgchat
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -88,7 +85,7 @@ services:
     networks:
       - sgchat
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -111,7 +108,7 @@ services:
     networks:
       - sgchat
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
       interval: 30s
       timeout: 20s
       retries: 3
@@ -143,7 +140,6 @@ services:
     restart: unless-stopped
     networks:
       - sgchat
-
   # ============================================================
   # Web Client: Now built into and served by the API server.
   # Access the web client at: http://localhost:3040

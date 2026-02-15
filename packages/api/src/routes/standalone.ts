@@ -30,6 +30,7 @@ const updateRoleSchema = z.object({
     text: z.number().optional(),
     voice: z.number().optional(),
   }).optional(),
+  is_hoisted: z.boolean().optional(),
 });
 
 const updateMemberSchema = z.object({
@@ -141,6 +142,7 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
       if (body.permissions?.server !== undefined) updates.server_permissions = String(body.permissions.server);
       if (body.permissions?.text !== undefined) updates.text_permissions = String(body.permissions.text);
       if (body.permissions?.voice !== undefined) updates.voice_permissions = String(body.permissions.voice);
+      if (body.is_hoisted !== undefined) updates.is_hoisted = body.is_hoisted;
 
       if (Object.keys(updates).length === 0) {
         return badRequest(reply, 'No updates provided');

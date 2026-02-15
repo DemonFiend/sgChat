@@ -6,6 +6,7 @@ export interface MessageAuthor {
   username: string;
   display_name: string | null;
   avatar_url: string | null;
+  role_color?: string | null;
 }
 
 export interface SystemEvent {
@@ -415,7 +416,10 @@ function MessageItem(props: MessageItemProps) {
           {/* Content */}
           <div class="flex-1 min-w-0">
             <div class="flex items-baseline gap-2">
-              <span class="font-medium text-text-primary hover:underline cursor-pointer">
+              <span 
+                class="font-medium hover:underline cursor-pointer"
+                style={{ color: author().role_color || 'var(--color-text-primary)' }}
+              >
                 {displayName()}
               </span>
               <span class="text-xs text-text-muted">

@@ -93,6 +93,9 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       const maxLimit = Math.min(parseInt(limit || '50') || 50, 100);
       let messages;
       
+      // Subquery to get the highest-positioned role color for a user in this server
+      const serverId = channel.server_id;
+      
       if (before) {
         messages = await db.sql`
           SELECT 
@@ -106,7 +109,16 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
             u.id as author_id,
             u.username as author_username,
             u.display_name as author_display_name,
-            u.avatar_url as author_avatar_url
+            u.avatar_url as author_avatar_url,
+            (
+              SELECT r.color FROM roles r
+              JOIN member_roles mr ON mr.role_id = r.id
+              WHERE mr.member_user_id = u.id 
+                AND mr.member_server_id = ${serverId}
+                AND r.color IS NOT NULL
+              ORDER BY r.position DESC
+              LIMIT 1
+            ) as author_role_color
           FROM messages m
           LEFT JOIN users u ON m.author_id = u.id
           WHERE m.channel_id = ${id}
@@ -127,7 +139,16 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
             u.id as author_id,
             u.username as author_username,
             u.display_name as author_display_name,
-            u.avatar_url as author_avatar_url
+            u.avatar_url as author_avatar_url,
+            (
+              SELECT r.color FROM roles r
+              JOIN member_roles mr ON mr.role_id = r.id
+              WHERE mr.member_user_id = u.id 
+                AND mr.member_server_id = ${serverId}
+                AND r.color IS NOT NULL
+              ORDER BY r.position DESC
+              LIMIT 1
+            ) as author_role_color
           FROM messages m
           LEFT JOIN users u ON m.author_id = u.id
           WHERE m.channel_id = ${id}
@@ -179,6 +200,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
           username: m.author_username,
           display_name: m.author_display_name || m.author_username,
           avatar_url: m.author_avatar_url,
+          role_color: m.author_role_color || null,
         },
         created_at: m.created_at,
         edited_at: m.edited_at,
