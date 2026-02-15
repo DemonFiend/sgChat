@@ -101,182 +101,186 @@ export function DMChatPanel(props: DMChatPanelProps): JSX.Element {
     }
   };
 
-  // No friend selected state
-  if (!props.friend) {
-    return (
-      <div class="flex-1 flex items-center justify-center bg-bg-primary">
-        <div class="text-center">
-          <div class="w-24 h-24 mx-auto mb-4 bg-bg-tertiary rounded-full flex items-center justify-center">
-            <svg class="w-12 h-12 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-            </svg>
-          </div>
-          <h3 class="text-xl font-semibold text-text-primary mb-2">Select a Friend</h3>
-          <p class="text-text-muted text-sm">
-            Choose a friend from the list to start chatting
-          </p>
-        </div>
-      </div>
-    );
-  }
-
+  // Use Show for reactive conditional rendering - this is critical in SolidJS
+  // Early returns with if() break reactivity since the component function only runs once
   return (
-    <div class="flex-1 flex flex-col bg-bg-primary relative">
-      {/* Header with Bendy Line */}
-      <div class="relative">
-        <header class="h-16 px-4 flex items-center gap-4 bg-bg-primary border-b border-bg-tertiary">
-          {/* Friend Username */}
-          <div class="flex-1">
-            <h2 class="text-lg font-semibold text-text-primary">
-              {props.friend.display_name || props.friend.username}
-            </h2>
-            <p class="text-xs text-text-muted">@{props.friend.username}</p>
-          </div>
-
-          {/* Large Avatar on right */}
-          <div class="relative">
-            <Avatar
-              src={props.friend.avatar_url}
-              alt={props.friend.display_name || props.friend.username}
-              size="lg"
-            />
-            <div class={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-bg-primary ${getStatusColor(props.friend.status)}`} />
-          </div>
-
-          {/* Group indicator placeholder */}
-          <div class="w-10 h-10 bg-bg-tertiary rounded-full flex items-center justify-center">
-            <span class="text-sm font-bold text-text-muted">2</span>
-          </div>
-        </header>
-        <BendyLine variant="horizontal" direction="down" class="absolute bottom-0 left-0 right-0 translate-y-1/2" />
-      </div>
-
-      {/* Messages Area */}
-      <div class="flex-1 overflow-y-auto scrollbar-thin p-4 mt-2">
-        {/* Empty state */}
-        <Show when={props.messages.length === 0}>
-          <div class="flex flex-col items-center justify-center h-full text-center">
-            <Avatar
-              src={props.friend.avatar_url}
-              alt={props.friend.display_name || props.friend.username}
-              size="xl"
-            />
-            <h3 class="text-lg font-semibold text-text-primary mt-4 mb-1">
-              {props.friend.display_name || props.friend.username}
-            </h3>
-            <p class="text-text-muted text-sm mb-4">
-              @{props.friend.username}
-            </p>
-            <p class="text-text-muted text-sm">
-              This is the beginning of your direct message history with{' '}
-              <span class="font-medium">{props.friend.display_name || props.friend.username}</span>.
-            </p>
-            <p class="text-xs text-status-online flex items-center gap-1 mt-2">
-              <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+    <Show
+      when={props.friend}
+      fallback={
+        <div class="flex-1 flex items-center justify-center bg-bg-primary">
+          <div class="text-center">
+            <div class="w-24 h-24 mx-auto mb-4 bg-bg-tertiary rounded-full flex items-center justify-center">
+              <svg class="w-12 h-12 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
-              Messages are end-to-end encrypted
+            </div>
+            <h3 class="text-xl font-semibold text-text-primary mb-2">Select a Friend</h3>
+            <p class="text-text-muted text-sm">
+              Choose a friend from the list to start chatting
             </p>
           </div>
-        </Show>
+        </div>
+      }
+    >
+      {(friend) => (
+        <div class="flex-1 flex flex-col bg-bg-primary relative">
+          {/* Header with Bendy Line */}
+          <div class="relative">
+            <header class="h-16 px-4 flex items-center gap-4 bg-bg-primary border-b border-bg-tertiary">
+              {/* Friend Username */}
+              <div class="flex-1">
+                <h2 class="text-lg font-semibold text-text-primary">
+                  {friend().display_name || friend().username}
+                </h2>
+                <p class="text-xs text-text-muted">@{friend().username}</p>
+              </div>
 
-        {/* Messages */}
-        <For each={props.messages}>
-          {(message) => {
-            const isMe = message.sender_id === props.currentUserId;
-            return (
-              <div class={`flex mb-3 ${isMe ? 'justify-end' : 'justify-start'}`}>
-                {/* Avatar for received messages */}
-                <Show when={!isMe}>
-                  <div class="flex-shrink-0 mr-2">
-                    <Avatar
-                      src={props.friend!.avatar_url}
-                      alt={props.friend!.display_name || props.friend!.username}
-                      size="sm"
-                    />
-                  </div>
-                </Show>
+              {/* Large Avatar on right */}
+              <div class="relative">
+                <Avatar
+                  src={friend().avatar_url}
+                  alt={friend().display_name || friend().username}
+                  size="lg"
+                />
+                <div class={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-bg-primary ${getStatusColor(friend().status)}`} />
+              </div>
 
-                <div class={`max-w-[70%] ${isMe ? 'order-1' : ''}`}>
-                  <div class={`rounded-2xl px-4 py-2 ${
-                    isMe 
-                      ? 'bg-brand-primary text-white rounded-br-md' 
-                      : 'bg-bg-tertiary text-text-primary rounded-bl-md'
-                  }`}>
-                    <p class="break-words whitespace-pre-wrap">{message.content}</p>
+              {/* Group indicator placeholder */}
+              <div class="w-10 h-10 bg-bg-tertiary rounded-full flex items-center justify-center">
+                <span class="text-sm font-bold text-text-muted">2</span>
+              </div>
+            </header>
+            <BendyLine variant="horizontal" direction="down" class="absolute bottom-0 left-0 right-0 translate-y-1/2" />
+          </div>
+
+          {/* Messages Area */}
+          <div class="flex-1 overflow-y-auto scrollbar-thin p-4 mt-2">
+            {/* Empty state */}
+            <Show when={props.messages.length === 0}>
+              <div class="flex flex-col items-center justify-center h-full text-center">
+                <Avatar
+                  src={friend().avatar_url}
+                  alt={friend().display_name || friend().username}
+                  size="xl"
+                />
+                <h3 class="text-lg font-semibold text-text-primary mt-4 mb-1">
+                  {friend().display_name || friend().username}
+                </h3>
+                <p class="text-text-muted text-sm mb-4">
+                  @{friend().username}
+                </p>
+                <p class="text-text-muted text-sm">
+                  This is the beginning of your direct message history with{' '}
+                  <span class="font-medium">{friend().display_name || friend().username}</span>.
+                </p>
+                <p class="text-xs text-status-online flex items-center gap-1 mt-2">
+                  <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                  Messages are end-to-end encrypted
+                </p>
+              </div>
+            </Show>
+
+            {/* Messages */}
+            <For each={props.messages}>
+              {(message) => {
+                const isMe = message.sender_id === props.currentUserId;
+                return (
+                  <div class={`flex mb-3 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                    {/* Avatar for received messages */}
+                    <Show when={!isMe}>
+                      <div class="flex-shrink-0 mr-2">
+                        <Avatar
+                          src={friend().avatar_url}
+                          alt={friend().display_name || friend().username}
+                          size="sm"
+                        />
+                      </div>
+                    </Show>
+
+                    <div class={`max-w-[70%] ${isMe ? 'order-1' : ''}`}>
+                      <div class={`rounded-2xl px-4 py-2 ${
+                        isMe 
+                          ? 'bg-brand-primary text-white rounded-br-md' 
+                          : 'bg-bg-tertiary text-text-primary rounded-bl-md'
+                      }`}>
+                        <p class="break-words whitespace-pre-wrap">{message.content}</p>
+                      </div>
+                      <div class={`text-[10px] mt-1 text-text-muted ${isMe ? 'text-right' : 'text-left'}`}>
+                        {formatTime(message.created_at)}
+                      </div>
+                    </div>
                   </div>
-                  <div class={`text-[10px] mt-1 text-text-muted ${isMe ? 'text-right' : 'text-left'}`}>
-                    {formatTime(message.created_at)}
-                  </div>
+                );
+              }}
+            </For>
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Bottom Section with Bendy Line and Actions */}
+          <div class="relative">
+            <BendyLine variant="horizontal" direction="up" class="absolute top-0 left-0 right-0 -translate-y-1/2" />
+            
+            {/* Typing Indicator */}
+            <Show when={props.isTyping}>
+              <div class="flex items-center gap-2 text-xs text-text-muted px-4 pt-2">
+                <div class="flex gap-0.5">
+                  <span class="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style={{ "animation-delay": "0ms" }} />
+                  <span class="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style={{ "animation-delay": "150ms" }} />
+                  <span class="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style={{ "animation-delay": "300ms" }} />
+                </div>
+                <span>{friend().display_name || friend().username} is typing...</span>
+              </div>
+            </Show>
+
+            {/* Message Input */}
+            <div class="p-4 flex items-end gap-3">
+              <div class="flex-1 flex items-end bg-bg-tertiary rounded-lg">
+                <textarea
+                  ref={inputRef}
+                  value={messageInput()}
+                  onInput={(e) => {
+                    setMessageInput(e.currentTarget.value);
+                    handleTyping();
+                  }}
+                  onKeyDown={handleKeyDown}
+                  placeholder={`Message @${friend().username}`}
+                  rows={1}
+                  class="flex-1 bg-transparent py-3 px-4 text-text-primary placeholder:text-text-muted outline-none resize-none max-h-32 scrollbar-thin"
+                  style={{ "min-height": "24px" }}
+                />
+                <button
+                  onClick={handleSend}
+                  disabled={!messageInput().trim()}
+                  class="p-3 text-text-muted hover:text-brand-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Bottom Right Action Buttons */}
+              <div class="flex items-center gap-2">
+                <button class="w-10 h-10 bg-bg-tertiary rounded-full flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-bg-modifier-hover transition-colors">
+                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </button>
+                <button class="w-10 h-10 bg-bg-tertiary rounded-full flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-bg-modifier-hover transition-colors">
+                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                  </svg>
+                </button>
+                <div class="w-12 h-12 bg-bg-tertiary rounded-full flex items-center justify-center">
+                  <span class="text-lg font-bold text-text-muted">4</span>
                 </div>
               </div>
-            );
-          }}
-        </For>
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Bottom Section with Bendy Line and Actions */}
-      <div class="relative">
-        <BendyLine variant="horizontal" direction="up" class="absolute top-0 left-0 right-0 -translate-y-1/2" />
-        
-        {/* Typing Indicator */}
-        <Show when={props.isTyping}>
-          <div class="flex items-center gap-2 text-xs text-text-muted px-4 pt-2">
-            <div class="flex gap-0.5">
-              <span class="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style={{ "animation-delay": "0ms" }} />
-              <span class="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style={{ "animation-delay": "150ms" }} />
-              <span class="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style={{ "animation-delay": "300ms" }} />
-            </div>
-            <span>{props.friend.display_name || props.friend.username} is typing...</span>
-          </div>
-        </Show>
-
-        {/* Message Input */}
-        <div class="p-4 flex items-end gap-3">
-          <div class="flex-1 flex items-end bg-bg-tertiary rounded-lg">
-            <textarea
-              ref={inputRef}
-              value={messageInput()}
-              onInput={(e) => {
-                setMessageInput(e.currentTarget.value);
-                handleTyping();
-              }}
-              onKeyDown={handleKeyDown}
-              placeholder={`Message @${props.friend.username}`}
-              rows={1}
-              class="flex-1 bg-transparent py-3 px-4 text-text-primary placeholder:text-text-muted outline-none resize-none max-h-32 scrollbar-thin"
-              style={{ "min-height": "24px" }}
-            />
-            <button
-              onClick={handleSend}
-              disabled={!messageInput().trim()}
-              class="p-3 text-text-muted hover:text-brand-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-              </svg>
-            </button>
-          </div>
-
-          {/* Bottom Right Action Buttons */}
-          <div class="flex items-center gap-2">
-            <button class="w-10 h-10 bg-bg-tertiary rounded-full flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-bg-modifier-hover transition-colors">
-              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </button>
-            <button class="w-10 h-10 bg-bg-tertiary rounded-full flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-bg-modifier-hover transition-colors">
-              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-              </svg>
-            </button>
-            <div class="w-12 h-12 bg-bg-tertiary rounded-full flex items-center justify-center">
-              <span class="text-lg font-bold text-text-muted">4</span>
             </div>
           </div>
         </div>
-      </div>
-    </div>
+      )}
+    </Show>
   );
 }
