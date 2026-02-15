@@ -59,6 +59,9 @@ export type AuthErrorReason = 'session_expired' | 'server_unreachable' | 'token_
 let accessToken: string | null = null;
 let tokenExpiresAt: number = 0;
 
+// Proactive token refresh interval
+let proactiveRefreshInterval: ReturnType<typeof setInterval> | null = null;
+
 /**
  * Get the effective API URL for auth requests.
  * Uses getEffectiveUrl to handle proxy routing for same-origin cookie flow.
@@ -111,6 +114,38 @@ function createAuthStore() {
   const clearTokens = () => {
     accessToken = null;
     tokenExpiresAt = 0;
+    stopProactiveRefresh();
+  };
+
+  /**
+   * Start proactive token refresh interval.
+   * Checks every minute if token expires in < 2 minutes and refreshes early.
+   */
+  const startProactiveRefresh = () => {
+    // Clear any existing interval
+    stopProactiveRefresh();
+    
+    proactiveRefreshInterval = setInterval(async () => {
+      // If token expires in less than 2 minutes (120000ms), refresh now
+      if (tokenExpiresAt && Date.now() > tokenExpiresAt - 120000) {
+        try {
+          await refreshAccessToken();
+          console.log('[Auth] Proactive token refresh successful');
+        } catch (err) {
+          console.error('[Auth] Proactive token refresh failed:', err);
+        }
+      }
+    }, 60000); // Check every minute
+  };
+
+  /**
+   * Stop proactive token refresh interval.
+   */
+  const stopProactiveRefresh = () => {
+    if (proactiveRefreshInterval) {
+      clearInterval(proactiveRefreshInterval);
+      proactiveRefreshInterval = null;
+    }
   };
 
   const login = async (email: string, password: string): Promise<User> => {
@@ -136,6 +171,7 @@ function createAuthStore() {
 
     const data = await response.json();
     setTokens(data.access_token, 900); // 15 min
+    startProactiveRefresh();
 
     setState({
       user: data.user,
@@ -196,6 +232,7 @@ function createAuthStore() {
 
     const data = await response.json();
     setTokens(data.access_token, 900);
+    startProactiveRefresh();
 
     setState({
       user: data.user,
@@ -303,6 +340,7 @@ function createAuthStore() {
 
       const user = await response.json();
       setState({ user, isAuthenticated: true, isLoading: false });
+      startProactiveRefresh();
       return true;
     } catch {
       setState({ user: null, isAuthenticated: false, isLoading: false });

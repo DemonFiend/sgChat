@@ -33,6 +33,7 @@ services:
       - SMTP_PASS=${SMTP_PASS:-}
       - SMTP_FROM=${SMTP_FROM:-noreply@sgchat.local}
       - APP_URL=${APP_URL:-http://localhost:3040}
+      - GIPHY_API_KEY=${GIPHY_API_KEY:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

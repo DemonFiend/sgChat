@@ -1,6 +1,7 @@
 import { createSignal, For, Show, createEffect, onCleanup, JSX } from 'solid-js';
 import { Avatar } from '@/components/ui';
 import { BendyLine } from '@/components/ui/BendyLine';
+import { GifPicker } from '@/components/ui/GifPicker';
 import type { Friend } from './DMSidebar';
 
 export interface DMMessage {
@@ -16,6 +17,7 @@ interface DMChatPanelProps {
   messages: DMMessage[];
   currentUserId: string;
   currentUserAvatar?: string | null;
+  currentUserDisplayName?: string | null;
   onSendMessage: (content: string) => void;
   onTypingStart?: () => void;
   onTypingStop?: () => void;
@@ -26,8 +28,10 @@ export function DMChatPanel(props: DMChatPanelProps): JSX.Element {
   const [messageInput, setMessageInput] = createSignal('');
   const [friendLocalTime, setFriendLocalTime] = createSignal<string | null>(null);
   const [showTimeTooltip, setShowTimeTooltip] = createSignal(false);
+  const [showGifPicker, setShowGifPicker] = createSignal(false);
   let messagesEndRef: HTMLDivElement | undefined;
   let inputRef: HTMLTextAreaElement | undefined;
+  let gifButtonRef: HTMLButtonElement | undefined;
   let typingTimeout: ReturnType<typeof setTimeout> | null = null;
   let isTyping = false;
   let timeUpdateInterval: ReturnType<typeof setInterval> | null = null;
@@ -311,7 +315,7 @@ export function DMChatPanel(props: DMChatPanelProps): JSX.Element {
                       <div class="flex-shrink-0 ml-2">
                         <Avatar
                           src={props.currentUserAvatar}
-                          alt="You"
+                          alt={props.currentUserDisplayName || "You"}
                           size="sm"
                         />
                       </div>
@@ -378,9 +382,27 @@ export function DMChatPanel(props: DMChatPanelProps): JSX.Element {
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                   </svg>
                 </button>
-                <div class="w-12 h-12 bg-bg-tertiary rounded-full flex items-center justify-center">
-                  <span class="text-lg font-bold text-text-muted">4</span>
-                </div>
+                <button
+                  ref={gifButtonRef}
+                  onClick={() => setShowGifPicker(!showGifPicker())}
+                  class="w-10 h-10 bg-bg-tertiary rounded-full flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-bg-modifier-hover transition-colors"
+                  title="Send a GIF"
+                >
+                  <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M11.5 9H13v6h-1.5V9zM9 9H6c-.5 0-1 .5-1 1v4c0 .5.5 1 1 1h3c.5 0 1-.5 1-1v-4c0-.5-.5-1-1-1zm-.5 4.5h-2v-3h2v3zM19 10.5V9h-4.5v6H16v-2h2v-1.5h-2v-1h3z" />
+                  </svg>
+                </button>
+
+                {/* GIF Picker */}
+                <GifPicker
+                  isOpen={showGifPicker()}
+                  onClose={() => setShowGifPicker(false)}
+                  onSelect={(gifUrl) => {
+                    props.onSendMessage(gifUrl);
+                    setShowGifPicker(false);
+                  }}
+                  anchorRef={gifButtonRef}
+                />
               </div>
             </div>
           </div>

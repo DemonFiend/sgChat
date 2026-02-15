@@ -528,6 +528,7 @@ export function DMPage(): JSX.Element {
             messages={messages()}
             currentUserId={currentUserId()}
             currentUserAvatar={authStore.state().user?.avatar_url}
+            currentUserDisplayName={authStore.state().user?.display_name || authStore.state().user?.username}
             onSendMessage={handleSendMessage}
             onTypingStart={handleTypingStart}
             onTypingStop={handleTypingStop}

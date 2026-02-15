@@ -1,5 +1,6 @@
 import { createSignal, For, Show, createEffect, onCleanup } from 'solid-js';
 import { Avatar, ReactionDisplay, ReactionPicker, type Reaction } from '@/components/ui';
+import { GifPicker } from '@/components/ui/GifPicker';
 
 export interface MessageAuthor {
   id: string;
@@ -57,8 +58,10 @@ interface ChatPanelProps {
 
 export function ChatPanel(props: ChatPanelProps) {
   const [messageInput, setMessageInput] = createSignal('');
+  const [showGifPicker, setShowGifPicker] = createSignal(false);
   let messagesEndRef: HTMLDivElement | undefined;
   let inputRef: HTMLTextAreaElement | undefined;
+  let gifButtonRef: HTMLButtonElement | undefined;
   let typingTimeout: ReturnType<typeof setTimeout> | null = null;
   let isTyping = false;
 
@@ -296,6 +299,29 @@ export function ChatPanel(props: ChatPanelProps) {
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </button>
+
+            {/* GIF button */}
+            <button
+              ref={gifButtonRef}
+              onClick={() => setShowGifPicker(!showGifPicker())}
+              class="p-3 text-text-muted hover:text-text-primary transition-colors"
+              title="Send a GIF"
+            >
+              <svg class="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M11.5 9H13v6h-1.5V9zM9 9H6c-.5 0-1 .5-1 1v4c0 .5.5 1 1 1h3c.5 0 1-.5 1-1v-4c0-.5-.5-1-1-1zm-.5 4.5h-2v-3h2v3zM19 10.5V9h-4.5v6H16v-2h2v-1.5h-2v-1h3z" />
+              </svg>
+            </button>
+
+            {/* GIF Picker */}
+            <GifPicker
+              isOpen={showGifPicker()}
+              onClose={() => setShowGifPicker(false)}
+              onSelect={(gifUrl) => {
+                props.onSendMessage?.(gifUrl);
+                setShowGifPicker(false);
+              }}
+              anchorRef={gifButtonRef}
+            />
 
             {/* Send button */}
             <button

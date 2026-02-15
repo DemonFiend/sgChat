@@ -10,6 +10,10 @@ function createSocketService() {
   
   let socket: Socket | null = null;
   
+  // Retry counter for token refresh attempts to prevent infinite loops
+  let refreshRetryCount = 0;
+  const MAX_REFRESH_RETRIES = 3;
+  
   // Queue of pending event handlers to register when socket connects
   const pendingHandlers: Map<string, Set<(data: unknown) => void>> = new Map();
 
@@ -54,6 +58,7 @@ function createSocketService() {
     socket.on('connect', () => {
       setConnectionState('connected');
       setReconnectAttempts(0);
+      refreshRetryCount = 0; // Reset retry counter on successful connect
       console.log('[Socket] Connected');
     });
 
@@ -63,6 +68,14 @@ function createSocketService() {
 
       // Server disconnected us - likely token expired
       if (reason === 'io server disconnect') {
+        // Check if we've exceeded max retries to prevent infinite loops
+        if (refreshRetryCount >= MAX_REFRESH_RETRIES) {
+          console.error('[Socket] Max refresh retries reached, stopping reconnection');
+          socket?.disconnect();
+          return;
+        }
+        refreshRetryCount++;
+        
         try {
           const newToken = await authStore.refreshAccessToken();
           if (socket) {
@@ -86,6 +99,14 @@ function createSocketService() {
       console.error('[Socket] Connection error:', error.message);
 
       if (error.message === 'Invalid token' || error.message === 'jwt expired') {
+        // Check if we've exceeded max retries to prevent infinite loops
+        if (refreshRetryCount >= MAX_REFRESH_RETRIES) {
+          console.error('[Socket] Max refresh retries reached, stopping reconnection');
+          socket?.disconnect();
+          return;
+        }
+        refreshRetryCount++;
+        
         try {
           const newToken = await authStore.refreshAccessToken();
           if (socket) {
