@@ -58,6 +58,7 @@ CREATE TABLE servers (
   -- Server settings
   motd TEXT CHECK (length(motd) <= 2000), -- Message of the day
   motd_enabled BOOLEAN DEFAULT false,
+  welcome_message TEXT CHECK (length(welcome_message) <= 2000), -- Welcome message for new members
   timezone VARCHAR(50) DEFAULT 'UTC',
   
   -- Admin claim system (for single-tenant bootstrap)

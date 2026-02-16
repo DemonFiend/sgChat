@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@sgchat/shared": "workspace:*",
     "solid-js": "^1.9.3",
     "@solidjs/router": "^0.15.2",
     "@tanstack/solid-query": "^5.62.7",
@@ -32,7 +33,11 @@
     "@types/dompurify": "^3.0.5",
     "workbox-window": "^7.3.0"
   },
-  "keywords": ["chat", "solidjs", "web-client"],
+  "keywords": [
+    "chat",
+    "solidjs",
+    "web-client"
+  ],
   "author": "DemonFiend",
   "license": "MIT"
 }

@@ -1,7 +1,9 @@
-import { For, Show } from 'solid-js';
+import { For, Show, createSignal } from 'solid-js';
 import { A, useLocation } from '@solidjs/router';
 import { clsx } from 'clsx';
 import { Tooltip } from '@/components/ui';
+import { serverPopupStore } from '@/stores';
+import { authStore } from '@/stores/auth';
 
 interface Server {
   id: string;
@@ -16,6 +18,7 @@ interface ServerListProps {
 
 export function ServerList(props: ServerListProps) {
   const location = useLocation();
+  const [lastClickTime, setLastClickTime] = createSignal<number>(0);
 
   const isActive = (serverId: string) => {
     return location.pathname.startsWith(`/channels/${serverId}`);
@@ -28,6 +31,33 @@ export function ServerList(props: ServerListProps) {
       .join('')
       .slice(0, 3)
       .toUpperCase();
+  };
+
+  const handleServerIconClick = (serverId: string, e: MouseEvent) => {
+    // Only handle left-click, preserve right-click for context menu
+    if (e.button === 2) return;
+
+    // Check if user is authenticated
+    const isAuthenticated = authStore.state().isAuthenticated;
+    if (!isAuthenticated) return;
+
+    // Debouncing (300ms) to prevent rapid clicks
+    const now = Date.now();
+    if (now - lastClickTime() < 300) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    setLastClickTime(now);
+
+    // Check if this is the current/active server
+    if (isActive(serverId)) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Reopen the popup for this server
+      serverPopupStore.reopenPopup();
+    }
   };
 
   return (
@@ -50,7 +80,7 @@ export function ServerList(props: ServerListProps) {
           <svg class="w-7 h-7 text-text-primary" fill="currentColor" viewBox="0 0 24 24">
             <path d="M21.79 18l-1.42-1.42a.996.996 0 111.41-1.41l1.42 1.42a.996.996 0 11-1.41 1.41zM19 17a.997.997 0 01-1-1v-1h-1a1 1 0 110-2h1v-1a1 1 0 112 0v1h1a1 1 0 110 2h-1v1c0 .55-.45 1-1 1zm-5-6c1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3 1.34 3 3 3zm-6 0c1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3 1.34 3 3 3zm6 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zM8 15c-2.33 0-7 1.17-7 3.5V19h6v-2.5c0-.85.33-2.34 2.37-3.47C8.5 13.01 8 13 8 13z" />
           </svg>
-          
+
           {/* Active indicator */}
           <Show when={location.pathname.startsWith('/channels/@me')}>
             <span class="absolute left-0 w-1 h-10 bg-text-primary rounded-r-full" />
@@ -72,6 +102,11 @@ export function ServerList(props: ServerListProps) {
                 'hover:rounded-xl',
                 isActive(server.id) ? 'rounded-xl' : 'rounded-2xl'
               )}
+              onClick={(e) => handleServerIconClick(server.id, e)}
+              onContextMenu={(e) => {
+                // Preserve right-click context menu behavior
+                // The handler will ignore right-clicks anyway
+              }}
             >
               <Show
                 when={server.icon_url}

@@ -1,0 +1,41 @@
+# Login Server Popup - State Management
+
+## Store: `useServerPopupStore`
+
+### State Shape
+```typescript
+interface ServerPopupState {
+  isVisible: boolean;           // Current visibility
+  currentServerId: string | null;
+  serverData: ServerPopupData | null;
+}
+
+interface ServerPopupData {
+  serverId: string;
+  serverName: string;
+  bannerUrl: string | null;
+  motd: string | null;
+  welcomeMessage: string | null;
+  timezone: string;
+}
+```
+
+### Actions
+- `showPopup(serverId: string)`: Load server data and show popup
+- `hidePopup()`: Hide popup (doesn't mark as dismissed)
+- `dismissPopup()`: Hide and save dismissal to localStorage
+- `reopenPopup()`: Show popup regardless of dismissal state
+- `setServerData(data: ServerPopupData)`: Update popup content
+
+## LocalStorage Schema
+Key: `serverPopup_dismissed_${serverId}`
+Value: `"true"` | undefined
+
+## State Logic
+1. On login → check if dismissed → if false, call `showPopup()`
+2. On dismiss button → call `dismissPopup()` → save to localStorage
+3. On server icon click → call `reopenPopup()` → ignore localStorage
+4. On server switch → hide current popup → check new server dismissal
+
+## Store Location
+`packages/web/src/stores/serverPopup.ts`

@@ -91,7 +91,7 @@ A modern, self-hosted chat platform that combines the best features of Discord, 
 
 ### Development
 
-```bash
+```
 # Install dependencies
 pnpm install
 
@@ -100,13 +100,12 @@ pnpm dev
 
 # Build all packages
 pnpm build
-Production Deployment
+```
 
-bash
-
-Copy block
+### Production Deployment
 
 
+```
 # Configure environment
 cp docker/.env.example docker/.env
 # Edit docker/.env with your settings
@@ -114,12 +113,11 @@ cp docker/.env.example docker/.env
 # Start all services
 cd docker
 docker-compose up -d
-📁 Project Structure
+```
+### Project Structure
 
 
-Copy block
-
-
+```
 sgchat/
 ├── packages/
 │   ├── shared/          # Shared types, validators, constants
@@ -132,7 +130,8 @@ sgchat/
 ├── docker/              # Docker compose and configs
 ├── themes/              # Bundled themes
 └── docs/                # Documentation
-🤝 Contributing
+```
+### 🤝 Contributing
 Contributions are welcome! Please follow these steps:
 
 Fork the repository
@@ -140,10 +139,17 @@ Create a feature branch (git checkout -b feature/AmazingFeature)
 Commit your changes (git commit -m 'Add some AmazingFeature')
 Push to the branch (git push origin feature/AmazingFeature)
 Open a Pull Request
-📄 License
+### 📄 License
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-🙏 Acknowledgments
+### 🙏 Acknowledgments
 Built with modern web technologies
 Real-time communication powered by Fastify and Socket.IO
 Self-hosted push notifications through ntfy
+
+### Proof of concept Photos: 
+Login: https://imgur.com/a/KkAJ8FL
+Friends/DMs: https://imgur.com/a/HQFJlbd
+Server: https://imgur.com/a/SGehJfG
+Server options: https://imgur.com/a/h1hMYsE
+Server permissions: https://imgur.com/a/z1mE8W1

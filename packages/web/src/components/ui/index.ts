@@ -6,6 +6,7 @@ export { Tooltip } from './Tooltip';
 export { NetworkSelector } from './NetworkSelector';
 export { UserSettingsModal } from './UserSettingsModal';
 export { ServerSettingsModal } from './ServerSettingsModal';
+export { ServerWelcomePopup } from './ServerWelcomePopup';
 export { ClaimAdminModal } from './ClaimAdminModal';
 export { TransferOwnershipModal } from './TransferOwnershipModal';
 export { UnclaimedServerBanner } from './UnclaimedServerBanner';

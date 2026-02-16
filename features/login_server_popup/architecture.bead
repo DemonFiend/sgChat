@@ -1,0 +1,35 @@
+# Login Server Popup - Architecture
+
+## Component Structure
+```
+ServerWelcomePopup (new component)
+├── PopupOverlay
+├── PopupHeader (server name + close button)
+├── PopupBanner (image display)
+├── ServerTimeDisplay
+├── MotdSection
+└── WelcomeMessageSection
+```
+
+## State Management
+**Store**: `useServerPopupStore` (Zustand)
+- Tracks visibility per server
+- Manages dismissal state
+- Handles reopen triggers
+
+## Data Flow
+1. User logs in → auth store triggers event
+2. Check localStorage: `serverPopup_dismissed_${serverId}`
+3. If not dismissed → fetch server data → show popup
+4. On dismiss → save to localStorage → hide popup
+5. On server icon click → toggle visibility (ignore dismissal flag)
+
+## Integration Points
+- **Auth Store**: Listen for login events
+- **Server Store**: Get server metadata (name, banner, motd)
+- **Layout**: Insert popup at root level (above all content)
+
+## Files to Modify
+- New: `packages/web/src/components/ui/ServerWelcomePopup.tsx`
+- New: `packages/web/src/stores/serverPopup.ts`
+- Update: `packages/web/src/components/layout/ServerList.tsx` (add icon click handler)

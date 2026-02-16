@@ -31,6 +31,7 @@ export interface Server {
   id: UUID;
   name: string;
   icon_url: string | null;
+  banner_url: string | null;
   owner_id: UUID;
   welcome_channel_id: UUID | null;
   afk_channel_id: UUID | null;
@@ -38,7 +39,19 @@ export interface Server {
   announce_joins: boolean;
   announce_leaves: boolean;
   announce_online: boolean;
+  motd: string | null;
+  welcome_message: string | null;
+  timezone: string;
   created_at: Date;
+}
+
+// Server popup data for the welcome popup feature
+export interface ServerPopupData {
+  serverName: string;
+  bannerUrl: string | null;
+  motd: string | null;
+  welcomeMessage: string | null;
+  timezone: string;
 }
 
 export interface Channel {

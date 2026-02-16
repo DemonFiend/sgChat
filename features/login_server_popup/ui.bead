@@ -1,0 +1,40 @@
+# Login Server Popup - UI Specification
+
+## Layout
+Modal popup: 600px wide, max-height 80vh, centered on screen with dark overlay backdrop.
+
+## Component Breakdown
+
+### Header Section
+- Server name (text-2xl, bold)
+- Close button (top-right X icon, hover effect)
+- Background: gradient or solid accent color
+
+### Banner Section
+- Full-width image (aspect 16:9, max-height 200px)
+- Fallback: gradient background if no banner
+- Object-fit: cover
+
+### Server Time Display
+- Label: "Server Time"
+- Format: HH:MM:SS (24-hour, with timezone abbreviation)
+- Update every second
+- Style: monospace font, subtle background
+
+### MOTD Section
+- Label: "Message of the Day"
+- Markdown support for basic formatting
+- Max 300 characters, scrollable if longer
+- Style: card with light background
+
+### Welcome Message Section
+- Label: "Welcome!"
+- Personalized text with user's name
+- Markdown support
+- Style: distinct from MOTD (different color/border)
+
+## Styling Notes
+- Use existing theme colors (from theme store)
+- Smooth fade-in animation (200ms)
+- Responsive: stack vertically on mobile
+- Use Tailwind utilities for consistency

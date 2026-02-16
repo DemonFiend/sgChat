@@ -1,0 +1,49 @@
+# Login Server Popup - Implementation Tasks
+
+## Task Checklist (Sequential)
+
+### Phase 1: State Layer
+- [ ] Create `packages/web/src/stores/serverPopup.ts`
+  - Define state interface
+  - Implement actions: showPopup, hidePopup, dismissPopup, reopenPopup
+  - Add localStorage helpers
+  
+### Phase 2: UI Component
+- [ ] Create `packages/web/src/components/ui/ServerWelcomePopup.tsx`
+  - Build popup shell (overlay + modal)
+  - Add header with close button
+  - Add banner section
+  - Add server time display (with interval)
+  - Add MOTD section
+  - Add welcome message section
+  - Style with Tailwind
+  
+### Phase 3: Integration
+- [ ] Hook popup to auth events
+  - Listen for login in MainLayout
+  - Check dismissal state
+  - Trigger showPopup if not dismissed
+  
+- [ ] Add reopen handler to ServerList
+  - Modify server icon onClick
+  - Call reopenPopup on click
+  
+### Phase 4: Data Fetching
+- [ ] Verify server metadata API
+  - Confirm fields: name, banner, motd, welcomeMessage, timezone
+  - Add types to shared package if needed
+  
+### Phase 5: Polish
+- [ ] Add animations (fade in/out)
+- [ ] Handle edge cases (see edge-cases.bead)
+- [ ] Test localStorage persistence
+- [ ] Test reopen functionality
+- [ ] Mobile responsive adjustments
+
+## Estimated Effort
+~4-6 hours for complete implementation
+
+## Dependencies
+- Existing server metadata API
+- Auth store (already exists)
+- Theme store (for colors)

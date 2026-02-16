@@ -118,6 +118,9 @@ importers:
 
   packages/web:
     dependencies:
+      '@sgchat/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@solidjs/router':
         specifier: ^0.15.2
         version: 0.15.4(solid-js@1.9.11)

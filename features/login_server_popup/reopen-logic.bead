@@ -1,0 +1,42 @@
+# Login Server Popup - Reopen Logic
+
+## Trigger Point
+User clicks on server icon in ServerList (left sidebar).
+
+## Implementation
+
+### 1. Add Click Handler to Server Icon
+Location: `packages/web/src/components/layout/ServerList.tsx`
+
+```typescript
+const handleServerIconClick = (serverId: string, e: MouseEvent) => {
+  e.stopPropagation(); // Prevent navigation
+  
+  // Right-click → show context menu (existing behavior)
+  if (e.button === 2) return;
+  
+  // Left-click → toggle popup
+  const { reopenPopup, currentServerId } = useServerPopupStore.getState();
+  if (currentServerId === serverId) {
+    reopenPopup();
+  }
+};
+```
+
+### 2. Store Method: `reopenPopup()`
+```typescript
+reopenPopup: () => set({ isVisible: true })
+```
+- Doesn't check localStorage
+- Doesn't fetch new data (use cached)
+- Simply toggles visibility to true
+
+### 3. Visual Feedback
+- No indicator needed on server icon
+- Popup appears with smooth animation
+- Clicking outside popup closes it (but doesn't dismiss)
+
+## Edge Cases
+- If not logged into server → do nothing
+- If server data not loaded → fetch first, then show
+- Multiple rapid clicks → debounce (300ms)

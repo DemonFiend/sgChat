@@ -1,21 +1,21 @@
 import { createSignal, Show, onMount, createEffect, onCleanup } from 'solid-js';
 import { useParams, useNavigate, useLocation } from '@solidjs/router';
-import { 
-  MemberList, 
-  ServerSidebar, 
-  ChatPanel, 
+import {
+  MemberList,
+  ServerSidebar,
+  ChatPanel,
   FloatingUserPanel,
   DMPage,
-  type Channel, 
+  type Channel,
   type Category,
   type Message,
   type ChannelInfo,
   type TypingUser
 } from '@/components/layout';
-import { UserSettingsModal, ServerSettingsModal, ClaimAdminModal, TransferOwnershipModal, UnclaimedServerBanner } from '@/components/ui';
+import { UserSettingsModal, ServerSettingsModal, ClaimAdminModal, TransferOwnershipModal, UnclaimedServerBanner, ServerWelcomePopup } from '@/components/ui';
 import { api } from '@/api';
 import { authStore } from '@/stores/auth';
-import { permissions, voiceStore } from '@/stores';
+import { permissions, voiceStore, serverPopupStore } from '@/stores';
 import { socketService } from '@/lib/socket';
 import { voiceService } from '@/lib/voiceService';
 import { soundService } from '@/lib/soundService';
@@ -52,7 +52,7 @@ export function MainLayout() {
 
   // Check if we're on the DM route (/channels/@me)
   const isDMRoute = () => location.pathname.startsWith('/channels/@me');
-  
+
   const [currentServer, setCurrentServer] = createSignal<Server | null>(null);
   const [channels, setChannels] = createSignal<Channel[]>([]);
   const [categories, setCategories] = createSignal<Category[]>([]);
@@ -61,7 +61,7 @@ export function MainLayout() {
   const [currentChannel, setCurrentChannel] = createSignal<ChannelInfo | null>(null);
   const [typingUsers, setTypingUsers] = createSignal<TypingUser[]>([]);
   const [serverTimeOffset, setServerTimeOffset] = createSignal<number>(0); // Offset in minutes from local time
-  
+
   // Modal states
   const [isUserSettingsOpen, setIsUserSettingsOpen] = createSignal(false);
   const [isServerSettingsOpen, setIsServerSettingsOpen] = createSignal(false);
@@ -79,7 +79,7 @@ export function MainLayout() {
       // In single-server architecture, fetch the connected server info
       const server = await api.get<Server>('/server');
       setCurrentServer(server);
-      
+
       // Calculate server time offset if server_time is provided
       if (server.server_time) {
         const serverTime = new Date(server.server_time).getTime();
@@ -104,18 +104,18 @@ export function MainLayout() {
           console.log('[MainLayout] /server/time endpoint not available, using local time');
         }
       }
-      
+
       // Show claim admin modal if server is unclaimed
       if (!server.admin_claimed) {
         setIsClaimAdminOpen(true);
       }
-      
+
       // Fetch channels - handle both array and object response formats
       const channelsResponse = await api.get<Channel[] | { channels: Channel[]; categories?: Category[] }>('/channels');
-      
+
       let fetchedChannels: Channel[] = [];
       let fetchedCategories: Category[] = [];
-      
+
       if (Array.isArray(channelsResponse)) {
         // Server returns array of channels directly
         fetchedChannels = channelsResponse;
@@ -126,13 +126,13 @@ export function MainLayout() {
         fetchedCategories = channelsResponse.categories || [];
         console.log('[MainLayout] Channels loaded (object format):', fetchedChannels.length, 'categories:', fetchedCategories.length);
       }
-      
+
       setChannels(fetchedChannels);
       setCategories(fetchedCategories);
 
       // Fetch members - handle both array and object response formats
       const membersResponse = await api.get<ServerMember[] | { members: ServerMember[] }>('/members');
-      
+
       let fetchedMembers: ServerMember[] = [];
       if (Array.isArray(membersResponse)) {
         fetchedMembers = membersResponse;
@@ -141,23 +141,23 @@ export function MainLayout() {
         fetchedMembers = membersResponse.members || [];
         console.log('[MainLayout] Members loaded (object format):', fetchedMembers.length);
       }
-      
+
       // Debug: log first member to see structure
       if (fetchedMembers.length > 0) {
         console.log('[MainLayout] First member sample:', JSON.stringify(fetchedMembers[0], null, 2));
       }
-      
+
       // Normalize members to ensure all fields exist
       const normalizedMembers = fetchedMembers.map(m => {
         const rawMember = m as any;
         const user = rawMember.user || rawMember; // Handle nested user object
-        
+
         // Normalize status: server might return "active" instead of "online"
         const rawStatus = user.status || rawMember.status || rawMember.presence || m.status || 'offline';
-        const normalizedStatus = rawStatus === 'active' ? 'online' : 
-                                  rawStatus === 'inactive' ? 'offline' :
-                                  (['online', 'idle', 'dnd', 'offline'].includes(rawStatus) ? rawStatus : 'offline');
-        
+        const normalizedStatus = rawStatus === 'active' ? 'online' :
+          rawStatus === 'inactive' ? 'offline' :
+            (['online', 'idle', 'dnd', 'offline'].includes(rawStatus) ? rawStatus : 'offline');
+
         return {
           id: user.id || rawMember.user_id || m.id || 'unknown',
           username: user.username || rawMember.name || m.username || 'Unknown',
@@ -168,7 +168,7 @@ export function MainLayout() {
           custom_status: user.custom_status || rawMember.custom_status || m.custom_status || null
         } as ServerMember;
       });
-      
+
       setMembers(normalizedMembers);
 
       // Auto-navigate to first channel if none selected and we have channels (but not on DM route)
@@ -186,12 +186,41 @@ export function MainLayout() {
 
   onMount(fetchServerData);
 
+  // Server welcome popup integration - show on authentication/server load
+  createEffect(() => {
+    const server = currentServer();
+    const user = authStore.state().user;
+    const isAuthenticated = authStore.state().isAuthenticated;
+
+    // Only show popup when authenticated and server is loaded
+    if (!isAuthenticated || !user || !server || isDMRoute()) {
+      return;
+    }
+
+    // Debounce server changes (500ms) to handle rapid switching
+    const debounceTimer = setTimeout(() => {
+      // Check if popup should be shown (will check localStorage internally)
+      serverPopupStore.showPopup(server.id);
+    }, 500);
+
+    onCleanup(() => clearTimeout(debounceTimer));
+  });
+
+  // Reset popup on logout
+  createEffect(() => {
+    const isAuthenticated = authStore.state().isAuthenticated;
+
+    if (!isAuthenticated) {
+      serverPopupStore.reset();
+    }
+  });
+
   // Auto-navigate to first channel when on /channels/ without a channelId
   createEffect(() => {
     const path = location.pathname;
     const channelId = params.channelId;
     const allChannels = channels();
-    
+
     // If on /channels/ (not @me) with no channelId, navigate to first channel
     if ((path === '/channels/' || path === '/channels') && !channelId && allChannels.length > 0) {
       const firstTextChannel = allChannels.find(c => c.type === 'text');
@@ -203,23 +232,23 @@ export function MainLayout() {
 
   // Socket event handler for presence updates
   createEffect(() => {
-    const handlePresenceUpdate = (data: { 
-      user_id: string; 
-      status: 'online' | 'idle' | 'dnd' | 'offline'; 
+    const handlePresenceUpdate = (data: {
+      user_id: string;
+      status: 'online' | 'idle' | 'dnd' | 'offline';
       custom_status?: string | null;
       avatar_url?: string | null;
     }) => {
       // Update member list
       setMembers(prev => prev.map(m => {
         if (m.id !== data.user_id) return m;
-        return { 
-          ...m, 
-          status: data.status, 
+        return {
+          ...m,
+          status: data.status,
           custom_status: data.custom_status ?? m.custom_status,
           avatar_url: data.avatar_url !== undefined ? data.avatar_url : m.avatar_url,
         };
       }));
-      
+
       // Update own status/avatar in auth store if it's the current user
       const currentUserId = authStore.state().user?.id;
       if (data.user_id === currentUserId) {
@@ -243,35 +272,35 @@ export function MainLayout() {
   // Socket event handler for new messages (real-time)
   createEffect(() => {
     const channelId = params.channelId;
-    
+
     const handleNewMessage = (rawMessage: any) => {
       console.log('[MainLayout] Received message:new event:', rawMessage);
-      
+
       // Only add message if we're viewing the channel it was sent to
       const messageChannelId = rawMessage.channel_id;
       if (messageChannelId && messageChannelId !== channelId) {
         console.log('[MainLayout] Ignoring message for different channel:', messageChannelId, 'vs current:', channelId);
         return;
       }
-      
+
       // Check if author object exists and has required fields
       const hasValidAuthor = rawMessage.author && rawMessage.author.id && rawMessage.author.username;
-      
+
       const author = hasValidAuthor ? rawMessage.author : {
         id: rawMessage.author?.id || rawMessage.author_id || rawMessage.user_id || 'unknown',
         username: rawMessage.author?.username || rawMessage.author_username || rawMessage.username || 'Unknown User',
         display_name: rawMessage.author?.display_name || rawMessage.author_display_name || rawMessage.display_name || null,
         avatar_url: rawMessage.author?.avatar_url || rawMessage.author_avatar_url || rawMessage.avatar_url || null
       };
-      
+
       const message: Message = { ...rawMessage, author };
-      
+
       // Don't duplicate messages we sent ourselves (already added optimistically)
       if (message.author.id === authStore.state().user?.id) {
         console.log('[MainLayout] Ignoring own message (already added optimistically)');
         return;
       }
-      
+
       console.log('[MainLayout] Adding message to chat:', message.id, 'author:', message.author.username);
       setMessages(prev => [...prev, message]);
 
@@ -296,19 +325,19 @@ export function MainLayout() {
 
     const handleTypingStart = (data: { channel_id: string; user?: TypingUser; user_id?: string }) => {
       if (data.channel_id !== channelId) return;
-      
+
       // Handle both old format (user_id) and new format (user object)
-      const user = data.user || (data.user_id ? { 
-        id: data.user_id, 
-        username: 'Someone', 
-        display_name: null 
+      const user = data.user || (data.user_id ? {
+        id: data.user_id,
+        username: 'Someone',
+        display_name: null
       } : null);
-      
+
       if (!user) return;
-      
+
       // Don't show own typing
       if (user.id === authStore.state().user?.id) return;
-      
+
       setTypingUsers(prev => {
         if (prev.some(u => u.id === user.id)) return prev;
         return [...prev, user];
@@ -353,7 +382,7 @@ export function MainLayout() {
 
     const handleChannelUpdate = (data: { channel: Channel }) => {
       console.log('[MainLayout] Channel updated:', data.channel.name);
-      setChannels(prev => prev.map(c => 
+      setChannels(prev => prev.map(c =>
         c.id === data.channel.id ? data.channel : c
       ));
       // Update current channel if it's the one being viewed
@@ -402,7 +431,7 @@ export function MainLayout() {
 
     const handleCategoryUpdate = (data: { category: Category }) => {
       console.log('[MainLayout] Category updated:', data.category.name);
-      setCategories(prev => prev.map(c => 
+      setCategories(prev => prev.map(c =>
         c.id === data.category.id ? data.category : c
       ));
     };
@@ -441,7 +470,7 @@ export function MainLayout() {
 
     const handleMemberUpdate = (data: { member: Partial<ServerMember> & { id: string } }) => {
       console.log('[MainLayout] Member updated:', data.member.id);
-      setMembers(prev => prev.map(m => 
+      setMembers(prev => prev.map(m =>
         m.id === data.member.id ? { ...m, ...data.member } : m
       ));
     };
@@ -464,7 +493,7 @@ export function MainLayout() {
     const handleMessageUpdate = (data: { message: Message; channel_id: string }) => {
       if (data.channel_id !== channelId) return;
       console.log('[MainLayout] Message updated:', data.message.id);
-      setMessages(prev => prev.map(m => 
+      setMessages(prev => prev.map(m =>
         m.id === data.message.id ? data.message : m
       ));
     };
@@ -475,24 +504,24 @@ export function MainLayout() {
       setMessages(prev => prev.filter(m => m.id !== data.message_id));
     };
 
-    const handleMessageReaction = (data: { 
-      message_id: string; 
-      channel_id: string; 
-      emoji: string; 
-      user_id: string; 
-      action: 'add' | 'remove' 
+    const handleMessageReaction = (data: {
+      message_id: string;
+      channel_id: string;
+      emoji: string;
+      user_id: string;
+      action: 'add' | 'remove'
     }) => {
       if (data.channel_id !== channelId) return;
       // Don't process our own reactions (already handled optimistically)
       if (data.user_id === authStore.state().user?.id) return;
-      
+
       console.log('[MainLayout] Reaction sync:', data.action, data.emoji, 'from', data.user_id);
       setMessages(prev => prev.map(m => {
         if (m.id !== data.message_id) return m;
-        
+
         const reactions = [...(m.reactions || [])];
         const existingIndex = reactions.findIndex(r => r.emoji === data.emoji);
-        
+
         if (data.action === 'add') {
           if (existingIndex >= 0) {
             // Add user to existing reaction
@@ -525,7 +554,7 @@ export function MainLayout() {
             };
           }
         }
-        
+
         return { ...m, reactions };
       }));
     };
@@ -543,18 +572,18 @@ export function MainLayout() {
 
   // Socket event handlers for voice channels
   createEffect(() => {
-    const handleVoiceUserJoined = (data: { 
-      channel_id: string; 
-      user: { 
-        id: string; 
-        username: string; 
-        display_name?: string | null; 
+    const handleVoiceUserJoined = (data: {
+      channel_id: string;
+      user: {
+        id: string;
+        username: string;
+        display_name?: string | null;
         avatar_url?: string | null;
       };
     }) => {
       console.log('[MainLayout] Voice user joined:', data.user.username, 'in channel:', data.channel_id);
       voiceStore.addParticipant(data.channel_id, data.user);
-      
+
       // Play join sound if we're in the same channel and it's not us
       const currentUserId = authStore.state().user?.id;
       const currentChannelId = voiceStore.currentChannelId();
@@ -566,7 +595,7 @@ export function MainLayout() {
     const handleVoiceUserLeft = (data: { channel_id: string; user_id: string }) => {
       console.log('[MainLayout] Voice user left:', data.user_id, 'from channel:', data.channel_id);
       voiceStore.removeParticipant(data.channel_id, data.user_id);
-      
+
       // Play leave sound if we're in the same channel and it's not us
       const currentUserId = authStore.state().user?.id;
       const currentChannelId = voiceStore.currentChannelId();
@@ -575,10 +604,10 @@ export function MainLayout() {
       }
     };
 
-    const handleVoiceMuteUpdate = (data: { 
-      channel_id: string; 
-      user_id: string; 
-      is_muted: boolean; 
+    const handleVoiceMuteUpdate = (data: {
+      channel_id: string;
+      user_id: string;
+      is_muted: boolean;
       is_deafened: boolean;
     }) => {
       console.log('[MainLayout] Voice mute update:', data.user_id, 'muted:', data.is_muted, 'deafened:', data.is_deafened);
@@ -647,31 +676,31 @@ export function MainLayout() {
 
       // Fetch messages - handle both array and object response formats
       const messagesResponse = await api.get<Message[] | { messages: Message[] }>(`/channels/${channelId}/messages`);
-      
+
       let fetchedMessages: Message[] = [];
       if (Array.isArray(messagesResponse)) {
         fetchedMessages = messagesResponse;
       } else if (messagesResponse && typeof messagesResponse === 'object' && 'messages' in messagesResponse) {
         fetchedMessages = messagesResponse.messages || [];
       }
-      
+
       // Normalize messages to ensure author object exists with all required fields
       const normalizedMessages = fetchedMessages.map(msg => {
         const rawMsg = msg as any;
-        
+
         // Check if author object exists and has required fields
         const hasValidAuthor = msg.author && msg.author.id && msg.author.username;
-        
+
         const author = hasValidAuthor ? msg.author : {
           id: rawMsg.author?.id || rawMsg.author_id || rawMsg.user_id || 'unknown',
           username: rawMsg.author?.username || rawMsg.author_username || rawMsg.username || 'Unknown User',
           display_name: rawMsg.author?.display_name || rawMsg.author_display_name || rawMsg.display_name || null,
           avatar_url: rawMsg.author?.avatar_url || rawMsg.author_avatar_url || rawMsg.avatar_url || null
         };
-        
+
         return { ...msg, author };
       });
-      
+
       console.log('[MainLayout] Messages loaded:', normalizedMessages.length);
       if (normalizedMessages.length > 0) {
         console.log('[MainLayout] First message sample:', JSON.stringify(normalizedMessages[0], null, 2));
@@ -705,22 +734,22 @@ export function MainLayout() {
 
     try {
       const rawMessage = await api.post<any>(`/channels/${channelId}/messages`, { content });
-      
+
       // Get current user for fallback
       const currentUser = authStore.state().user;
-      
+
       // Check if author object exists and has required fields
       const hasValidAuthor = rawMessage.author && rawMessage.author.id && rawMessage.author.username;
-      
+
       const author = hasValidAuthor ? rawMessage.author : {
         id: rawMessage.author?.id || rawMessage.author_id || currentUser?.id || 'unknown',
         username: rawMessage.author?.username || rawMessage.author_username || currentUser?.username || 'Unknown User',
         display_name: rawMessage.author?.display_name || rawMessage.author_display_name || currentUser?.display_name || null,
         avatar_url: rawMessage.author?.avatar_url || rawMessage.author_avatar_url || currentUser?.avatar_url || null
       };
-      
+
       const newMessage: Message = { ...rawMessage, author };
-      
+
       console.log('[MainLayout] Message sent:', newMessage.id, 'author:', author.username);
       setMessages(prev => [...prev, newMessage]);
     } catch (err) {
@@ -730,19 +759,19 @@ export function MainLayout() {
 
   const handleReactionAdd = async (messageId: string, emoji: string) => {
     console.log('[MainLayout] Adding reaction:', emoji, 'to message:', messageId);
-    
+
     // Optimistically update UI first
     const userId = authStore.state().user?.id || '';
     setMessages(prev => prev.map(msg => {
       if (msg.id !== messageId) return msg;
       const reactions = [...(msg.reactions || [])];
       const existingReaction = reactions.find(r => r.emoji === emoji);
-      
+
       if (existingReaction) {
         return {
           ...msg,
-          reactions: reactions.map(r => 
-            r.emoji === emoji 
+          reactions: reactions.map(r =>
+            r.emoji === emoji
               ? { ...r, count: r.count + 1, users: [...r.users, userId], me: true }
               : r
           )
@@ -751,7 +780,7 @@ export function MainLayout() {
         return { ...msg, reactions: [...reactions, { emoji, count: 1, users: [userId], me: true }] };
       }
     }));
-    
+
     try {
       await api.put(`/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`, {});
       console.log('[MainLayout] Reaction added successfully');
@@ -762,12 +791,12 @@ export function MainLayout() {
         if (msg.id !== messageId) return msg;
         const reactions = [...(msg.reactions || [])];
         const existingReaction = reactions.find(r => r.emoji === emoji);
-        
+
         if (existingReaction && existingReaction.count > 1) {
           return {
             ...msg,
-            reactions: reactions.map(r => 
-              r.emoji === emoji 
+            reactions: reactions.map(r =>
+              r.emoji === emoji
                 ? { ...r, count: r.count - 1, users: r.users.filter(u => u !== userId), me: false }
                 : r
             )
@@ -781,26 +810,26 @@ export function MainLayout() {
 
   const handleReactionRemove = async (messageId: string, emoji: string) => {
     console.log('[MainLayout] Removing reaction:', emoji, 'from message:', messageId);
-    
+
     const userId = authStore.state().user?.id || '';
-    
+
     // Store the old state for potential revert
     const oldMessages = messages();
-    
+
     // Optimistically update UI first
     setMessages(prev => prev.map(msg => {
       if (msg.id !== messageId) return msg;
       const reactions = [...(msg.reactions || [])];
       const existingReaction = reactions.find(r => r.emoji === emoji);
-      
+
       if (existingReaction) {
         if (existingReaction.count <= 1) {
           return { ...msg, reactions: reactions.filter(r => r.emoji !== emoji) };
         }
         return {
           ...msg,
-          reactions: reactions.map(r => 
-            r.emoji === emoji 
+          reactions: reactions.map(r =>
+            r.emoji === emoji
               ? { ...r, count: r.count - 1, users: r.users.filter(u => u !== userId), me: false }
               : r
           )
@@ -808,7 +837,7 @@ export function MainLayout() {
       }
       return msg;
     }));
-    
+
     try {
       await api.delete(`/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`);
       console.log('[MainLayout] Reaction removed successfully');
@@ -853,7 +882,7 @@ export function MainLayout() {
     <div class="flex flex-col h-screen w-screen overflow-hidden bg-bg-primary">
       {/* Unclaimed Server Banner - only show when not on DM route */}
       <Show when={!isDMRoute()}>
-        <UnclaimedServerBanner 
+        <UnclaimedServerBanner
           isVisible={currentServer()?.admin_claimed === false}
           onClaimClick={() => setIsClaimAdminOpen(true)}
         />
@@ -939,8 +968,8 @@ export function MainLayout() {
       />
 
       {/* Hidden audio container for voice chat */}
-      <div 
-        id="voice-audio-container" 
+      <div
+        id="voice-audio-container"
         class="hidden"
         ref={(el) => {
           if (el) {
@@ -948,6 +977,9 @@ export function MainLayout() {
           }
         }}
       />
+
+      {/* Server Welcome Popup */}
+      <ServerWelcomePopup />
     </div>
   );
 }

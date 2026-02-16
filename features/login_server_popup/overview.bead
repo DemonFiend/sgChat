@@ -1,0 +1,21 @@
+# Login Server Popup - Overview
+
+## Purpose
+Show a modal popup when user logs into a server, displaying server information and welcome content.
+
+## Requirements
+- Auto-show on server login (first join or switching servers)
+- Display 5 fields: server name, banner image, server time, MOTD, custom welcome message
+- User can dismiss with X button
+- User can reopen via server icon button click
+- Remember dismissal per server (localStorage)
+- Design for future extensibility (announcements, polls, etc.)
+
+## User Flow
+1. User logs in → popup appears
+2. User reads content → clicks X to dismiss
+3. Popup won't show again on this server (unless manually opened)
+4. User clicks server icon → popup reopens
+
+## Scope
+Frontend-only feature. Backend already provides server metadata via existing API.

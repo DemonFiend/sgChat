@@ -1,0 +1,51 @@
+# Login Server Popup - Edge Cases
+
+## 1. Missing Data Fields
+**Problem**: Server has no banner, MOTD, or welcome message
+**Solution**: 
+- Banner → Show gradient placeholder
+- MOTD → Show "No message of the day"
+- Welcome → Generic "Welcome to {serverName}!"
+
+## 2. API Failure
+**Problem**: Server metadata fetch fails
+**Solution**:
+- Show popup with basic info (name from cache)
+- Display error message: "Unable to load server details"
+- Retry button in popup
+
+## 3. User Not Authenticated
+**Problem**: Popup triggered but user logged out
+**Solution**:
+- Check auth state before showing
+- Hide popup immediately on logout
+
+## 4. Rapid Server Switching
+**Problem**: User switches servers quickly
+**Solution**:
+- Cancel previous popup if still animating
+- Show new server's popup only after 500ms delay
+- Reset visibility state on switch
+
+## 5. LocalStorage Full/Unavailable
+**Problem**: Cannot save dismissal state
+**Solution**:
+- Gracefully fail (log error)
+- Popup will reappear on reload (acceptable degradation)
+
+## 6. Long Content
+**Problem**: MOTD or welcome message > 1000 chars
+**Solution**:
+- Make scrollable (max-height: 300px)
+- Add fade gradient at bottom when scrolling
+
+## 7. Server Time Timezone
+**Problem**: Server doesn't provide timezone
+**Solution**:
+- Default to UTC
+- Show "Server Time (UTC)"
+
+## 8. Deleted Server
+**Problem**: User has dismissal flag for deleted server
+**Solution**:
+- Clean up localStorage on server list fetch (remove orphaned entries)
