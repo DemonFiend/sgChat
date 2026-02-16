@@ -171,7 +171,7 @@ function AccountTab(props: { user: ReturnType<typeof authStore.state>['user']; o
 
   const handleLogout = async (forgetDevice: boolean) => {
     setLoggingOut(true);
-    
+
     try {
       props.onClose(); // Close the settings modal first
       await authStore.logout(forgetDevice);
@@ -185,11 +185,11 @@ function AccountTab(props: { user: ReturnType<typeof authStore.state>['user']; o
   return (
     <div>
       <h2 class="text-xl font-bold text-text-primary mb-5">My Account</h2>
-      
+
       <div class="bg-bg-secondary rounded-lg overflow-hidden">
         {/* Banner area */}
         <div class="h-[100px] bg-brand-primary" />
-        
+
         {/* User info */}
         <div class="px-4 pb-4">
           <div class="flex items-end gap-4 -mt-[38px]">
@@ -212,7 +212,7 @@ function AccountTab(props: { user: ReturnType<typeof authStore.state>['user']; o
               Edit User Profile
             </button>
           </div>
-          
+
           {/* Account details card */}
           <div class="mt-4 bg-bg-tertiary rounded-lg p-4 space-y-4">
             <div class="flex justify-between items-center">
@@ -224,7 +224,7 @@ function AccountTab(props: { user: ReturnType<typeof authStore.state>['user']; o
                 Edit
               </button>
             </div>
-            
+
             <div class="flex justify-between items-center">
               <div>
                 <div class="text-xs font-bold uppercase text-text-muted mb-1">Email</div>
@@ -269,7 +269,7 @@ function AccountTab(props: { user: ReturnType<typeof authStore.state>['user']; o
           Log out of your account on this device.
         </p>
         <div class="flex gap-2">
-          <button 
+          <button
             onClick={() => handleLogout(false)}
             disabled={loggingOut()}
             class="px-4 py-2 bg-danger hover:bg-danger/90 text-white text-sm font-medium rounded transition-colors disabled:opacity-50 flex items-center gap-2"
@@ -279,7 +279,7 @@ function AccountTab(props: { user: ReturnType<typeof authStore.state>['user']; o
             </svg>
             {loggingOut() ? 'Logging out...' : 'Log Out'}
           </button>
-          <button 
+          <button
             onClick={() => handleLogout(true)}
             disabled={loggingOut()}
             class="px-4 py-2 border border-danger text-danger hover:bg-danger/10 text-sm font-medium rounded transition-colors disabled:opacity-50 flex items-center gap-2"
@@ -341,14 +341,14 @@ function ProfileTab(props: { user: ReturnType<typeof authStore.state>['user'] })
   const [saving, setSaving] = createSignal(false);
   const [saveSuccess, setSaveSuccess] = createSignal(false);
   const [saveError, setSaveError] = createSignal<string | null>(null);
-  
+
   // Privacy settings (from user_settings)
   const [timezone, setTimezone] = createSignal('');
   const [timezonePublic, setTimezonePublic] = createSignal(false);
   const [timezoneDstEnabled, setTimezoneDstEnabled] = createSignal(true);
   const [privacyLoaded, setPrivacyLoaded] = createSignal(false);
   const [savingPrivacy, setSavingPrivacy] = createSignal(false);
-  
+
   // Load privacy settings on mount
   onMount(async () => {
     try {
@@ -366,9 +366,9 @@ function ProfileTab(props: { user: ReturnType<typeof authStore.state>['user'] })
   // Track if profile fields have changed (not avatar - that saves immediately)
   const hasChanges = () => {
     return displayName() !== (props.user?.display_name || '') ||
-           customStatus() !== (props.user?.custom_status || '');
+      customStatus() !== (props.user?.custom_status || '');
   };
-  
+
   const handleSavePrivacy = async () => {
     setSavingPrivacy(true);
     try {
@@ -386,20 +386,20 @@ function ProfileTab(props: { user: ReturnType<typeof authStore.state>['user'] })
 
   const handleSaveProfile = async () => {
     if (!hasChanges() || saving()) return;
-    
+
     setSaving(true);
     setSaveError(null);
     setSaveSuccess(false);
-    
+
     try {
       await api.patch('/users/me', {
         display_name: displayName() || null,
         custom_status: customStatus() || null,
       });
-      
+
       // Refresh user data in auth store
       await authStore.refreshUser();
-      
+
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err: any) {
@@ -418,7 +418,7 @@ function ProfileTab(props: { user: ReturnType<typeof authStore.state>['user'] })
   return (
     <div>
       <h2 class="text-xl font-bold text-text-primary mb-5">Profile</h2>
-      
+
       <div class="flex gap-10">
         {/* Form */}
         <div class="flex-1 space-y-6">
@@ -462,19 +462,19 @@ function ProfileTab(props: { user: ReturnType<typeof authStore.state>['user'] })
 
           {/* Save button with status */}
           <div class="flex items-center gap-3">
-            <button 
+            <button
               onClick={handleSaveProfile}
               disabled={!hasChanges() || saving()}
               class={clsx(
                 "px-4 py-2 text-white text-sm font-medium rounded transition-colors",
-                hasChanges() 
-                  ? "bg-success hover:bg-success/90" 
+                hasChanges()
+                  ? "bg-success hover:bg-success/90"
                   : "bg-bg-tertiary text-text-muted cursor-not-allowed"
               )}
             >
               {saving() ? 'Saving...' : 'Save Changes'}
             </button>
-            
+
             <Show when={saveSuccess()}>
               <span class="text-sm text-success flex items-center gap-1">
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -483,16 +483,16 @@ function ProfileTab(props: { user: ReturnType<typeof authStore.state>['user'] })
                 Saved!
               </span>
             </Show>
-            
+
             <Show when={saveError()}>
               <span class="text-sm text-danger">{saveError()}</span>
             </Show>
           </div>
-          
+
           {/* Privacy Settings */}
           <div class="mt-8 pt-6 border-t border-border-subtle">
             <h3 class="text-sm font-bold uppercase text-text-muted mb-4">Privacy</h3>
-            
+
             <Show when={privacyLoaded()} fallback={<div class="text-text-muted text-sm">Loading...</div>}>
               <div class="space-y-4">
                 <div>
@@ -517,7 +517,7 @@ function ProfileTab(props: { user: ReturnType<typeof authStore.state>['user'] })
                     Select "Hidden" to show "Hidden" to friends instead of your time
                   </p>
                 </div>
-                
+
                 <div class="flex items-center justify-between">
                   <div>
                     <label class="text-sm font-medium text-text-primary">
@@ -546,7 +546,7 @@ function ProfileTab(props: { user: ReturnType<typeof authStore.state>['user'] })
                     />
                   </button>
                 </div>
-                
+
                 <Show when={timezone()}>
                   <div class="flex items-center justify-between">
                     <div>
@@ -620,7 +620,7 @@ function AppearanceTab() {
   return (
     <div>
       <h2 class="text-xl font-bold text-text-primary mb-5">Appearance</h2>
-      
+
       <div class="space-y-6">
         <div>
           <h3 class="text-xs font-bold uppercase text-text-muted mb-4">Theme</h3>
@@ -678,7 +678,7 @@ function NotificationsTab() {
   return (
     <div>
       <h2 class="text-xl font-bold text-text-primary mb-5">Notifications</h2>
-      
+
       <div class="space-y-6">
         <div class="flex items-center justify-between p-4 bg-bg-secondary rounded-lg">
           <div>
@@ -743,7 +743,7 @@ function VoiceTab() {
   const [isTesting, setIsTesting] = createSignal(false);
   const [micLevel, setMicLevel] = createSignal(0);
   const [saving, setSaving] = createSignal(false);
-  
+
   let testStream: MediaStream | null = null;
   let audioContext: AudioContext | null = null;
   let analyser: AnalyserNode | null = null;
@@ -768,7 +768,7 @@ function VoiceTab() {
     } catch (err) {
       console.error('Failed to load voice settings:', err);
     }
-    
+
     await enumerateDevices();
   });
 
@@ -784,7 +784,7 @@ function VoiceTab() {
       }).catch(() => {
         // Permission denied, but we can still try to enumerate
       });
-      
+
       const devices = await navigator.mediaDevices.enumerateDevices();
       setInputDevices(devices.filter(d => d.kind === 'audioinput'));
       setOutputDevices(devices.filter(d => d.kind === 'audiooutput'));
@@ -849,14 +849,14 @@ function VoiceTab() {
           noiseSuppression: noiseSuppression(),
         }
       };
-      
+
       testStream = await navigator.mediaDevices.getUserMedia(constraints);
       audioContext = new AudioContext();
       const source = audioContext.createMediaStreamSource(testStream);
       analyser = audioContext.createAnalyser();
       analyser.fftSize = 256;
       source.connect(analyser);
-      
+
       setIsTesting(true);
       updateMicLevel();
     } catch (err) {
@@ -884,15 +884,15 @@ function VoiceTab() {
 
   const updateMicLevel = () => {
     if (!analyser) return;
-    
+
     const dataArray = new Uint8Array(analyser.frequencyBinCount);
     analyser.getByteFrequencyData(dataArray);
-    
+
     // Calculate average level
     const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
     const normalizedLevel = Math.min(100, (average / 128) * 100 * (inputVolume() / 100));
     setMicLevel(normalizedLevel);
-    
+
     animationFrame = requestAnimationFrame(updateMicLevel);
   };
 
@@ -902,16 +902,16 @@ function VoiceTab() {
       const ctx = new AudioContext();
       const oscillator = ctx.createOscillator();
       const gainNode = ctx.createGain();
-      
+
       oscillator.type = 'sine';
       oscillator.frequency.value = 440; // A4 note
       gainNode.gain.value = (outputVolume() / 100) * 0.3;
-      
+
       oscillator.connect(gainNode);
       gainNode.connect(ctx.destination);
-      
+
       oscillator.start();
-      
+
       // Stop after 1 second
       setTimeout(() => {
         oscillator.stop();
@@ -925,14 +925,14 @@ function VoiceTab() {
   return (
     <div>
       <h2 class="text-xl font-bold text-text-primary mb-5">Voice & Video</h2>
-      
+
       <div class="space-y-6">
         {/* Input Device Selection */}
         <div>
           <label class="block text-xs font-bold uppercase text-text-muted mb-2">
             Input Device
           </label>
-          <select 
+          <select
             class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
             value={selectedInputDevice()}
             onChange={(e) => handleInputDeviceChange(e.currentTarget.value)}
@@ -953,7 +953,7 @@ function VoiceTab() {
           <label class="block text-xs font-bold uppercase text-text-muted mb-2">
             Output Device
           </label>
-          <select 
+          <select
             class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
             value={selectedOutputDevice()}
             onChange={(e) => handleOutputDeviceChange(e.currentTarget.value)}
@@ -985,7 +985,7 @@ function VoiceTab() {
           {/* Mic level indicator */}
           <Show when={isTesting()}>
             <div class="mt-2 h-2 bg-bg-tertiary rounded-full overflow-hidden">
-              <div 
+              <div
                 class="h-full bg-success transition-all duration-75"
                 style={{ width: `${micLevel()}%` }}
               />
@@ -1028,18 +1028,18 @@ function VoiceTab() {
 
         {/* Test Buttons */}
         <div class="flex gap-3">
-          <button 
+          <button
             onClick={() => isTesting() ? stopMicTest() : startMicTest()}
             class={clsx(
               "px-4 py-2 text-sm font-medium rounded transition-colors",
-              isTesting() 
-                ? "bg-danger hover:bg-danger/90 text-white" 
+              isTesting()
+                ? "bg-danger hover:bg-danger/90 text-white"
                 : "bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary"
             )}
           >
             {isTesting() ? 'Stop Testing' : 'Test Microphone'}
           </button>
-          <button 
+          <button
             onClick={testSpeakers}
             class="px-4 py-2 bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary text-sm font-medium rounded transition-colors"
           >
@@ -1050,7 +1050,7 @@ function VoiceTab() {
         {/* Audio Processing Toggles */}
         <div class="border-t border-border-subtle pt-6">
           <h3 class="text-sm font-bold text-text-primary mb-4">Audio Processing</h3>
-          
+
           <div class="space-y-4">
             {/* Echo Cancellation */}
             <div class="flex items-center justify-between">
@@ -1137,7 +1137,7 @@ function VoiceTab() {
         {/* Sound Settings */}
         <div class="border-t border-border-subtle pt-6">
           <h3 class="text-sm font-bold text-text-primary mb-4">Sounds</h3>
-          
+
           <div class="flex items-center justify-between">
             <div>
               <div class="text-text-primary font-medium">Voice Channel Sounds</div>

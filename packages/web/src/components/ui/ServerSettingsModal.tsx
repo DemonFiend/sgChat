@@ -295,7 +295,6 @@ export function ServerSettingsModal(props: ServerSettingsModalProps) {
             </div>
           </div>
         </div>
-      </div>
     </Portal>
     </Show >
   );
@@ -795,8 +794,8 @@ function RolesTab() {
                 <button
                   onClick={() => selectRole(role)}
                   class={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-left transition-colors ${selectedRole()?.id === role.id
-                      ? 'bg-bg-modifier-selected text-text-primary'
-                      : 'text-text-muted hover:bg-bg-modifier-hover hover:text-text-secondary'
+                    ? 'bg-bg-modifier-selected text-text-primary'
+                    : 'text-text-muted hover:bg-bg-modifier-hover hover:text-text-secondary'
                     }`}
                 >
                   <div
