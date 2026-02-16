@@ -61,6 +61,12 @@ CREATE TABLE servers (
   welcome_message TEXT CHECK (length(welcome_message) <= 2000), -- Welcome message for new members
   timezone VARCHAR(50) DEFAULT 'UTC',
   
+  -- Popup configuration (admin-editable)
+  popup_config JSONB DEFAULT jsonb_build_object(
+    'timeFormat', '24h',
+    'events', '[]'::jsonb
+  ),
+  
   -- Admin claim system (for single-tenant bootstrap)
   admin_claim_code VARCHAR(64),
   admin_claimed BOOLEAN DEFAULT false,

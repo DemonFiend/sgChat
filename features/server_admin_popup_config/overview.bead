@@ -1,0 +1,37 @@
+# Server Admin Popup Config - Overview
+
+## Purpose
+Allow server admins to configure the server welcome popup UI elements displayed to users.
+
+## Requirements
+- Admin-only access (check permissions)
+- Configure 7 fields:
+  - Server name
+  - Server icon URL
+  - Server banner URL
+  - Server time format (12h/24h)
+  - Message of the Day (MOTD)
+  - Customized welcome message
+  - Events section (empty placeholder for future)
+- Save changes to database
+- Load existing config on form open
+- Real-time validation (URL format, text limits)
+- Preview changes (optional enhancement)
+
+## User Flow
+1. Admin opens server settings → navigates to "Popup Config" tab
+2. Form loads with current server config
+3. Admin edits fields → clicks Save
+4. Changes persist to database
+5. Users see updated popup on next login
+
+## Scope
+- Backend: API endpoints for GET/PUT config
+- Frontend: Admin form UI component
+- Database: Extend server table or create config table
+- Permissions: Verify MANAGE_SERVER permission
+
+## Future Extensions
+- Events section will support announcements, polls, scheduled messages
+- Preview mode to see popup as users would
+- Template system for welcome messages

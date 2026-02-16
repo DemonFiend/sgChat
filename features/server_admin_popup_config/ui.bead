@@ -1,0 +1,75 @@
+# Server Admin Popup Config - UI Specification
+
+## Layout
+Form container: max-width 800px, scrollable, with sticky save button at bottom.
+
+## Component Breakdown
+
+### Form Header
+- Title: "Popup Configuration"
+- Subtitle: "Customize what users see when they join your server"
+- Save button: Primary color, disabled during save, shows spinner
+
+### Basic Info Section
+**Server Name Input**
+- Label: "Server Name"
+- Type: text input
+- Max length: 100 characters
+- Help text: "Displayed in popup header"
+
+**Server Icon Input**
+- Label: "Server Icon URL"
+- Type: text input (URL)
+- Validation: Valid image URL
+- Preview: 64x64 thumbnail next to input
+- Help text: "Square image recommended (256x256+)"
+
+### Visual Section
+**Server Banner Input**
+- Label: "Banner Image URL"
+- Type: text input (URL)
+- Validation: Valid image URL
+- Preview: 16:9 thumbnail (200px wide)
+- Help text: "Wide image recommended (1920x1080)"
+
+**Time Format Selector**
+- Label: "Server Time Format"
+- Type: dropdown select
+- Options: "12-hour (AM/PM)" | "24-hour"
+- Default: 24-hour
+
+### Content Section
+**MOTD Editor**
+- Label: "Message of the Day"
+- Type: textarea (4 rows)
+- Max length: 500 characters
+- Character counter
+- Help text: "Basic markdown supported: **bold**, *italic*, [links]()"
+
+**Welcome Message Editor**
+- Label: "Welcome Message"
+- Type: textarea (4 rows)
+- Max length: 500 characters
+- Character counter
+- Help text: "Use {username} to insert user's name"
+- Example preview below: "Welcome, DemonFiend!"
+
+### Events Section
+**Placeholder**
+- Label: "Events" (with "Coming Soon" badge)
+- Content: Gray box with "Future feature: announcements, polls, and scheduled events"
+- Style: Subtle border, muted colors to indicate disabled state
+
+## Form Behavior
+- Auto-save draft to localStorage every 30 seconds
+- Confirm dialog if user navigates away with unsaved changes
+- Validation errors appear inline below each field
+- Success toast on successful save
+- Error toast with details on failed save
+
+## Styling Notes
+- Use consistent spacing (gap-4 between sections, gap-2 within sections)
+- Input fields: full width with consistent height
+- Previews: border, rounded corners, subtle shadow
+- Disabled save button: reduced opacity + cursor-not-allowed
+- Mobile: stack previews below inputs

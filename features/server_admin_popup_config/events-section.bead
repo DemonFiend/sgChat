@@ -1,0 +1,71 @@
+# Server Admin Popup Config - Events Section
+
+## Purpose
+Future-proofed section in popup config for event management. Currently empty placeholder.
+
+## Planned Event Types
+1. **Announcements**: One-way broadcasts (text + optional image)
+2. **Polls**: Multiple choice questions with voting
+3. **Scheduled Messages**: Time-based auto-show content
+
+## Future State Schema
+```typescript
+interface EventConfig {
+  id: string;                          // UUID
+  type: 'announcement' | 'poll' | 'scheduled';
+  title: string;                       // Max 100 chars
+  content: string;                     // Max 1000 chars, markdown
+  imageUrl?: string;                   // Optional image
+  startDate?: string;                  // ISO 8601, optional
+  endDate?: string;                    // ISO 8601, optional
+  enabled: boolean;                    // Active/inactive toggle
+  priority: number;                    // Display order (0 = highest)
+  targetRoles?: string[];              // Show only to specific roles
+  
+  // Poll-specific fields
+  pollOptions?: string[];              // Array of choices
+  allowMultiple?: boolean;             // Multi-select poll
+  showResults?: boolean;               // Show live results
+  
+  // Scheduling fields
+  recurrence?: 'once' | 'daily' | 'weekly' | 'monthly';
+  timezone?: string;                   // IANA timezone
+}
+```
+
+## UI Placeholder (Current Implementation)
+```
+┌─────────────────────────────────────┐
+│ Events (Coming Soon)                │
+├─────────────────────────────────────┤
+│ 📅 Future feature: Create          │
+│ announcements, polls, and           │
+│ scheduled events for your server.   │
+│                                      │
+│ Stay tuned!                         │
+└─────────────────────────────────────┘
+```
+
+## Future UI Requirements
+When implemented:
+- Event list with drag-to-reorder (priority)
+- Add Event button → modal with type selector
+- Each event shows: title, type badge, status toggle, edit/delete buttons
+- Event editor modal with type-specific fields
+- Preview button to see how event appears in popup
+- Bulk actions: enable/disable multiple, delete multiple
+
+## API Endpoints (Future)
+- `POST /api/servers/:serverId/popup-config/events` - Create event
+- `PUT /api/servers/:serverId/popup-config/events/:eventId` - Update event
+- `DELETE /api/servers/:serverId/popup-config/events/:eventId` - Delete event
+- `PATCH /api/servers/:serverId/popup-config/events/:eventId/toggle` - Enable/disable
+
+## Database Considerations
+Events stored in JSONB array for now. If events become complex (voting records, response tracking), migrate to dedicated `server_popup_events` table.
+
+## Implementation Notes
+- Current array is always empty: `events: []`
+- Validation accepts empty array
+- UI shows "Coming Soon" placeholder
+- Schema is ready for future expansion without breaking changes

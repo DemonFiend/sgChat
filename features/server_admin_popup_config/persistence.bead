@@ -1,0 +1,124 @@
+````plaintext
+# Server Admin Popup Config - Persistence Layer
+
+## Database Schema
+
+### Option A: JSON Column (Simpler)
+Add to `servers` table:
+```sql
+ALTER TABLE servers 
+ADD COLUMN popup_config JSONB DEFAULT '{
+  "timeFormat": "24h",
+  "motd": null,
+  "welcomeMessage": null,
+  "events": []
+}'::jsonb;
+```
+
+### Option B: Dedicated Table (More Flexible)
+```sql
+CREATE TABLE server_popup_configs (
+  server_id UUID PRIMARY KEY REFERENCES servers(id) ON DELETE CASCADE,
+  server_name VARCHAR(100),  -- Cached for performance
+  server_icon_url TEXT,
+  banner_url TEXT,
+  time_format VARCHAR(3) DEFAULT '24h',
+  motd TEXT,
+  welcome_message TEXT,
+  events JSONB DEFAULT '[]'::jsonb,
+  updated_at TIMESTAMP DEFAULT NOW(),
+  updated_by UUID REFERENCES users(id)
+);
+```
+
+**Recommendation**: Option A (JSON column) for simplicity. Migrate to Option B if complexity grows.
+
+## API Implementation
+
+### GET Endpoint
+```typescript
+// GET /api/servers/:serverId/popup-config
+// Returns current config merged with server defaults
+async function getPopupConfig(serverId: string) {
+  const server = await db.servers.findUnique({
+    where: { id: serverId },
+    select: { 
+      id: true, 
+      name: true, 
+      iconUrl: true, 
+      bannerUrl: true,
+      popupConfig: true 
+    }
+  });
+  
+  return {
+    serverId: server.id,
+    serverName: server.popupConfig?.serverName || server.name,
+    serverIconUrl: server.popupConfig?.serverIconUrl || server.iconUrl,
+    bannerUrl: server.popupConfig?.bannerUrl || server.bannerUrl,
+    timeFormat: server.popupConfig?.timeFormat || '24h',
+    motd: server.popupConfig?.motd || null,
+    welcomeMessage: server.popupConfig?.welcomeMessage || null,
+    events: server.popupConfig?.events || []
+  };
+}
+```
+
+### PUT Endpoint
+```typescript
+// PUT /api/servers/:serverId/popup-config
+async function updatePopupConfig(serverId: string, config: PopupConfigInput) {
+  // Validate permissions (MANAGE_SERVER)
+  await checkPermission(userId, serverId, 'MANAGE_SERVER');
+  
+  // Validate input
+  await validatePopupConfig(config);
+  
+  // Update database
+  const updated = await db.servers.update({
+    where: { id: serverId },
+    data: {
+      popupConfig: {
+        serverName: config.serverName,
+        serverIconUrl: config.serverIconUrl,
+        bannerUrl: config.bannerUrl,
+        timeFormat: config.timeFormat,
+        motd: config.motd,
+        welcomeMessage: config.welcomeMessage,
+        events: config.events,
+        updatedAt: new Date()
+      }
+    }
+  });
+  
+  // Emit event to notify connected clients
+  eventBus.emit('server:config:updated', { serverId, config });
+  
+  return updated.popupConfig;
+}
+```
+
+## Cache Strategy
+- Cache config in server store on frontend
+- Invalidate cache on successful PUT
+- TTL: 5 minutes
+- On cache miss, fetch from API
+
+## Migration Files
+- Create: `packages/api/src/migrations/XXXX_add_popup_config_to_servers.sql`
+- Rollback: Drop column or table
+
+## Validation Layer
+Location: `packages/shared/src/validators/serverPopupConfig.ts`
+```typescript
+export const popupConfigSchema = z.object({
+  serverName: z.string().min(1).max(100),
+  serverIconUrl: z.string().url().nullable().optional(),
+  bannerUrl: z.string().url().nullable().optional(),
+  timeFormat: z.enum(['12h', '24h']),
+  motd: z.string().max(500).nullable().optional(),
+  welcomeMessage: z.string().max(500).nullable().optional(),
+  events: z.array(eventConfigSchema).default([])
+});
+```
+````

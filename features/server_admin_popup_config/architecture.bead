@@ -1,0 +1,48 @@
+````plaintext
+# Server Admin Popup Config - Architecture
+
+## Component Structure
+```
+ServerPopupConfigForm (new component)
+├── FormHeader (title + save button)
+├── BasicInfoSection
+│   ├── ServerNameInput
+│   └── ServerIconInput (URL + preview)
+├── VisualSection
+│   ├── ServerBannerInput (URL + preview)
+│   └── TimeFormatSelector (dropdown: 12h/24h)
+├── ContentSection
+│   ├── MotdEditor (textarea, markdown support)
+│   └── WelcomeMessageEditor (textarea, markdown support)
+└── EventsSection (placeholder div with "Coming Soon" text)
+```
+
+## API Endpoints
+**GET** `/api/servers/:serverId/popup-config`
+- Returns current config object
+- Permission: MANAGE_SERVER
+
+**PUT** `/api/servers/:serverId/popup-config`
+- Body: PopupConfigInput
+- Returns updated config
+- Permission: MANAGE_SERVER
+
+## Data Flow
+1. Component mounts → fetch current config → populate form
+2. Admin edits field → update local state (controlled inputs)
+3. Admin clicks Save → validate → PUT request → show success/error
+4. On success → update server store with new config
+
+## Integration Points
+- **Permissions Service**: Check MANAGE_SERVER before showing form
+- **Server Store**: Cache popup config alongside server data
+- **Admin Dashboard**: Add new tab/section for popup config
+- **Validation**: Use shared validators for URLs, text lengths
+
+## Files to Create/Modify
+- New: `packages/api/src/routes/serverPopupConfig.ts` (API route)
+- New: `packages/web/src/components/admin/ServerPopupConfigForm.tsx` (UI)
+- New: `packages/shared/src/types/serverPopupConfig.ts` (types)
+- New: `packages/shared/src/validators/serverPopupConfig.ts` (validation)
+- Update: Database migration to add popup_config JSON column to servers table
+````

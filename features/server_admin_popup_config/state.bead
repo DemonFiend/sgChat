@@ -1,0 +1,74 @@
+````plaintext
+# Server Admin Popup Config - State Management
+
+## Store: `useServerConfigStore` (or extend existing server store)
+
+### State Shape
+```typescript
+interface ServerPopupConfig {
+  serverId: string;
+  serverName: string;
+  serverIconUrl: string | null;
+  bannerUrl: string | null;
+  timeFormat: '12h' | '24h';
+  motd: string | null;
+  welcomeMessage: string | null;
+  events: EventConfig[];  // Empty array for now
+}
+
+interface EventConfig {
+  id: string;
+  type: 'announcement' | 'poll' | 'scheduled';
+  title: string;
+  content: string;
+  startDate: string | null;
+  endDate: string | null;
+  enabled: boolean;
+}
+```
+
+### Form State (Component-level)
+```typescript
+interface ConfigFormState {
+  config: ServerPopupConfig;
+  isDirty: boolean;
+  isSaving: boolean;
+  errors: Record<string, string>;
+  lastSaved: Date | null;
+}
+```
+
+### Actions
+- `fetchPopupConfig(serverId: string)`: Load config from API
+- `updatePopupConfig(serverId: string, config: ServerPopupConfig)`: Save via PUT
+- `validateConfig(config: ServerPopupConfig)`: Client-side validation
+- `resetForm()`: Discard changes and reload
+- `saveDraft()`: Save to localStorage temporarily
+
+## LocalStorage Schema
+Key: `serverPopupConfig_draft_${serverId}`
+Value: Serialized ServerPopupConfig object
+TTL: Clean up after 24 hours
+
+## Validation Rules
+- `serverName`: 1-100 characters, required
+- `serverIconUrl`: Valid URL format, optional
+- `bannerUrl`: Valid URL format, optional
+- `timeFormat`: Must be '12h' or '24h', required
+- `motd`: 0-500 characters, optional
+- `welcomeMessage`: 0-500 characters, optional
+- Events array can be empty (always valid for now)
+
+## State Logic Flow
+1. Mount → fetch config → populate form state
+2. User edits → mark isDirty = true → auto-save draft to localStorage
+3. User clicks Save → validate → set isSaving = true → PUT request
+4. On success → update store → clear draft → show toast → set isDirty = false
+5. On error → set errors object → show toast → keep isDirty = true
+6. On unmount with isDirty → show confirm dialog
+
+## Store Location
+Option A: `packages/web/src/stores/serverConfig.ts` (new dedicated store)
+Option B: Extend `packages/web/src/stores/server.ts` with config actions
+Recommendation: Option A for separation of concerns
+````

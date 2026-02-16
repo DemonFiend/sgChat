@@ -3,8 +3,9 @@ import { Portal } from 'solid-js/web';
 import { clsx } from 'clsx';
 import { api } from '@/api';
 import { permissions } from '@/stores';
+import { ServerPopupConfigForm } from './ServerPopupConfigForm';
 
-type ServerSettingsTab = 'overview' | 'roles' | 'members' | 'channels' | 'invites' | 'bans' | 'audit-log';
+type ServerSettingsTab = 'overview' | 'popup-config' | 'roles' | 'members' | 'channels' | 'invites' | 'bans' | 'audit-log';
 
 interface ServerSettings {
   motd: string;
@@ -52,6 +53,16 @@ const tabs: { id: ServerSettingsTab; label: string; icon: JSX.Element; permissio
     icon: (
       <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+    permission: 'manage_server',
+  },
+  {
+    id: 'popup-config',
+    label: 'Popup Config',
+    icon: (
+      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
       </svg>
     ),
     permission: 'manage_server',
@@ -123,7 +134,7 @@ export function ServerSettingsModal(props: ServerSettingsModalProps) {
   const [serverData, setServerData] = createSignal<ServerData | null>(null);
   const [channels, setChannels] = createSignal<Channel[]>([]);
   const [isLoading, setIsLoading] = createSignal(false);
-  
+
   // Check permissions using the new named boolean system
   const hasPermission = (permission?: string) => {
     if (!permission) return true;
@@ -239,45 +250,51 @@ export function ServerSettingsModal(props: ServerSettingsModalProps) {
             {/* Tab content */}
             <div class="flex-1 overflow-y-auto py-[60px] px-10 max-w-[740px]">
               <Show when={isLoading()} fallback={
-                <>
-                  <Show when={activeTab() === 'overview'}>
-                    <OverviewTab 
-                      serverData={serverData()} 
-                      channels={channels()}
-                      isOwner={permissions.isOwner(props.serverOwnerId)}
-                      onTransferOwnership={props.onTransferOwnership}
-                      onRefresh={fetchServerData}
-                    />
-                  </Show>
-                  <Show when={activeTab() === 'roles'}>
-                <RolesTab />
-              </Show>
-              <Show when={activeTab() === 'members'}>
-                <MembersTab />
-              </Show>
-              <Show when={activeTab() === 'channels'}>
-                <ChannelsTab />
-              </Show>
-              <Show when={activeTab() === 'invites'}>
-                <InvitesTab />
-              </Show>
-              <Show when={activeTab() === 'bans'}>
-                <BansTab />
-              </Show>
-              <Show when={activeTab() === 'audit-log'}>
-                <AuditLogTab />
-              </Show>
-                </>
+                <>popup-config'}>
+                  <ServerPopupConfigForm
+                    serverId={serverData()?.id || ''}
+                    onSaveSuccess={fetchServerData}
+                  />
+                </Show>
+                <Show when={activeTab() === '
+                  < Show when={activeTab() === 'overview'}>
+                  <OverviewTab
+                    serverData={serverData()}
+                    channels={channels()}
+                    isOwner={permissions.isOwner(props.serverOwnerId)}
+                    onTransferOwnership={props.onTransferOwnership}
+                    onRefresh={fetchServerData}
+                  />
+                </Show>
+                <Show when={activeTab() === 'roles'}>
+                  <RolesTab />
+                </Show>
+                <Show when={activeTab() === 'members'}>
+                  <MembersTab />
+                </Show>
+                <Show when={activeTab() === 'channels'}>
+                  <ChannelsTab />
+                </Show>
+                <Show when={activeTab() === 'invites'}>
+                  <InvitesTab />
+                </Show>
+                <Show when={activeTab() === 'bans'}>
+                  <BansTab />
+                </Show>
+                <Show when={activeTab() === 'audit-log'}>
+                  <AuditLogTab />
+                </Show>
+              </>
               }>
-                <div class="flex items-center justify-center h-64">
-                  <div class="text-text-muted">Loading...</div>
-                </div>
-              </Show>
-            </div>
+              <div class="flex items-center justify-center h-64">
+                <div class="text-text-muted">Loading...</div>
+              </div>
+            </Show>
           </div>
         </div>
-      </Portal>
-    </Show>
+      </div>
+    </Portal>
+    </Show >
   );
 }
 
@@ -370,7 +387,7 @@ function OverviewTab(props: OverviewTabProps) {
   return (
     <div>
       <h2 class="text-xl font-bold text-text-primary mb-5">Server Overview</h2>
-      
+
       <div class="flex gap-6 mb-8">
         {/* Server Icon */}
         <div class="flex flex-col items-center">
@@ -561,7 +578,7 @@ function OverviewTab(props: OverviewTabProps) {
 
       {/* Save Button */}
       <div class="flex items-center gap-4 mb-8">
-        <button 
+        <button
           onClick={handleSave}
           disabled={isSaving()}
           class="px-4 py-2 bg-success hover:bg-success/90 text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
@@ -586,7 +603,7 @@ function OverviewTab(props: OverviewTabProps) {
                 <h4 class="font-medium text-text-primary">Transfer Ownership</h4>
                 <p class="text-sm text-text-muted">Transfer this server to another member</p>
               </div>
-              <button 
+              <button
                 onClick={props.onTransferOwnership}
                 class="px-4 py-2 bg-danger hover:bg-danger/90 text-white text-sm font-medium rounded transition-colors"
               >
@@ -699,7 +716,7 @@ function RolesTab() {
 
   const handleCreateRole = async () => {
     if (!newRoleName().trim()) return;
-    
+
     setIsCreating(true);
     try {
       const newRole = await api.post<Role>('/roles', { name: newRoleName() });
@@ -759,7 +776,7 @@ function RolesTab() {
         <div class="flex items-center justify-between mb-3">
           <h3 class="text-sm font-semibold text-text-muted uppercase">Roles</h3>
         </div>
-        
+
         <Show when={isLoading()}>
           <div class="text-sm text-text-muted">Loading...</div>
         </Show>
@@ -774,13 +791,12 @@ function RolesTab() {
               {(role) => (
                 <button
                   onClick={() => selectRole(role)}
-                  class={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-left transition-colors ${
-                    selectedRole()?.id === role.id 
-                      ? 'bg-bg-modifier-selected text-text-primary' 
+                  class={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-left transition-colors ${selectedRole()?.id === role.id
+                      ? 'bg-bg-modifier-selected text-text-primary'
                       : 'text-text-muted hover:bg-bg-modifier-hover hover:text-text-secondary'
-                  }`}
+                    }`}
                 >
-                  <div 
+                  <div
                     class="w-3 h-3 rounded-full flex-shrink-0"
                     style={{ background: role.color || '#99aab5' }}
                   />
@@ -814,7 +830,7 @@ function RolesTab() {
 
       {/* Role Editor */}
       <div class="flex-1 overflow-y-auto">
-        <Show 
+        <Show
           when={selectedRole()}
           fallback={
             <div class="flex items-center justify-center h-full text-text-muted">
@@ -873,7 +889,7 @@ function RolesTab() {
                   </div>
                 </div>
               </div>
-              
+
               {/* Display Settings */}
               <div class="border-t border-border-subtle pt-4">
                 <label class="flex items-center justify-between cursor-pointer hover:bg-bg-modifier-hover p-2 rounded transition-colors">
@@ -894,7 +910,7 @@ function RolesTab() {
             {/* Permissions */}
             <div>
               <h3 class="text-sm font-semibold text-text-muted uppercase mb-3">Permissions</h3>
-              
+
               <For each={permissionGroups}>
                 {(group) => (
                   <div class="mb-4">
@@ -974,7 +990,7 @@ function MembersTab() {
   const filteredMembers = () => {
     const query = searchQuery().toLowerCase();
     if (!query) return members();
-    return members().filter(m => 
+    return members().filter(m =>
       m.username.toLowerCase().includes(query) ||
       m.display_name?.toLowerCase().includes(query)
     );
@@ -983,7 +999,7 @@ function MembersTab() {
   const handleKick = async (member: ServerMember) => {
     const reason = prompt(`Kick ${member.username}? Enter a reason (optional):`);
     if (reason === null) return; // Cancelled
-    
+
     setActionInProgress(member.id);
     try {
       await api.delete(`/members/${member.id}${reason ? `?reason=${encodeURIComponent(reason)}` : ''}`);
@@ -999,7 +1015,7 @@ function MembersTab() {
   const handleBan = async (member: ServerMember) => {
     const reason = prompt(`Ban ${member.username}? Enter a reason (optional):`);
     if (reason === null) return; // Cancelled
-    
+
     setActionInProgress(member.id);
     try {
       await api.post(`/members/${member.id}/ban`, { reason: reason || undefined });
@@ -1029,8 +1045,8 @@ function MembersTab() {
   };
 
   const toggleRole = (roleId: string) => {
-    setEditingRoles(prev => 
-      prev.includes(roleId) 
+    setEditingRoles(prev =>
+      prev.includes(roleId)
         ? prev.filter(id => id !== roleId)
         : [...prev, roleId]
     );
@@ -1044,7 +1060,7 @@ function MembersTab() {
     try {
       await api.patch(`/members/${member.id}`, { roles: editingRoles() });
       // Update the member in local state
-      setMembers(prev => prev.map(m => 
+      setMembers(prev => prev.map(m =>
         m.id === member.id ? { ...m, roles: editingRoles() } : m
       ));
       setSelectedMember({ ...member, roles: editingRoles() });
@@ -1092,15 +1108,14 @@ function MembersTab() {
         <div class="space-y-1">
           <For each={filteredMembers()}>
             {(member) => (
-              <div 
-                class={`flex items-center justify-between p-3 rounded-lg transition-colors cursor-pointer ${
-                  selectedMember()?.id === member.id ? 'bg-bg-modifier-selected' : 'hover:bg-bg-modifier-hover'
-                }`}
+              <div
+                class={`flex items-center justify-between p-3 rounded-lg transition-colors cursor-pointer ${selectedMember()?.id === member.id ? 'bg-bg-modifier-selected' : 'hover:bg-bg-modifier-hover'
+                  }`}
                 onClick={() => setSelectedMember(selectedMember()?.id === member.id ? null : member)}
               >
                 <div class="flex items-center gap-3">
                   <div class="w-10 h-10 rounded-full bg-bg-tertiary flex items-center justify-center overflow-hidden">
-                    <Show 
+                    <Show
                       when={member.avatar_url}
                       fallback={
                         <span class="text-text-muted font-medium">
@@ -1123,9 +1138,9 @@ function MembersTab() {
                         {(roleId) => {
                           const role = getRoleById(roleId);
                           return role ? (
-                            <span 
+                            <span
                               class="text-xs px-1.5 py-0.5 rounded"
-                              style={{ 
+                              style={{
                                 background: role.color ? `${role.color}20` : 'var(--color-bg-tertiary)',
                                 color: role.color || 'var(--color-text-muted)'
                               }}
@@ -1167,7 +1182,7 @@ function MembersTab() {
                 <div class="space-y-2 mb-3">
                   <For each={assignableRoles()}>
                     {(role) => (
-                      <label 
+                      <label
                         class="flex items-center gap-3 p-2 rounded hover:bg-bg-modifier-hover cursor-pointer transition-colors"
                       >
                         <input
@@ -1176,7 +1191,7 @@ function MembersTab() {
                           onChange={() => toggleRole(role.id)}
                           class="w-4 h-4 rounded border-border-subtle bg-bg-tertiary"
                         />
-                        <div 
+                        <div
                           class="w-3 h-3 rounded-full flex-shrink-0"
                           style={{ background: role.color || '#99aab5' }}
                         />
@@ -1212,9 +1227,9 @@ function MembersTab() {
                     {(roleId) => {
                       const role = getRoleById(roleId);
                       return role ? (
-                        <span 
+                        <span
                           class="text-xs px-2 py-1 rounded"
-                          style={{ 
+                          style={{
                             background: role.color ? `${role.color}20` : 'var(--color-bg-tertiary)',
                             color: role.color || 'var(--color-text-muted)'
                           }}
@@ -1282,7 +1297,7 @@ function ChannelsTab() {
   const [error, setError] = createSignal<string | null>(null);
   const [showCreateChannel, setShowCreateChannel] = createSignal(false);
   const [showCreateCategory, setShowCreateCategory] = createSignal(false);
-  
+
   // Form states
   const [newChannelName, setNewChannelName] = createSignal('');
   const [newChannelType, setNewChannelType] = createSignal<'text' | 'voice' | 'announcement'>('text');
@@ -1297,7 +1312,7 @@ function ChannelsTab() {
       // Fetch channels first - this is required
       const channelsData = await api.get<ChannelData[]>('/channels');
       setChannels(channelsData || []);
-      
+
       // Try to fetch categories, but don't fail if it errors
       try {
         const categoriesData = await api.get<ChannelCategory[]>('/categories');
@@ -1327,7 +1342,7 @@ function ChannelsTab() {
 
   const handleCreateChannel = async () => {
     if (!newChannelName().trim()) return;
-    
+
     setActionInProgress(true);
     try {
       const newChannel = await api.post<ChannelData>('/channels', {
@@ -1349,7 +1364,7 @@ function ChannelsTab() {
 
   const handleCreateCategory = async () => {
     if (!newCategoryName().trim()) return;
-    
+
     setActionInProgress(true);
     try {
       const newCategory = await api.post<ChannelCategory>('/categories', {
@@ -1367,7 +1382,7 @@ function ChannelsTab() {
 
   const handleDeleteChannel = async (channel: ChannelData) => {
     if (!confirm(`Delete channel #${channel.name}? This cannot be undone.`)) return;
-    
+
     try {
       await api.delete(`/channels/${channel.id}`);
       setChannels(prev => prev.filter(c => c.id !== channel.id));
@@ -1383,7 +1398,7 @@ function ChannelsTab() {
       return;
     }
     if (!confirm(`Delete category "${category.name}"?`)) return;
-    
+
     try {
       await api.delete(`/categories/${category.id}`);
       setCategories(prev => prev.filter(c => c.id !== category.id));
@@ -1420,13 +1435,13 @@ function ChannelsTab() {
       <div class="flex items-center justify-between mb-5">
         <h2 class="text-xl font-bold text-text-primary">Channels</h2>
         <div class="flex gap-2">
-          <button 
+          <button
             onClick={() => setShowCreateCategory(true)}
             class="px-4 py-2 bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary text-sm font-medium rounded transition-colors"
           >
             Create Category
           </button>
-          <button 
+          <button
             onClick={() => setShowCreateChannel(true)}
             class="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors"
           >
@@ -1536,7 +1551,7 @@ function ChannelsTab() {
         <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
           <div class="bg-bg-primary rounded-lg p-6 w-full max-w-md">
             <h3 class="text-lg font-bold text-text-primary mb-4">Create Channel</h3>
-            
+
             <div class="space-y-4">
               <div>
                 <label class="block text-sm font-medium text-text-secondary mb-1">Channel Name</label>
@@ -1548,7 +1563,7 @@ function ChannelsTab() {
                   class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:border-brand-primary"
                 />
               </div>
-              
+
               <div>
                 <label class="block text-sm font-medium text-text-secondary mb-1">Channel Type</label>
                 <select
@@ -1561,7 +1576,7 @@ function ChannelsTab() {
                   <option value="announcement">Announcement</option>
                 </select>
               </div>
-              
+
               <div>
                 <label class="block text-sm font-medium text-text-secondary mb-1">Category (optional)</label>
                 <select
@@ -1576,7 +1591,7 @@ function ChannelsTab() {
                 </select>
               </div>
             </div>
-            
+
             <div class="flex justify-end gap-2 mt-6">
               <button
                 onClick={() => setShowCreateChannel(false)}
@@ -1601,7 +1616,7 @@ function ChannelsTab() {
         <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
           <div class="bg-bg-primary rounded-lg p-6 w-full max-w-md">
             <h3 class="text-lg font-bold text-text-primary mb-4">Create Category</h3>
-            
+
             <div>
               <label class="block text-sm font-medium text-text-secondary mb-1">Category Name</label>
               <input
@@ -1612,7 +1627,7 @@ function ChannelsTab() {
                 class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:border-brand-primary"
               />
             </div>
-            
+
             <div class="flex justify-end gap-2 mt-6">
               <button
                 onClick={() => setShowCreateCategory(false)}
@@ -1652,7 +1667,7 @@ function InvitesTab() {
   const [error, setError] = createSignal<string | null>(null);
   const [showCreateModal, setShowCreateModal] = createSignal(false);
   const [copiedCode, setCopiedCode] = createSignal<string | null>(null);
-  
+
   // Create form states
   const [expiresIn, setExpiresIn] = createSignal<string>('1d');
   const [maxUses, setMaxUses] = createSignal<string>('');
@@ -1679,7 +1694,7 @@ function InvitesTab() {
     setActionInProgress(true);
     try {
       const body: Record<string, any> = {};
-      
+
       // Convert expiresIn to actual expiry
       if (expiresIn() !== 'never') {
         const hours = {
@@ -1690,15 +1705,15 @@ function InvitesTab() {
           '1d': 24,
           '7d': 168,
         }[expiresIn()] || 24;
-        
+
         const expiresAt = new Date(Date.now() + hours * 60 * 60 * 1000);
         body.expires_at = expiresAt.toISOString();
       }
-      
+
       if (maxUses() && parseInt(maxUses()) > 0) {
         body.max_uses = parseInt(maxUses());
       }
-      
+
       const newInvite = await api.post<Invite>('/invites', body);
       setInvites(prev => [newInvite, ...prev]);
       setShowCreateModal(false);
@@ -1713,7 +1728,7 @@ function InvitesTab() {
 
   const handleDeleteInvite = async (code: string) => {
     if (!confirm('Delete this invite link?')) return;
-    
+
     try {
       await api.delete(`/invites/${code}`);
       setInvites(prev => prev.filter(i => i.code !== code));
@@ -1750,7 +1765,7 @@ function InvitesTab() {
     <div>
       <div class="flex items-center justify-between mb-5">
         <h2 class="text-xl font-bold text-text-primary">Invites</h2>
-        <button 
+        <button
           onClick={() => setShowCreateModal(true)}
           class="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors"
         >
@@ -1785,9 +1800,8 @@ function InvitesTab() {
           <div class="space-y-2">
             <For each={invites()}>
               {(invite) => (
-                <div class={`flex items-center justify-between p-3 rounded-lg ${
-                  isExpired(invite.expires_at) ? 'bg-bg-secondary/50 opacity-60' : 'bg-bg-secondary'
-                }`}>
+                <div class={`flex items-center justify-between p-3 rounded-lg ${isExpired(invite.expires_at) ? 'bg-bg-secondary/50 opacity-60' : 'bg-bg-secondary'
+                  }`}>
                   <div class="flex-1">
                     <div class="flex items-center gap-2">
                       <code class="text-brand-primary font-mono text-sm">{invite.code}</code>
@@ -1796,8 +1810,8 @@ function InvitesTab() {
                       </Show>
                     </div>
                     <div class="text-xs text-text-muted mt-1">
-                      Created by {invite.created_by_username} • 
-                      Uses: {invite.uses}{invite.max_uses ? `/${invite.max_uses}` : ''} • 
+                      Created by {invite.created_by_username} •
+                      Uses: {invite.uses}{invite.max_uses ? `/${invite.max_uses}` : ''} •
                       Expires: {formatExpiry(invite.expires_at)}
                     </div>
                   </div>
@@ -1807,7 +1821,7 @@ function InvitesTab() {
                       class="p-2 text-text-secondary hover:text-text-primary hover:bg-bg-modifier-hover rounded transition-colors"
                       title="Copy invite link"
                     >
-                      <Show 
+                      <Show
                         when={copiedCode() === invite.code}
                         fallback={
                           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1842,7 +1856,7 @@ function InvitesTab() {
         <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
           <div class="bg-bg-primary rounded-lg p-6 w-full max-w-md">
             <h3 class="text-lg font-bold text-text-primary mb-4">Create Invite Link</h3>
-            
+
             <div class="space-y-4">
               <div>
                 <label class="block text-sm font-medium text-text-secondary mb-1">Expire After</label>
@@ -1860,7 +1874,7 @@ function InvitesTab() {
                   <option value="never">Never</option>
                 </select>
               </div>
-              
+
               <div>
                 <label class="block text-sm font-medium text-text-secondary mb-1">Max Number of Uses</label>
                 <input
@@ -1874,7 +1888,7 @@ function InvitesTab() {
                 <p class="text-xs text-text-muted mt-1">Leave blank for unlimited uses</p>
               </div>
             </div>
-            
+
             <div class="flex justify-end gap-2 mt-6">
               <button
                 onClick={() => setShowCreateModal(false)}
@@ -1933,7 +1947,7 @@ function BansTab() {
 
   const handleUnban = async (userId: string) => {
     if (!confirm('Are you sure you want to unban this user?')) return;
-    
+
     setUnbanningId(userId);
     try {
       await api.delete(`/bans/${userId}`);
@@ -1982,7 +1996,7 @@ function BansTab() {
       </Show>
 
       <Show when={!isLoading() && !error()}>
-        <Show 
+        <Show
           when={filteredBans().length > 0}
           fallback={
             <div class="bg-bg-secondary rounded-lg p-4">
@@ -1998,7 +2012,7 @@ function BansTab() {
                 <div class="flex items-center justify-between p-3 bg-bg-secondary rounded-lg">
                   <div class="flex items-center gap-3">
                     <div class="w-10 h-10 rounded-full bg-bg-tertiary flex items-center justify-center overflow-hidden">
-                      <Show 
+                      <Show
                         when={ban.avatar_url}
                         fallback={
                           <span class="text-text-muted font-medium">
@@ -2083,7 +2097,7 @@ function AuditLogTab() {
       const params = new URLSearchParams();
       if (actionFilter()) params.append('action', actionFilter());
       params.append('limit', '50');
-      
+
       const data = await api.get<{ entries: AuditLogEntry[] }>(`/audit-log?${params}`);
       setEntries(data.entries || []);
     } catch (err: any) {
@@ -2125,7 +2139,7 @@ function AuditLogTab() {
       </p>
 
       <div class="flex gap-2 mb-4">
-        <select 
+        <select
           value={actionFilter()}
           onChange={(e) => { setActionFilter(e.currentTarget.value); fetchAuditLog(); }}
           class="px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
@@ -2134,7 +2148,7 @@ function AuditLogTab() {
             {(type) => <option value={type.value}>{type.label}</option>}
           </For>
         </select>
-        <button 
+        <button
           onClick={fetchAuditLog}
           class="px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary hover:bg-bg-modifier-hover transition-colors"
         >
@@ -2157,7 +2171,7 @@ function AuditLogTab() {
       </Show>
 
       <Show when={!isLoading() && !error()}>
-        <Show 
+        <Show
           when={entries().length > 0}
           fallback={
             <div class="text-center py-8">

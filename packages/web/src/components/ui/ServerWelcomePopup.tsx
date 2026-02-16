@@ -47,13 +47,14 @@ export function ServerWelcomePopup() {
 
         try {
             const timezone = data.timezone || 'UTC';
+            const timeFormat = data.timeFormat || '24h';
             const now = new Date();
             const formatter = new Intl.DateTimeFormat('en-US', {
                 timeZone: timezone,
                 hour: '2-digit',
                 minute: '2-digit',
                 second: '2-digit',
-                hour12: false,
+                hour12: timeFormat === '12h',
             });
             setCurrentTime(formatter.format(now));
         } catch (err) {

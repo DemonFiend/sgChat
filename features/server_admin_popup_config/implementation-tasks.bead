@@ -1,0 +1,140 @@
+# Server Admin Popup Config - Implementation Tasks
+
+## Task Checklist (Sequential)
+
+### Phase 1: Shared Types & Validation
+- [ ] Create `packages/shared/src/types/serverPopupConfig.ts`
+  - Define ServerPopupConfig interface
+  - Define EventConfig interface (empty events array for now)
+  - Export types
+  
+- [ ] Create `packages/shared/src/validators/serverPopupConfig.ts`
+  - Zod schema for popup config
+  - Validation for URLs, text lengths, enum values
+  - Export validators
+
+### Phase 2: Database Layer
+- [ ] Create migration: `packages/api/src/migrations/XXXX_add_popup_config.sql`
+  - Add popup_config JSONB column to servers table
+  - Set default values
+  - Create index if needed
+  
+- [ ] Run migration on dev database
+  - Test default values
+  - Verify JSON structure
+
+### Phase 3: API Layer
+- [ ] Create `packages/api/src/routes/serverPopupConfig.ts`
+  - GET endpoint: fetch config with defaults fallback
+  - PUT endpoint: update config with validation
+  - Permission checks (MANAGE_SERVER)
+  - Error handling
+  
+- [ ] Register route in `packages/api/src/index.ts`
+  - Mount at `/api/servers/:serverId/popup-config`
+  
+- [ ] Test API endpoints
+  - Use Postman/Thunder Client
+  - Verify permission checks
+  - Test validation errors
+
+### Phase 4: Frontend State
+- [ ] Create `packages/web/src/stores/serverConfig.ts`
+  - Define form state interface
+  - Implement fetchPopupConfig action
+  - Implement updatePopupConfig action
+  - Implement validateConfig action
+  - Add localStorage draft save/load helpers
+  
+- [ ] Test store actions
+  - Mock API calls
+  - Verify state updates
+
+### Phase 5: UI Components
+- [ ] Create `packages/web/src/components/admin/ServerPopupConfigForm.tsx`
+  - Build form shell with sections
+  - Add controlled inputs for all fields
+  - Add image preview components
+  - Add character counters
+  - Add validation error display
+  - Add save button with loading state
+  - Implement auto-save draft
+  - Add unsaved changes warning
+  
+- [ ] Style component
+  - Responsive layout
+  - Consistent spacing
+  - Preview thumbnails
+  - Events placeholder section
+
+### Phase 6: Integration
+- [ ] Add config form to admin dashboard
+  - Create new tab/section: "Popup Config"
+  - Check MANAGE_SERVER permission before rendering
+  - Pass serverId prop to form
+  
+- [ ] Hook up to navigation
+  - Add link in server settings sidebar
+  - Update route definitions
+
+### Phase 7: User-Facing Popup Update
+- [ ] Update `ServerWelcomePopup` to use config
+  - Fetch config from new API
+  - Use configured values instead of hardcoded
+  - Handle missing/null fields gracefully
+  - Respect time format setting
+  
+- [ ] Test popup with various configs
+  - With all fields filled
+  - With minimal fields
+  - With missing banner/icon
+
+### Phase 8: Polish & Testing
+- [ ] Add loading states
+  - Skeleton loader while fetching config
+  - Disabled inputs during save
+  
+- [ ] Add success/error toasts
+  - On successful save
+  - On validation errors
+  - On network errors
+  
+- [ ] Test edge cases
+  - Invalid URLs
+  - Extremely long text
+  - Missing permissions
+  - Network failures
+  
+- [ ] Mobile responsive testing
+  - Form layout on small screens
+  - Preview visibility
+  - Touch interactions
+
+### Phase 9: Documentation
+- [ ] Update API documentation
+  - Document endpoints
+  - Example requests/responses
+  
+- [ ] Update admin guide
+  - How to configure popup
+  - Field descriptions
+  - Best practices for images
+
+## Estimated Effort
+~8-12 hours for complete implementation
+
+## Dependencies
+- Database migration tool
+- Existing permissions system
+- Server metadata API
+- Admin dashboard structure
+- ServerWelcomePopup component (may need updates)
+
+## Testing Points
+- Permission validation (non-admin cannot access)
+- URL validation (reject invalid URLs)
+- Text length limits (enforce max characters)
+- Draft auto-save (localStorage works)
+- Unsaved changes warning (triggers on navigate)
+- Config persistence (survives page refresh)
+- Popup reflects config changes (real-time update)

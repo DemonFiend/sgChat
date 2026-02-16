@@ -40,28 +40,6 @@ function clearDismissed(serverId: string): void {
     }
 }
 
-// Server API response type (snake_case from backend)
-interface ServerResponse {
-    id: string;
-    name: string;
-    banner_url: string | null;
-    motd: string | null;
-    welcome_message: string | null;
-    timezone: string;
-    // ... other fields we don't need
-}
-
-// Convert server response to popup data
-function mapServerToPopupData(server: ServerResponse): ServerPopupData {
-    return {
-        serverName: server.name,
-        bannerUrl: server.banner_url,
-        motd: server.motd,
-        welcomeMessage: server.welcome_message,
-        timezone: server.timezone || 'UTC',
-    };
-}
-
 function createServerPopupStore() {
     const [state, setState] = createSignal<ServerPopupState>({
         isVisible: false,
@@ -91,9 +69,9 @@ function createServerPopupStore() {
         });
 
         try {
-            // Fetch server data from API
-            const server = await api.get<ServerResponse>(`/servers/${serverId}`);
-            const popupData = mapServerToPopupData(server);
+            // Fetch popup data from the new config endpoint
+            // This endpoint returns the admin-configured popup data
+            const popupData = await api.get<ServerPopupData>('/server/popup-config/data');
 
             // Update state with data and show popup
             setState({

@@ -172,6 +172,27 @@ export const markAllNotificationsReadSchema = z.object({
   before: z.string().datetime().optional(), // Mark all before this timestamp
 });
 
+// Server popup configuration validators
+export const eventConfigSchema = z.object({
+  id: z.string().uuid(),
+  type: z.enum(['announcement', 'poll', 'scheduled']),
+  title: z.string().min(1).max(100),
+  content: z.string().min(1).max(1000),
+  startDate: z.string().datetime().nullable(),
+  endDate: z.string().datetime().nullable(),
+  enabled: z.boolean(),
+});
+
+export const updatePopupConfigSchema = z.object({
+  serverName: z.string().min(1).max(100).optional(),
+  serverIconUrl: z.string().url().nullable().optional(),
+  bannerUrl: z.string().url().nullable().optional(),
+  timeFormat: z.enum(['12h', '24h']).optional(),
+  motd: z.string().max(500).nullable().optional(),
+  welcomeMessage: z.string().max(500).nullable().optional(),
+  events: z.array(eventConfigSchema).optional(),
+});
+
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type CreateServerInput = z.infer<typeof createServerSchema>;
@@ -186,3 +207,5 @@ export type UpdateRoleInput = z.infer<typeof updateRoleSchema>;
 export type PermissionOverrideInput = z.infer<typeof permissionOverrideSchema>;
 export type TimeoutMemberInput = z.infer<typeof timeoutMemberSchema>;
 export type UpdateUserSettingsInput = z.infer<typeof updateUserSettingsSchema>;
+export type UpdatePopupConfigInput = z.infer<typeof updatePopupConfigSchema>;
+export type EventConfigInput = z.infer<typeof eventConfigSchema>;

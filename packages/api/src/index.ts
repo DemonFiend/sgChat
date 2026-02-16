@@ -26,6 +26,7 @@ import { dmRoutes } from './routes/dms.js';
 import { friendRoutes } from './routes/friends.js';
 import { voiceRoutes } from './routes/voice.js';
 import { globalServerRoutes } from './routes/server.js';
+import { serverPopupConfigRoutes } from './routes/serverPopupConfig.js';
 import { standaloneRoutes } from './routes/standalone.js';
 import { categoryRoutes } from './routes/categories.js';
 import { uploadRoutes } from './routes/upload.js';
@@ -106,7 +107,7 @@ async function start() {
   });
 
   // Parse CORS origins - supports comma-separated list or single origin
-  const corsOrigins = process.env.CORS_ORIGIN 
+  const corsOrigins = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
     : true; // true = reflect request origin (allow all)
 
@@ -150,6 +151,7 @@ async function start() {
 
     // Single-tenant routes
     await api.register(globalServerRoutes, { prefix: '/server' });
+    await api.register(serverPopupConfigRoutes, { prefix: '/server/popup-config' });
     await api.register(standaloneRoutes);
     await api.register(categoryRoutes);
     await api.register(uploadRoutes);
@@ -195,7 +197,8 @@ async function start() {
   await fastify.register(dmRoutes, { prefix: '/dms' });
   await fastify.register(friendRoutes, { prefix: '/friends' });
   await fastify.register(voiceRoutes, { prefix: '/voice' });
-  await fastify.register(globalServerRoutes, { prefix: '/server' });
+  await fastify.register(gerverPopupConfigRoutes, { prefix: '/server/popup-config' });
+  await fastify.register(slobalServerRoutes, { prefix: '/server' });
   await fastify.register(standaloneRoutes);
   await fastify.register(categoryRoutes);
   await fastify.register(uploadRoutes);
@@ -236,7 +239,7 @@ async function start() {
   // Initialize Socket.IO BEFORE starting the server
   // We need to use fastify.server which is available after ready()
   await fastify.ready();
-  
+
   const io = new SocketIOServer(fastify.server, {
     cors: {
       origin: corsOrigins,
@@ -259,12 +262,12 @@ async function start() {
   // Graceful shutdown
   const gracefulShutdown = async (signal: string) => {
     fastify.log.info(`${signal} received, shutting down gracefully...`);
-    
+
     await fastify.close();
     await shutdownEventBus();
     await redis.client.quit();
     await db.end();
-    
+
     process.exit(0);
   };
 

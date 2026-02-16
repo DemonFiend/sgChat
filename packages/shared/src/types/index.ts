@@ -49,9 +49,33 @@ export interface Server {
 export interface ServerPopupData {
   serverName: string;
   bannerUrl: string | null;
+  timeFormat: '12h' | '24h';
   motd: string | null;
   welcomeMessage: string | null;
   timezone: string;
+  events?: EventConfig[];
+}
+
+// Server popup configuration (admin-editable)
+export interface ServerPopupConfig {
+  serverId: string;
+  serverName: string;
+  serverIconUrl: string | null;
+  bannerUrl: string | null;
+  timeFormat: '12h' | '24h';
+  motd: string | null;
+  welcomeMessage: string | null;
+  events: EventConfig[];
+}
+
+export interface EventConfig {
+  id: string;
+  type: 'announcement' | 'poll' | 'scheduled';
+  title: string;
+  content: string;
+  startDate: string | null;
+  endDate: string | null;
+  enabled: boolean;
 }
 
 export interface Channel {
