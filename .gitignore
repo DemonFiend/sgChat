@@ -60,4 +60,5 @@ AGENTS.md
 .beads/
 beads/
 .cursor/
+.cursor/rules
 .claude/

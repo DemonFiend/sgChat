@@ -138,22 +138,24 @@ export function UserSettingsModal(props: UserSettingsModalProps) {
             </div>
 
             {/* Tab content */}
-            <div class="flex-1 overflow-y-auto py-[60px] px-10 max-w-[740px]">
-              <Show when={activeTab() === 'account'}>
-                <AccountTab user={user()} onClose={props.onClose} />
-              </Show>
-              <Show when={activeTab() === 'profile'}>
-                <ProfileTab user={user()} />
-              </Show>
-              <Show when={activeTab() === 'appearance'}>
-                <AppearanceTab />
-              </Show>
-              <Show when={activeTab() === 'notifications'}>
-                <NotificationsTab />
-              </Show>
-              <Show when={activeTab() === 'voice'}>
-                <VoiceTab />
-              </Show>
+            <div class="flex-1 overflow-y-auto py-[60px] px-10">
+              <div class="max-w-[740px] mx-auto">
+                <Show when={activeTab() === 'account'}>
+                  <AccountTab user={user()} onClose={props.onClose} />
+                </Show>
+                <Show when={activeTab() === 'profile'}>
+                  <ProfileTab user={user()} />
+                </Show>
+                <Show when={activeTab() === 'appearance'}>
+                  <AppearanceTab />
+                </Show>
+                <Show when={activeTab() === 'notifications'}>
+                  <NotificationsTab />
+                </Show>
+                <Show when={activeTab() === 'voice'}>
+                  <VoiceTab />
+                </Show>
+              </div>
             </div>
           </div>
         </div>

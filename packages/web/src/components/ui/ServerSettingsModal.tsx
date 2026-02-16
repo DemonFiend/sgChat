@@ -248,48 +248,51 @@ export function ServerSettingsModal(props: ServerSettingsModalProps) {
             </div>
 
             {/* Tab content */}
-            <div class="flex-1 overflow-y-auto py-[60px] px-10 max-w-[740px]">
-              <Show when={isLoading()} fallback={
-                <>popup-config'}>
-                  <ServerPopupConfigForm
-                    serverId={serverData()?.id || ''}
-                    onSaveSuccess={fetchServerData}
-                  />
+            <div class="flex-1 overflow-y-auto py-[60px] px-10">
+              <div class="max-w-[740px] mx-auto">
+                <Show when={isLoading()} fallback={
+                  <>
+                    <Show when={activeTab() === 'popup-config'}>
+                      <ServerPopupConfigForm
+                        serverId={serverData()?.id || ''}
+                        onSaveSuccess={fetchServerData}
+                      />
+                    </Show>
+                    <Show when={activeTab() === 'overview'}>
+                      <OverviewTab
+                        serverData={serverData()}
+                        channels={channels()}
+                        isOwner={permissions.isOwner(props.serverOwnerId)}
+                        onTransferOwnership={props.onTransferOwnership}
+                        onRefresh={fetchServerData}
+                      />
+                    </Show>
+                    <Show when={activeTab() === 'roles'}>
+                      <RolesTab />
+                    </Show>
+                    <Show when={activeTab() === 'members'}>
+                      <MembersTab />
+                    </Show>
+                    <Show when={activeTab() === 'channels'}>
+                      <ChannelsTab />
+                    </Show>
+                    <Show when={activeTab() === 'invites'}>
+                      <InvitesTab />
+                    </Show>
+                    <Show when={activeTab() === 'bans'}>
+                      <BansTab />
+                    </Show>
+                    <Show when={activeTab() === 'audit-log'}>
+                      <AuditLogTab />
+                    </Show>
+                  </>
+                }>
+                  <div class="flex items-center justify-center h-64">
+                    <div class="text-text-muted">Loading...</div>
+                  </div>
                 </Show>
-                <Show when={activeTab() === '
-                  < Show when={activeTab() === 'overview'}>
-                  <OverviewTab
-                    serverData={serverData()}
-                    channels={channels()}
-                    isOwner={permissions.isOwner(props.serverOwnerId)}
-                    onTransferOwnership={props.onTransferOwnership}
-                    onRefresh={fetchServerData}
-                  />
-                </Show>
-                <Show when={activeTab() === 'roles'}>
-                  <RolesTab />
-                </Show>
-                <Show when={activeTab() === 'members'}>
-                  <MembersTab />
-                </Show>
-                <Show when={activeTab() === 'channels'}>
-                  <ChannelsTab />
-                </Show>
-                <Show when={activeTab() === 'invites'}>
-                  <InvitesTab />
-                </Show>
-                <Show when={activeTab() === 'bans'}>
-                  <BansTab />
-                </Show>
-                <Show when={activeTab() === 'audit-log'}>
-                  <AuditLogTab />
-                </Show>
-              </>
-              }>
-              <div class="flex items-center justify-center h-64">
-                <div class="text-text-muted">Loading...</div>
               </div>
-            </Show>
+            </div>
           </div>
         </div>
       </div>
