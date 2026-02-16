@@ -51,14 +51,13 @@ temp/
 CLIENT_HANDOFF.md
 SERVER_HANDOFF.md
 Publishing2Dev.md
+P2D.md
 agent-workstream.md
+markdown/
 
 # Beads local files and agent docs
 AGENTS.md
 .beads/
 beads/
-
-# Beads local files and agent docs
-AGENTS.md
-.beads/
-beads/
+.cursor/
+.claude/
