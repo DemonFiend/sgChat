@@ -54,8 +54,16 @@ function createServerPopupStore() {
      * Fetches server data from API and checks if it was previously dismissed.
      */
     const showPopup = async (serverId: string): Promise<void> => {
+        console.log('[ServerPopup] showPopup called for server:', serverId);
+        
         // Check if already dismissed
-        if (isDismissed(serverId)) {
+        const dismissed = isDismissed(serverId);
+        console.log('[ServerPopup] Dismissal check:', { serverId, dismissed, 
+            localStorageKey: `${DISMISSED_KEY_PREFIX}${serverId}`,
+            localStorageValue: localStorage.getItem(`${DISMISSED_KEY_PREFIX}${serverId}`)
+        });
+        
+        if (dismissed) {
             console.log(`[ServerPopup] Server ${serverId} popup was dismissed, not showing`);
             return;
         }
@@ -69,9 +77,11 @@ function createServerPopupStore() {
         });
 
         try {
+            console.log('[ServerPopup] Fetching popup data from /server/popup-config/data');
             // Fetch popup data from the new config endpoint
             // This endpoint returns the admin-configured popup data
             const popupData = await api.get<ServerPopupData>('/server/popup-config/data');
+            console.log('[ServerPopup] Popup data received:', popupData);
 
             // Update state with data and show popup
             setState({
@@ -81,6 +91,7 @@ function createServerPopupStore() {
                 isLoading: false,
                 error: null,
             });
+            console.log('[ServerPopup] Popup state set to visible');
         } catch (err) {
             console.error('[ServerPopup] Failed to fetch server data:', err);
 
@@ -126,24 +137,32 @@ function createServerPopupStore() {
      * This is called when the user clicks on a server icon.
      */
     const reopenPopup = async (): Promise<void> => {
+        console.log('[ServerPopup] reopenPopup called');
         const currentServer = state().currentServerId;
 
         if (!currentServer) {
-            console.warn('[ServerPopup] No current server to reopen popup for');
+            console.warn('[ServerPopup] No current server to reopen popup for, fetching from DOM/state');
+            // Try to get server ID from the current user context
+            // This will be set by the main layout when server loads
             return;
         }
 
+        console.log('[ServerPopup] Reopening popup for server:', currentServer);
+        
         // Clear dismissal state so it shows again
         clearDismissed(currentServer);
+        console.log('[ServerPopup] Cleared dismissal state');
 
         // If we already have server data, just show it
         if (state().serverData) {
+            console.log('[ServerPopup] Using cached server data, showing popup');
             setState({
                 ...state(),
                 isVisible: true,
             });
         } else {
             // Otherwise fetch fresh data
+            console.log('[ServerPopup] No cached data, fetching fresh');
             await showPopup(currentServer);
         }
     };

@@ -295,7 +295,7 @@ export function ServerSettingsModal(props: ServerSettingsModalProps) {
             </div>
           </div>
         </div>
-    </Portal>
+      </Portal>
     </Show >
   );
 }

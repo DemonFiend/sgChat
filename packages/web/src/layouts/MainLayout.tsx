@@ -191,14 +191,24 @@ export function MainLayout() {
     const server = currentServer();
     const user = authStore.state().user;
     const isAuthenticated = authStore.state().isAuthenticated;
+    const onDMPage = isDMRoute();
+
+    console.log('[MainLayout] Popup trigger check:', {
+      isAuthenticated,
+      hasUser: !!user,
+      hasServer: !!server,
+      onDMPage,
+      path: location.pathname
+    });
 
     // Only show popup when authenticated, on DM route
-    if (!isAuthenticated || !user || !server || !isDMRoute()) {
+    if (!isAuthenticated || !user || !server || !onDMPage) {
       return;
     }
 
     // Debounce to handle rapid navigation changes (500ms)
     const debounceTimer = setTimeout(() => {
+      console.log('[MainLayout] Attempting to show popup for server:', server.id);
       // Check if popup should be shown (will check localStorage internally)
       serverPopupStore.showPopup(server.id);
     }, 500);
