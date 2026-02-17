@@ -212,7 +212,7 @@ export function ServerWelcomePopup() {
                             {/* Scrollable Content */}
                             <div class="flex-1 overflow-y-auto">
                                 {/* Banner */}
-                                <div class="relative w-full" style="padding-bottom: 56.25%;">
+                                <div class="relative w-full" style="padding-bottom: 25%;">
                                     <Show
                                         when={serverData()?.bannerUrl}
                                         fallback={
@@ -228,7 +228,7 @@ export function ServerWelcomePopup() {
                                 </div>
 
                                 {/* Server Time Display */}
-                                <div class="px-6 pt-6 pb-4">
+                                <div class="px-6 pt-3 pb-2">
                                     <div class="flex items-center gap-3 text-text-muted">
                                         <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
