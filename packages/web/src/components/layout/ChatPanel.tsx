@@ -455,12 +455,12 @@ function MessageItem(props: MessageItemProps) {
               <MessageContent content={props.message.content} />
             </div>
 
-            {/* Reactions */
-              <ReactionDisplay
-                reactions={props.message.reactions || []}
-                onReactionClick={handleReactionClick}
-                onAddReaction={() => setShowReactionPicker(true)}
-              />
+            {/* Reactions */}
+            <ReactionDisplay
+              reactions={props.message.reactions || []}
+              onReactionClick={handleReactionClick}
+              onAddReaction={() => setShowReactionPicker(true)}
+            />
           </div>
         </div>
 
@@ -511,12 +511,12 @@ function MessageItem(props: MessageItemProps) {
           <MessageContent content={props.message.content} />
         </div>
 
-        {/* Reactions */
-          <ReactionDisplay
-            reactions={props.message.reactions || []}
-            onReactionClick={handleReactionClick}
-            onAddReaction={() => setShowReactionPicker(true)}
-          />
+        {/* Reactions */}
+        <ReactionDisplay
+          reactions={props.message.reactions || []}
+          onReactionClick={handleReactionClick}
+          onAddReaction={() => setShowReactionPicker(true)}
+        />
       </div>
 
       {/* Hover Action Buttons */}
