@@ -823,29 +823,95 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
 
       const limitNum = Math.min(parseInt(limit, 10) || 50, 100);
 
-      // Build query with safe parameterized conditions using postgres array syntax
-      const conditions = [sql`al.server_id = ${server.id}`];
-      if (action_type) {
-        conditions.push(sql`al.action = ${action_type}`);
+      // Build safe parameterized query based on filters
+      let entries;
+      
+      // Build query dynamically based on which filters are present
+      if (action_type && user_id && before) {
+        entries = await sql`
+          SELECT al.*, u.username as actor_username, u.avatar_url as actor_avatar_url
+          FROM audit_log al
+          LEFT JOIN users u ON u.id = al.user_id
+          WHERE al.server_id = ${server.id}
+            AND al.action = ${action_type}
+            AND al.user_id = ${user_id}
+            AND al.created_at < ${before}
+          ORDER BY al.created_at DESC
+          LIMIT ${limitNum}
+        `;
+      } else if (action_type && user_id) {
+        entries = await sql`
+          SELECT al.*, u.username as actor_username, u.avatar_url as actor_avatar_url
+          FROM audit_log al
+          LEFT JOIN users u ON u.id = al.user_id
+          WHERE al.server_id = ${server.id}
+            AND al.action = ${action_type}
+            AND al.user_id = ${user_id}
+          ORDER BY al.created_at DESC
+          LIMIT ${limitNum}
+        `;
+      } else if (action_type && before) {
+        entries = await sql`
+          SELECT al.*, u.username as actor_username, u.avatar_url as actor_avatar_url
+          FROM audit_log al
+          LEFT JOIN users u ON u.id = al.user_id
+          WHERE al.server_id = ${server.id}
+            AND al.action = ${action_type}
+            AND al.created_at < ${before}
+          ORDER BY al.created_at DESC
+          LIMIT ${limitNum}
+        `;
+      } else if (user_id && before) {
+        entries = await sql`
+          SELECT al.*, u.username as actor_username, u.avatar_url as actor_avatar_url
+          FROM audit_log al
+          LEFT JOIN users u ON u.id = al.user_id
+          WHERE al.server_id = ${server.id}
+            AND al.user_id = ${user_id}
+            AND al.created_at < ${before}
+          ORDER BY al.created_at DESC
+          LIMIT ${limitNum}
+        `;
+      } else if (action_type) {
+        entries = await sql`
+          SELECT al.*, u.username as actor_username, u.avatar_url as actor_avatar_url
+          FROM audit_log al
+          LEFT JOIN users u ON u.id = al.user_id
+          WHERE al.server_id = ${server.id}
+            AND al.action = ${action_type}
+          ORDER BY al.created_at DESC
+          LIMIT ${limitNum}
+        `;
+      } else if (user_id) {
+        entries = await sql`
+          SELECT al.*, u.username as actor_username, u.avatar_url as actor_avatar_url
+          FROM audit_log al
+          LEFT JOIN users u ON u.id = al.user_id
+          WHERE al.server_id = ${server.id}
+            AND al.user_id = ${user_id}
+          ORDER BY al.created_at DESC
+          LIMIT ${limitNum}
+        `;
+      } else if (before) {
+        entries = await sql`
+          SELECT al.*, u.username as actor_username, u.avatar_url as actor_avatar_url
+          FROM audit_log al
+          LEFT JOIN users u ON u.id = al.user_id
+          WHERE al.server_id = ${server.id}
+            AND al.created_at < ${before}
+          ORDER BY al.created_at DESC
+          LIMIT ${limitNum}
+        `;
+      } else {
+        entries = await sql`
+          SELECT al.*, u.username as actor_username, u.avatar_url as actor_avatar_url
+          FROM audit_log al
+          LEFT JOIN users u ON u.id = al.user_id
+          WHERE al.server_id = ${server.id}
+          ORDER BY al.created_at DESC
+          LIMIT ${limitNum}
+        `;
       }
-      if (user_id) {
-        conditions.push(sql`al.user_id = ${user_id}`);
-      }
-      if (before) {
-        conditions.push(sql`al.created_at < ${before}`);
-      }
-
-      const entries = await sql`
-        SELECT 
-          al.*,
-          u.username as actor_username,
-          u.avatar_url as actor_avatar_url
-        FROM audit_log al
-        LEFT JOIN users u ON u.id = al.user_id
-        WHERE ${sql(conditions, ' AND ')}
-        ORDER BY al.created_at DESC
-        LIMIT ${limitNum}
-      `;
 
       return {
         entries: entries.map((e: any) => ({
@@ -864,26 +930,26 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
           created_at: e.created_at,
         })),
       };
-  },
+    },
   });
 
-// ============================================================
-// CHANNELS - Standalone endpoint
-// ============================================================
+  // ============================================================
+  // CHANNELS - Standalone endpoint
+  // ============================================================
 
-// List all channels in the server with categories, unread counts, and mentions
-fastify.get('/channels', {
-  onRequest: [authenticate],
-  handler: async (request, reply) => {
-    const server = await getDefaultServer();
-    if (!server) {
-      return { channels: [], categories: [] };
-    }
+  // List all channels in the server with categories, unread counts, and mentions
+  fastify.get('/channels', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) {
+        return { channels: [], categories: [] };
+      }
 
-    const userId = request.user!.id;
+      const userId = request.user!.id;
 
-    // Get channels with unread counts and mention detection
-    const channels = await db.sql`
+      // Get channels with unread counts and mention detection
+      const channels = await db.sql`
         SELECT 
           c.id,
           c.name,
@@ -923,187 +989,187 @@ fastify.get('/channels', {
         ORDER BY c.position ASC, c.created_at ASC
       `;
 
-    // Get categories
-    const categories = await db.sql`
+      // Get categories
+      const categories = await db.sql`
         SELECT id, name, position, created_at
         FROM categories
         WHERE server_id = ${server.id}
         ORDER BY position ASC, created_at ASC
       `;
 
-    return {
-      channels: channels.map((c: any) => ({
-        id: c.id,
-        name: c.name,
-        type: c.type,
-        category_id: c.category_id,
-        position: c.position,
-        topic: c.topic,
-        unread_count: c.unread_count,
-        has_mentions: c.has_mentions,
-      })),
-      categories: categories.map((cat: any) => ({
-        id: cat.id,
-        name: cat.name,
-        position: cat.position,
-      })),
-    };
-  },
-});
+      return {
+        channels: channels.map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          type: c.type,
+          category_id: c.category_id,
+          position: c.position,
+          topic: c.topic,
+          unread_count: c.unread_count,
+          has_mentions: c.has_mentions,
+        })),
+        categories: categories.map((cat: any) => ({
+          id: cat.id,
+          name: cat.name,
+          position: cat.position,
+        })),
+      };
+    },
+  });
 
-// ============================================================
-// CATEGORIES - Standalone endpoints
-// ============================================================
+  // ============================================================
+  // CATEGORIES - Standalone endpoints
+  // ============================================================
 
-// List all categories
-fastify.get('/categories', {
-  onRequest: [authenticate],
-  handler: async (request, reply) => {
-    const server = await getDefaultServer();
-    if (!server) return [];
+  // List all categories
+  fastify.get('/categories', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) return [];
 
-    const categories = await db.sql`
+      const categories = await db.sql`
         SELECT id, name, position
         FROM categories
         WHERE server_id = ${server.id}
         ORDER BY position ASC
       `;
 
-    return categories;
-  },
-});
+      return categories;
+    },
+  });
 
-// Create category
-fastify.post('/categories', {
-  onRequest: [authenticate],
-  handler: async (request, reply) => {
-    const server = await getDefaultServer();
-    if (!server) return notFound(reply, 'Server');
+  // Create category
+  fastify.post('/categories', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) return notFound(reply, 'Server');
 
-    const perms = await calculatePermissions(request.user!.id, server.id);
-    if (!hasPermission(perms.server, ServerPermissions.MANAGE_CHANNELS)) {
-      return forbidden(reply, 'Missing MANAGE_CHANNELS permission');
-    }
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_CHANNELS)) {
+        return forbidden(reply, 'Missing MANAGE_CHANNELS permission');
+      }
 
-    const { name } = request.body as { name: string };
-    if (!name || name.length < 1 || name.length > 100) {
-      return badRequest(reply, 'Category name must be 1-100 characters');
-    }
+      const { name } = request.body as { name: string };
+      if (!name || name.length < 1 || name.length > 100) {
+        return badRequest(reply, 'Category name must be 1-100 characters');
+      }
 
-    // Get max position
-    const [maxPos] = await db.sql`
+      // Get max position
+      const [maxPos] = await db.sql`
         SELECT COALESCE(MAX(position), -1) + 1 as next_position
         FROM categories
         WHERE server_id = ${server.id}
       `;
 
-    const [category] = await db.sql`
+      const [category] = await db.sql`
         INSERT INTO categories (server_id, name, position)
         VALUES (${server.id}, ${name}, ${maxPos.next_position})
         RETURNING *
       `;
 
-    // Audit log
-    await db.sql`
+      // Audit log
+      await db.sql`
         INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
         VALUES (${server.id}, ${request.user!.id}, 'category_create', 'category', ${category.id}, 
           ${JSON.stringify({ name })})
       `;
 
-    fastify.io?.to(`server:${server.id}`).emit('category.create', category);
-    return category;
-  },
-});
+      fastify.io?.to(`server:${server.id}`).emit('category.create', category);
+      return category;
+    },
+  });
 
-// Update category
-fastify.patch('/categories/:categoryId', {
-  onRequest: [authenticate],
-  handler: async (request, reply) => {
-    const server = await getDefaultServer();
-    if (!server) return notFound(reply, 'Server');
-    const { categoryId } = request.params as { categoryId: string };
+  // Update category
+  fastify.patch('/categories/:categoryId', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) return notFound(reply, 'Server');
+      const { categoryId } = request.params as { categoryId: string };
 
-    const perms = await calculatePermissions(request.user!.id, server.id);
-    if (!hasPermission(perms.server, ServerPermissions.MANAGE_CHANNELS)) {
-      return forbidden(reply, 'Missing MANAGE_CHANNELS permission');
-    }
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_CHANNELS)) {
+        return forbidden(reply, 'Missing MANAGE_CHANNELS permission');
+      }
 
-    const [category] = await db.sql`
+      const [category] = await db.sql`
         SELECT * FROM categories 
         WHERE id = ${categoryId} AND server_id = ${server.id}
       `;
-    if (!category) return notFound(reply, 'Category');
+      if (!category) return notFound(reply, 'Category');
 
-    const { name, position } = request.body as { name?: string; position?: number };
-    const updates: Record<string, any> = {};
+      const { name, position } = request.body as { name?: string; position?: number };
+      const updates: Record<string, any> = {};
 
-    if (name !== undefined) {
-      if (name.length < 1 || name.length > 100) {
-        return badRequest(reply, 'Category name must be 1-100 characters');
+      if (name !== undefined) {
+        if (name.length < 1 || name.length > 100) {
+          return badRequest(reply, 'Category name must be 1-100 characters');
+        }
+        updates.name = name;
       }
-      updates.name = name;
-    }
-    if (position !== undefined) updates.position = position;
+      if (position !== undefined) updates.position = position;
 
-    if (Object.keys(updates).length === 0) {
-      return badRequest(reply, 'No updates provided');
-    }
+      if (Object.keys(updates).length === 0) {
+        return badRequest(reply, 'No updates provided');
+      }
 
-    await db.sql`UPDATE categories SET ${db.sql(updates)} WHERE id = ${categoryId}`;
+      await db.sql`UPDATE categories SET ${db.sql(updates)} WHERE id = ${categoryId}`;
 
-    const [updated] = await db.sql`SELECT * FROM categories WHERE id = ${categoryId}`;
+      const [updated] = await db.sql`SELECT * FROM categories WHERE id = ${categoryId}`;
 
-    // Audit log
-    await db.sql`
+      // Audit log
+      await db.sql`
         INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
         VALUES (${server.id}, ${request.user!.id}, 'category_update', 'category', ${categoryId}, 
           ${JSON.stringify(updates)})
       `;
 
-    fastify.io?.to(`server:${server.id}`).emit('category.update', updated);
-    return updated;
-  },
-});
+      fastify.io?.to(`server:${server.id}`).emit('category.update', updated);
+      return updated;
+    },
+  });
 
-// Delete category
-fastify.delete('/categories/:categoryId', {
-  onRequest: [authenticate],
-  handler: async (request, reply) => {
-    const server = await getDefaultServer();
-    if (!server) return notFound(reply, 'Server');
-    const { categoryId } = request.params as { categoryId: string };
+  // Delete category
+  fastify.delete('/categories/:categoryId', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) return notFound(reply, 'Server');
+      const { categoryId } = request.params as { categoryId: string };
 
-    const perms = await calculatePermissions(request.user!.id, server.id);
-    if (!hasPermission(perms.server, ServerPermissions.MANAGE_CHANNELS)) {
-      return forbidden(reply, 'Missing MANAGE_CHANNELS permission');
-    }
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_CHANNELS)) {
+        return forbidden(reply, 'Missing MANAGE_CHANNELS permission');
+      }
 
-    const [category] = await db.sql`
+      const [category] = await db.sql`
         SELECT * FROM categories 
         WHERE id = ${categoryId} AND server_id = ${server.id}
       `;
-    if (!category) return notFound(reply, 'Category');
+      if (!category) return notFound(reply, 'Category');
 
-    // Check if category has channels
-    const channels = await db.sql`
+      // Check if category has channels
+      const channels = await db.sql`
         SELECT COUNT(*) as count FROM channels 
         WHERE category_id = ${categoryId}
       `;
 
-    if (channels[0].count > 0) {
-      return badRequest(reply, 'Cannot delete category with channels. Move or delete channels first.');
-    }
+      if (channels[0].count > 0) {
+        return badRequest(reply, 'Cannot delete category with channels. Move or delete channels first.');
+      }
 
-    await db.sql`DELETE FROM categories WHERE id = ${categoryId}`;
+      await db.sql`DELETE FROM categories WHERE id = ${categoryId}`;
 
-    // Audit log
-    await db.sql`
+      // Audit log
+      await db.sql`
         INSERT INTO audit_log (server_id, user_id, action, target_type, target_id)
         VALUES (${server.id}, ${request.user!.id}, 'category_delete', 'category', ${categoryId})
       `;
 
-    fastify.io?.to(`server:${server.id}`).emit('category.delete', { id: categoryId });
-    return { message: 'Category deleted' };
-  },
-});
+      fastify.io?.to(`server:${server.id}`).emit('category.delete', { id: categoryId });
+      return { message: 'Category deleted' };
+    },
+  });
 };
