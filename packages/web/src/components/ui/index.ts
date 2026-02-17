@@ -14,6 +14,7 @@ export { UnclaimedServerBanner } from './UnclaimedServerBanner';
 export { MOTDDisplay } from './MOTDDisplay';
 export { ReactionPicker } from './ReactionPicker';
 export { ReactionDisplay, type Reaction } from './ReactionDisplay';
+export { MessageContent, type MessageContentProps } from './MessageContent';
 export { UnreadIndicator, UnreadDot } from './UnreadIndicator';
 export { BendyLine } from './BendyLine';
 export { VoiceConnectedBar } from './VoiceConnectedBar';

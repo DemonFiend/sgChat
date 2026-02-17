@@ -11,12 +11,14 @@ import { redis } from '../lib/redis.js';
 import { getDefaultServer } from './server.js';
 import { calculatePermissions } from '../services/permissions.js';
 import { handleMemberLeave, generateInviteCode } from '../services/server.js';
-import { 
-  ServerPermissions, 
-  hasPermission, 
+import {
+  ServerPermissions,
+  TextPermissions,
+  VoicePermissions,
+  hasPermission,
   toNamedPermissions,
   createRoleSchema,
-  createInviteSchema 
+  createInviteSchema
 } from '@sgchat/shared';
 import { notFound, forbidden, badRequest, conflict, sendError } from '../utils/errors.js';
 import { z } from 'zod';
@@ -25,13 +27,94 @@ const updateRoleSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).nullable().optional(),
   position: z.number().min(0).optional(),
-  permissions: z.object({
-    server: z.number().optional(),
-    text: z.number().optional(),
-    voice: z.number().optional(),
-  }).optional(),
+  permissions: z.union([
+    z.object({
+      server: z.number().optional(),
+      text: z.number().optional(),
+      voice: z.number().optional(),
+    }),
+    z.record(z.boolean()) // Accept named permissions from frontend
+  ]).optional(),
   is_hoisted: z.boolean().optional(),
 });
+
+// Helper function to convert named permissions to bitfields
+function namedPermissionsToBitfields(named: Record<string, boolean>): { server: bigint; text: bigint; voice: bigint } {
+  let server = 0n;
+  let text = 0n;
+  let voice = 0n;
+
+  // Map of named permission keys to their bitfield values
+  const serverPermsMap: Record<string, bigint> = {
+    administrator: ServerPermissions.ADMINISTRATOR,
+    manage_server: ServerPermissions.MANAGE_SERVER,
+    manage_channels: ServerPermissions.MANAGE_CHANNELS,
+    manage_roles: ServerPermissions.MANAGE_ROLES,
+    manage_categories: ServerPermissions.MANAGE_CATEGORIES,
+    kick_members: ServerPermissions.KICK_MEMBERS,
+    ban_members: ServerPermissions.BAN_MEMBERS,
+    timeout_members: ServerPermissions.TIMEOUT_MEMBERS,
+    manage_nicknames: ServerPermissions.MANAGE_NICKNAMES,
+    create_invites: ServerPermissions.CREATE_INVITES,
+    manage_invites: ServerPermissions.MANAGE_INVITES,
+    change_nickname: ServerPermissions.CHANGE_NICKNAME,
+    view_audit_log: ServerPermissions.VIEW_AUDIT_LOG,
+    view_server_insights: ServerPermissions.VIEW_SERVER_INSIGHTS,
+    manage_emojis: ServerPermissions.MANAGE_EMOJIS,
+    manage_stickers: ServerPermissions.MANAGE_STICKERS,
+    manage_expressions: ServerPermissions.MANAGE_EXPRESSIONS,
+    manage_webhooks: ServerPermissions.MANAGE_WEBHOOKS,
+    create_events: ServerPermissions.CREATE_EVENTS,
+    manage_events: ServerPermissions.MANAGE_EVENTS,
+    manage_threads: ServerPermissions.MANAGE_THREADS,
+    create_public_threads: ServerPermissions.CREATE_PUBLIC_THREADS,
+    create_private_threads: ServerPermissions.CREATE_PRIVATE_THREADS,
+    view_server_members: ServerPermissions.VIEW_SERVER_MEMBERS,
+    moderate_members: ServerPermissions.MODERATE_MEMBERS,
+  };
+
+  const textPermsMap: Record<string, bigint> = {
+    view_channel: TextPermissions.VIEW_CHANNEL,
+    send_messages: TextPermissions.SEND_MESSAGES,
+    send_tts_messages: TextPermissions.SEND_TTS_MESSAGES,
+    read_message_history: TextPermissions.READ_MESSAGE_HISTORY,
+    embed_links: TextPermissions.EMBED_LINKS,
+    attach_files: TextPermissions.ATTACH_FILES,
+    add_reactions: TextPermissions.ADD_REACTIONS,
+    mention_everyone: TextPermissions.MENTION_EVERYONE,
+    mention_roles: TextPermissions.MENTION_ROLES,
+    manage_messages: TextPermissions.MANAGE_MESSAGES,
+    use_external_emojis: TextPermissions.USE_EXTERNAL_EMOJIS,
+    use_external_stickers: TextPermissions.USE_EXTERNAL_STICKERS,
+    delete_own_messages: TextPermissions.DELETE_OWN_MESSAGES,
+    edit_own_messages: TextPermissions.EDIT_OWN_MESSAGES,
+    bypass_slowmode: TextPermissions.BYPASS_SLOWMODE,
+  };
+
+  const voicePermsMap: Record<string, bigint> = {
+    connect: VoicePermissions.CONNECT,
+    speak: VoicePermissions.SPEAK,
+    video: VoicePermissions.VIDEO,
+    stream: VoicePermissions.STREAM,
+    mute_members: VoicePermissions.MUTE_MEMBERS,
+    deafen_members: VoicePermissions.DEAFEN_MEMBERS,
+    move_members: VoicePermissions.MOVE_MEMBERS,
+    use_voice_activity: VoicePermissions.USE_VOICE_ACTIVITY,
+    priority_speaker: VoicePermissions.PRIORITY_SPEAKER,
+    disconnect_members: VoicePermissions.DISCONNECT_MEMBERS,
+  };
+
+  // Build bitfields from named permissions
+  for (const [key, value] of Object.entries(named)) {
+    if (value === true) {
+      if (key in serverPermsMap) server |= serverPermsMap[key];
+      if (key in textPermsMap) text |= textPermsMap[key];
+      if (key in voicePermsMap) voice |= voicePermsMap[key];
+    }
+  }
+
+  return { server, text, voice };
+}
 
 const updateMemberSchema = z.object({
   roles: z.array(z.string().uuid()).optional(),
@@ -55,9 +138,14 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
       if (!server) return [];
 
       const roles = await db.sql`
-        SELECT * FROM roles 
-        WHERE server_id = ${server.id}
-        ORDER BY position DESC
+        SELECT 
+          r.*,
+          COALESCE(COUNT(DISTINCT mr.member_user_id), 0)::int as member_count
+        FROM roles r
+        LEFT JOIN member_roles mr ON mr.role_id = r.id
+        WHERE r.server_id = ${server.id}
+        GROUP BY r.id
+        ORDER BY r.position DESC
       `;
 
       // Convert permissions to named format for each role
@@ -135,13 +223,28 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
 
       const body = updateRoleSchema.parse(request.body);
       const updates: Record<string, any> = {};
-      
+
       if (body.name !== undefined) updates.name = body.name;
       if ('color' in body) updates.color = body.color;
       if (body.position !== undefined) updates.position = body.position;
-      if (body.permissions?.server !== undefined) updates.server_permissions = String(body.permissions.server);
-      if (body.permissions?.text !== undefined) updates.text_permissions = String(body.permissions.text);
-      if (body.permissions?.voice !== undefined) updates.voice_permissions = String(body.permissions.voice);
+
+      // Handle permissions - accept both bitfield and named formats
+      if (body.permissions) {
+        // Check if it's named format (Record<string, boolean>) or bitfield format
+        if ('server' in body.permissions || 'text' in body.permissions || 'voice' in body.permissions) {
+          // Bitfield format
+          if (body.permissions.server !== undefined) updates.server_permissions = String(body.permissions.server);
+          if (body.permissions.text !== undefined) updates.text_permissions = String(body.permissions.text);
+          if (body.permissions.voice !== undefined) updates.voice_permissions = String(body.permissions.voice);
+        } else {
+          // Named format - convert to bitfields
+          const bitfields = namedPermissionsToBitfields(body.permissions as Record<string, boolean>);
+          updates.server_permissions = String(bitfields.server);
+          updates.text_permissions = String(bitfields.text);
+          updates.voice_permissions = String(bitfields.voice);
+        }
+      }
+
       if (body.is_hoisted !== undefined) updates.is_hoisted = body.is_hoisted;
 
       if (Object.keys(updates).length === 0) {
@@ -227,9 +330,9 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
       const server = await getDefaultServer();
       if (!server) return { members: [], total: 0 };
 
-      const { limit = '100', offset = '0', search } = request.query as { 
-        limit?: string; 
-        offset?: string; 
+      const { limit = '100', offset = '0', search } = request.query as {
+        limit?: string;
+        offset?: string;
         search?: string;
       };
 
@@ -285,17 +388,17 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
           WHERE mr.member_user_id = ${m.user_id} AND mr.member_server_id = ${server.id}
           ORDER BY r.position DESC
         `;
-        
+
         // Get the highest-positioned role's color (first one since ordered DESC)
         const roleColor = roles.length > 0 && roles[0].color ? roles[0].color : null;
-        
+
         // Determine effective status:
         // - If user is connected (in Redis), show 'online' unless they chose 'dnd' or 'idle'
         // - If user chose 'offline' (invisible) in DB but is connected, still show 'offline' to others
         // - If user is not connected, show 'offline'
         const isConnected = onlineSet.has(m.user_id);
         const dbStatus = m.status || 'offline';
-        
+
         let effectiveStatus: string;
         if (!isConnected) {
           // User not connected - always show offline
@@ -307,7 +410,7 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
           // User is connected and not invisible - show their chosen status
           effectiveStatus = dbStatus;
         }
-        
+
         return {
           id: m.user_id,
           username: m.username,
@@ -336,7 +439,7 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
 
       const perms = await calculatePermissions(request.user!.id, server.id);
       if (!hasPermission(perms.server, ServerPermissions.MANAGE_NICKNAMES) &&
-          !hasPermission(perms.server, ServerPermissions.MANAGE_ROLES)) {
+        !hasPermission(perms.server, ServerPermissions.MANAGE_ROLES)) {
         return forbidden(reply, 'Missing permission to manage members');
       }
 
@@ -361,7 +464,7 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
           DELETE FROM member_roles 
           WHERE member_user_id = ${userId} AND member_server_id = ${server.id}
         `;
-        
+
         // Add new roles
         for (const roleId of body.roles) {
           await db.sql`
@@ -379,9 +482,9 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
         WHERE member_user_id = ${userId} AND member_server_id = ${server.id}
       `;
 
-      return { 
-        ...updated, 
-        roles: roles.map((r: any) => r.role_id) 
+      return {
+        ...updated,
+        roles: roles.map((r: any) => r.role_id)
       };
     },
   });
@@ -413,10 +516,10 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
         VALUES (${server.id}, ${request.user!.id}, 'member_kick', 'member', ${userId}, ${body.reason || null})
       `;
 
-      fastify.io?.to(`user:${userId}`).emit('server.kicked', { 
-        server_id: server.id, 
+      fastify.io?.to(`user:${userId}`).emit('server.kicked', {
+        server_id: server.id,
         server_name: server.name,
-        reason: body.reason 
+        reason: body.reason
       });
 
       return { message: 'Member kicked' };
@@ -459,10 +562,10 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
         VALUES (${server.id}, ${request.user!.id}, 'member_ban', 'member', ${userId}, ${body.reason || null})
       `;
 
-      fastify.io?.to(`user:${userId}`).emit('server.banned', { 
-        server_id: server.id, 
+      fastify.io?.to(`user:${userId}`).emit('server.banned', {
+        server_id: server.id,
         server_name: server.name,
-        reason: body.reason 
+        reason: body.reason
       });
 
       return { message: 'Member banned' };
@@ -720,19 +823,28 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
 
       const limitNum = Math.min(parseInt(limit, 10) || 50, 100);
 
-      let query = db.sql`
-        SELECT al.*, u.username as actor_username
-        FROM audit_log al
-        LEFT JOIN users u ON u.id = al.user_id
-        WHERE al.server_id = ${server.id}
-      `;
+      // Build WHERE conditions
+      const conditions: string[] = [`al.server_id = ${server.id}`];
+      if (action_type) {
+        conditions.push(`al.action = '${action_type.replace(/'/g, "''")}'`);
+      }
+      if (user_id) {
+        conditions.push(`al.user_id = '${user_id.replace(/'/g, "''")}'`);
+      }
+      if (before) {
+        conditions.push(`al.created_at < '${before.replace(/'/g, "''")}'`);
+      }
 
-      // Build conditions (simplified - full implementation would use query builder)
+      const whereClause = conditions.join(' AND ');
+
       const entries = await db.sql`
-        SELECT al.*, u.username as actor_username
+        SELECT 
+          al.*,
+          u.username as actor_username,
+          u.avatar_url as actor_avatar_url
         FROM audit_log al
         LEFT JOIN users u ON u.id = al.user_id
-        WHERE al.server_id = ${server.id}
+        WHERE ${db.sql.raw(whereClause)}
         ORDER BY al.created_at DESC
         LIMIT ${limitNum}
       `;
@@ -740,9 +852,15 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
       return {
         entries: entries.map((e: any) => ({
           id: e.id,
-          action_type: e.action,
-          user: e.user_id ? { id: e.user_id, username: e.actor_username } : null,
-          target: { type: e.target_type, id: e.target_id },
+          action: e.action,  // Changed from action_type to action
+          user: e.user_id ? {
+            id: e.user_id,
+            username: e.actor_username,
+            avatar_url: e.actor_avatar_url || null  // Include avatar
+          } : null,
+          target_type: e.target_type,  // Flat structure instead of nested
+          target_id: e.target_id,
+          target_name: e.target_name || null,  // Include target name if available
           changes: e.changes,
           reason: e.reason,
           created_at: e.created_at,
@@ -832,6 +950,162 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
           position: cat.position,
         })),
       };
+    },
+  });
+
+  // ============================================================
+  // CATEGORIES - Standalone endpoints
+  // ============================================================
+
+  // List all categories
+  fastify.get('/categories', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) return [];
+
+      const categories = await db.sql`
+        SELECT id, name, position
+        FROM categories
+        WHERE server_id = ${server.id}
+        ORDER BY position ASC
+      `;
+
+      return categories;
+    },
+  });
+
+  // Create category
+  fastify.post('/categories', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) return notFound(reply, 'Server');
+
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_CHANNELS)) {
+        return forbidden(reply, 'Missing MANAGE_CHANNELS permission');
+      }
+
+      const { name } = request.body as { name: string };
+      if (!name || name.length < 1 || name.length > 100) {
+        return badRequest(reply, 'Category name must be 1-100 characters');
+      }
+
+      // Get max position
+      const [maxPos] = await db.sql`
+        SELECT COALESCE(MAX(position), -1) + 1 as next_position
+        FROM categories
+        WHERE server_id = ${server.id}
+      `;
+
+      const [category] = await db.sql`
+        INSERT INTO categories (server_id, name, position)
+        VALUES (${server.id}, ${name}, ${maxPos.next_position})
+        RETURNING *
+      `;
+
+      // Audit log
+      await db.sql`
+        INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
+        VALUES (${server.id}, ${request.user!.id}, 'category_create', 'category', ${category.id}, 
+          ${JSON.stringify({ name })})
+      `;
+
+      fastify.io?.to(`server:${server.id}`).emit('category.create', category);
+      return category;
+    },
+  });
+
+  // Update category
+  fastify.patch('/categories/:categoryId', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) return notFound(reply, 'Server');
+      const { categoryId } = request.params as { categoryId: string };
+
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_CHANNELS)) {
+        return forbidden(reply, 'Missing MANAGE_CHANNELS permission');
+      }
+
+      const [category] = await db.sql`
+        SELECT * FROM categories 
+        WHERE id = ${categoryId} AND server_id = ${server.id}
+      `;
+      if (!category) return notFound(reply, 'Category');
+
+      const { name, position } = request.body as { name?: string; position?: number };
+      const updates: Record<string, any> = {};
+
+      if (name !== undefined) {
+        if (name.length < 1 || name.length > 100) {
+          return badRequest(reply, 'Category name must be 1-100 characters');
+        }
+        updates.name = name;
+      }
+      if (position !== undefined) updates.position = position;
+
+      if (Object.keys(updates).length === 0) {
+        return badRequest(reply, 'No updates provided');
+      }
+
+      await db.sql`UPDATE categories SET ${db.sql(updates)} WHERE id = ${categoryId}`;
+
+      const [updated] = await db.sql`SELECT * FROM categories WHERE id = ${categoryId}`;
+
+      // Audit log
+      await db.sql`
+        INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
+        VALUES (${server.id}, ${request.user!.id}, 'category_update', 'category', ${categoryId}, 
+          ${JSON.stringify(updates)})
+      `;
+
+      fastify.io?.to(`server:${server.id}`).emit('category.update', updated);
+      return updated;
+    },
+  });
+
+  // Delete category
+  fastify.delete('/categories/:categoryId', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) return notFound(reply, 'Server');
+      const { categoryId } = request.params as { categoryId: string };
+
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_CHANNELS)) {
+        return forbidden(reply, 'Missing MANAGE_CHANNELS permission');
+      }
+
+      const [category] = await db.sql`
+        SELECT * FROM categories 
+        WHERE id = ${categoryId} AND server_id = ${server.id}
+      `;
+      if (!category) return notFound(reply, 'Category');
+
+      // Check if category has channels
+      const channels = await db.sql`
+        SELECT COUNT(*) as count FROM channels 
+        WHERE category_id = ${categoryId}
+      `;
+
+      if (channels[0].count > 0) {
+        return badRequest(reply, 'Cannot delete category with channels. Move or delete channels first.');
+      }
+
+      await db.sql`DELETE FROM categories WHERE id = ${categoryId}`;
+
+      // Audit log
+      await db.sql`
+        INSERT INTO audit_log (server_id, user_id, action, target_type, target_id)
+        VALUES (${server.id}, ${request.user!.id}, 'category_delete', 'category', ${categoryId})
+      `;
+
+      fastify.io?.to(`server:${server.id}`).emit('category.delete', { id: categoryId });
+      return { message: 'Category deleted' };
     },
   });
 };

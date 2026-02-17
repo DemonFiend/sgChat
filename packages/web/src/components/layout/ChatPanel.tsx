@@ -1,5 +1,5 @@
 import { createSignal, For, Show, createEffect, onCleanup } from 'solid-js';
-import { Avatar, ReactionDisplay, ReactionPicker, type Reaction } from '@/components/ui';
+import { Avatar, ReactionDisplay, ReactionPicker, MessageContent, type Reaction } from '@/components/ui';
 import { GifPicker } from '@/components/ui/GifPicker';
 
 export interface MessageAuthor {
@@ -141,18 +141,18 @@ export function ChatPanel(props: ChatPanelProps) {
   const shouldShowAuthor = (message: Message, index: number) => {
     // System messages always get their own styling
     if (isSystemMessage(message)) return true;
-    
+
     if (index === 0) return true;
     const prevMessage = props.messages[index - 1];
-    
+
     // Defensive check: if either message has no author, show author header
     if (!prevMessage?.author?.id || !message?.author?.id) return true;
-    
+
     // If previous was a system message, always show author for current
     if (isSystemMessage(prevMessage)) return true;
-    
+
     if (prevMessage.author.id !== message.author.id) return true;
-    
+
     // Show author if more than 5 minutes apart
     const prevTime = new Date(prevMessage.created_at).getTime();
     const currTime = new Date(message.created_at).getTime();
@@ -177,17 +177,16 @@ export function ChatPanel(props: ChatPanelProps) {
             {props.channel!.topic}
           </span>
         </Show>
-        
+
         {/* Spacer to push toggle to the right */}
         <div class="flex-1 min-w-0" />
-        
+
         {/* Member List Toggle Button */}
         <Show when={props.onToggleMemberList}>
           <button
             onClick={props.onToggleMemberList}
-            class={`p-2 rounded hover:bg-bg-modifier-hover transition-colors ${
-              props.isMemberListOpen ? 'text-text-primary' : 'text-text-muted'
-            }`}
+            class={`p-2 rounded hover:bg-bg-modifier-hover transition-colors ${props.isMemberListOpen ? 'text-text-primary' : 'text-text-muted'
+              }`}
             title={props.isMemberListOpen ? 'Hide member list' : 'Show member list'}
           >
             <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -259,7 +258,7 @@ export function ChatPanel(props: ChatPanelProps) {
                 <span class="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style={{ "animation-delay": "300ms" }} />
               </div>
               <span>
-                {props.typingUsers!.length === 1 
+                {props.typingUsers!.length === 1
                   ? `${props.typingUsers![0].username} is typing...`
                   : props.typingUsers!.length === 2
                     ? `${props.typingUsers![0].username} and ${props.typingUsers![1].username} are typing...`
@@ -352,10 +351,10 @@ interface MessageItemProps {
 function MessageItem(props: MessageItemProps) {
   const [showReactionPicker, setShowReactionPicker] = createSignal(false);
   const [actionMenuAnchor, setActionMenuAnchor] = createSignal<HTMLElement | null>(null);
-  
+
   // Check if this is a system message
   const isSystem = () => props.message.type === 'system' || props.message.system_event != null;
-  
+
   // Get system event icon based on type
   const getSystemIcon = () => {
     const eventType = props.message.system_event?.type;
@@ -379,7 +378,7 @@ function MessageItem(props: MessageItemProps) {
       </svg>
     );
   };
-  
+
   // Safely get author with fallback
   const author = () => props.message.author || { id: 'unknown', username: 'Unknown User', display_name: null, avatar_url: null };
   const displayName = () => author().display_name || author().username;
@@ -406,7 +405,7 @@ function MessageItem(props: MessageItemProps) {
         <div class="flex-shrink-0 w-10 h-10 rounded-full bg-bg-tertiary flex items-center justify-center">
           {getSystemIcon()}
         </div>
-        
+
         {/* Content */}
         <div class="flex-1 min-w-0">
           <div class="flex items-baseline gap-2">
@@ -442,7 +441,7 @@ function MessageItem(props: MessageItemProps) {
           {/* Content */}
           <div class="flex-1 min-w-0">
             <div class="flex items-baseline gap-2">
-              <span 
+              <span
                 class="font-medium hover:underline cursor-pointer"
                 style={{ color: author().role_color || 'var(--color-text-primary)' }}
               >
@@ -452,16 +451,16 @@ function MessageItem(props: MessageItemProps) {
                 {props.formatTime(props.message.created_at)}
               </span>
             </div>
-            <p class="text-text-primary break-words whitespace-pre-wrap">
-              {props.message.content}
-            </p>
-            
-            {/* Reactions */}
-            <ReactionDisplay
-              reactions={props.message.reactions || []}
-              onReactionClick={handleReactionClick}
-              onAddReaction={() => setShowReactionPicker(true)}
-            />
+            <div class="text-text-primary">
+              <MessageContent content={props.message.content} />
+            </div>
+
+            {/* Reactions */
+              <ReactionDisplay
+                reactions={props.message.reactions || []}
+                onReactionClick={handleReactionClick}
+                onAddReaction={() => setShowReactionPicker(true)}
+              />
           </div>
         </div>
 
@@ -508,16 +507,16 @@ function MessageItem(props: MessageItemProps) {
       </span>
       <div class="w-10 flex-shrink-0" /> {/* Spacer to align with avatar messages */}
       <div class="flex-1 pl-4">
-        <p class="text-text-primary break-words whitespace-pre-wrap">
-          {props.message.content}
-        </p>
-        
-        {/* Reactions */}
-        <ReactionDisplay
-          reactions={props.message.reactions || []}
-          onReactionClick={handleReactionClick}
-          onAddReaction={() => setShowReactionPicker(true)}
-        />
+        <div class="text-text-primary">
+          <MessageContent content={props.message.content} />
+        </div>
+
+        {/* Reactions */
+          <ReactionDisplay
+            reactions={props.message.reactions || []}
+            onReactionClick={handleReactionClick}
+            onAddReaction={() => setShowReactionPicker(true)}
+          />
       </div>
 
       {/* Hover Action Buttons */}

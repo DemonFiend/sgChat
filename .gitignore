@@ -59,6 +59,7 @@ markdown/
 AGENTS.md
 .beads/
 beads/
+features/
 .cursor/
 .cursor/rules
 .claude/

@@ -186,30 +186,29 @@ export function MainLayout() {
 
   onMount(fetchServerData);
 
-  // Server welcome popup integration - show on authentication when user navigates to DM page
+  // Server welcome popup integration - show on authentication (any page)
   createEffect(() => {
     const server = currentServer();
     const user = authStore.state().user;
     const isAuthenticated = authStore.state().isAuthenticated;
-    const onDMPage = isDMRoute();
 
     console.log('[MainLayout] Popup trigger check:', {
       isAuthenticated,
       hasUser: !!user,
       hasServer: !!server,
-      onDMPage,
       path: location.pathname
     });
 
-    // Only show popup when authenticated, on DM route
-    if (!isAuthenticated || !user || !server || !onDMPage) {
+    // Show popup when authenticated (on any page, not just DM route)
+    // The 24-hour check is handled inside serverPopupStore.showPopup()
+    if (!isAuthenticated || !user || !server) {
       return;
     }
 
     // Debounce to handle rapid navigation changes (500ms)
     const debounceTimer = setTimeout(() => {
       console.log('[MainLayout] Attempting to show popup for server:', server.id);
-      // Check if popup should be shown (will check localStorage internally)
+      // Check if popup should be shown (will check 24h timestamp internally)
       serverPopupStore.showPopup(server.id);
     }, 500);
 

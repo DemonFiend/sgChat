@@ -1,5 +1,5 @@
 import { createSignal, For, Show, createEffect, onCleanup, JSX } from 'solid-js';
-import { Avatar } from '@/components/ui';
+import { Avatar, MessageContent } from '@/components/ui';
 import { BendyLine } from '@/components/ui/BendyLine';
 import { GifPicker } from '@/components/ui/GifPicker';
 import type { Friend } from './DMSidebar';
@@ -43,7 +43,7 @@ export function DMChatPanel(props: DMChatPanelProps): JSX.Element {
     if (friend?.timezone_public && friend?.timezone) {
       try {
         const now = new Date();
-        
+
         if (friend.timezone_dst_enabled !== false) {
           // DST enabled (default) - use current time with automatic DST adjustment
           const time = now.toLocaleTimeString('en-US', {
@@ -60,11 +60,11 @@ export function DMChatPanel(props: DMChatPanelProps): JSX.Element {
           const janInTz = new Date(jan.toLocaleString('en-US', { timeZone: friend.timezone }));
           const janLocal = new Date(jan.toLocaleString('en-US', { timeZone: 'UTC' }));
           const standardOffset = janInTz.getTime() - janLocal.getTime();
-          
+
           // Apply standard offset to current UTC time
           const utcNow = now.getTime() + (now.getTimezoneOffset() * 60000);
           const standardTime = new Date(utcNow + standardOffset);
-          
+
           const time = standardTime.toLocaleTimeString('en-US', {
             hour: '2-digit',
             minute: '2-digit',
@@ -87,10 +87,10 @@ export function DMChatPanel(props: DMChatPanelProps): JSX.Element {
       clearInterval(timeUpdateInterval);
       timeUpdateInterval = null;
     }
-    
+
     // Update immediately
     updateFriendTime();
-    
+
     // Update every minute
     if (props.friend?.timezone_public && props.friend?.timezone) {
       timeUpdateInterval = setInterval(updateFriendTime, 60000);
@@ -211,7 +211,7 @@ export function DMChatPanel(props: DMChatPanelProps): JSX.Element {
 
               {/* Friend's Local Time */}
               <div class="relative">
-                <div 
+                <div
                   class="flex items-center gap-1 px-2 py-1 bg-bg-tertiary rounded-md cursor-default"
                   onMouseEnter={() => setShowTimeTooltip(true)}
                   onMouseLeave={() => setShowTimeTooltip(false)}
@@ -298,12 +298,11 @@ export function DMChatPanel(props: DMChatPanelProps): JSX.Element {
                     </Show>
 
                     <div class={`max-w-[70%] ${isMe ? 'order-1' : ''}`}>
-                      <div class={`rounded-2xl px-4 py-2 ${
-                        isMe 
-                          ? 'bg-brand-primary text-white rounded-br-md' 
+                      <div class={`rounded-2xl px-4 py-2 ${isMe
+                          ? 'bg-brand-primary text-white rounded-br-md'
                           : 'bg-bg-tertiary text-text-primary rounded-bl-md'
-                      }`}>
-                        <p class="break-words whitespace-pre-wrap">{message.content}</p>
+                        }`}>
+                        <MessageContent content={message.content} isOwnMessage={isMe} />
                       </div>
                       <div class={`text-[10px] mt-1 text-text-muted ${isMe ? 'text-right' : 'text-left'}`}>
                         {formatTime(message.created_at)}
@@ -330,7 +329,7 @@ export function DMChatPanel(props: DMChatPanelProps): JSX.Element {
           {/* Bottom Section with Bendy Line and Actions */}
           <div class="relative">
             <BendyLine variant="horizontal" direction="up" class="absolute top-0 left-0 right-0 -translate-y-1/2" />
-            
+
             {/* Typing Indicator */}
             <Show when={props.isTyping}>
               <div class="flex items-center gap-2 text-xs text-text-muted px-4 pt-2">

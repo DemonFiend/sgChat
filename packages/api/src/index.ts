@@ -197,8 +197,8 @@ async function start() {
   await fastify.register(dmRoutes, { prefix: '/dms' });
   await fastify.register(friendRoutes, { prefix: '/friends' });
   await fastify.register(voiceRoutes, { prefix: '/voice' });
-  await fastify.register(gerverPopupConfigRoutes, { prefix: '/server/popup-config' });
-  await fastify.register(slobalServerRoutes, { prefix: '/server' });
+  await fastify.register(serverPopupConfigRoutes, { prefix: '/server/popup-config' });
+  await fastify.register(globalServerRoutes, { prefix: '/server' });
   await fastify.register(standaloneRoutes);
   await fastify.register(categoryRoutes);
   await fastify.register(uploadRoutes);

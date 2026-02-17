@@ -51,24 +51,24 @@ export function ServerSidebar(props: ServerSidebarProps) {
   const organizedChannels = () => {
     const categorized = new Map<string | null, Channel[]>();
     const sortedCategories = [...props.categories].sort((a, b) => a.position - b.position);
-    
+
     // Initialize categories
     categorized.set(null, []); // Uncategorized
     for (const cat of sortedCategories) {
       categorized.set(cat.id, []);
     }
-    
+
     // Group channels
     for (const channel of props.channels) {
       const list = categorized.get(channel.category_id) || categorized.get(null)!;
       list.push(channel);
     }
-    
+
     // Sort channels within each category
     for (const list of categorized.values()) {
       list.sort((a, b) => a.position - b.position);
     }
-    
+
     return { categorized, sortedCategories };
   };
 
@@ -173,7 +173,7 @@ export function ServerSidebar(props: ServerSidebarProps) {
 
       {/* Channel List - Scrollable */}
       <div class="flex-1 overflow-y-auto scrollbar-thin">
-        <Show 
+        <Show
           when={useCategoryView()}
           fallback={
             <>
@@ -369,7 +369,7 @@ function ChannelItem(props: ChannelItemProps) {
         >
           {props.icon}
           <span class="truncate flex-1">{props.channel.name}</span>
-          
+
           {/* Participant count badge */}
           <Show when={participantCount() > 0}>
             <span class="text-xs text-text-muted">
@@ -390,7 +390,7 @@ function ChannelItem(props: ChannelItemProps) {
       </div>
     );
   }
-  
+
   // Text channels use navigation
   return (
     <A
@@ -408,17 +408,17 @@ function ChannelItem(props: ChannelItemProps) {
       <Show when={hasUnread() && !props.isActive}>
         <span class="absolute -left-1 w-1 h-2 bg-text-primary rounded-r" />
       </Show>
-      
+
       {props.icon}
       <span class="truncate flex-1">{props.channel.name}</span>
-      
+
       {/* Unread count badge */}
       <Show when={hasUnread() && !props.isActive}>
-        <span 
+        <span
           class={clsx(
             "inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-xs font-bold",
-            props.channel.has_mentions 
-              ? "bg-danger text-white" 
+            props.channel.has_mentions
+              ? "bg-danger text-white"
               : "bg-text-muted text-bg-primary"
           )}
         >

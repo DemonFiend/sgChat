@@ -1,5 +1,5 @@
 import { createSignal, For, Show } from 'solid-js';
-import { Avatar } from '@/components/ui';
+import { Avatar, MessageContent } from '@/components/ui';
 
 interface User {
   id: string;
@@ -63,7 +63,7 @@ export function DMModal(props: DMModalProps) {
   const filteredUsers = () => {
     const query = searchQuery().toLowerCase();
     if (!query) return props.users;
-    return props.users.filter(user => 
+    return props.users.filter(user =>
       user.username.toLowerCase().includes(query) ||
       (user.display_name?.toLowerCase().includes(query))
     );
@@ -92,11 +92,11 @@ export function DMModal(props: DMModalProps) {
   return (
     <div class="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
-      <div 
+      <div
         class="absolute inset-0 bg-black/60 backdrop-blur-sm"
         onClick={handleClose}
       />
-      
+
       {/* Modal */}
       <div class="relative bg-bg-primary rounded-xl shadow-2xl border border-bg-tertiary w-full max-w-4xl h-[600px] mx-4 flex overflow-hidden">
         {/* Left Panel - User List */}
@@ -116,10 +116,10 @@ export function DMModal(props: DMModalProps) {
             </div>
             {/* Search */}
             <div class="relative">
-              <svg 
-                class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" 
-                fill="none" 
-                viewBox="0 0 24 24" 
+              <svg
+                class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted"
+                fill="none"
+                viewBox="0 0 24 24"
                 stroke="currentColor"
               >
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -142,9 +142,8 @@ export function DMModal(props: DMModalProps) {
                 return (
                   <button
                     onClick={() => setSelectedUser(user)}
-                    class={`w-full p-3 flex items-center gap-3 hover:bg-bg-modifier-hover transition-colors ${
-                      selectedUser()?.id === user.id ? 'bg-bg-modifier-selected' : ''
-                    }`}
+                    class={`w-full p-3 flex items-center gap-3 hover:bg-bg-modifier-hover transition-colors ${selectedUser()?.id === user.id ? 'bg-bg-modifier-selected' : ''
+                      }`}
                   >
                     <div class="relative flex-shrink-0">
                       <Avatar
@@ -237,12 +236,11 @@ export function DMModal(props: DMModalProps) {
                     const isMe = message.sender_id === props.currentUserId;
                     return (
                       <div class={`flex mb-3 ${isMe ? 'justify-end' : 'justify-start'}`}>
-                        <div class={`max-w-[70%] rounded-2xl px-4 py-2 ${
-                          isMe 
-                            ? 'bg-brand-primary text-white rounded-br-md' 
+                        <div class={`max-w-[70%] rounded-2xl px-4 py-2 ${isMe
+                            ? 'bg-brand-primary text-white rounded-br-md'
                             : 'bg-bg-tertiary text-text-primary rounded-bl-md'
-                        }`}>
-                          <p class="break-words">{message.content}</p>
+                          }`}>
+                          <MessageContent content={message.content} compact={true} />
                           <div class={`text-[10px] mt-1 ${isMe ? 'text-white/70' : 'text-text-muted'}`}>
                             {formatTime(message.created_at)}
                           </div>
@@ -252,7 +250,7 @@ export function DMModal(props: DMModalProps) {
                   }}
                 </For>
               </Show>
-              
+
               <Show when={!getConversation(selectedUser()!) || getConversation(selectedUser()!)?.messages.length === 0}>
                 <div class="flex flex-col items-center justify-center h-full text-center">
                   <Avatar
