@@ -20,7 +20,7 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
     },
     handler: async (request, reply) => {
       const { channel_id } = request.query as { channel_id: string };
-      
+
       if (!channel_id) {
         return badRequest(reply, 'channel_id is required');
       }
@@ -30,24 +30,28 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
         return notFound(reply, 'Voice channel');
       }
 
-      if (channel.type !== 'voice') {
-        return badRequest(reply, 'Not a voice channel');
+      if (channel.type !== 'voice' && channel.type !== 'music') {
+        return badRequest(reply, 'Not a voice or music channel');
       }
 
       // Check permissions
       const perms = await calculatePermissions(request.user!.id, channel.server_id, channel_id);
-      
+
       if (!hasPermission(perms.voice, VoicePermissions.CONNECT)) {
         return forbidden(reply, 'You don\'t have permission to join this voice channel');
       }
 
       const roomName = `voice:${channel_id}`;
 
+      // For music/stage channels, default to listener mode unless user has SPEAK permission
+      const isStageChannel = channel.type === 'music';
+      const canSpeak = hasPermission(perms.voice, VoicePermissions.SPEAK);
+
       // Generate LiveKit token with appropriate grants
       const token = await generateLiveKitToken({
         identity: request.user!.id,
         room: roomName,
-        canPublish: hasPermission(perms.voice, VoicePermissions.SPEAK),
+        canPublish: isStageChannel ? canSpeak : hasPermission(perms.voice, VoicePermissions.SPEAK),
         canPublishVideo: hasPermission(perms.voice, VoicePermissions.VIDEO),
         canPublishScreen: hasPermission(perms.voice, VoicePermissions.STREAM),
         canSubscribe: true,
@@ -94,19 +98,19 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
     },
     handler: async (request, reply) => {
       const { channelId } = request.params as { channelId: string };
-      
+
       const channel = await db.channels.findById(channelId);
       if (!channel) {
         return notFound(reply, 'Channel');
       }
 
-      if (channel.type !== 'voice') {
-        return badRequest(reply, 'Not a voice channel');
+      if (channel.type !== 'voice' && channel.type !== 'music') {
+        return badRequest(reply, 'Not a voice or music channel');
       }
 
       // Check permissions
       const perms = await calculatePermissions(request.user!.id, channel.server_id, channelId);
-      
+
       if (!hasPermission(perms.voice, VoicePermissions.CONNECT)) {
         return forbidden(reply, 'Missing CONNECT permission');
       }
@@ -120,11 +124,15 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
         }
       }
 
+      // For music/stage channels, default to listener mode unless user has SPEAK permission
+      const isStageChannel = channel.type === 'music';
+      const canSpeak = hasPermission(perms.voice, VoicePermissions.SPEAK);
+
       // Generate LiveKit token with appropriate grants
       const token = await generateLiveKitToken({
         identity: request.user!.id,
         room: `voice:${channelId}`,
-        canPublish: hasPermission(perms.voice, VoicePermissions.SPEAK),
+        canPublish: isStageChannel ? canSpeak : hasPermission(perms.voice, VoicePermissions.SPEAK),
         canPublishVideo: hasPermission(perms.voice, VoicePermissions.VIDEO),
         canPublishScreen: hasPermission(perms.voice, VoicePermissions.STREAM),
         canSubscribe: true, // Can always listen
@@ -182,7 +190,7 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
     },
     handler: async (request, reply) => {
       const { server_id } = request.body as { server_id: string };
-      
+
       const server = await db.servers.findById(server_id);
       if (!server) {
         return notFound(reply, 'Server');
@@ -230,7 +238,7 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
         return notFound(reply, 'Source channel');
       }
       const perms = await calculatePermissions(request.user!.id, fromChannel.server_id);
-      
+
       if (!hasPermission(perms.voice, VoicePermissions.MOVE_MEMBERS)) {
         return forbidden(reply, 'Missing MOVE_MEMBERS permission');
       }
@@ -271,7 +279,7 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
         return notFound(reply, 'Channel');
       }
       const perms = await calculatePermissions(request.user!.id, channel.server_id);
-      
+
       if (!hasPermission(perms.voice, VoicePermissions.DISCONNECT_MEMBERS)) {
         return forbidden(reply, 'Missing DISCONNECT_MEMBERS permission');
       }

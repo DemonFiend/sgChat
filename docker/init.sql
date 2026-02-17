@@ -89,7 +89,7 @@ CREATE TABLE channels (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   server_id UUID NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
   name TEXT NOT NULL CHECK (length(name) >= 1 AND length(name) <= 100),
-  type TEXT NOT NULL CHECK (type IN ('text', 'voice')),
+  type TEXT NOT NULL CHECK (type IN ('text', 'voice', 'announcement', 'music')),
   topic TEXT CHECK (length(topic) <= 1024),
   position INTEGER DEFAULT 0,
   

@@ -46,7 +46,7 @@ export const channelNameSchema = z
 
 export const createChannelSchema = z.object({
   name: channelNameSchema,
-  type: z.enum(['text', 'voice']),
+  type: z.enum(['text', 'voice', 'announcement', 'music']),
   topic: z.string().max(1024).optional(),
   bitrate: z.number().min(8000).max(384000).optional(),
   user_limit: z.number().min(0).max(99).optional(),

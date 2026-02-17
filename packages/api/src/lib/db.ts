@@ -154,6 +154,14 @@ export const db = {
         UPDATE channels SET bitrate = ${bitrate} WHERE id = ${id}
       `;
     },
+    async findAfkChannel(serverId: string) {
+      const [channel] = await sql`
+        SELECT * FROM channels 
+        WHERE server_id = ${serverId} AND is_afk_channel = true
+        LIMIT 1
+      `;
+      return channel;
+    },
   },
 
   // Messages
@@ -243,7 +251,7 @@ export const db = {
       const updates: any = {};
       if (data.content !== undefined) updates.content = data.content;
       if (data.edited_at) updates.edited_at = data.edited_at;
-      
+
       const [message] = await sql`
         UPDATE messages 
         SET ${sql(updates)}
@@ -788,7 +796,7 @@ export const db = {
   async end() {
     await sql.end();
   },
-  
+
   // Expose sql for direct queries
   sql,
 };

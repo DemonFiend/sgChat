@@ -7,7 +7,7 @@ export type UserStatus = 'online' | 'idle' | 'dnd' | 'offline';
 export type MessageStatus = 'sending' | 'sent' | 'received' | 'failed';
 
 // Channel types
-export type ChannelType = 'text' | 'voice';
+export type ChannelType = 'text' | 'voice' | 'announcement' | 'music';
 
 // System event types
 export type SystemEventType = 'member_join' | 'member_leave' | 'member_online';
@@ -85,9 +85,18 @@ export interface Channel {
   type: ChannelType;
   topic: string | null;
   position: number;
-  bitrate: number; // Voice only
-  user_limit: number; // Voice only
+  bitrate: number; // Voice/Music only
+  user_limit: number; // Voice/Music only
   is_afk_channel: boolean;
+  category_id: UUID | null;
+  created_at: Date;
+}
+
+export interface Category {
+  id: UUID;
+  server_id: UUID;
+  name: string;
+  position: number;
   created_at: Date;
 }
 

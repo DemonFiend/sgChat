@@ -95,7 +95,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
     onRequest: [authenticate],
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
-      
+
       const member = await db.members.findByUserAndServer(request.user!.id, id);
       if (!member) {
         return forbidden(reply, 'You are not a member of this server');
@@ -114,7 +114,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
     onRequest: [authenticate],
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
-      
+
       const member = await db.members.findByUserAndServer(request.user!.id, id);
       if (!member) {
         return forbidden(reply, 'You are not a member of this server');
@@ -131,10 +131,18 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
       const body = createChannelSchema.parse(request.body);
-      
+
       const perms = await calculatePermissions(request.user!.id, id);
       if (!hasPermission(perms.server, ServerPermissions.MANAGE_CHANNELS)) {
         return forbidden(reply, 'Missing MANAGE_CHANNELS permission');
+      }
+
+      // Validate AFK channel limit (only 1 per server)
+      if (body.is_afk_channel) {
+        const existingAfk = await db.channels.findAfkChannel(id);
+        if (existingAfk) {
+          return badRequest(reply, 'Server already has an AFK channel');
+        }
       }
 
       const channel = await db.channels.create({
@@ -165,7 +173,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
     onRequest: [authenticate],
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
-      
+
       const member = await db.members.findByUserAndServer(request.user!.id, id);
       if (!member) {
         return forbidden(reply, 'You are not a member of this server');
@@ -181,7 +189,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
     onRequest: [authenticate],
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
-      
+
       const member = await db.members.findByUserAndServer(request.user!.id, id);
       if (!member) {
         return forbidden(reply, 'You are not a member of this server');
@@ -198,7 +206,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
       const { template } = request.body as { template: keyof typeof RoleTemplates };
-      
+
       const perms = await calculatePermissions(request.user!.id, id);
       if (!hasPermission(perms.server, ServerPermissions.MANAGE_ROLES)) {
         return forbidden(reply, 'Missing MANAGE_ROLES permission');
@@ -214,7 +222,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
     onRequest: [authenticate],
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
-      
+
       const perms = await calculatePermissions(request.user!.id, id);
       if (!hasPermission(perms.server, ServerPermissions.MANAGE_SERVER)) {
         return forbidden(reply, 'Missing MANAGE_SERVER permission');
@@ -231,7 +239,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
       const body = createInviteSchema.parse(request.body);
-      
+
       const perms = await calculatePermissions(request.user!.id, id);
       if (!hasPermission(perms.server, ServerPermissions.CREATE_INVITES)) {
         return forbidden(reply, 'Missing CREATE_INVITES permission');
@@ -255,7 +263,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
     onRequest: [authenticate],
     handler: async (request, reply) => {
       const { code } = request.params as { code: string };
-      
+
       const invite = await db.invites.findByCode(code);
       if (!invite) {
         return notFound(reply, 'Invite');
@@ -288,11 +296,11 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
       const server = await db.servers.findById(id);
-      
+
       if (!server) {
         return notFound(reply, 'Server');
       }
-      
+
       if (server.owner_id === request.user!.id) {
         return badRequest(reply, 'Server owner cannot leave. Transfer ownership or delete the server.');
       }
@@ -527,11 +535,11 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Broadcast role assignment
-      fastify.io?.to(`server:${id}`).emit('member.role.add', { 
-        user_id: userId, 
-        server_id: id, 
+      fastify.io?.to(`server:${id}`).emit('member.role.add', {
+        user_id: userId,
+        server_id: id,
         role_id: roleId,
-        role_name: role.name 
+        role_name: role.name
       });
 
       return { message: 'Role assigned' };
@@ -568,10 +576,10 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Broadcast role removal
-      fastify.io?.to(`server:${id}`).emit('member.role.remove', { 
-        user_id: userId, 
-        server_id: id, 
-        role_id: roleId 
+      fastify.io?.to(`server:${id}`).emit('member.role.remove', {
+        user_id: userId,
+        server_id: id,
+        role_id: roleId
       });
 
       return { message: 'Role removed' };
@@ -623,10 +631,10 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Notify kicked user
-      fastify.io?.to(`user:${userId}`).emit('server.kicked', { 
-        server_id: id, 
+      fastify.io?.to(`user:${userId}`).emit('server.kicked', {
+        server_id: id,
         server_name: server.name,
-        reason: body.reason 
+        reason: body.reason
       });
 
       return { message: 'Member kicked' };
@@ -687,10 +695,10 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Notify banned user
-      fastify.io?.to(`user:${userId}`).emit('server.banned', { 
-        server_id: id, 
+      fastify.io?.to(`user:${userId}`).emit('server.banned', {
+        server_id: id,
         server_name: server.name,
-        reason: body.reason 
+        reason: body.reason
       });
 
       return { message: 'Member banned' };

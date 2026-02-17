@@ -7,14 +7,14 @@ import { createNotification } from './notifications.js';
 import { ServerPermissions, TextPermissions, hasPermission, sendMessageSchema } from '@sgchat/shared';
 import { notFound, forbidden, badRequest } from '../utils/errors.js';
 import { z } from 'zod';
-import { 
-  getChannelStorageStats, 
+import {
+  getChannelStorageStats,
   getSegmentsForChannel,
   getOrCreateSegment,
   onMessageCreated,
 } from '../services/segmentation.js';
-import { 
-  getEffectiveChannelRetention, 
+import {
+  getEffectiveChannelRetention,
   applyRetentionPolicy,
   applySizeLimitPolicy,
 } from '../services/trimming.js';
@@ -60,7 +60,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       if (!UUID_REGEX.test(id)) {
         return badRequest(reply, 'Invalid channel ID');
       }
-      
+
       const canAccess = await canAccessChannel(request.user!.id, id);
       if (!canAccess) {
         return forbidden(reply, 'Cannot access this channel');
@@ -85,7 +85,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       if (!UUID_REGEX.test(id)) {
         return badRequest(reply, 'Invalid channel ID');
       }
-      
+
       const canAccess = await canAccessChannel(currentUserId, id);
       if (!canAccess) {
         return forbidden(reply, 'Cannot access this channel');
@@ -96,7 +96,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
         return notFound(reply, 'Channel');
       }
       const perms = await calculatePermissions(currentUserId, channel.server_id, id);
-      
+
       if (!hasPermission(perms.text, TextPermissions.READ_MESSAGE_HISTORY)) {
         return forbidden(reply, 'Missing READ_MESSAGE_HISTORY permission');
       }
@@ -104,10 +104,10 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       // Get messages with full author info (include display_name)
       const maxLimit = Math.min(parseInt(limit || '50') || 50, 100);
       let messages;
-      
+
       // Subquery to get the highest-positioned role color for a user in this server
       const serverId = channel.server_id;
-      
+
       if (before) {
         messages = await db.sql`
           SELECT 
@@ -172,7 +172,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       // Get reactions for all messages
       const messageIds = messages.map((m: any) => m.id);
       let reactionsMap: Map<string, any[]> = new Map();
-      
+
       if (messageIds.length > 0) {
         const reactions = await db.sql`
           SELECT 
@@ -221,7 +221,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
         reactions: reactionsMap.get(m.id) || [],
         system_event: m.system_event || null,
       }));
-      
+
       return formattedMessages;
     },
   });
@@ -245,16 +245,24 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
           return cached.result;
         }
       }
-      
+
       const channel = await db.channels.findById(id);
       if (!channel) {
         return notFound(reply, 'Channel');
       }
 
       const perms = await calculatePermissions(request.user!.id, channel.server_id, id);
-      
-      if (!hasPermission(perms.text, TextPermissions.SEND_MESSAGES)) {
-        return forbidden(reply, 'Missing SEND_MESSAGES permission');
+
+      // For announcement channels, only users with Administrator permission can post
+      if (channel.type === 'announcement') {
+        if (!hasPermission(perms.server, ServerPermissions.ADMINISTRATOR)) {
+          return forbidden(reply, 'Only administrators can post in announcement channels');
+        }
+      } else {
+        // For regular channels, check SEND_MESSAGES permission
+        if (!hasPermission(perms.text, TextPermissions.SEND_MESSAGES)) {
+          return forbidden(reply, 'Missing SEND_MESSAGES permission');
+        }
       }
 
       const message = await db.messages.create({
@@ -393,7 +401,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
       const { bitrate } = request.body as { bitrate: number };
-      
+
       const channel = await db.channels.findById(id);
       if (!channel) {
         return notFound(reply, 'Channel');
@@ -439,7 +447,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       if (body.name !== undefined) updates.name = body.name;
       if ('topic' in body) updates.topic = body.topic;
       if (body.position !== undefined) updates.position = body.position;
-      
+
       // Voice channel specific
       if (channel.type === 'voice') {
         if (body.bitrate !== undefined) updates.bitrate = body.bitrate;
@@ -557,7 +565,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
     handler: async (request, reply) => {
       const { id } = request.params;
       const { message_id } = (request.body as { message_id?: string }) || {};
-      
+
       const canAccess = await canAccessChannel(request.user!.id, id);
       if (!canAccess) {
         return forbidden(reply, 'Cannot access this channel');
@@ -601,7 +609,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
     onRequest: [authenticate],
     handler: async (request, reply) => {
       const { id } = request.params;
-      
+
       const canAccess = await canAccessChannel(request.user!.id, id);
       if (!canAccess) {
         return forbidden(reply, 'Cannot access this channel');
@@ -646,7 +654,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
     onRequest: [authenticate],
     handler: async (request, reply) => {
       const { id } = request.params;
-      
+
       const channel = await db.channels.findById(id);
       if (!channel) {
         return notFound(reply, 'Channel');
@@ -673,7 +681,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       const participants = await Promise.all(participantIds.map(async (userId) => {
         const user = await db.users.findById(userId);
         const voiceState = await redis.getVoiceState(id, userId);
-        
+
         return {
           user_id: userId,
           username: user?.username || 'Unknown',
@@ -700,7 +708,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
     onRequest: [authenticate],
     handler: async (request, reply) => {
       const { id } = request.params;
-      
+
       const channel = await db.channels.findById(id);
       if (!channel) {
         return notFound(reply, 'Channel');
@@ -763,7 +771,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
         voice_allow?: string;
         voice_deny?: string;
       };
-      
+
       const channel = await db.channels.findById(id);
       if (!channel) {
         return notFound(reply, 'Channel');
@@ -828,7 +836,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
         voice_allow?: string;
         voice_deny?: string;
       };
-      
+
       const channel = await db.channels.findById(id);
       if (!channel) {
         return notFound(reply, 'Channel');
@@ -885,7 +893,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
     onRequest: [authenticate],
     handler: async (request, reply) => {
       const { id, roleId } = request.params;
-      
+
       const channel = await db.channels.findById(id);
       if (!channel) {
         return notFound(reply, 'Channel');
@@ -919,7 +927,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
     onRequest: [authenticate],
     handler: async (request, reply) => {
       const { id, userId } = request.params;
-      
+
       const channel = await db.channels.findById(id);
       if (!channel) {
         return notFound(reply, 'Channel');
@@ -957,7 +965,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
     onRequest: [authenticate],
     handler: async (request, reply) => {
       const { id } = request.params;
-      
+
       const canAccess = await canAccessChannel(request.user!.id, id);
       if (!canAccess) {
         return forbidden(reply, 'Cannot access this channel');
@@ -1019,7 +1027,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
     onRequest: [authenticate],
     handler: async (request, reply) => {
       const { id, messageId } = request.params;
-      
+
       const channel = await db.channels.findById(id);
       if (!channel) {
         return notFound(reply, 'Channel');
@@ -1089,7 +1097,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
     onRequest: [authenticate],
     handler: async (request, reply) => {
       const { id, messageId } = request.params;
-      
+
       const channel = await db.channels.findById(id);
       if (!channel) {
         return notFound(reply, 'Channel');
@@ -1224,8 +1232,8 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       return {
         ...stats,
         size_limit_bytes: retention.size_limit_bytes,
-        usage_percent: retention.size_limit_bytes 
-          ? Math.round((stats.total_size_bytes / retention.size_limit_bytes) * 100) 
+        usage_percent: retention.size_limit_bytes
+          ? Math.round((stats.total_size_bytes / retention.size_limit_bytes) * 100)
           : null,
       };
     },
@@ -1343,7 +1351,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
 
       // Run retention cleanup
       const retentionResult = await applyRetentionPolicy(id, null, { dryRun: dry_run });
-      
+
       // Run size limit cleanup
       const sizeResult = await applySizeLimitPolicy(id, null, { dryRun: dry_run });
 
@@ -1352,12 +1360,12 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
         await db.sql`
           INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
           VALUES (${channel.server_id}, ${request.user!.id}, 'channel_update', 'channel', ${id}, 
-            ${JSON.stringify({ 
-              cleanup: { 
-                retention: retentionResult, 
-                size_limit: sizeResult 
-              } 
-            })})
+            ${JSON.stringify({
+          cleanup: {
+            retention: retentionResult,
+            size_limit: sizeResult
+          }
+        })})
         `;
       }
 
@@ -1405,8 +1413,8 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
         UPDATE messages SET exempt_from_trimming = ${newExemptStatus} WHERE id = ${messageId}
       `;
 
-      return { 
-        message_id: messageId, 
+      return {
+        message_id: messageId,
         exempt_from_trimming: newExemptStatus,
       };
     },
