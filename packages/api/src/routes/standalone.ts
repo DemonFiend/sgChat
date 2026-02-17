@@ -6,7 +6,7 @@
  */
 import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/auth.js';
-import { db } from '../lib/db.js';
+import { db, sql } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
 import { getDefaultServer } from './server.js';
 import { calculatePermissions } from '../services/permissions.js';
@@ -823,33 +823,29 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
 
       const limitNum = Math.min(parseInt(limit, 10) || 50, 100);
 
-      // Build WHERE conditions
-      const conditions: string[] = [`al.server_id = ${server.id}`];
+      // Build query with safe parameterized conditions using postgres array syntax
+      const conditions = [sql`al.server_id = ${server.id}`];
       if (action_type) {
-        conditions.push(`al.action = '${action_type.replace(/'/g, "''")}'`);
+        conditions.push(sql`al.action = ${action_type}`);
       }
       if (user_id) {
-        conditions.push(`al.user_id = '${user_id.replace(/'/g, "''")}'`);
+        conditions.push(sql`al.user_id = ${user_id}`);
       }
       if (before) {
-        conditions.push(`al.created_at < '${before.replace(/'/g, "''")}'`);
+        conditions.push(sql`al.created_at < ${before}`);
       }
 
-      const whereClause = conditions.join(' AND ');
-
-      const entries = await db.sql`
+      const entries = await sql`
         SELECT 
           al.*,
           u.username as actor_username,
           u.avatar_url as actor_avatar_url
         FROM audit_log al
         LEFT JOIN users u ON u.id = al.user_id
-        WHERE ${db.sql.raw(whereClause)}
+        WHERE ${sql(conditions, ' AND ')}
         ORDER BY al.created_at DESC
         LIMIT ${limitNum}
       `;
-
-      return {
         entries: entries.map((e: any) => ({
           id: e.id,
           action: e.action,  // Changed from action_type to action
