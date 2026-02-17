@@ -1203,15 +1203,15 @@ BEGIN
   IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
     -- Daily retention cleanup at 3 AM UTC
     PERFORM cron.schedule('retention-cleanup-daily', '0 3 * * *', 
-      $$SELECT * FROM run_retention_cleanup()$$);
+      $query$SELECT * FROM run_retention_cleanup()$query$);
     
     -- Hourly storage threshold check
     PERFORM cron.schedule('storage-monitor-hourly', '0 * * * *',
-      $$SELECT * FROM check_storage_thresholds()$$);
+      $query$SELECT * FROM check_storage_thresholds()$query$);
     
     -- Weekly size limit enforcement (Sunday at 4 AM UTC)
     PERFORM cron.schedule('size-limit-weekly', '0 4 * * 0',
-      $$SELECT * FROM run_size_limit_enforcement()$$);
+      $query$SELECT * FROM run_size_limit_enforcement()$query$);
     
     RAISE NOTICE 'pg_cron jobs scheduled successfully';
   ELSE
