@@ -50,6 +50,8 @@ export const createChannelSchema = z.object({
   topic: z.string().max(1024).optional(),
   bitrate: z.number().min(8000).max(384000).optional(),
   user_limit: z.number().min(0).max(99).optional(),
+  is_afk_channel: z.boolean().optional(),
+  category_id: z.string().uuid().nullable().optional(),
 });
 
 // Message validators
