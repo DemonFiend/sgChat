@@ -418,10 +418,10 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       // Track DM voice state in Redis
-      await redis.set(`dm_voice:${id}:${request.user!.id}`, JSON.stringify({
+      await redis.client.setex(`dm_voice:${id}:${request.user!.id}`, 3600, JSON.stringify({
         user_id: request.user!.id,
         joined_at: new Date().toISOString(),
-      }), 'EX', 3600); // 1 hour expiry
+      })); // 1 hour expiry
 
       // Get user info for notification
       const user = await db.users.findById(request.user!.id);
@@ -476,7 +476,7 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       // Remove from Redis voice state
-      await redis.del(`dm_voice:${id}:${request.user!.id}`);
+      await redis.client.del(`dm_voice:${id}:${request.user!.id}`);
 
       // Get user info for notification
       const user = await db.users.findById(request.user!.id);
@@ -520,8 +520,8 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
         return forbidden(reply, 'Not part of this DM');
       }
 
-      const user1State = await redis.get(`dm_voice:${id}:${dm.user1_id}`);
-      const user2State = await redis.get(`dm_voice:${id}:${dm.user2_id}`);
+      const user1State = await redis.client.get(`dm_voice:${id}:${dm.user1_id}`);
+      const user2State = await redis.client.get(`dm_voice:${id}:${dm.user2_id}`);
 
       const participants = [];
       if (user1State) {
