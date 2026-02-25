@@ -715,6 +715,18 @@ export function MainLayout() {
         console.log('[MainLayout] First message sample:', JSON.stringify(normalizedMessages[0], null, 2));
       }
       setMessages(normalizedMessages);
+
+      // Mark channel as read to clear unread notifications
+      try {
+        await api.post(`/channels/${channelId}/ack`);
+        // Update local channel state to reflect 0 unread count
+        setChannels(prev => prev.map(c =>
+          c.id === channelId ? { ...c, unread_count: 0, has_mentions: false } : c
+        ));
+        console.log('[MainLayout] Channel marked as read:', channelId);
+      } catch (ackErr) {
+        console.error('[MainLayout] Failed to mark channel as read:', ackErr);
+      }
     } catch (err) {
       console.error('Failed to fetch channel data:', err);
     }
@@ -884,7 +896,8 @@ export function MainLayout() {
   const canAccessSettings = () => {
     const server = currentServer();
     if (!server) return false;
-    return permissions.isOwner(server.owner_id) || permissions.isAdmin();
+    // Check owner, admin, or manage_server permission
+    return permissions.isOwner(server.owner_id) || permissions.canManageServer(server.owner_id);
   };
 
   return (
@@ -964,7 +977,13 @@ export function MainLayout() {
       <ClaimAdminModal
         isOpen={isClaimAdminOpen()}
         onClose={() => setIsClaimAdminOpen(false)}
-        onSuccess={fetchServerData}
+        onSuccess={async () => {
+          // Refresh both server data and user data (for updated permissions)
+          await Promise.all([
+            fetchServerData(),
+            authStore.refreshUser()
+          ]);
+        }}
       />
 
       {/* Transfer Ownership Modal */}

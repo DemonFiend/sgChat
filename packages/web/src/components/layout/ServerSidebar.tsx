@@ -1,4 +1,4 @@
-import { createSignal, Show, For } from 'solid-js';
+import { createSignal, Show, For, onMount } from 'solid-js';
 import { A, useParams, useNavigate } from '@solidjs/router';
 import { clsx } from 'clsx';
 import { authStore } from '@/stores/auth';
@@ -9,6 +9,12 @@ import { serverPopupStore } from '@/stores';
 import { Channel, Category, ChannelType } from './ChannelList';
 import { InlineParticipants } from '@/components/ui/VoiceParticipantsList';
 import { VoiceConnectedBar } from '@/components/ui/VoiceConnectedBar';
+
+// Sidebar resize constants
+const MIN_WIDTH = 192; // 240px - 20% = 192px
+const MAX_WIDTH = 384; // 240px + 60% = 384px
+const DEFAULT_WIDTH = 240; // 15rem (w-60)
+const STORAGE_KEY = 'serverSidebarWidth';
 
 export interface ServerInfo {
   id: string;
@@ -29,6 +35,48 @@ export function ServerSidebar(props: ServerSidebarProps) {
   const params = useParams<{ channelId?: string }>();
   const navigate = useNavigate();
   const [collapsedSections, setCollapsedSections] = createSignal<Set<string>>(new Set());
+  const [width, setWidth] = createSignal(DEFAULT_WIDTH);
+  const [isResizing, setIsResizing] = createSignal(false);
+
+  // Load saved width from localStorage on mount
+  onMount(() => {
+    const savedWidth = localStorage.getItem(STORAGE_KEY);
+    if (savedWidth) {
+      const parsed = parseInt(savedWidth, 10);
+      if (!isNaN(parsed) && parsed >= MIN_WIDTH && parsed <= MAX_WIDTH) {
+        setWidth(parsed);
+      }
+    }
+  });
+
+  const handleMouseDown = (e: MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+
+    const startX = e.clientX;
+    const startWidth = width();
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const deltaX = e.clientX - startX; // Positive when dragging right
+      const newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, startWidth + deltaX));
+      setWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      // Save to localStorage
+      localStorage.setItem(STORAGE_KEY, width().toString());
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.body.style.cursor = 'ew-resize';
+    document.body.style.userSelect = 'none';
+  };
 
   const toggleSection = (sectionId: string) => {
     setCollapsedSections((prev) => {
@@ -81,6 +129,10 @@ export function ServerSidebar(props: ServerSidebarProps) {
 
   // Check if we should use category-based view
   const useCategoryView = () => props.categories.length > 0;
+
+  // Check if a channel type is voice-like (needs voice controls)
+  const isVoiceChannel = (type: ChannelType) => 
+    type === 'voice' || type === 'temp_voice' || type === 'temp_voice_generator' || type === 'music';
 
   const handleLogout = async () => {
     await authStore.logout(false);
@@ -137,7 +189,23 @@ export function ServerSidebar(props: ServerSidebarProps) {
   };
 
   return (
-    <div class="flex flex-col w-60 h-full bg-bg-secondary border-r border-bg-tertiary">
+    <div 
+      class="flex flex-col h-full bg-bg-secondary border-r border-bg-tertiary relative"
+      style={{ width: `${width()}px` }}
+    >
+      {/* Resize Handle - Right Edge */}
+      <div
+        class={clsx(
+          'absolute right-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-brand-primary/50 transition-colors z-10 group',
+          isResizing() && 'bg-brand-primary'
+        )}
+        onMouseDown={handleMouseDown}
+        title="Drag to resize sidebar"
+      >
+        {/* Wider hover area for easier grabbing */}
+        <div class="absolute -left-1 -right-1 top-0 bottom-0" />
+      </div>
+
       {/* Header with Server Info and Settings */}
       <div class="flex items-center gap-2 p-3 border-b border-bg-tertiary">
         {/* Logout Button */}
@@ -287,7 +355,7 @@ export function ServerSidebar(props: ServerSidebarProps) {
                     channel={channel}
                     isActive={params.channelId === channel.id}
                     icon={channelIcon(channel.type)}
-                    isVoice={channel.type === 'voice'}
+                    isVoice={isVoiceChannel(channel.type)}
                   />
                 )}
               </For>
@@ -322,7 +390,7 @@ export function ServerSidebar(props: ServerSidebarProps) {
                         channel={channel}
                         isActive={params.channelId === channel.id}
                         icon={channelIcon(channel.type)}
-                        isVoice={channel.type === 'voice'}
+                        isVoice={isVoiceChannel(channel.type)}
                       />
                     )}
                   </For>
@@ -332,8 +400,8 @@ export function ServerSidebar(props: ServerSidebarProps) {
           </For>
         </Show>
 
-        {/* AFK Channel - Separate */}
-        <Show when={afkChannel()}>
+        {/* AFK Channel - Separate section only when NOT using category view */}
+        <Show when={afkChannel() && !useCategoryView()}>
           <div class="px-2 pt-3">
             <div class="px-1 mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted">
               AFK Channel

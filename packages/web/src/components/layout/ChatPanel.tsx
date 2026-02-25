@@ -500,23 +500,28 @@ function MessageItem(props: MessageItemProps) {
 
   // Compact message (continuation from same author)
   return (
-    <div class="px-4 py-0.5 hover:bg-bg-modifier-hover group flex items-start relative">
-      {/* Timestamp on hover */}
-      <span class="w-[40px] flex-shrink-0 text-[10px] text-text-muted opacity-0 group-hover:opacity-100 pt-1 text-right pr-2">
-        {props.formatTime(props.message.created_at)}
-      </span>
-      <div class="w-10 flex-shrink-0" /> {/* Spacer to align with avatar messages */}
-      <div class="flex-1 pl-4">
-        <div class="text-text-primary">
-          <MessageContent content={props.message.content} />
+    <div class="px-4 py-0.5 hover:bg-bg-modifier-hover group relative">
+      <div class="flex gap-4">
+        {/* Timestamp on hover - positioned in place of avatar */}
+        <div class="w-10 flex-shrink-0 flex items-start justify-end pt-0.5">
+          <span class="text-[10px] text-text-muted opacity-0 group-hover:opacity-100">
+            {props.formatTime(props.message.created_at)}
+          </span>
         </div>
 
-        {/* Reactions */}
-        <ReactionDisplay
-          reactions={props.message.reactions || []}
-          onReactionClick={handleReactionClick}
-          onAddReaction={() => setShowReactionPicker(true)}
-        />
+        {/* Content - aligned with full message */}
+        <div class="flex-1 min-w-0">
+          <div class="text-text-primary">
+            <MessageContent content={props.message.content} />
+          </div>
+
+          {/* Reactions */}
+          <ReactionDisplay
+            reactions={props.message.reactions || []}
+            onReactionClick={handleReactionClick}
+            onAddReaction={() => setShowReactionPicker(true)}
+          />
+        </div>
       </div>
 
       {/* Hover Action Buttons */}

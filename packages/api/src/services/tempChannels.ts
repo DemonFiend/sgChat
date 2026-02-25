@@ -226,7 +226,7 @@ export async function cleanupEmptyTempChannels(): Promise<{
     FROM channels
     WHERE is_temp_channel = true
       AND temp_channel_last_empty_at IS NOT NULL
-      AND temp_channel_last_empty_at < NOW() - INTERVAL '${timeoutSeconds} seconds'
+      AND temp_channel_last_empty_at < NOW() - (INTERVAL '1 second' * ${timeoutSeconds})
   `;
 
   const deleted: string[] = [];
