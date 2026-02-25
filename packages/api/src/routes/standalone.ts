@@ -1016,4 +1016,151 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
       };
     },
   });
+
+  // Create channel in the default server
+  const createChannelSchema = z.object({
+    name: z.string().min(1).max(100),
+    type: z.enum(['text', 'voice', 'announcement', 'music', 'temp_voice_generator']),
+    topic: z.string().max(1024).optional(),
+    category_id: z.string().uuid().nullable().optional(),
+    bitrate: z.number().min(8000).max(384000).optional(),
+    user_limit: z.number().min(0).max(99).optional(),
+  });
+
+  fastify.post('/channels', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) {
+        return notFound(reply, 'Server');
+      }
+
+      // Check permission
+      const isOwner = server.owner_id === request.user!.id;
+      const hasPermission = isOwner || await checkServerPermission(request.user!.id, server.id, 'MANAGE_CHANNELS');
+      
+      if (!hasPermission) {
+        return forbidden(reply, 'You do not have permission to create channels');
+      }
+
+      const body = createChannelSchema.parse(request.body);
+
+      // Get max position for the category
+      let position = 0;
+      if (body.category_id) {
+        const [result] = await db.sql`
+          SELECT COALESCE(MAX(position), -1) + 1 as next_position
+          FROM channels 
+          WHERE server_id = ${server.id} AND category_id = ${body.category_id}
+        `;
+        position = result.next_position;
+      } else {
+        const [result] = await db.sql`
+          SELECT COALESCE(MAX(position), -1) + 1 as next_position
+          FROM channels 
+          WHERE server_id = ${server.id} AND category_id IS NULL
+        `;
+        position = result.next_position;
+      }
+
+      const [channel] = await db.sql`
+        INSERT INTO channels (
+          server_id, name, type, topic, category_id, position,
+          bitrate, user_limit
+        )
+        VALUES (
+          ${server.id},
+          ${body.name},
+          ${body.type},
+          ${body.topic || null},
+          ${body.category_id || null},
+          ${position},
+          ${body.bitrate || 64000},
+          ${body.user_limit || 0}
+        )
+        RETURNING id, name, type, topic, category_id, position, bitrate, user_limit, created_at
+      `;
+
+      // Emit socket event
+      fastify.io?.to(`server:${server.id}`).emit('channel.create', channel);
+
+      reply.code(201);
+      return channel;
+    },
+  });
+
+  // Delete channel
+  fastify.delete<{ Params: { id: string } }>('/channels/:id', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) {
+        return notFound(reply, 'Server');
+      }
+
+      const { id } = request.params;
+
+      // Check channel exists and belongs to this server
+      const [channel] = await db.sql`
+        SELECT * FROM channels WHERE id = ${id} AND server_id = ${server.id}
+      `;
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+
+      // Check permission
+      const isOwner = server.owner_id === request.user!.id;
+      const hasPermission = isOwner || await checkServerPermission(request.user!.id, server.id, 'MANAGE_CHANNELS');
+      
+      if (!hasPermission) {
+        return forbidden(reply, 'You do not have permission to delete channels');
+      }
+
+      // Don't allow deleting the welcome channel
+      if (server.welcome_channel_id === id) {
+        return badRequest(reply, 'Cannot delete the welcome channel');
+      }
+
+      // Delete the channel
+      await db.sql`DELETE FROM channels WHERE id = ${id}`;
+
+      // Emit socket event
+      fastify.io?.to(`server:${server.id}`).emit('channel.delete', { id });
+
+      return { message: 'Channel deleted' };
+    },
+  });
 };
+
+// Helper function to check server permissions
+async function checkServerPermission(userId: string, serverId: string, permissionName: string): Promise<boolean> {
+  const roles = await db.sql`
+    SELECT r.server_permissions
+    FROM roles r
+    JOIN member_roles mr ON mr.role_id = r.id
+    WHERE mr.member_user_id = ${userId} AND mr.member_server_id = ${serverId}
+  `;
+
+  const [everyoneRole] = await db.sql`
+    SELECT server_permissions FROM roles
+    WHERE server_id = ${serverId} AND name = '@everyone'
+  `;
+
+  let combinedPerms = BigInt(everyoneRole?.server_permissions || 0);
+  for (const role of roles) {
+    combinedPerms |= BigInt(role.server_permissions || 0);
+  }
+
+  // Permission bit positions (from shared permissions)
+  const permBits: Record<string, bigint> = {
+    'ADMINISTRATOR': 1n << 0n,
+    'MANAGE_SERVER': 1n << 1n,
+    'MANAGE_CHANNELS': 1n << 2n,
+    'MANAGE_ROLES': 1n << 3n,
+  };
+
+  const adminBit = permBits['ADMINISTRATOR'];
+  const targetBit = permBits[permissionName] || 0n;
+
+  return (combinedPerms & adminBit) !== 0n || (combinedPerms & targetBit) !== 0n;
+}
