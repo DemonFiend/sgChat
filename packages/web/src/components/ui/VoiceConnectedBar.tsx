@@ -1,6 +1,8 @@
 import { Show } from 'solid-js';
 import { voiceStore } from '@/stores/voice';
 import { voiceService } from '@/lib/voiceService';
+import { ScreenShareButton, ScreenShareQualityIndicator } from './ScreenShareButton';
+import { PingIndicator } from './PingIndicator';
 
 export function VoiceConnectedBar() {
   const handleMuteClick = async () => {
@@ -19,20 +21,34 @@ export function VoiceConnectedBar() {
     <Show when={voiceStore.isConnected() || voiceStore.isConnecting()}>
       <div class="bg-bg-tertiary border-t border-bg-modifier-accent p-3">
         {/* Connection Status */}
-        <div class="flex items-center gap-2 mb-2">
-          <Show 
-            when={voiceStore.isConnected()} 
-            fallback={
-              <>
-                <div class="w-2 h-2 bg-warning rounded-full animate-pulse" />
-                <span class="text-xs text-warning font-medium">Connecting...</span>
-              </>
-            }
-          >
-            <div class={`w-2 h-2 rounded-full ${voiceStore.isSpeaking() ? 'bg-status-online animate-pulse' : 'bg-status-online'}`} />
-            <span class="text-xs text-status-online font-medium">Voice Connected</span>
+        <div class="flex items-center justify-between gap-2 mb-2">
+          <div class="flex items-center gap-2">
+            <Show 
+              when={voiceStore.isConnected()} 
+              fallback={
+                <>
+                  <div class="w-2 h-2 bg-warning rounded-full animate-pulse" />
+                  <span class="text-xs text-warning font-medium">Connecting...</span>
+                </>
+              }
+            >
+              <div class={`w-2 h-2 rounded-full ${voiceStore.isSpeaking() ? 'bg-status-online animate-pulse' : 'bg-status-online'}`} />
+              <span class="text-xs text-status-online font-medium">Voice Connected</span>
+            </Show>
+          </div>
+          
+          {/* Ping Indicator */}
+          <Show when={voiceStore.isConnected()}>
+            <PingIndicator size="sm" showLabel showTooltip />
           </Show>
         </div>
+        
+        {/* Screen Share Status */}
+        <Show when={voiceStore.isScreenSharing()}>
+          <div class="flex items-center gap-2 mb-2">
+            <ScreenShareQualityIndicator />
+          </div>
+        </Show>
 
         {/* Channel Name */}
         <div class="flex items-center gap-2 mb-3">
@@ -94,6 +110,9 @@ export function VoiceConnectedBar() {
               </svg>
             </Show>
           </button>
+
+          {/* Screen Share Button */}
+          <ScreenShareButton size="sm" showQualityMenu />
 
           {/* Disconnect Button */}
           <button

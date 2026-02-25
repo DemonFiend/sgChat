@@ -20,4 +20,6 @@ export { BendyLine } from './BendyLine';
 export { VoiceConnectedBar } from './VoiceConnectedBar';
 export { VoiceParticipantsList, InlineParticipants } from './VoiceParticipantsList';
 export { MuteButton, DeafenButton, DisconnectButton, SpeakerIcon } from './VoiceControls';
+export { ScreenShareButton, ScreenShareQualityIndicator } from './ScreenShareButton';
+export { PingIndicator, ConnectionStatusDot } from './PingIndicator';
 export { SessionExpiredOverlay } from './SessionExpiredOverlay';
