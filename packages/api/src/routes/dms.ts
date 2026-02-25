@@ -539,4 +539,147 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
       };
     },
   });
+
+  // ============================================================
+  // EXPORT FUNCTIONALITY
+  // ============================================================
+
+  const dmExportSchema = z.object({
+    format: z.enum(['json', 'csv']).default('json'),
+    include_attachment_urls: z.boolean().default(true),
+    include_user_info: z.boolean().default(true),
+    start_date: z.string().optional(),
+    end_date: z.string().optional(),
+    compress: z.boolean().default(true),
+  });
+
+  /**
+   * POST /dms/:id/export - Export DM messages for compliance/backup
+   * Both participants can export
+   */
+  fastify.post<{ Params: { id: string } }>('/:id/export', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params;
+      const body = dmExportSchema.parse(request.body);
+
+      if (!await verifyDMAccess(request.user!.id, id)) {
+        return forbidden(reply, 'Not part of this DM');
+      }
+
+      const { exportDMMessages } = await import('../services/archive.js');
+
+      const result = await exportDMMessages(id, {
+        format: body.format,
+        includeAttachmentUrls: body.include_attachment_urls,
+        includeUserInfo: body.include_user_info,
+        startDate: body.start_date ? new Date(body.start_date) : undefined,
+        endDate: body.end_date ? new Date(body.end_date) : undefined,
+        compress: body.compress,
+      });
+
+      return result;
+    },
+  });
+
+  /**
+   * GET /dms/:id/exports - List available exports for a DM
+   */
+  fastify.get<{ Params: { id: string } }>('/:id/exports', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params;
+
+      if (!await verifyDMAccess(request.user!.id, id)) {
+        return forbidden(reply, 'Not part of this DM');
+      }
+
+      const { listExports } = await import('../services/archive.js');
+      const exports = await listExports(null, id);
+
+      return { exports };
+    },
+  });
+
+  /**
+   * GET /dms/:id/exports/:exportPath/download - Download an export file
+   */
+  fastify.get<{ Params: { id: string; exportPath: string } }>('/:id/exports/:exportPath/download', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id, exportPath } = request.params;
+
+      if (!await verifyDMAccess(request.user!.id, id)) {
+        return forbidden(reply, 'Not part of this DM');
+      }
+
+      const { downloadExport } = await import('../services/archive.js');
+      
+      const fullPath = decodeURIComponent(exportPath);
+      if (!fullPath.startsWith(`exports/dms/${id}/`)) {
+        return forbidden(reply, 'Invalid export path');
+      }
+
+      const data = await downloadExport(fullPath);
+
+      const isCompressed = fullPath.endsWith('.gz');
+      const isJson = fullPath.includes('.json');
+
+      reply.header('Content-Type', isCompressed ? 'application/gzip' : (isJson ? 'application/json' : 'text/csv'));
+      reply.header('Content-Disposition', `attachment; filename="${fullPath.split('/').pop()}"`);
+
+      return reply.send(data);
+    },
+  });
+
+  /**
+   * DELETE /dms/:id/exports/:exportPath - Delete an export file
+   */
+  fastify.delete<{ Params: { id: string; exportPath: string } }>('/:id/exports/:exportPath', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id, exportPath } = request.params;
+
+      if (!await verifyDMAccess(request.user!.id, id)) {
+        return forbidden(reply, 'Not part of this DM');
+      }
+
+      const { deleteExport } = await import('../services/archive.js');
+      
+      const fullPath = decodeURIComponent(exportPath);
+      if (!fullPath.startsWith(`exports/dms/${id}/`)) {
+        return forbidden(reply, 'Invalid export path');
+      }
+
+      await deleteExport(fullPath);
+
+      return { deleted: true };
+    },
+  });
+
+  /**
+   * GET /dms/:id/storage-stats/comprehensive - Get comprehensive storage stats including media
+   */
+  fastify.get<{ Params: { id: string } }>('/:id/storage-stats/comprehensive', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params;
+
+      if (!await verifyDMAccess(request.user!.id, id)) {
+        return forbidden(reply, 'Not part of this DM');
+      }
+
+      const { getComprehensiveStorageStats } = await import('../services/trimming.js');
+      const stats = await getComprehensiveStorageStats(null, id);
+      const retention = await getEffectiveDMRetention(id);
+
+      return {
+        ...stats,
+        size_limit_bytes: retention.size_limit_bytes,
+        usage_percent: retention.size_limit_bytes
+          ? Math.round((stats.total_size_bytes / retention.size_limit_bytes) * 100)
+          : null,
+      };
+    },
+  });
 };

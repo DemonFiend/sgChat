@@ -1419,4 +1419,199 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       };
     },
   });
+
+  // ============================================================
+  // EXPORT FUNCTIONALITY
+  // ============================================================
+
+  const exportSchema = z.object({
+    format: z.enum(['json', 'csv']).default('json'),
+    include_attachment_urls: z.boolean().default(true),
+    include_user_info: z.boolean().default(true),
+    start_date: z.string().optional(),
+    end_date: z.string().optional(),
+    compress: z.boolean().default(true),
+  });
+
+  /**
+   * POST /channels/:id/export - Export channel messages for compliance/backup
+   */
+  fastify.post<{ Params: { id: string } }>('/:id/export', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params;
+      const body = exportSchema.parse(request.body);
+
+      const channel = await db.channels.findById(id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, channel.server_id, id);
+      const server = await db.servers.findById(channel.server_id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) ||
+                      server?.owner_id === request.user!.id;
+
+      if (!isAdmin) {
+        return forbidden(reply, 'Administrator permission required for exports');
+      }
+
+      const { exportChannelMessages } = await import('../services/archive.js');
+
+      const result = await exportChannelMessages(id, {
+        format: body.format,
+        includeAttachmentUrls: body.include_attachment_urls,
+        includeUserInfo: body.include_user_info,
+        startDate: body.start_date ? new Date(body.start_date) : undefined,
+        endDate: body.end_date ? new Date(body.end_date) : undefined,
+        compress: body.compress,
+      });
+
+      // Audit log
+      await db.sql`
+        INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
+        VALUES (${channel.server_id}, ${request.user!.id}, 'channel_update', 'channel', ${id}, 
+          ${JSON.stringify({ export: result })})
+      `;
+
+      return result;
+    },
+  });
+
+  /**
+   * GET /channels/:id/exports - List available exports for a channel
+   */
+  fastify.get<{ Params: { id: string } }>('/:id/exports', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params;
+
+      const channel = await db.channels.findById(id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, channel.server_id, id);
+      const server = await db.servers.findById(channel.server_id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) ||
+                      server?.owner_id === request.user!.id;
+
+      if (!isAdmin) {
+        return forbidden(reply, 'Administrator permission required');
+      }
+
+      const { listExports } = await import('../services/archive.js');
+      const exports = await listExports(id, null);
+
+      return { exports };
+    },
+  });
+
+  /**
+   * GET /channels/:id/exports/:exportPath/download - Download an export file
+   */
+  fastify.get<{ Params: { id: string; exportPath: string } }>('/:id/exports/:exportPath/download', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id, exportPath } = request.params;
+
+      const channel = await db.channels.findById(id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, channel.server_id, id);
+      const server = await db.servers.findById(channel.server_id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) ||
+                      server?.owner_id === request.user!.id;
+
+      if (!isAdmin) {
+        return forbidden(reply, 'Administrator permission required');
+      }
+
+      const { downloadExport } = await import('../services/archive.js');
+      
+      const fullPath = decodeURIComponent(exportPath);
+      if (!fullPath.startsWith(`exports/channels/${id}/`)) {
+        return forbidden(reply, 'Invalid export path');
+      }
+
+      const data = await downloadExport(fullPath);
+
+      const isCompressed = fullPath.endsWith('.gz');
+      const isJson = fullPath.includes('.json');
+
+      reply.header('Content-Type', isCompressed ? 'application/gzip' : (isJson ? 'application/json' : 'text/csv'));
+      reply.header('Content-Disposition', `attachment; filename="${fullPath.split('/').pop()}"`);
+
+      return reply.send(data);
+    },
+  });
+
+  /**
+   * DELETE /channels/:id/exports/:exportPath - Delete an export file
+   */
+  fastify.delete<{ Params: { id: string; exportPath: string } }>('/:id/exports/:exportPath', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id, exportPath } = request.params;
+
+      const channel = await db.channels.findById(id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, channel.server_id, id);
+      const server = await db.servers.findById(channel.server_id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) ||
+                      server?.owner_id === request.user!.id;
+
+      if (!isAdmin) {
+        return forbidden(reply, 'Administrator permission required');
+      }
+
+      const { deleteExport } = await import('../services/archive.js');
+      
+      const fullPath = decodeURIComponent(exportPath);
+      if (!fullPath.startsWith(`exports/channels/${id}/`)) {
+        return forbidden(reply, 'Invalid export path');
+      }
+
+      await deleteExport(fullPath);
+
+      return { deleted: true };
+    },
+  });
+
+  /**
+   * GET /channels/:id/storage-stats/comprehensive - Get comprehensive storage stats including media
+   */
+  fastify.get<{ Params: { id: string } }>('/:id/storage-stats/comprehensive', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params;
+
+      const channel = await db.channels.findById(id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, channel.server_id, id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_CHANNELS)) {
+        return forbidden(reply, 'Missing MANAGE_CHANNELS permission');
+      }
+
+      const { getComprehensiveStorageStats } = await import('../services/trimming.js');
+      const stats = await getComprehensiveStorageStats(id, null);
+      const retention = await getEffectiveChannelRetention(id);
+
+      return {
+        ...stats,
+        size_limit_bytes: retention.size_limit_bytes,
+        usage_percent: retention.size_limit_bytes
+          ? Math.round((stats.total_size_bytes / retention.size_limit_bytes) * 100)
+          : null,
+      };
+    },
+  });
 };
