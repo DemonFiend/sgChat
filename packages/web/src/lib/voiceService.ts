@@ -1,9 +1,10 @@
-import { Room, RoomEvent, Track, RemoteTrack, RemoteParticipant, ConnectionState, ConnectionQuality } from 'livekit-client';
+import { Room, RoomEvent, Track, RemoteTrack, RemoteParticipant, ConnectionState, ConnectionQuality, TrackPublication, Track as TrackTypes } from 'livekit-client';
 import { api } from '@/api';
 import { voiceStore, type VoicePermissions, type VoiceParticipant, type ConnectionQualityLevel, type ScreenShareQuality, type ConnectionQualityState } from '@/stores/voice';
 import { socketService } from './socket';
 import { soundService } from './soundService';
 import { SCREEN_SHARE_QUALITIES } from '@sgchat/shared';
+import { streamViewerStore } from '@/stores/streamViewer';
 
 interface JoinVoiceResponse {
   token: string;
@@ -49,19 +50,154 @@ interface VoiceSettings {
   enable_voice_join_sounds: boolean;
 }
 
+const VOICE_CHANNEL_STORAGE_KEY = 'sgchat_voice_channel';
+
+interface StoredVoiceChannel {
+  channelId: string;
+  channelName: string;
+  timestamp: number;
+}
+
 class VoiceServiceClass {
   private room: Room | null = null;
   private audioElements: Map<string, HTMLAudioElement> = new Map();
+  private videoElements: Map<string, HTMLVideoElement> = new Map();
   private audioContainer: HTMLElement | null = null;
   private voiceSettings: VoiceSettings | null = null;
   private outputVolume: number = 100;
   private connectionQualityInterval: ReturnType<typeof setInterval> | null = null;
+  private isAutoRejoining: boolean = false;
 
   /**
    * Set the container element for audio elements
    */
   setAudioContainer(container: HTMLElement) {
     this.audioContainer = container;
+  }
+
+  /**
+   * Save current voice channel to localStorage for persistence across refresh
+   */
+  private saveVoiceChannel(channelId: string, channelName: string): void {
+    try {
+      const data: StoredVoiceChannel = {
+        channelId,
+        channelName,
+        timestamp: Date.now(),
+      };
+      localStorage.setItem(VOICE_CHANNEL_STORAGE_KEY, JSON.stringify(data));
+      console.log('[VoiceService] Saved voice channel to localStorage:', channelId);
+    } catch (err) {
+      console.warn('[VoiceService] Failed to save voice channel to localStorage:', err);
+    }
+  }
+
+  /**
+   * Clear stored voice channel from localStorage
+   */
+  private clearStoredVoiceChannel(): void {
+    try {
+      localStorage.removeItem(VOICE_CHANNEL_STORAGE_KEY);
+      console.log('[VoiceService] Cleared voice channel from localStorage');
+    } catch (err) {
+      console.warn('[VoiceService] Failed to clear voice channel from localStorage:', err);
+    }
+  }
+
+  /**
+   * Get stored voice channel from localStorage
+   * Returns null if expired (older than 1 hour) or not found
+   */
+  getStoredVoiceChannel(): StoredVoiceChannel | null {
+    try {
+      const stored = localStorage.getItem(VOICE_CHANNEL_STORAGE_KEY);
+      if (!stored) return null;
+
+      const data: StoredVoiceChannel = JSON.parse(stored);
+      
+      // Check if the stored channel is older than 1 hour (expired)
+      const ONE_HOUR = 60 * 60 * 1000;
+      if (Date.now() - data.timestamp > ONE_HOUR) {
+        console.log('[VoiceService] Stored voice channel expired, clearing');
+        this.clearStoredVoiceChannel();
+        return null;
+      }
+
+      return data;
+    } catch (err) {
+      console.warn('[VoiceService] Failed to get stored voice channel:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Attempt to rejoin a previously connected voice channel after page refresh
+   * First checks server state, then falls back to localStorage
+   */
+  async attemptAutoRejoin(): Promise<boolean> {
+    if (voiceStore.isConnected() || voiceStore.isConnecting()) {
+      console.log('[VoiceService] Already connected or connecting, skipping auto-rejoin');
+      return false;
+    }
+
+    try {
+      // First, check server-side state for the user's current voice channel
+      const serverState = await api.get<{
+        in_voice: boolean;
+        channel_id: string | null;
+        channel_name: string | null;
+        voice_state: {
+          is_muted: boolean;
+          is_deafened: boolean;
+          is_streaming: boolean;
+        } | null;
+      }>('/voice/me');
+
+      if (serverState.in_voice && serverState.channel_id && serverState.channel_name) {
+        console.log('[VoiceService] Server reports user in voice channel:', serverState.channel_id, serverState.channel_name);
+        
+        this.isAutoRejoining = true;
+        try {
+          await this.join(serverState.channel_id, serverState.channel_name);
+          console.log('[VoiceService] Successfully auto-rejoined voice channel from server state');
+          return true;
+        } catch (err) {
+          console.warn('[VoiceService] Failed to auto-rejoin from server state:', err);
+        } finally {
+          this.isAutoRejoining = false;
+        }
+      }
+    } catch (err) {
+      console.warn('[VoiceService] Failed to fetch server voice state:', err);
+    }
+
+    // Fallback to localStorage
+    const stored = this.getStoredVoiceChannel();
+    if (!stored) {
+      console.log('[VoiceService] No stored voice channel to rejoin');
+      return false;
+    }
+
+    try {
+      this.isAutoRejoining = true;
+      console.log('[VoiceService] Attempting to auto-rejoin voice channel from localStorage:', stored.channelId, stored.channelName);
+      await this.join(stored.channelId, stored.channelName);
+      console.log('[VoiceService] Successfully auto-rejoined voice channel from localStorage');
+      return true;
+    } catch (err) {
+      console.warn('[VoiceService] Failed to auto-rejoin voice channel:', err);
+      this.clearStoredVoiceChannel();
+      return false;
+    } finally {
+      this.isAutoRejoining = false;
+    }
+  }
+
+  /**
+   * Check if currently auto-rejoining
+   */
+  isAutoRejoiningChannel(): boolean {
+    return this.isAutoRejoining;
   }
 
   /**
@@ -218,8 +354,15 @@ class VoiceServiceClass {
       // 8. Start connection quality monitoring
       this.startConnectionQualityMonitoring();
 
-      // 9. Emit socket event to notify server with actual channel ID
-      socketService.emit('voice:join', { channel_id: targetChannelId });
+      // 9. Emit socket event to update mute/deafen state (join is already handled by API route)
+      socketService.emit('voice:join', { 
+        channel_id: targetChannelId,
+        muted: voiceStore.isMuted(),
+        deafened: voiceStore.isDeafened(),
+      });
+
+      // 10. Save to localStorage for persistence across refresh
+      this.saveVoiceChannel(targetChannelId, targetChannelName);
 
     } catch (err: any) {
       console.error('[VoiceService] Failed to join voice channel:', err);
@@ -262,11 +405,15 @@ class VoiceServiceClass {
       await this.room.disconnect();
       this.room = null;
 
-      // Clean up audio elements
+      // Clean up audio and video elements
       this.cleanupAudioElements();
+      this.cleanupVideoElements();
 
       // Update store
       voiceStore.setDisconnected();
+
+      // Clear stored voice channel (user intentionally left)
+      this.clearStoredVoiceChannel();
       
       console.log('[VoiceService] Disconnected from voice channel');
     } catch (err) {
@@ -275,6 +422,7 @@ class VoiceServiceClass {
       this.room = null;
       this.stopConnectionQualityMonitoring();
       voiceStore.setDisconnected();
+      this.clearStoredVoiceChannel();
     }
   }
 
@@ -595,21 +743,88 @@ class VoiceServiceClass {
   private setupRoomEventListeners(): void {
     if (!this.room) return;
 
-    // Track subscribed - attach audio
-    this.room.on(RoomEvent.TrackSubscribed, (track, _publication, participant) => {
-      console.log('[VoiceService] Track subscribed:', track.kind, 'from', participant.identity);
+    // Track subscribed - attach audio or video
+    this.room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+      console.log('[VoiceService] Track subscribed:', track.kind, 'source:', publication.source, 'from', participant.identity);
       
       if (track.kind === Track.Kind.Audio) {
         this.attachAudioTrack(track as RemoteTrack, participant);
+      } else if (track.kind === Track.Kind.Video) {
+        console.log('[VoiceService] Video track subscribed from:', participant.identity, 'source:', publication.source);
+        this.attachVideoTrack(track as RemoteTrack, participant, publication);
       }
     });
 
-    // Track unsubscribed - detach audio
-    this.room.on(RoomEvent.TrackUnsubscribed, (track, _publication, participant) => {
-      console.log('[VoiceService] Track unsubscribed:', track.kind, 'from', participant.identity);
+    // Track unsubscribed - detach audio or video
+    this.room.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+      console.log('[VoiceService] Track unsubscribed:', track.kind, 'source:', publication.source, 'from', participant.identity);
       
       if (track.kind === Track.Kind.Audio) {
         this.detachAudioTrack(participant.identity);
+      } else if (track.kind === Track.Kind.Video) {
+        console.log('[VoiceService] Video track unsubscribed from:', participant.identity);
+        this.detachVideoTrack(participant.identity);
+      }
+    });
+
+    // Track published - detect when someone starts screen sharing
+    this.room.on(RoomEvent.TrackPublished, (publication, participant) => {
+      console.log('[VoiceService] Track published:', publication.kind, 'source:', publication.source, 'from', participant.identity);
+      
+      // Check if this is a screen share track
+      if (publication.source === TrackTypes.Source.ScreenShare) {
+        console.log('[VoiceService] Screen share started by:', participant.identity);
+        const channelId = voiceStore.currentChannelId();
+        if (channelId) {
+          voiceStore.updateParticipantState(channelId, participant.identity, { isStreaming: true });
+        }
+      }
+    });
+
+    // Track unpublished - detect when someone stops screen sharing
+    this.room.on(RoomEvent.TrackUnpublished, (publication, participant) => {
+      console.log('[VoiceService] Track unpublished:', publication.kind, 'source:', publication.source, 'from', participant.identity);
+      
+      // Check if this is a screen share track
+      if (publication.source === TrackTypes.Source.ScreenShare) {
+        console.log('[VoiceService] Screen share stopped by:', participant.identity);
+        const channelId = voiceStore.currentChannelId();
+        if (channelId) {
+          voiceStore.updateParticipantState(channelId, participant.identity, { isStreaming: false });
+        }
+        
+        // If we were watching this streamer, close the stream viewer
+        if (streamViewerStore.isWatchingStreamer(participant.identity)) {
+          console.log('[VoiceService] Closing stream viewer - streamer stopped sharing');
+          streamViewerStore.leaveStream();
+        }
+        
+        // Clean up video element
+        this.detachVideoTrack(participant.identity);
+      }
+    });
+
+    // Local track unpublished - detect when we stop screen sharing (e.g., browser share dialog closed)
+    this.room.on(RoomEvent.LocalTrackUnpublished, (publication) => {
+      console.log('[VoiceService] Local track unpublished:', publication.kind, 'source:', publication.source);
+      
+      if (publication.source === TrackTypes.Source.ScreenShare) {
+        console.log('[VoiceService] Local screen share stopped (browser dialog closed or track ended)');
+        
+        // Update local screen sharing state
+        if (voiceStore.isScreenSharing()) {
+          voiceStore.setScreenSharing(false);
+          
+          // Notify server that screen sharing stopped
+          const channelId = voiceStore.currentChannelId();
+          if (channelId) {
+            socketService.emit('voice:update', {
+              muted: voiceStore.isMuted(),
+              deafened: voiceStore.isDeafened(),
+              screen_sharing: false,
+            });
+          }
+        }
       }
     });
 
@@ -676,6 +891,7 @@ class VoiceServiceClass {
       } else if (state === ConnectionState.Disconnected) {
         voiceStore.setDisconnected();
         this.cleanupAudioElements();
+        this.cleanupVideoElements();
       }
     });
 
@@ -684,6 +900,7 @@ class VoiceServiceClass {
       console.log('[VoiceService] Disconnected:', reason);
       voiceStore.setDisconnected();
       this.cleanupAudioElements();
+      this.cleanupVideoElements();
     });
   }
 
@@ -717,6 +934,55 @@ class VoiceServiceClass {
     console.log('[VoiceService] Audio track attached for:', participant.identity);
   }
 
+  private attachVideoTrack(track: RemoteTrack, participant: RemoteParticipant, publication: TrackPublication): void {
+    const streamerId = participant.identity;
+    console.log('[VoiceService] Attaching video track for streamer:', streamerId, 'source:', publication.source);
+    
+    // Create video element
+    const video = document.createElement('video');
+    video.autoplay = true;
+    video.playsInline = true;
+    video.muted = false;
+    
+    // Attach track to video element
+    track.attach(video);
+    
+    // Store reference
+    this.videoElements.set(streamerId, video);
+    
+    // If we're watching this streamer, update the stream viewer store
+    if (streamViewerStore.isWatchingStreamer(streamerId)) {
+      console.log('[VoiceService] Updating stream viewer with video element for:', streamerId);
+      streamViewerStore.setVideoElement(video);
+    }
+    
+    console.log('[VoiceService] Video track attached for:', streamerId);
+  }
+
+  private detachVideoTrack(participantIdentity: string): void {
+    const video = this.videoElements.get(participantIdentity);
+    if (video) {
+      video.pause();
+      video.srcObject = null;
+      video.remove();
+      this.videoElements.delete(participantIdentity);
+      console.log('[VoiceService] Video track detached for:', participantIdentity);
+    }
+    
+    // If we were watching this streamer, clear the video element
+    if (streamViewerStore.isWatchingStreamer(participantIdentity)) {
+      console.log('[VoiceService] Clearing stream viewer video element for:', participantIdentity);
+      streamViewerStore.setVideoElement(null);
+    }
+  }
+
+  /**
+   * Get video element for a specific streamer (used when clicking LIVE button)
+   */
+  getVideoElementForStreamer(streamerId: string): HTMLVideoElement | null {
+    return this.videoElements.get(streamerId) || null;
+  }
+
   private detachAudioTrack(participantIdentity: string): void {
     const audio = this.audioElements.get(participantIdentity);
     if (audio) {
@@ -736,6 +1002,21 @@ class VoiceServiceClass {
     });
     this.audioElements.clear();
     console.log('[VoiceService] All audio elements cleaned up');
+  }
+
+  private cleanupVideoElements(): void {
+    this.videoElements.forEach((video) => {
+      video.pause();
+      video.srcObject = null;
+      video.remove();
+    });
+    this.videoElements.clear();
+    
+    // Clear stream viewer if watching any stream
+    if (streamViewerStore.isWatchingStream()) {
+      streamViewerStore.setVideoElement(null);
+    }
+    console.log('[VoiceService] All video elements cleaned up');
   }
 }
 

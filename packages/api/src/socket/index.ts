@@ -627,56 +627,33 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       deafened?: boolean;
     }) => {
       try {
-      const channel = await db.channels.findById(data.channel_id);
-      if (!channel) return;
+        const channel = await db.channels.findById(data.channel_id);
+        if (!channel) return;
 
-      if (channel.type !== 'voice') {
-        socket.emit('error', { message: 'Not a voice channel' });
-        return;
-      }
-
-      const perms = await calculatePermissions(userId, channel.server_id, data.channel_id);
-      if (!hasPermission(perms.voice, VoicePermissions.CONNECT)) {
-        socket.emit('error', { message: 'Missing CONNECT permission' });
-        return;
-      }
-
-      if (channel.user_limit && channel.user_limit > 0) {
-        const participants = await redis.getVoiceChannelParticipants(data.channel_id);
-        if (participants.length >= channel.user_limit && !hasPermission(perms.voice, VoicePermissions.MOVE_MEMBERS)) {
-          socket.emit('error', { message: 'Voice channel is full' });
+        const voiceChannelTypes = ['voice', 'temp_voice', 'temp_voice_generator', 'music'];
+        if (!voiceChannelTypes.includes(channel.type)) {
+          socket.emit('error', { message: 'Not a voice channel' });
           return;
         }
-      }
 
-      await redis.joinVoiceChannel(userId, data.channel_id);
-      
-      if (data.muted !== undefined || data.deafened !== undefined) {
-        await redis.updateVoiceState(data.channel_id, userId, {
-          is_muted: data.muted,
-          is_deafened: data.deafened,
-        });
-      }
-
-      const user = await db.users.findById(userId);
-
-      await publishEvent({
-        type: 'voice.join',
-        actorId: userId,
-        resourceId: `server:${channel.server_id}`,
-        payload: {
-          channel_id: data.channel_id,
-          user: {
-            id: user.id,
-            username: user.username,
-            display_name: user.display_name || user.username,
-            avatar_url: user.avatar_url,
-          },
-        },
-      });
+        // Note: The API route /voice/join/:channelId already handles:
+        // - Permission checking
+        // - User limit checking  
+        // - Redis tracking (joinVoiceChannel)
+        // - Publishing voice.join event
+        //
+        // This socket event is only used to update mute/deafen state after joining
+        // We don't duplicate the join logic here to avoid race conditions
+        
+        if (data.muted !== undefined || data.deafened !== undefined) {
+          await redis.updateVoiceState(data.channel_id, userId, {
+            is_muted: data.muted,
+            is_deafened: data.deafened,
+          });
+        }
       } catch (err) {
         fastify.log.error(err);
-        socket.emit('error', { message: 'Failed to join voice channel' });
+        socket.emit('error', { message: 'Failed to update voice state' });
       }
     });
 

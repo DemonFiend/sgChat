@@ -204,6 +204,16 @@ export function MainLayout() {
         console.warn('[MainLayout] Failed to fetch voice participants:', voiceErr);
       }
 
+      // Auto-rejoin voice channel if we were in one before page refresh
+      try {
+        const rejoined = await voiceService.attemptAutoRejoin();
+        if (rejoined) {
+          console.log('[MainLayout] Successfully auto-rejoined voice channel');
+        }
+      } catch (rejoinErr) {
+        console.warn('[MainLayout] Failed to auto-rejoin voice channel:', rejoinErr);
+      }
+
       // Auto-navigate to first channel if none selected and we have channels (but not on DM route)
       if (!params.channelId && !isDMRoute() && fetchedChannels.length > 0) {
         const firstTextChannel = fetchedChannels.find((c) => c.type === 'text');

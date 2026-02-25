@@ -247,9 +247,11 @@ function createVoiceStore() {
       
       // Don't add if already exists
       if (channelParticipants.some(p => p.userId === user.id)) {
+        console.log('[VoiceStore] Participant already exists, skipping add:', user.id, user.username);
         return prev;
       }
       
+      console.log('[VoiceStore] Adding participant:', user.id, user.username, 'to channel:', channelId);
       channelParticipants.push({
         userId: user.id,
         username: user.username,
@@ -261,6 +263,7 @@ function createVoiceStore() {
       });
       
       newParticipants.set(channelId, channelParticipants);
+      console.log('[VoiceStore] Channel now has', channelParticipants.length, 'participants');
       
       return {
         ...prev,
@@ -273,14 +276,23 @@ function createVoiceStore() {
   const removeParticipant = (channelId: string, userId: string) => {
     setState(prev => {
       const newParticipants = new Map(prev.participants);
-      const channelParticipants = (newParticipants.get(channelId) || [])
-        .filter(p => p.userId !== userId);
+      const existing = newParticipants.get(channelId) || [];
+      const channelParticipants = existing.filter(p => p.userId !== userId);
+      
+      if (channelParticipants.length === existing.length) {
+        console.log('[VoiceStore] Participant not found for removal:', userId, 'in channel:', channelId);
+        return prev;
+      }
+      
+      console.log('[VoiceStore] Removing participant:', userId, 'from channel:', channelId);
       
       if (channelParticipants.length > 0) {
         newParticipants.set(channelId, channelParticipants);
       } else {
         newParticipants.delete(channelId);
       }
+      
+      console.log('[VoiceStore] Channel now has', channelParticipants.length, 'participants');
       
       return {
         ...prev,
@@ -317,11 +329,36 @@ function createVoiceStore() {
     });
   };
 
-  // Set participants for a channel (from initial fetch)
+  // Set participants for a channel (from initial fetch) - merges with existing to avoid race conditions
   const setChannelParticipants = (channelId: string, participants: VoiceParticipant[]) => {
     setState(prev => {
       const newParticipants = new Map(prev.participants);
-      newParticipants.set(channelId, participants);
+      const existing = newParticipants.get(channelId) || [];
+      
+      // Build a map of incoming participants by userId
+      const incomingMap = new Map(participants.map(p => [p.userId, p]));
+      
+      // Merge: keep existing participants that are not in the new list (they may have joined via socket event)
+      // and update/add participants from the new list
+      const merged: VoiceParticipant[] = [];
+      const seenIds = new Set<string>();
+      
+      // First, add all incoming participants (they have latest data from server)
+      for (const p of participants) {
+        merged.push(p);
+        seenIds.add(p.userId);
+      }
+      
+      // Then, add any existing participants not in the incoming list
+      // (these might have joined via socket event after the fetch started)
+      for (const p of existing) {
+        if (!seenIds.has(p.userId)) {
+          console.log('[VoiceStore] Preserving participant added by socket event:', p.userId);
+          merged.push(p);
+        }
+      }
+      
+      newParticipants.set(channelId, merged);
       
       return {
         ...prev,

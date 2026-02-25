@@ -1,6 +1,7 @@
 import { For, Show } from 'solid-js';
 import { voiceStore, type VoiceParticipant } from '@/stores/voice';
 import { streamViewerStore } from '@/stores/streamViewer';
+import { voiceService } from '@/lib/voiceService';
 import { SpeakerIcon } from './VoiceControls';
 import { Avatar } from './Avatar';
 
@@ -43,6 +44,9 @@ function VoiceParticipantItem(props: VoiceParticipantItemProps) {
 
   const handleWatchStream = (e: Event) => {
     e.stopPropagation();
+    console.log('[VoiceParticipantsList] Watch stream clicked for:', props.participant.userId);
+    
+    // Start watching the stream
     streamViewerStore.watchStream({
       streamerId: props.participant.userId,
       streamerName: displayName(),
@@ -50,6 +54,15 @@ function VoiceParticipantItem(props: VoiceParticipantItemProps) {
       channelId: props.channelId,
       channelName: props.channelName || 'Voice Channel',
     });
+    
+    // If video element already exists (track already subscribed), set it immediately
+    const existingVideo = voiceService.getVideoElementForStreamer(props.participant.userId);
+    if (existingVideo) {
+      console.log('[VoiceParticipantsList] Video element already exists, setting it');
+      streamViewerStore.setVideoElement(existingVideo);
+    } else {
+      console.log('[VoiceParticipantsList] No video element yet, will be set when track subscribes');
+    }
   };
 
   if (props.compact) {

@@ -443,6 +443,57 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   /**
+   * GET /voice/me - Get the current user's voice channel state
+   * Returns the channel they're in (if any) and their voice state
+   */
+  fastify.get('/me', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const userId = request.user!.id;
+      
+      // Get the user's current voice channel from Redis
+      const channelId = await redis.getUserVoiceChannel(userId);
+      
+      if (!channelId) {
+        return { 
+          in_voice: false,
+          channel_id: null,
+          channel_name: null,
+          voice_state: null,
+        };
+      }
+
+      // Get channel info
+      const channel = await db.channels.findById(channelId);
+      if (!channel) {
+        // Channel doesn't exist anymore, clean up
+        await redis.leaveVoiceChannel(userId);
+        return {
+          in_voice: false,
+          channel_id: null,
+          channel_name: null,
+          voice_state: null,
+        };
+      }
+
+      // Get voice state
+      const voiceState = await redis.getVoiceState(channelId, userId);
+
+      return {
+        in_voice: true,
+        channel_id: channelId,
+        channel_name: channel.name,
+        voice_state: voiceState ? {
+          is_muted: voiceState.is_muted || false,
+          is_deafened: voiceState.is_deafened || false,
+          is_streaming: voiceState.is_streaming || false,
+          joined_at: voiceState.joined_at,
+        } : null,
+      };
+    },
+  });
+
+  /**
    * GET /voice/participants - Get all voice participants across all channels
    * Returns a map of channel_id -> participants for all voice channels with users
    */
