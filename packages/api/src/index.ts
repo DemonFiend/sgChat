@@ -34,6 +34,7 @@ import { gatewayRoutes } from './routes/gateway.js';
 import { notificationRoutes } from './routes/notifications.js';
 import { giphyRoutes } from './routes/giphy.js';
 import { initSocketIO } from './socket/index.js';
+import { cleanupEmptyTempChannels } from './services/tempChannels.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -259,9 +260,21 @@ async function start() {
   }
   fastify.log.info(`📋 API available at http://${HOST}:${PORT}/api`);
 
+  // Start temp channel cleanup interval (every 30 seconds)
+  const tempChannelCleanupInterval = setInterval(async () => {
+    try {
+      await cleanupEmptyTempChannels();
+    } catch (err) {
+      fastify.log.error({ err }, 'Temp channel cleanup failed');
+    }
+  }, 30 * 1000);
+
   // Graceful shutdown
   const gracefulShutdown = async (signal: string) => {
     fastify.log.info(`${signal} received, shutting down gracefully...`);
+
+    // Stop cleanup intervals
+    clearInterval(tempChannelCleanupInterval);
 
     await fastify.close();
     await shutdownEventBus();

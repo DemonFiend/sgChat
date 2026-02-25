@@ -7,6 +7,12 @@ import { calculatePermissions } from '../services/permissions.js';
 import { generateLiveKitToken, getLiveKitUrl } from '../services/livekit.js';
 import { VoicePermissions, hasPermission, RATE_LIMITS } from '@sgchat/shared';
 import { notFound, forbidden, badRequest } from '../utils/errors.js';
+import { 
+  createTempVoiceChannel, 
+  markTempChannelEmpty, 
+  markTempChannelOccupied,
+  isTempVoiceGenerator 
+} from '../services/tempChannels.js';
 
 export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
   // Get voice token for a channel (GET endpoint as specified in SERVER_HANDOFF.md)
@@ -25,23 +31,47 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
         return badRequest(reply, 'channel_id is required');
       }
 
-      const channel = await db.channels.findById(channel_id);
+      let channel = await db.channels.findById(channel_id);
       if (!channel) {
         return notFound(reply, 'Voice channel');
       }
 
-      if (channel.type !== 'voice' && channel.type !== 'music') {
-        return badRequest(reply, 'Not a voice or music channel');
+      // Handle temp voice generator - create temp channel and redirect
+      if (channel.type === 'temp_voice_generator') {
+        const perms = await calculatePermissions(request.user!.id, channel.server_id, channel_id);
+        if (!hasPermission(perms.voice, VoicePermissions.CONNECT)) {
+          return forbidden(reply, 'You don\'t have permission to create a temp channel');
+        }
+
+        const { channelId: tempChannelId, channelName } = await createTempVoiceChannel(
+          request.user!.id,
+          channel_id
+        );
+
+        // Redirect to the temp channel
+        channel = await db.channels.findById(tempChannelId);
+        if (!channel) {
+          return badRequest(reply, 'Failed to create temp channel');
+        }
+      }
+
+      if (channel.type !== 'voice' && channel.type !== 'music' && channel.type !== 'temp_voice') {
+        return badRequest(reply, 'Not a voice channel');
       }
 
       // Check permissions
-      const perms = await calculatePermissions(request.user!.id, channel.server_id, channel_id);
+      const perms = await calculatePermissions(request.user!.id, channel.server_id, channel.id);
 
       if (!hasPermission(perms.voice, VoicePermissions.CONNECT)) {
         return forbidden(reply, 'You don\'t have permission to join this voice channel');
       }
 
-      const roomName = `voice:${channel_id}`;
+      // Mark temp channel as occupied
+      if (channel.is_temp_channel) {
+        await markTempChannelOccupied(channel.id);
+      }
+
+      const roomName = `voice:${channel.id}`;
 
       // For music/stage channels, default to listener mode unless user has SPEAK permission
       const isStageChannel = channel.type === 'music';
@@ -99,26 +129,53 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
     handler: async (request, reply) => {
       const { channelId } = request.params as { channelId: string };
 
-      const channel = await db.channels.findById(channelId);
+      let channel = await db.channels.findById(channelId);
+      let actualChannelId = channelId;
+
       if (!channel) {
         return notFound(reply, 'Channel');
       }
 
-      if (channel.type !== 'voice' && channel.type !== 'music') {
-        return badRequest(reply, 'Not a voice or music channel');
+      // Handle temp voice generator - create temp channel and redirect
+      if (channel.type === 'temp_voice_generator') {
+        const perms = await calculatePermissions(request.user!.id, channel.server_id, channelId);
+        if (!hasPermission(perms.voice, VoicePermissions.CONNECT)) {
+          return forbidden(reply, 'You don\'t have permission to create a temp channel');
+        }
+
+        const { channelId: tempChannelId, channelName } = await createTempVoiceChannel(
+          request.user!.id,
+          channelId
+        );
+
+        // Use the temp channel instead
+        channel = await db.channels.findById(tempChannelId);
+        actualChannelId = tempChannelId;
+        
+        if (!channel) {
+          return badRequest(reply, 'Failed to create temp channel');
+        }
+      }
+
+      if (channel.type !== 'voice' && channel.type !== 'music' && channel.type !== 'temp_voice') {
+        return badRequest(reply, 'Not a voice channel');
       }
 
       // Check permissions
-      const perms = await calculatePermissions(request.user!.id, channel.server_id, channelId);
+      const perms = await calculatePermissions(request.user!.id, channel.server_id, actualChannelId);
 
       if (!hasPermission(perms.voice, VoicePermissions.CONNECT)) {
         return forbidden(reply, 'Missing CONNECT permission');
       }
 
+      // Mark temp channel as occupied
+      if (channel.is_temp_channel) {
+        await markTempChannelOccupied(actualChannelId);
+      }
+
       // Enforce user limit (0 = unlimited)
       if (channel.user_limit && channel.user_limit > 0) {
-        const participants = await redis.getVoiceChannelParticipants(channelId);
-        // Admins/move_members can bypass the limit
+        const participants = await redis.getVoiceChannelParticipants(actualChannelId);
         if (participants.length >= channel.user_limit && !hasPermission(perms.voice, VoicePermissions.MOVE_MEMBERS)) {
           return badRequest(reply, 'Voice channel is full');
         }
@@ -131,7 +188,7 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
       // Generate LiveKit token with appropriate grants
       const token = await generateLiveKitToken({
         identity: request.user!.id,
-        room: `voice:${channelId}`,
+        room: `voice:${actualChannelId}`,
         canPublish: isStageChannel ? canSpeak : hasPermission(perms.voice, VoicePermissions.SPEAK),
         canPublishVideo: hasPermission(perms.voice, VoicePermissions.VIDEO),
         canPublishScreen: hasPermission(perms.voice, VoicePermissions.STREAM),
@@ -139,7 +196,7 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       // Track voice state in Redis
-      await redis.joinVoiceChannel(request.user!.id, channelId);
+      await redis.joinVoiceChannel(request.user!.id, actualChannelId);
 
       // Get user info for socket event
       const user = await db.users.findById(request.user!.id);
@@ -150,20 +207,24 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
         actorId: request.user!.id,
         resourceId: `server:${channel.server_id}`,
         payload: {
-          channel_id: channelId,
+          channel_id: actualChannelId,
           user: {
             id: user.id,
             username: user.username,
             display_name: user.display_name || user.username,
             avatar_url: user.avatar_url,
           },
+          is_temp_channel: channel.is_temp_channel || false,
+          redirected_from: channelId !== actualChannelId ? channelId : undefined,
         },
       });
 
       return {
         token,
         url: getLiveKitUrl(),
-        room_name: `voice:${channelId}`,
+        room_name: `voice:${actualChannelId}`,
+        channel_id: actualChannelId,
+        is_temp_channel: channel.is_temp_channel || false,
         bitrate: channel.bitrate || 64000,
         user_limit: channel.user_limit || 0,
         permissions: {
@@ -296,6 +357,88 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       return { message: 'Disconnect requested' };
+    },
+  });
+
+  // Leave voice channel
+  fastify.post('/leave/:channelId', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { channelId } = request.params as { channelId: string };
+
+      const channel = await db.channels.findById(channelId);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+
+      // Remove from Redis voice state
+      await redis.leaveVoiceChannel(request.user!.id);
+
+      // Get user info for socket event
+      const user = await db.users.findById(request.user!.id);
+
+      // Publish voice.leave event
+      await publishEvent({
+        type: 'voice.leave',
+        actorId: request.user!.id,
+        resourceId: `server:${channel.server_id}`,
+        payload: {
+          channel_id: channelId,
+          user: {
+            id: user.id,
+            username: user.username,
+            display_name: user.display_name || user.username,
+            avatar_url: user.avatar_url,
+          },
+        },
+      });
+
+      // Check if temp channel is now empty
+      if (channel.is_temp_channel) {
+        const participants = await redis.getVoiceChannelParticipants(channelId);
+        if (participants.length === 0) {
+          await markTempChannelEmpty(channelId);
+          console.log(`🕐 Temp channel ${channel.name} is now empty, starting cleanup timer`);
+        }
+      }
+
+      return { message: 'Left voice channel' };
+    },
+  });
+
+  // Get temp channel settings (admin)
+  fastify.get('/temp-settings', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { getTempChannelSettings } = await import('../services/tempChannels.js');
+      const settings = await getTempChannelSettings();
+      return settings;
+    },
+  });
+
+  // Update temp channel settings (admin)
+  fastify.patch('/temp-settings', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const updates = request.body as any;
+
+      // TODO: Check admin permissions
+
+      const { updateTempChannelSettings } = await import('../services/tempChannels.js');
+      const settings = await updateTempChannelSettings(updates);
+      return settings;
+    },
+  });
+
+  // Manually cleanup empty temp channels (admin)
+  fastify.post('/cleanup-temp-channels', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      // TODO: Check admin permissions
+
+      const { cleanupEmptyTempChannels } = await import('../services/tempChannels.js');
+      const result = await cleanupEmptyTempChannels();
+      return result;
     },
   });
 };
