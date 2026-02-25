@@ -174,7 +174,19 @@ export async function bootstrapServer(): Promise<void> {
     RETURNING id
   `;
 
-  console.log(`✅ Created categories: Text Channels, Voice Channels`);
+  const [tempChannelsCategory] = await db.sql`
+    INSERT INTO categories (server_id, name, position)
+    VALUES (${server.id}, 'Temp Channels', 2)
+    RETURNING id
+  `;
+
+  const [afkCategory] = await db.sql`
+    INSERT INTO categories (server_id, name, position)
+    VALUES (${server.id}, 'AFK', 3)
+    RETURNING id
+  `;
+
+  console.log(`✅ Created categories: Text Channels, Voice Channels, Temp Channels, AFK`);
 
   // ============================================================
   // CREATE DEFAULT CHANNELS
@@ -222,22 +234,42 @@ export async function bootstrapServer(): Promise<void> {
     )
   `;
 
+  console.log(`✅ Created voice channel: General Voice`);
+
+  // Create temp voice generator channel in Temp Channels category
+  await db.sql`
+    INSERT INTO channels (server_id, name, type, position, bitrate, user_limit, category_id, topic)
+    VALUES (
+      ${server.id},
+      '➕ Create Channel',
+      'temp_voice_generator',
+      0,
+      64000,
+      0,
+      ${tempChannelsCategory.id},
+      'Join to create your own temporary voice channel'
+    )
+  `;
+
+  console.log(`✅ Created temp voice generator channel`);
+
+  // Create AFK channel in AFK category (separate category at bottom)
   const [afkChannel] = await db.sql`
     INSERT INTO channels (server_id, name, type, position, bitrate, user_limit, is_afk_channel, category_id)
     VALUES (
       ${server.id},
       'AFK',
       'voice',
-      999,
+      0,
       8000,
       0,
       true,
-      ${voiceCategory.id}
+      ${afkCategory.id}
     )
     RETURNING id
   `;
 
-  console.log(`✅ Created voice channels: General Voice, AFK`);
+  console.log(`✅ Created AFK channel`);
 
   // Update server with default and AFK channel references
   await db.sql`

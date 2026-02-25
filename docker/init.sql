@@ -89,7 +89,7 @@ CREATE TABLE channels (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   server_id UUID NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
   name TEXT NOT NULL CHECK (length(name) >= 1 AND length(name) <= 100),
-  type TEXT NOT NULL CHECK (type IN ('text', 'voice', 'announcement', 'music')),
+  type TEXT NOT NULL CHECK (type IN ('text', 'voice', 'announcement', 'music', 'temp_voice_generator', 'temp_voice')),
   topic TEXT CHECK (length(topic) <= 1024),
   position INTEGER DEFAULT 0,
   
@@ -98,11 +98,19 @@ CREATE TABLE channels (
   user_limit INTEGER DEFAULT 0 CHECK (user_limit >= 0 AND user_limit <= 99),
   is_afk_channel BOOLEAN DEFAULT false,
   
+  -- Temp voice channel settings
+  is_temp_channel BOOLEAN DEFAULT false,
+  temp_channel_owner_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  temp_channel_created_at TIMESTAMPTZ,
+  temp_channel_last_empty_at TIMESTAMPTZ,
+  
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX idx_channels_server ON channels(server_id, position);
 CREATE INDEX idx_channels_type ON channels(server_id, type);
+CREATE INDEX idx_channels_temp_cleanup ON channels(temp_channel_last_empty_at) 
+  WHERE is_temp_channel = true AND temp_channel_last_empty_at IS NOT NULL;
 
 -- Add foreign key constraints for server's special channels
 ALTER TABLE servers 
@@ -878,6 +886,21 @@ INSERT INTO instance_settings (key, value) VALUES (
     "segment_duration_hours": 50,
     "min_retention_hours": 24,
     "archive_enabled": true
+  }'::jsonb
+) ON CONFLICT (key) DO NOTHING;
+
+-- ============================================================
+-- TEMP VOICE CHANNEL SETTINGS
+-- ============================================================
+
+INSERT INTO instance_settings (key, value) VALUES (
+  'temp_channel_settings',
+  '{
+    "empty_timeout_seconds": 300,
+    "max_temp_channels_per_user": 1,
+    "inherit_generator_permissions": true,
+    "default_user_limit": 0,
+    "default_bitrate": 64000
   }'::jsonb
 ) ON CONFLICT (key) DO NOTHING;
 

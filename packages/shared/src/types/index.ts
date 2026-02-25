@@ -7,7 +7,13 @@ export type UserStatus = 'online' | 'idle' | 'dnd' | 'offline';
 export type MessageStatus = 'sending' | 'sent' | 'received' | 'failed';
 
 // Channel types
-export type ChannelType = 'text' | 'voice' | 'announcement' | 'music';
+// - text: Regular text channel
+// - voice: Regular voice channel
+// - announcement: Read-only announcement channel
+// - music: Music/stage channel (listeners by default)
+// - temp_voice_generator: When joined, creates a temp voice channel and moves user
+// - temp_voice: Auto-generated temp voice channel (deleted when empty)
+export type ChannelType = 'text' | 'voice' | 'announcement' | 'music' | 'temp_voice_generator' | 'temp_voice';
 
 // System event types
 export type SystemEventType = 'member_join' | 'member_leave' | 'member_online';
