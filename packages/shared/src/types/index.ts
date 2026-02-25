@@ -734,3 +734,87 @@ export interface ArchivedSegmentData {
   archived_at: string;
   compression: 'gzip' | 'none';
 }
+
+// ============================================================
+// Export & Compliance Types
+// ============================================================
+
+/**
+ * Options for exporting channel/DM messages.
+ */
+export interface ExportOptions {
+  /** Export format: JSON or CSV */
+  format: 'json' | 'csv';
+  /** Include attachment URLs in export */
+  includeAttachmentUrls?: boolean;
+  /** Include user information (username, display name) */
+  includeUserInfo?: boolean;
+  /** Start date for message range (inclusive) */
+  startDate?: Date | string;
+  /** End date for message range (inclusive) */
+  endDate?: Date | string;
+  /** Compress the export file */
+  compress?: boolean;
+}
+
+/**
+ * Result of an export operation.
+ */
+export interface ExportResult {
+  /** Path to the exported file in storage */
+  exportPath: string;
+  /** Format of the export */
+  format: 'json' | 'csv';
+  /** Number of messages exported */
+  messageCount: number;
+  /** Number of segments included */
+  segmentCount: number;
+  /** ISO timestamp of when export was created */
+  exportedAt: string;
+  /** Date range of exported messages */
+  dateRange: {
+    start: string | null;
+    end: string | null;
+  };
+  /** Size of the export file in bytes */
+  sizeBytes: number;
+}
+
+/**
+ * Storage alert for channels approaching limits.
+ */
+export interface StorageAlert {
+  /** Type of target */
+  channel_type: 'channel' | 'dm';
+  /** ID of the channel or DM */
+  target_id: UUID;
+  /** Name of the channel (if applicable) */
+  target_name?: string;
+  /** Current storage usage in bytes */
+  current_size_bytes: number;
+  /** Configured size limit in bytes */
+  limit_bytes: number;
+  /** Usage percentage (0-100+) */
+  usage_percent: number;
+  /** Alert severity level */
+  alert_level: 'warning' | 'critical';
+  /** Server ID (for channels) */
+  server_id?: UUID;
+}
+
+/**
+ * Comprehensive storage statistics including media files.
+ */
+export interface ComprehensiveStorageStats {
+  message_storage: {
+    total_size_bytes: number;
+    active_size_bytes: number;
+    archived_size_bytes: number;
+  };
+  media_storage: {
+    total_size_bytes: number;
+    attachment_count: number;
+    by_type: Record<string, number>;
+  };
+  total_size_bytes: number;
+}

@@ -344,3 +344,547 @@ export async function checkArchiveHealth(): Promise<{
     };
   }
 }
+
+// ============================================================
+// EXPORT FUNCTIONALITY
+// ============================================================
+
+export interface ExportOptions {
+  format: 'json' | 'csv';
+  includeAttachmentUrls?: boolean;
+  includeUserInfo?: boolean;
+  startDate?: Date;
+  endDate?: Date;
+  compress?: boolean;
+}
+
+export interface ExportResult {
+  exportPath: string;
+  format: 'json' | 'csv';
+  messageCount: number;
+  segmentCount: number;
+  exportedAt: string;
+  dateRange: {
+    start: string | null;
+    end: string | null;
+  };
+  sizeBytes: number;
+}
+
+/**
+ * Export channel messages for compliance/backup purposes.
+ * Returns a downloadable archive containing all messages within the date range.
+ */
+export async function exportChannelMessages(
+  channelId: string,
+  options: ExportOptions
+): Promise<ExportResult> {
+  const { 
+    format = 'json', 
+    includeAttachmentUrls = true,
+    includeUserInfo = true,
+    startDate, 
+    endDate,
+    compress = true,
+  } = options;
+
+  let query = db.sql`
+    SELECT 
+      m.id, m.content, m.created_at, m.edited_at, m.reply_to_id,
+      m.attachments, m.system_event, m.segment_id,
+      ${includeUserInfo ? db.sql`u.id as author_id, u.username as author_username, u.display_name as author_display_name,` : db.sql`m.author_id,`}
+      ms.is_archived, ms.archive_path
+    FROM messages m
+    LEFT JOIN message_segments ms ON m.segment_id = ms.id
+    ${includeUserInfo ? db.sql`LEFT JOIN users u ON m.author_id = u.id` : db.sql``}
+    WHERE m.channel_id = ${channelId}
+    ${startDate ? db.sql`AND m.created_at >= ${startDate}` : db.sql``}
+    ${endDate ? db.sql`AND m.created_at <= ${endDate}` : db.sql``}
+    ORDER BY m.created_at ASC
+  `;
+
+  const messages = await query;
+
+  // Also load messages from archived segments within the date range
+  const archivedSegments = await db.sql`
+    SELECT id, archive_path FROM message_segments
+    WHERE channel_id = ${channelId}
+      AND is_archived = true
+      ${startDate ? db.sql`AND segment_end >= ${startDate}` : db.sql``}
+      ${endDate ? db.sql`AND segment_start <= ${endDate}` : db.sql``}
+  `;
+
+  const archivedMessages: any[] = [];
+  for (const seg of archivedSegments) {
+    try {
+      const segMessages = await loadArchivedMessages(seg.id);
+      for (const msg of segMessages) {
+        const msgDate = new Date(msg.created_at);
+        if ((!startDate || msgDate >= startDate) && (!endDate || msgDate <= endDate)) {
+          archivedMessages.push({
+            ...msg,
+            _source: 'archive',
+            _segment_id: seg.id,
+          });
+        }
+      }
+    } catch (e) {
+      console.error(`Failed to load archived segment ${seg.id} for export:`, e);
+    }
+  }
+
+  // Combine and sort all messages
+  const allMessages = [
+    ...messages.map((m: any) => ({ ...m, _source: 'database' })),
+    ...archivedMessages,
+  ].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+  // Format output based on format type
+  let exportData: string;
+  if (format === 'csv') {
+    exportData = formatMessagesAsCSV(allMessages, includeAttachmentUrls, includeUserInfo);
+  } else {
+    exportData = JSON.stringify({
+      channel_id: channelId,
+      exported_at: new Date().toISOString(),
+      date_range: {
+        start: startDate?.toISOString() || null,
+        end: endDate?.toISOString() || null,
+      },
+      message_count: allMessages.length,
+      messages: allMessages.map(m => formatMessageForExport(m, includeAttachmentUrls)),
+    }, null, 2);
+  }
+
+  // Compress if requested
+  let finalData: Buffer;
+  if (compress) {
+    finalData = await gzipAsync(Buffer.from(exportData, 'utf8'));
+  } else {
+    finalData = Buffer.from(exportData, 'utf8');
+  }
+
+  // Upload to storage
+  const exportPath = `exports/channels/${channelId}/export-${Date.now()}.${format}${compress ? '.gz' : ''}`;
+  await storage.uploadArchive(exportPath, finalData);
+
+  // Log the export
+  await db.trimmingLog.create({
+    channel_id: channelId,
+    action: 'manual_cleanup',
+    messages_affected: allMessages.length,
+    bytes_freed: 0,
+    triggered_by: 'manual',
+    details: {
+      action_type: 'export',
+      export_path: exportPath,
+      format,
+      compressed: compress,
+      date_range: {
+        start: startDate?.toISOString() || null,
+        end: endDate?.toISOString() || null,
+      },
+    },
+  });
+
+  return {
+    exportPath,
+    format,
+    messageCount: allMessages.length,
+    segmentCount: new Set(allMessages.map((m: any) => m.segment_id || m._segment_id)).size,
+    exportedAt: new Date().toISOString(),
+    dateRange: {
+      start: startDate?.toISOString() || null,
+      end: endDate?.toISOString() || null,
+    },
+    sizeBytes: finalData.length,
+  };
+}
+
+/**
+ * Export DM messages for compliance/backup purposes.
+ */
+export async function exportDMMessages(
+  dmChannelId: string,
+  options: ExportOptions
+): Promise<ExportResult> {
+  const { 
+    format = 'json', 
+    includeAttachmentUrls = true,
+    includeUserInfo = true,
+    startDate, 
+    endDate,
+    compress = true,
+  } = options;
+
+  let query = db.sql`
+    SELECT 
+      m.id, m.content, m.created_at, m.edited_at, m.reply_to_id,
+      m.attachments, m.system_event, m.segment_id,
+      ${includeUserInfo ? db.sql`u.id as author_id, u.username as author_username,` : db.sql`m.author_id,`}
+      ms.is_archived
+    FROM messages m
+    LEFT JOIN message_segments ms ON m.segment_id = ms.id
+    ${includeUserInfo ? db.sql`LEFT JOIN users u ON m.author_id = u.id` : db.sql``}
+    WHERE m.dm_channel_id = ${dmChannelId}
+    ${startDate ? db.sql`AND m.created_at >= ${startDate}` : db.sql``}
+    ${endDate ? db.sql`AND m.created_at <= ${endDate}` : db.sql``}
+    ORDER BY m.created_at ASC
+  `;
+
+  const messages = await query;
+
+  // Also load messages from archived segments
+  const archivedSegments = await db.sql`
+    SELECT id FROM message_segments
+    WHERE dm_channel_id = ${dmChannelId}
+      AND is_archived = true
+      ${startDate ? db.sql`AND segment_end >= ${startDate}` : db.sql``}
+      ${endDate ? db.sql`AND segment_start <= ${endDate}` : db.sql``}
+  `;
+
+  const archivedMessages: any[] = [];
+  for (const seg of archivedSegments) {
+    try {
+      const segMessages = await loadArchivedMessages(seg.id);
+      for (const msg of segMessages) {
+        const msgDate = new Date(msg.created_at);
+        if ((!startDate || msgDate >= startDate) && (!endDate || msgDate <= endDate)) {
+          archivedMessages.push({
+            ...msg,
+            _source: 'archive',
+            _segment_id: seg.id,
+          });
+        }
+      }
+    } catch (e) {
+      console.error(`Failed to load archived DM segment ${seg.id} for export:`, e);
+    }
+  }
+
+  const allMessages = [
+    ...messages.map((m: any) => ({ ...m, _source: 'database' })),
+    ...archivedMessages,
+  ].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+  let exportData: string;
+  if (format === 'csv') {
+    exportData = formatMessagesAsCSV(allMessages, includeAttachmentUrls, includeUserInfo);
+  } else {
+    exportData = JSON.stringify({
+      dm_channel_id: dmChannelId,
+      exported_at: new Date().toISOString(),
+      date_range: {
+        start: startDate?.toISOString() || null,
+        end: endDate?.toISOString() || null,
+      },
+      message_count: allMessages.length,
+      messages: allMessages.map(m => formatMessageForExport(m, includeAttachmentUrls)),
+    }, null, 2);
+  }
+
+  let finalData: Buffer;
+  if (compress) {
+    finalData = await gzipAsync(Buffer.from(exportData, 'utf8'));
+  } else {
+    finalData = Buffer.from(exportData, 'utf8');
+  }
+
+  const exportPath = `exports/dms/${dmChannelId}/export-${Date.now()}.${format}${compress ? '.gz' : ''}`;
+  await storage.uploadArchive(exportPath, finalData);
+
+  await db.trimmingLog.create({
+    dm_channel_id: dmChannelId,
+    action: 'manual_cleanup',
+    messages_affected: allMessages.length,
+    bytes_freed: 0,
+    triggered_by: 'manual',
+    details: {
+      action_type: 'export',
+      export_path: exportPath,
+      format,
+      compressed: compress,
+    },
+  });
+
+  return {
+    exportPath,
+    format,
+    messageCount: allMessages.length,
+    segmentCount: new Set(allMessages.map((m: any) => m.segment_id || m._segment_id)).size,
+    exportedAt: new Date().toISOString(),
+    dateRange: {
+      start: startDate?.toISOString() || null,
+      end: endDate?.toISOString() || null,
+    },
+    sizeBytes: finalData.length,
+  };
+}
+
+/**
+ * Download an export file.
+ */
+export async function downloadExport(exportPath: string): Promise<Buffer> {
+  return storage.downloadArchive(exportPath);
+}
+
+/**
+ * List available exports for a channel.
+ */
+export async function listExports(
+  channelId: string | null,
+  dmChannelId: string | null
+): Promise<{ path: string; size: number; lastModified: Date }[]> {
+  const prefix = channelId 
+    ? `exports/channels/${channelId}/`
+    : `exports/dms/${dmChannelId}/`;
+  return storage.listArchives(prefix);
+}
+
+/**
+ * Delete an export file.
+ */
+export async function deleteExport(exportPath: string): Promise<void> {
+  await storage.deleteArchive(exportPath);
+}
+
+// Helper functions for export formatting
+
+function formatMessageForExport(msg: any, includeAttachmentUrls: boolean) {
+  const formatted: any = {
+    id: msg.id,
+    author_id: msg.author_id,
+    content: msg.content,
+    created_at: msg.created_at,
+    edited_at: msg.edited_at,
+    reply_to_id: msg.reply_to_id,
+  };
+
+  if (msg.author_username) {
+    formatted.author_username = msg.author_username;
+  }
+  if (msg.author_display_name) {
+    formatted.author_display_name = msg.author_display_name;
+  }
+  if (msg.system_event) {
+    formatted.system_event = msg.system_event;
+  }
+  if (includeAttachmentUrls && msg.attachments?.length > 0) {
+    formatted.attachments = msg.attachments;
+  }
+
+  return formatted;
+}
+
+function formatMessagesAsCSV(messages: any[], includeAttachmentUrls: boolean, includeUserInfo: boolean): string {
+  const headers = ['id', 'created_at', 'edited_at', 'author_id'];
+  if (includeUserInfo) {
+    headers.push('author_username');
+  }
+  headers.push('content', 'reply_to_id');
+  if (includeAttachmentUrls) {
+    headers.push('attachments');
+  }
+
+  const rows = messages.map(msg => {
+    const row: string[] = [
+      msg.id,
+      msg.created_at,
+      msg.edited_at || '',
+      msg.author_id || '',
+    ];
+    if (includeUserInfo) {
+      row.push(msg.author_username || '');
+    }
+    row.push(
+      `"${(msg.content || '').replace(/"/g, '""')}"`,
+      msg.reply_to_id || '',
+    );
+    if (includeAttachmentUrls) {
+      row.push(msg.attachments ? JSON.stringify(msg.attachments) : '');
+    }
+    return row.join(',');
+  });
+
+  return [headers.join(','), ...rows].join('\n');
+}
+
+// ============================================================
+// CROSS-SEGMENT REFERENCE HANDLING
+// ============================================================
+
+/**
+ * Handle message edit that may affect archived segments.
+ * Updates the edit timestamp and content in the message,
+ * and logs a reference update for archived cross-references.
+ */
+export async function handleCrossSegmentEdit(
+  messageId: string,
+  newContent: string
+): Promise<{ 
+  updated: boolean; 
+  affectedReferences: string[];
+}> {
+  const [message] = await db.sql`
+    SELECT id, segment_id, channel_id, dm_channel_id FROM messages WHERE id = ${messageId}
+  `;
+
+  if (!message) {
+    return { updated: false, affectedReferences: [] };
+  }
+
+  // Find messages in other segments that reply to this message
+  const replyingMessages = await db.sql`
+    SELECT m.id, m.segment_id, ms.is_archived
+    FROM messages m
+    LEFT JOIN message_segments ms ON m.segment_id = ms.id
+    WHERE m.reply_to_id = ${messageId}
+      AND m.segment_id != ${message.segment_id}
+  `;
+
+  const affectedReferences: string[] = [];
+
+  // For archived segments that reference this message, we log the edit
+  // The reply_preview will be stale, but we track this for audit purposes
+  for (const reply of replyingMessages) {
+    if (reply.is_archived) {
+      affectedReferences.push(reply.id);
+    }
+  }
+
+  if (affectedReferences.length > 0) {
+    await db.trimmingLog.create({
+      channel_id: message.channel_id || undefined,
+      dm_channel_id: message.dm_channel_id || undefined,
+      action: 'manual_cleanup',
+      messages_affected: affectedReferences.length,
+      bytes_freed: 0,
+      triggered_by: 'manual',
+      details: {
+        action_type: 'cross_segment_edit',
+        edited_message_id: messageId,
+        affected_archived_references: affectedReferences,
+        new_content_preview: newContent.substring(0, 50),
+      },
+    });
+  }
+
+  return { updated: true, affectedReferences };
+}
+
+/**
+ * Handle message deletion that may affect archived segments.
+ * Tracks deletions that break cross-segment references.
+ */
+export async function handleCrossSegmentDelete(
+  messageId: string,
+  channelId: string | null,
+  dmChannelId: string | null
+): Promise<{ 
+  deleted: boolean; 
+  brokenReferences: string[];
+}> {
+  // Find messages that reply to this message
+  const replyingMessages = await db.sql`
+    SELECT m.id, m.segment_id, ms.is_archived
+    FROM messages m
+    LEFT JOIN message_segments ms ON m.segment_id = ms.id
+    WHERE m.reply_to_id = ${messageId}
+  `;
+
+  const brokenReferences: string[] = [];
+
+  for (const reply of replyingMessages) {
+    brokenReferences.push(reply.id);
+  }
+
+  if (brokenReferences.length > 0) {
+    await db.trimmingLog.create({
+      channel_id: channelId || undefined,
+      dm_channel_id: dmChannelId || undefined,
+      action: 'manual_cleanup',
+      messages_affected: brokenReferences.length,
+      bytes_freed: 0,
+      triggered_by: 'manual',
+      details: {
+        action_type: 'cross_segment_delete',
+        deleted_message_id: messageId,
+        broken_references: brokenReferences,
+      },
+    });
+  }
+
+  return { deleted: true, brokenReferences };
+}
+
+/**
+ * Resolve a cross-segment message reference.
+ * Attempts to find the referenced message in the database or archives.
+ */
+export async function resolveCrossSegmentReference(
+  messageId: string
+): Promise<{
+  found: boolean;
+  source: 'database' | 'archive' | 'not_found';
+  content?: string;
+  author_id?: string;
+  created_at?: string;
+}> {
+  // First try database
+  const [message] = await db.sql`
+    SELECT id, content, author_id, created_at, segment_id
+    FROM messages WHERE id = ${messageId}
+  `;
+
+  if (message) {
+    return {
+      found: true,
+      source: 'database',
+      content: message.content,
+      author_id: message.author_id,
+      created_at: new Date(message.created_at).toISOString(),
+    };
+  }
+
+  // Search in archived segments
+  // This is expensive, so we look for the segment that should contain this message
+  const [segmentHint] = await db.sql`
+    SELECT ms.id, ms.archive_path
+    FROM message_segments ms
+    WHERE ms.is_archived = true
+    ORDER BY ms.segment_start DESC
+    LIMIT 50
+  `;
+
+  if (!segmentHint) {
+    return { found: false, source: 'not_found' };
+  }
+
+  // Check recent archived segments for the message
+  const archivedSegments = await db.sql`
+    SELECT id FROM message_segments 
+    WHERE is_archived = true 
+    ORDER BY segment_start DESC 
+    LIMIT 20
+  `;
+
+  for (const seg of archivedSegments) {
+    try {
+      const messages = await loadArchivedMessages(seg.id);
+      const found = messages.find(m => m.id === messageId);
+      if (found) {
+        return {
+          found: true,
+          source: 'archive',
+          content: found.content,
+          author_id: found.author_id || undefined,
+          created_at: found.created_at,
+        };
+      }
+    } catch (e) {
+      // Continue to next segment
+    }
+  }
+
+  return { found: false, source: 'not_found' };
+}

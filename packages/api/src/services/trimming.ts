@@ -7,7 +7,7 @@
 
 import { db } from '../lib/db.js';
 import { archiveSegment, deleteArchivedSegment } from './archive.js';
-import { getArchivableSegments, getChannelStorageStats, getDMStorageStats } from './segmentation.js';
+import { getArchivableSegments, getChannelStorageStats, getDMStorageStats, getServerStorageStats } from './segmentation.js';
 import type { 
   ServerRetentionSettings, 
   ChannelRetentionSettings,
@@ -563,4 +563,311 @@ export async function getTrimmingLogs(
   } else {
     return db.trimmingLog.findAll(limit, offset);
   }
+}
+
+// ============================================================
+// STORAGE ALERT NOTIFICATIONS
+// ============================================================
+
+export interface StorageAlert {
+  channel_type: 'channel' | 'dm';
+  target_id: string;
+  target_name?: string;
+  current_size_bytes: number;
+  limit_bytes: number;
+  usage_percent: number;
+  alert_level: 'warning' | 'critical';
+  server_id?: string;
+}
+
+/**
+ * Generate storage alerts for channels approaching or exceeding limits.
+ * Returns alerts grouped by severity level.
+ */
+export async function generateStorageAlerts(): Promise<{
+  warning: StorageAlert[];
+  critical: StorageAlert[];
+}> {
+  const serverSettings = await getServerRetentionSettings();
+  const warningThreshold = serverSettings.storage_warning_threshold_percent;
+  const actionThreshold = serverSettings.storage_action_threshold_percent;
+
+  const alerts: StorageAlert[] = [];
+
+  // Check channels with size limits
+  const channels = await db.sql`
+    SELECT c.id, c.name, c.server_id, c.size_limit_bytes,
+           COALESCE(SUM(ms.size_bytes), 0)::bigint as current_size
+    FROM channels c
+    LEFT JOIN message_segments ms ON c.id = ms.channel_id
+    WHERE c.size_limit_bytes IS NOT NULL AND c.pruning_enabled = true
+    GROUP BY c.id, c.name, c.server_id, c.size_limit_bytes
+    HAVING COALESCE(SUM(ms.size_bytes), 0) >= (c.size_limit_bytes * ${warningThreshold / 100})
+  `;
+
+  for (const channel of channels) {
+    const usagePercent = Math.round((Number(channel.current_size) / channel.size_limit_bytes) * 100);
+    alerts.push({
+      channel_type: 'channel',
+      target_id: channel.id,
+      target_name: channel.name,
+      current_size_bytes: Number(channel.current_size),
+      limit_bytes: channel.size_limit_bytes,
+      usage_percent: usagePercent,
+      alert_level: usagePercent >= actionThreshold ? 'critical' : 'warning',
+      server_id: channel.server_id,
+    });
+  }
+
+  // Check DM channels with size limits
+  const dmChannels = await db.sql`
+    SELECT dc.id, dc.size_limit_bytes,
+           COALESCE(SUM(ms.size_bytes), 0)::bigint as current_size
+    FROM dm_channels dc
+    LEFT JOIN message_segments ms ON dc.id = ms.dm_channel_id
+    WHERE dc.size_limit_bytes IS NOT NULL
+    GROUP BY dc.id, dc.size_limit_bytes
+    HAVING COALESCE(SUM(ms.size_bytes), 0) >= (dc.size_limit_bytes * ${warningThreshold / 100})
+  `;
+
+  for (const dm of dmChannels) {
+    const usagePercent = Math.round((Number(dm.current_size) / dm.size_limit_bytes) * 100);
+    alerts.push({
+      channel_type: 'dm',
+      target_id: dm.id,
+      current_size_bytes: Number(dm.current_size),
+      limit_bytes: dm.size_limit_bytes,
+      usage_percent: usagePercent,
+      alert_level: usagePercent >= actionThreshold ? 'critical' : 'warning',
+    });
+  }
+
+  return {
+    warning: alerts.filter(a => a.alert_level === 'warning'),
+    critical: alerts.filter(a => a.alert_level === 'critical'),
+  };
+}
+
+/**
+ * Send storage alerts to server administrators.
+ * Creates notifications for admins about channels approaching limits.
+ */
+export async function notifyAdminsOfStorageAlerts(
+  serverId: string,
+  alerts: StorageAlert[]
+): Promise<{ notified: number; adminIds: string[] }> {
+  if (alerts.length === 0) {
+    return { notified: 0, adminIds: [] };
+  }
+
+  // Get server admins (owner + users with admin role)
+  const server = await db.sql`SELECT owner_id FROM servers WHERE id = ${serverId}`;
+  if (!server || server.length === 0) {
+    return { notified: 0, adminIds: [] };
+  }
+
+  const adminUsers = await db.sql`
+    SELECT DISTINCT sm.user_id
+    FROM server_members sm
+    INNER JOIN member_roles mr ON sm.user_id = mr.user_id AND sm.server_id = mr.server_id
+    INNER JOIN roles r ON mr.role_id = r.id
+    WHERE sm.server_id = ${serverId}
+      AND (r.server_permissions::bigint & 8) = 8
+  `;
+
+  const adminIds = new Set<string>([
+    server[0].owner_id,
+    ...adminUsers.map((u: any) => u.user_id),
+  ]);
+
+  // Create notifications for each admin
+  for (const adminId of adminIds) {
+    const criticalCount = alerts.filter(a => a.alert_level === 'critical').length;
+    const warningCount = alerts.filter(a => a.alert_level === 'warning').length;
+
+    await db.sql`
+      INSERT INTO notifications (user_id, type, data, priority)
+      VALUES (
+        ${adminId},
+        'system',
+        ${JSON.stringify({
+          title: 'Storage Alert',
+          message: `${criticalCount} channels critical, ${warningCount} channels warning`,
+          alerts: alerts.slice(0, 5),
+          total_alerts: alerts.length,
+        })},
+        ${criticalCount > 0 ? 'high' : 'normal'}
+      )
+    `;
+  }
+
+  return {
+    notified: adminIds.size,
+    adminIds: Array.from(adminIds),
+  };
+}
+
+/**
+ * Check all servers for storage alerts and notify admins.
+ * This should be called periodically (e.g., hourly or daily).
+ */
+export async function runStorageAlertCheck(): Promise<{
+  serversChecked: number;
+  alertsGenerated: number;
+  adminsNotified: number;
+}> {
+  const { warning, critical } = await generateStorageAlerts();
+  const allAlerts = [...warning, ...critical];
+
+  // Group alerts by server
+  const alertsByServer = new Map<string, StorageAlert[]>();
+  for (const alert of allAlerts) {
+    if (alert.server_id) {
+      const existing = alertsByServer.get(alert.server_id) || [];
+      existing.push(alert);
+      alertsByServer.set(alert.server_id, existing);
+    }
+  }
+
+  let totalAdminsNotified = 0;
+
+  // Notify admins of each server
+  for (const [serverId, serverAlerts] of alertsByServer) {
+    const result = await notifyAdminsOfStorageAlerts(serverId, serverAlerts);
+    totalAdminsNotified += result.notified;
+  }
+
+  // Log the alert check
+  if (allAlerts.length > 0) {
+    await db.trimmingLog.create({
+      action: 'retention_cleanup',
+      messages_affected: 0,
+      bytes_freed: 0,
+      triggered_by: 'scheduled',
+      details: {
+        action_type: 'storage_alert_check',
+        warning_count: warning.length,
+        critical_count: critical.length,
+        servers_notified: alertsByServer.size,
+        admins_notified: totalAdminsNotified,
+      },
+    });
+  }
+
+  return {
+    serversChecked: alertsByServer.size,
+    alertsGenerated: allAlerts.length,
+    adminsNotified: totalAdminsNotified,
+  };
+}
+
+// ============================================================
+// MEDIA FILE RETENTION
+// ============================================================
+
+/**
+ * Calculate storage used by attachments for a channel.
+ * Includes external media files in retention calculations.
+ */
+export async function calculateMediaStorageUsage(
+  channelId: string | null,
+  dmChannelId: string | null
+): Promise<{
+  total_attachment_size: number;
+  attachment_count: number;
+  attachment_types: Record<string, number>;
+}> {
+  const whereClause = channelId 
+    ? db.sql`WHERE m.channel_id = ${channelId}`
+    : db.sql`WHERE m.dm_channel_id = ${dmChannelId}`;
+
+  const [stats] = await db.sql`
+    SELECT 
+      COALESCE(SUM(
+        CASE 
+          WHEN jsonb_typeof(m.attachments) = 'array' 
+          THEN (
+            SELECT COALESCE(SUM((a->>'size')::bigint), 0)
+            FROM jsonb_array_elements(m.attachments) as a
+          )
+          ELSE 0 
+        END
+      ), 0)::bigint as total_size,
+      COALESCE(SUM(
+        CASE 
+          WHEN jsonb_typeof(m.attachments) = 'array' 
+          THEN jsonb_array_length(m.attachments)
+          ELSE 0 
+        END
+      ), 0)::int as attachment_count
+    FROM messages m
+    ${whereClause}
+  `;
+
+  // Get breakdown by type
+  const typeBreakdown = await db.sql`
+    SELECT 
+      a->>'type' as content_type,
+      COUNT(*)::int as count
+    FROM messages m,
+      jsonb_array_elements(m.attachments) as a
+    ${whereClause}
+      AND jsonb_typeof(m.attachments) = 'array'
+    GROUP BY a->>'type'
+  `;
+
+  const attachmentTypes: Record<string, number> = {};
+  for (const row of typeBreakdown) {
+    attachmentTypes[row.content_type || 'unknown'] = row.count;
+  }
+
+  return {
+    total_attachment_size: Number(stats.total_size || 0),
+    attachment_count: stats.attachment_count || 0,
+    attachment_types: attachmentTypes,
+  };
+}
+
+/**
+ * Get comprehensive storage stats including media files.
+ */
+export async function getComprehensiveStorageStats(
+  channelId: string | null,
+  dmChannelId: string | null
+): Promise<{
+  message_storage: {
+    total_size_bytes: number;
+    active_size_bytes: number;
+    archived_size_bytes: number;
+  };
+  media_storage: {
+    total_size_bytes: number;
+    attachment_count: number;
+    by_type: Record<string, number>;
+  };
+  total_size_bytes: number;
+}> {
+  // Get message storage stats
+  const getStats = channelId 
+    ? () => getChannelStorageStats(channelId)
+    : () => getDMStorageStats(dmChannelId!);
+  
+  const messageStats = await getStats();
+
+  // Get media storage stats
+  const mediaStats = await calculateMediaStorageUsage(channelId, dmChannelId);
+
+  return {
+    message_storage: {
+      total_size_bytes: messageStats.total_size_bytes,
+      active_size_bytes: messageStats.active_size_bytes,
+      archived_size_bytes: messageStats.archived_size_bytes,
+    },
+    media_storage: {
+      total_size_bytes: mediaStats.total_attachment_size,
+      attachment_count: mediaStats.attachment_count,
+      by_type: mediaStats.attachment_types,
+    },
+    total_size_bytes: messageStats.total_size_bytes + mediaStats.total_attachment_size,
+  };
 }
