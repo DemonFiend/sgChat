@@ -14,8 +14,10 @@ function createStreamViewerStore() {
   const [videoElement, setVideoElement] = createSignal<HTMLVideoElement | null>(null);
 
   const watchStream = (stream: StreamInfo) => {
+    console.log('[StreamViewerStore] watchStream called:', stream);
     setActiveStream(stream);
     setIsMinimized(false);
+    console.log('[StreamViewerStore] activeStream is now:', activeStream());
   };
 
   const minimizeStream = () => {

@@ -240,15 +240,29 @@ function createVoiceStore() {
     username: string;
     display_name?: string | null;
     avatar_url?: string | null;
+    is_streaming?: boolean;
   }) => {
     setState(prev => {
       const newParticipants = new Map(prev.participants);
       const channelParticipants = [...(newParticipants.get(channelId) || [])];
       
       // Don't add if already exists
-      if (channelParticipants.some(p => p.userId === user.id)) {
-        console.log('[VoiceStore] Participant already exists, skipping add:', user.id, user.username);
-        return prev;
+      const existingIndex = channelParticipants.findIndex(p => p.userId === user.id);
+      if (existingIndex !== -1) {
+        // User already exists - update their info but preserve streaming state if not provided
+        const existing = channelParticipants[existingIndex];
+        channelParticipants[existingIndex] = {
+          ...existing,
+          username: user.username,
+          displayName: user.display_name || null,
+          avatarUrl: user.avatar_url || null,
+          isStreaming: user.is_streaming ?? existing.isStreaming,
+        };
+        newParticipants.set(channelId, channelParticipants);
+        return {
+          ...prev,
+          participants: newParticipants,
+        };
       }
       
       console.log('[VoiceStore] Adding participant:', user.id, user.username, 'to channel:', channelId);
@@ -260,6 +274,7 @@ function createVoiceStore() {
         isMuted: false,
         isDeafened: false,
         isSpeaking: false,
+        isStreaming: user.is_streaming || false,
       });
       
       newParticipants.set(channelId, channelParticipants);
@@ -335,17 +350,28 @@ function createVoiceStore() {
       const newParticipants = new Map(prev.participants);
       const existing = newParticipants.get(channelId) || [];
       
-      // Build a map of incoming participants by userId
-      const incomingMap = new Map(participants.map(p => [p.userId, p]));
+      // Build a map of existing participants by userId to preserve real-time state
+      const existingMap = new Map(existing.map(p => [p.userId, p]));
       
       // Merge: keep existing participants that are not in the new list (they may have joined via socket event)
-      // and update/add participants from the new list
+      // and update/add participants from the new list, preserving real-time state like isStreaming, isSpeaking
       const merged: VoiceParticipant[] = [];
       const seenIds = new Set<string>();
       
-      // First, add all incoming participants (they have latest data from server)
+      // First, add all incoming participants but preserve real-time state from existing
       for (const p of participants) {
-        merged.push(p);
+        const existingParticipant = existingMap.get(p.userId);
+        if (existingParticipant) {
+          // Preserve real-time state (isStreaming, isSpeaking) from existing participant
+          // Use incoming data for server-authoritative state (isMuted, isDeafened)
+          merged.push({
+            ...p,
+            isSpeaking: existingParticipant.isSpeaking,
+            isStreaming: p.isStreaming || existingParticipant.isStreaming, // Keep streaming if either says true
+          });
+        } else {
+          merged.push(p);
+        }
         seenIds.add(p.userId);
       }
       

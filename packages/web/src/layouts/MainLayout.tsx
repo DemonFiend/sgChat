@@ -760,10 +760,6 @@ export function MainLayout() {
         return { ...msg, author };
       });
 
-      console.log('[MainLayout] Messages loaded:', normalizedMessages.length);
-      if (normalizedMessages.length > 0) {
-        console.log('[MainLayout] First message sample:', JSON.stringify(normalizedMessages[0], null, 2));
-      }
       setMessages(normalizedMessages);
 
       // Mark channel as read to clear unread notifications
@@ -773,7 +769,6 @@ export function MainLayout() {
         setChannels(prev => prev.map(c =>
           c.id === channelId ? { ...c, unread_count: 0, has_mentions: false } : c
         ));
-        console.log('[MainLayout] Channel marked as read:', channelId);
       } catch (ackErr) {
         console.error('[MainLayout] Failed to mark channel as read:', ackErr);
       }
@@ -979,7 +974,7 @@ export function MainLayout() {
           {/* Main content area - Stream Viewer or Chat */}
           <div class="flex-1 flex flex-col min-w-0">
             <Show 
-              when={streamViewerStore.isWatchingStream() && !streamViewerStore.isMinimized()}
+              when={streamViewerStore.activeStream() && !streamViewerStore.isMinimized()}
               fallback={
                 <ChatPanel
                   channel={currentChannel()}
@@ -996,16 +991,18 @@ export function MainLayout() {
                 />
               }
             >
-              <StreamViewer
-                streamerId={streamViewerStore.activeStream()!.streamerId}
-                streamerName={streamViewerStore.activeStream()!.streamerName}
-                streamerAvatar={streamViewerStore.activeStream()!.streamerAvatar}
-                channelId={streamViewerStore.activeStream()!.channelId}
-                videoElement={streamViewerStore.videoElement()}
-                onClose={streamViewerStore.leaveStream}
-                onMinimize={streamViewerStore.toggleMinimize}
-                isMinimized={false}
-              />
+              {(stream) => (
+                <StreamViewer
+                  streamerId={stream().streamerId}
+                  streamerName={stream().streamerName}
+                  streamerAvatar={stream().streamerAvatar}
+                  channelId={stream().channelId}
+                  videoElement={streamViewerStore.videoElement()}
+                  onClose={streamViewerStore.leaveStream}
+                  onMinimize={streamViewerStore.toggleMinimize}
+                  isMinimized={false}
+                />
+              )}
             </Show>
           </div>
 
@@ -1076,17 +1073,19 @@ export function MainLayout() {
       <ServerWelcomePopup />
 
       {/* Minimized Stream Viewer (Picture-in-Picture) */}
-      <Show when={streamViewerStore.isWatchingStream() && streamViewerStore.isMinimized()}>
-        <StreamViewer
-          streamerId={streamViewerStore.activeStream()!.streamerId}
-          streamerName={streamViewerStore.activeStream()!.streamerName}
-          streamerAvatar={streamViewerStore.activeStream()!.streamerAvatar}
-          channelId={streamViewerStore.activeStream()!.channelId}
-          videoElement={streamViewerStore.videoElement()}
-          onClose={streamViewerStore.leaveStream}
-          onMinimize={streamViewerStore.toggleMinimize}
-          isMinimized={true}
-        />
+      <Show when={streamViewerStore.activeStream() && streamViewerStore.isMinimized()}>
+        {(stream) => (
+          <StreamViewer
+            streamerId={stream().streamerId}
+            streamerName={stream().streamerName}
+            streamerAvatar={stream().streamerAvatar}
+            channelId={stream().channelId}
+            videoElement={streamViewerStore.videoElement()}
+            onClose={streamViewerStore.leaveStream}
+            onMinimize={streamViewerStore.toggleMinimize}
+            isMinimized={true}
+          />
+        )}
       </Show>
     </div>
   );
