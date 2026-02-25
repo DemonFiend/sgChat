@@ -18,6 +18,22 @@ export interface VoicePermissions {
   canMoveMembers: boolean;
 }
 
+export type ConnectionQualityLevel = 'excellent' | 'good' | 'poor' | 'lost' | 'unknown';
+
+export type ScreenShareQuality = 'standard' | 'high' | 'native';
+
+export interface ScreenShareState {
+  isSharing: boolean;
+  quality: ScreenShareQuality;
+}
+
+export interface ConnectionQualityState {
+  level: ConnectionQualityLevel;
+  ping: number | null;
+  jitter: number | null;
+  packetLoss: number | null;
+}
+
 export type VoiceConnectionState = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'error';
 
 export interface VoiceState {
@@ -31,6 +47,8 @@ export interface VoiceState {
     isDeafened: boolean;
     isSpeaking: boolean;
   };
+  screenShare: ScreenShareState;
+  connectionQuality: ConnectionQualityState;
   error: string | null;
 }
 
@@ -46,6 +64,16 @@ function createVoiceStore() {
       isDeafened: false,
       isSpeaking: false,
     },
+    screenShare: {
+      isSharing: false,
+      quality: 'standard',
+    },
+    connectionQuality: {
+      level: 'unknown',
+      ping: null,
+      jitter: null,
+      packetLoss: null,
+    },
     error: null,
   });
 
@@ -59,6 +87,9 @@ function createVoiceStore() {
   const isSpeaking = () => state().localState.isSpeaking;
   const error = () => state().error;
   const permissions = () => state().permissions;
+  const isScreenSharing = () => state().screenShare.isSharing;
+  const screenShareQuality = () => state().screenShare.quality;
+  const connectionQuality = () => state().connectionQuality;
 
   // Get participants for a specific channel
   const getParticipants = (channelId: string): VoiceParticipant[] => {
@@ -105,6 +136,16 @@ function createVoiceStore() {
         isMuted: false,
         isDeafened: false,
         isSpeaking: false,
+      },
+      screenShare: {
+        isSharing: false,
+        quality: 'standard',
+      },
+      connectionQuality: {
+        level: 'unknown',
+        ping: null,
+        jitter: null,
+        packetLoss: null,
       },
       error: null,
     }));
@@ -159,6 +200,36 @@ function createVoiceStore() {
         ...prev.localState,
         isSpeaking: speaking,
       },
+    }));
+  };
+
+  // Update screen sharing state
+  const setScreenSharing = (isSharing: boolean) => {
+    setState(prev => ({
+      ...prev,
+      screenShare: {
+        ...prev.screenShare,
+        isSharing,
+      },
+    }));
+  };
+
+  // Update screen share quality
+  const setScreenShareQuality = (quality: ScreenShareQuality) => {
+    setState(prev => ({
+      ...prev,
+      screenShare: {
+        ...prev.screenShare,
+        quality,
+      },
+    }));
+  };
+
+  // Update connection quality
+  const setConnectionQuality = (quality: ConnectionQualityState) => {
+    setState(prev => ({
+      ...prev,
+      connectionQuality: quality,
     }));
   };
 
@@ -284,6 +355,9 @@ function createVoiceStore() {
     permissions,
     getParticipants,
     currentParticipants,
+    isScreenSharing,
+    screenShareQuality,
+    connectionQuality,
     // State setters
     setConnecting,
     setConnected,
@@ -293,6 +367,9 @@ function createVoiceStore() {
     setMuted,
     setDeafened,
     setSpeaking,
+    setScreenSharing,
+    setScreenShareQuality,
+    setConnectionQuality,
     // Participant management
     addParticipant,
     removeParticipant,

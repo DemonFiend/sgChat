@@ -1,8 +1,9 @@
-import { Room, RoomEvent, Track, RemoteTrack, RemoteParticipant, LocalParticipant, ConnectionState } from 'livekit-client';
+import { Room, RoomEvent, Track, RemoteTrack, RemoteParticipant, LocalParticipant, ConnectionState, ConnectionQuality, LocalTrackPublication } from 'livekit-client';
 import { api } from '@/api';
-import { voiceStore, type VoicePermissions, type VoiceParticipant } from '@/stores/voice';
+import { voiceStore, type VoicePermissions, type VoiceParticipant, type ConnectionQualityLevel, type ScreenShareQuality, type ConnectionQualityState } from '@/stores/voice';
 import { socketService } from './socket';
 import { soundService } from './soundService';
+import { SCREEN_SHARE_QUALITIES } from '@sgchat/shared';
 
 interface JoinVoiceResponse {
   token: string;
@@ -52,6 +53,8 @@ class VoiceServiceClass {
   private audioContainer: HTMLElement | null = null;
   private voiceSettings: VoiceSettings | null = null;
   private outputVolume: number = 100;
+  private screenShareTrack: LocalTrackPublication | null = null;
+  private connectionQualityInterval: ReturnType<typeof setInterval> | null = null;
 
   /**
    * Set the container element for audio elements
@@ -200,7 +203,10 @@ class VoiceServiceClass {
         console.log('[VoiceService] Microphone enabled');
       }
 
-      // 8. Emit socket event to notify server
+      // 8. Start connection quality monitoring
+      this.startConnectionQualityMonitoring();
+
+      // 9. Emit socket event to notify server
       socketService.emit('voice:join', { channel_id: channelId });
 
     } catch (err: any) {
@@ -223,6 +229,14 @@ class VoiceServiceClass {
 
     try {
       console.log('[VoiceService] Leaving voice channel:', channelId);
+
+      // Stop connection quality monitoring
+      this.stopConnectionQualityMonitoring();
+
+      // Stop screen share if active
+      if (voiceStore.isScreenSharing()) {
+        await this.stopScreenShare();
+      }
 
       // Play leave sound before disconnecting
       this.playSound('leave');
@@ -247,6 +261,7 @@ class VoiceServiceClass {
       console.error('[VoiceService] Error leaving voice channel:', err);
       // Force disconnect state even on error
       this.room = null;
+      this.stopConnectionQualityMonitoring();
       voiceStore.setDisconnected();
     }
   }
@@ -358,6 +373,198 @@ class VoiceServiceClass {
     console.log('[VoiceService] Force moved to channel:', toChannelId);
     await this.leave();
     await this.join(toChannelId, toChannelName);
+  }
+
+  /**
+   * Start screen sharing
+   */
+  async startScreenShare(quality: ScreenShareQuality = 'standard'): Promise<void> {
+    if (!this.room) {
+      console.warn('[VoiceService] Cannot start screen share: not connected');
+      return;
+    }
+
+    // Check permission
+    const permissions = voiceStore.permissions();
+    if (!permissions?.canStream) {
+      console.warn('[VoiceService] Cannot start screen share: no STREAM permission');
+      voiceStore.setError('You do not have permission to share your screen');
+      return;
+    }
+
+    try {
+      const qualityConfig = SCREEN_SHARE_QUALITIES[quality.toUpperCase() as keyof typeof SCREEN_SHARE_QUALITIES];
+      
+      // For native quality, we don't constrain resolution
+      const constraints: DisplayMediaStreamOptions = {
+        video: quality === 'native' ? true : {
+          width: { ideal: qualityConfig.width },
+          height: { ideal: qualityConfig.height },
+          frameRate: { ideal: qualityConfig.fps },
+        },
+        audio: true,
+      };
+
+      await this.room.localParticipant.setScreenShareEnabled(true, constraints, {
+        screenShareEncoding: {
+          maxBitrate: qualityConfig.bitrate,
+          maxFramerate: qualityConfig.fps,
+        },
+      });
+
+      voiceStore.setScreenSharing(true);
+      voiceStore.setScreenShareQuality(quality);
+      console.log('[VoiceService] Screen share started with quality:', quality);
+
+      // Notify server
+      const channelId = voiceStore.currentChannelId();
+      if (channelId) {
+        socketService.emit('voice:update', {
+          muted: voiceStore.isMuted(),
+          deafened: voiceStore.isDeafened(),
+          screen_sharing: true,
+        });
+      }
+    } catch (err: any) {
+      console.error('[VoiceService] Failed to start screen share:', err);
+      if (err.name === 'NotAllowedError') {
+        voiceStore.setError('Screen sharing was cancelled');
+      } else {
+        voiceStore.setError(err?.message || 'Failed to start screen share');
+      }
+    }
+  }
+
+  /**
+   * Stop screen sharing
+   */
+  async stopScreenShare(): Promise<void> {
+    if (!this.room) return;
+
+    try {
+      await this.room.localParticipant.setScreenShareEnabled(false);
+      voiceStore.setScreenSharing(false);
+      console.log('[VoiceService] Screen share stopped');
+
+      // Notify server
+      const channelId = voiceStore.currentChannelId();
+      if (channelId) {
+        socketService.emit('voice:update', {
+          muted: voiceStore.isMuted(),
+          deafened: voiceStore.isDeafened(),
+          screen_sharing: false,
+        });
+      }
+    } catch (err) {
+      console.error('[VoiceService] Failed to stop screen share:', err);
+    }
+  }
+
+  /**
+   * Toggle screen sharing
+   */
+  async toggleScreenShare(quality?: ScreenShareQuality): Promise<void> {
+    if (voiceStore.isScreenSharing()) {
+      await this.stopScreenShare();
+    } else {
+      await this.startScreenShare(quality || voiceStore.screenShareQuality());
+    }
+  }
+
+  /**
+   * Update screen share quality while sharing
+   */
+  async updateScreenShareQuality(quality: ScreenShareQuality): Promise<void> {
+    voiceStore.setScreenShareQuality(quality);
+    
+    if (voiceStore.isScreenSharing()) {
+      // Restart with new quality
+      await this.stopScreenShare();
+      await this.startScreenShare(quality);
+    }
+  }
+
+  /**
+   * Get current connection quality metrics
+   */
+  getConnectionQuality(): ConnectionQualityState {
+    return voiceStore.connectionQuality();
+  }
+
+  /**
+   * Start monitoring connection quality
+   */
+  private startConnectionQualityMonitoring(): void {
+    if (this.connectionQualityInterval) {
+      clearInterval(this.connectionQualityInterval);
+    }
+
+    this.connectionQualityInterval = setInterval(() => {
+      this.updateConnectionQuality();
+    }, 2000);
+
+    // Initial update
+    this.updateConnectionQuality();
+  }
+
+  /**
+   * Stop monitoring connection quality
+   */
+  private stopConnectionQualityMonitoring(): void {
+    if (this.connectionQualityInterval) {
+      clearInterval(this.connectionQualityInterval);
+      this.connectionQualityInterval = null;
+    }
+  }
+
+  /**
+   * Update connection quality from LiveKit stats
+   */
+  private async updateConnectionQuality(): Promise<void> {
+    if (!this.room?.localParticipant) return;
+
+    const quality = this.room.localParticipant.connectionQuality;
+    const level = this.mapConnectionQuality(quality);
+
+    // Get RTT/ping from room engine if available
+    let ping: number | null = null;
+    let jitter: number | null = null;
+    let packetLoss: number | null = null;
+
+    try {
+      // Access the engine's publisher stats for detailed metrics
+      const engine = (this.room as any).engine;
+      if (engine?.client?.rtt) {
+        ping = Math.round(engine.client.rtt);
+      }
+    } catch {
+      // Stats not available
+    }
+
+    voiceStore.setConnectionQuality({
+      level,
+      ping,
+      jitter,
+      packetLoss,
+    });
+  }
+
+  /**
+   * Map LiveKit ConnectionQuality to our level
+   */
+  private mapConnectionQuality(quality: ConnectionQuality): ConnectionQualityLevel {
+    switch (quality) {
+      case ConnectionQuality.Excellent:
+        return 'excellent';
+      case ConnectionQuality.Good:
+        return 'good';
+      case ConnectionQuality.Poor:
+        return 'poor';
+      case ConnectionQuality.Lost:
+        return 'lost';
+      default:
+        return 'unknown';
+    }
   }
 
   /**
