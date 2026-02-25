@@ -1670,6 +1670,92 @@ function ChannelsTab() {
           </div>
         </div>
       </Show>
+
+      {/* Temp Channel Settings Section */}
+      <TempChannelSettings />
+    </div>
+  );
+}
+
+// Temp Channel Settings Component
+function TempChannelSettings() {
+  const [settings, setSettings] = createSignal<{
+    empty_timeout_seconds: number;
+    max_temp_channels_per_user: number;
+    inherit_generator_permissions: boolean;
+    default_user_limit: number;
+    default_bitrate: number;
+  } | null>(null);
+  const [isLoading, setIsLoading] = createSignal(true);
+  const [isSaving, setIsSaving] = createSignal(false);
+  const [timeoutMinutes, setTimeoutMinutes] = createSignal(5);
+
+  const fetchSettings = async () => {
+    try {
+      const data = await api.get<any>('/voice/temp-settings');
+      setSettings(data);
+      setTimeoutMinutes(Math.round((data?.empty_timeout_seconds || 300) / 60));
+    } catch (err) {
+      console.error('Failed to fetch temp settings:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  createEffect(() => {
+    fetchSettings();
+  });
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      const updated = await api.patch<any>('/voice/temp-settings', {
+        empty_timeout_seconds: timeoutMinutes() * 60,
+      });
+      setSettings(updated);
+      alert('Temp channel settings saved!');
+    } catch (err: any) {
+      alert(err?.message || 'Failed to save settings');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div class="mt-8 pt-6 border-t border-border-subtle">
+      <h3 class="text-lg font-bold text-text-primary mb-4">Temp Voice Channel Settings</h3>
+      <p class="text-sm text-text-muted mb-4">
+        Configure how temporary voice channels behave when users join a "Create Channel" voice channel.
+      </p>
+
+      <Show when={!isLoading()} fallback={<div class="text-text-muted">Loading settings...</div>}>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-text-secondary mb-1">
+              Empty Channel Timeout (minutes)
+            </label>
+            <input
+              type="number"
+              min="1"
+              max="60"
+              value={timeoutMinutes()}
+              onInput={(e) => setTimeoutMinutes(parseInt(e.currentTarget.value) || 5)}
+              class="w-32 px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
+            />
+            <p class="text-xs text-text-muted mt-1">
+              Time before an empty temp channel is automatically deleted.
+            </p>
+          </div>
+
+          <button
+            onClick={handleSave}
+            disabled={isSaving()}
+            class="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
+          >
+            {isSaving() ? 'Saving...' : 'Save Settings'}
+          </button>
+        </div>
+      </Show>
     </div>
   );
 }
