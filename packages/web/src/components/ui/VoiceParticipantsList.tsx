@@ -1,10 +1,12 @@
 import { For, Show } from 'solid-js';
 import { voiceStore, type VoiceParticipant } from '@/stores/voice';
+import { streamViewerStore } from '@/stores/streamViewer';
 import { SpeakerIcon } from './VoiceControls';
 import { Avatar } from './Avatar';
 
 interface VoiceParticipantsListProps {
   channelId: string;
+  channelName?: string;
   compact?: boolean;
 }
 
@@ -18,6 +20,8 @@ export function VoiceParticipantsList(props: VoiceParticipantsListProps) {
           {(participant) => (
             <VoiceParticipantItem 
               participant={participant} 
+              channelId={props.channelId}
+              channelName={props.channelName}
               compact={props.compact} 
             />
           )}
@@ -29,11 +33,24 @@ export function VoiceParticipantsList(props: VoiceParticipantsListProps) {
 
 interface VoiceParticipantItemProps {
   participant: VoiceParticipant;
+  channelId: string;
+  channelName?: string;
   compact?: boolean;
 }
 
 function VoiceParticipantItem(props: VoiceParticipantItemProps) {
   const displayName = () => props.participant.displayName || props.participant.username;
+
+  const handleWatchStream = (e: Event) => {
+    e.stopPropagation();
+    streamViewerStore.watchStream({
+      streamerId: props.participant.userId,
+      streamerName: displayName(),
+      streamerAvatar: props.participant.avatarUrl,
+      channelId: props.channelId,
+      channelName: props.channelName || 'Voice Channel',
+    });
+  };
 
   if (props.compact) {
     return (
@@ -94,6 +111,7 @@ function VoiceParticipantItem(props: VoiceParticipantItemProps) {
       {/* Streaming indicator - clickable */}
       <Show when={props.participant.isStreaming}>
         <button
+          onClick={handleWatchStream}
           class="flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-purple-400 bg-purple-500/20 rounded hover:bg-purple-500/30 transition-colors"
           title={`Watch ${displayName()}'s stream`}
         >

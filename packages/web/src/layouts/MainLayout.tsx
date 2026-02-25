@@ -12,10 +12,11 @@ import {
   type ChannelInfo,
   type TypingUser
 } from '@/components/layout';
-import { UserSettingsModal, ServerSettingsModal, ClaimAdminModal, TransferOwnershipModal, UnclaimedServerBanner, ServerWelcomePopup } from '@/components/ui';
+import { UserSettingsModal, ServerSettingsModal, ClaimAdminModal, TransferOwnershipModal, UnclaimedServerBanner, ServerWelcomePopup, StreamViewer } from '@/components/ui';
 import { api } from '@/api';
 import { authStore } from '@/stores/auth';
 import { permissions, voiceStore, serverPopupStore } from '@/stores';
+import { streamViewerStore } from '@/stores/streamViewer';
 import { socketService } from '@/lib/socket';
 import { voiceService } from '@/lib/voiceService';
 import { soundService } from '@/lib/soundService';
@@ -193,6 +194,7 @@ export function MainLayout() {
               isMuted: p.is_muted,
               isDeafened: p.is_deafened,
               isSpeaking: false,
+              isStreaming: p.is_streaming || false,
             }));
             voiceStore.setChannelParticipants(channelId, voiceParticipants);
           }
@@ -714,6 +716,11 @@ export function MainLayout() {
           topic: channel.topic,
           type: channel.type
         });
+
+        // Minimize stream viewer when navigating to a text channel
+        if (channel.type === 'text' && streamViewerStore.isWatchingStream() && !streamViewerStore.isMinimized()) {
+          streamViewerStore.minimizeStream();
+        }
       }
 
       // Fetch messages - handle both array and object response formats
@@ -959,21 +966,37 @@ export function MainLayout() {
             onServerSettingsClick={canAccessSettings() ? handleServerSettingsClick : undefined}
           />
 
-          {/* Main content area - Chat */}
+          {/* Main content area - Stream Viewer or Chat */}
           <div class="flex-1 flex flex-col min-w-0">
-            <ChatPanel
-              channel={currentChannel()}
-              messages={messages()}
-              onSendMessage={handleSendMessage}
-              onReactionAdd={handleReactionAdd}
-              onReactionRemove={handleReactionRemove}
-              onTypingStart={handleTypingStart}
-              onTypingStop={handleTypingStop}
-              currentUserId={authStore.state().user?.id}
-              typingUsers={typingUsers()}
-              isMemberListOpen={isMemberListOpen()}
-              onToggleMemberList={toggleMemberList}
-            />
+            <Show 
+              when={streamViewerStore.isWatchingStream() && !streamViewerStore.isMinimized()}
+              fallback={
+                <ChatPanel
+                  channel={currentChannel()}
+                  messages={messages()}
+                  onSendMessage={handleSendMessage}
+                  onReactionAdd={handleReactionAdd}
+                  onReactionRemove={handleReactionRemove}
+                  onTypingStart={handleTypingStart}
+                  onTypingStop={handleTypingStop}
+                  currentUserId={authStore.state().user?.id}
+                  typingUsers={typingUsers()}
+                  isMemberListOpen={isMemberListOpen()}
+                  onToggleMemberList={toggleMemberList}
+                />
+              }
+            >
+              <StreamViewer
+                streamerId={streamViewerStore.activeStream()!.streamerId}
+                streamerName={streamViewerStore.activeStream()!.streamerName}
+                streamerAvatar={streamViewerStore.activeStream()!.streamerAvatar}
+                channelId={streamViewerStore.activeStream()!.channelId}
+                videoElement={streamViewerStore.videoElement()}
+                onClose={streamViewerStore.leaveStream}
+                onMinimize={streamViewerStore.toggleMinimize}
+                isMinimized={false}
+              />
+            </Show>
           </div>
 
           {/* Right Sidebar - Member List (collapsible) */}
@@ -1041,6 +1064,20 @@ export function MainLayout() {
 
       {/* Server Welcome Popup */}
       <ServerWelcomePopup />
+
+      {/* Minimized Stream Viewer (Picture-in-Picture) */}
+      <Show when={streamViewerStore.isWatchingStream() && streamViewerStore.isMinimized()}>
+        <StreamViewer
+          streamerId={streamViewerStore.activeStream()!.streamerId}
+          streamerName={streamViewerStore.activeStream()!.streamerName}
+          streamerAvatar={streamViewerStore.activeStream()!.streamerAvatar}
+          channelId={streamViewerStore.activeStream()!.channelId}
+          videoElement={streamViewerStore.videoElement()}
+          onClose={streamViewerStore.leaveStream}
+          onMinimize={streamViewerStore.toggleMinimize}
+          isMinimized={true}
+        />
+      </Show>
     </div>
   );
 }
