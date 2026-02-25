@@ -68,7 +68,7 @@ export const NOTIFICATION_BATCH_THRESHOLD = 3;
 export const NOTIFICATION_BATCH_WINDOW = 30_000; // 30 seconds
 
 // Theme defaults
-export const DEFAULT_THEME = 'dark';
+export const DEFAULT_THEME = 'nord';
 export const DEFAULT_ACCENT_COLOR = '#5865f2';
 export const DEFAULT_FONT_SIZE = 14;
 export const DEFAULT_CHAT_DENSITY = 'cozy';

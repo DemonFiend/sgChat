@@ -1,5 +1,5 @@
 import { createSignal, For, Show, createEffect, onCleanup, JSX } from 'solid-js';
-import { Avatar, MessageContent, DMVoiceControls, DMCallStatusBar } from '@/components/ui';
+import { Avatar, MessageContent, DMVoiceControls, DMCallStatusBar, ReactionPicker } from '@/components/ui';
 import { BendyLine } from '@/components/ui/BendyLine';
 import { GifPicker } from '@/components/ui/GifPicker';
 import type { Friend } from './DMSidebar';
@@ -29,9 +29,11 @@ export function DMChatPanel(props: DMChatPanelProps): JSX.Element {
   const [friendLocalTime, setFriendLocalTime] = createSignal<string | null>(null);
   const [showTimeTooltip, setShowTimeTooltip] = createSignal(false);
   const [showGifPicker, setShowGifPicker] = createSignal(false);
+  const [showEmojiPicker, setShowEmojiPicker] = createSignal(false);
   let messagesEndRef: HTMLDivElement | undefined;
   let inputRef: HTMLTextAreaElement | undefined;
   let gifButtonRef: HTMLButtonElement | undefined;
+  let emojiButtonRef: HTMLButtonElement | undefined;
   let typingTimeout: ReturnType<typeof setTimeout> | null = null;
   let isTyping = false;
   let timeUpdateInterval: ReturnType<typeof setInterval> | null = null;
@@ -291,41 +293,33 @@ export function DMChatPanel(props: DMChatPanelProps): JSX.Element {
             <For each={props.messages}>
               {(message) => {
                 const isMe = message.sender_id === props.currentUserId;
+                const senderName = isMe
+                  ? (props.currentUserDisplayName || 'You')
+                  : (friend().display_name || friend().username);
+                const senderAvatar = isMe ? props.currentUserAvatar : friend().avatar_url;
                 return (
-                  <div class={`flex mb-3 ${isMe ? 'justify-end' : 'justify-start'}`}>
-                    {/* Avatar for received messages */}
-                    <Show when={!isMe}>
-                      <div class="flex-shrink-0 mr-2">
-                        <Avatar
-                          src={friend().avatar_url}
-                          alt={friend().display_name || friend().username}
-                          size="sm"
-                        />
-                      </div>
-                    </Show>
-
-                    <div class={`max-w-[70%] ${isMe ? 'order-1' : ''}`}>
-                      <div class={`rounded-2xl px-4 py-2 ${isMe
-                          ? 'bg-brand-primary text-white rounded-br-md'
-                          : 'bg-bg-tertiary text-text-primary rounded-bl-md'
-                        }`}>
-                        <MessageContent content={message.content} isOwnMessage={isMe} />
-                      </div>
-                      <div class={`text-[10px] mt-1 text-text-muted ${isMe ? 'text-right' : 'text-left'}`}>
-                        {formatTime(message.created_at)}
-                      </div>
+                  <div class="flex mb-3 justify-start">
+                    <div class="flex-shrink-0 mr-2">
+                      <Avatar
+                        src={senderAvatar}
+                        alt={senderName}
+                        size="sm"
+                      />
                     </div>
 
-                    {/* Avatar for sent messages (own) */}
-                    <Show when={isMe}>
-                      <div class="flex-shrink-0 ml-2">
-                        <Avatar
-                          src={props.currentUserAvatar}
-                          alt={props.currentUserDisplayName || "You"}
-                          size="sm"
-                        />
+                    <div class="max-w-[85%]">
+                      <div class="flex items-baseline gap-2 mb-0.5">
+                        <span class={`text-sm font-medium ${isMe ? 'text-brand-primary' : 'text-text-primary'}`}>
+                          {senderName}
+                        </span>
+                        <span class="text-[10px] text-text-muted">
+                          {formatTime(message.created_at)}
+                        </span>
                       </div>
-                    </Show>
+                      <div class="text-text-primary">
+                        <MessageContent content={message.content} isOwnMessage={isMe} />
+                      </div>
+                    </div>
                   </div>
                 );
               }}
@@ -383,12 +377,30 @@ export function DMChatPanel(props: DMChatPanelProps): JSX.Element {
               </div>
 
               {/* Bottom Right Action Buttons */}
-              <div class="flex items-center gap-2">
-                <button class="w-10 h-10 bg-bg-tertiary rounded-full flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-bg-modifier-hover transition-colors">
+              <div class="flex items-center gap-2 relative">
+                <button
+                  ref={emojiButtonRef}
+                  onClick={() => setShowEmojiPicker(!showEmojiPicker())}
+                  class={`w-10 h-10 bg-bg-tertiary rounded-full flex items-center justify-center transition-colors ${showEmojiPicker() ? 'text-brand-primary bg-bg-modifier-hover' : 'text-text-muted hover:text-text-primary hover:bg-bg-modifier-hover'}`}
+                  title="Emoji"
+                >
                   <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </button>
+
+                {/* Emoji Picker */}
+                <ReactionPicker
+                  isOpen={showEmojiPicker()}
+                  onClose={() => setShowEmojiPicker(false)}
+                  onSelect={(emoji) => {
+                    setMessageInput(prev => prev + emoji);
+                    setShowEmojiPicker(false);
+                    inputRef?.focus();
+                  }}
+                  anchorRef={emojiButtonRef}
+                />
+
                 <button class="w-10 h-10 bg-bg-tertiary rounded-full flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-bg-modifier-hover transition-colors">
                   <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />

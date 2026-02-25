@@ -16,6 +16,8 @@ export interface Channel {
   has_mentions?: boolean;
   is_afk_channel?: boolean;
   is_temp_channel?: boolean;
+  bitrate?: number;
+  user_limit?: number;
 }
 
 export interface Category {

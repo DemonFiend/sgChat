@@ -41,7 +41,7 @@ export interface VoiceState {
   connectionState: VoiceConnectionState;
   currentChannelId: string | null;
   currentChannelName: string | null;
-  participants: Map<string, VoiceParticipant[]>; // channelId -> participants
+  participants: Record<string, VoiceParticipant[]>;
   permissions: VoicePermissions | null;
   localState: {
     isMuted: boolean;
@@ -58,7 +58,7 @@ function createVoiceStore() {
     connectionState: 'idle',
     currentChannelId: null,
     currentChannelName: null,
-    participants: new Map(),
+    participants: {},
     permissions: null,
     localState: {
       isMuted: false,
@@ -94,14 +94,14 @@ function createVoiceStore() {
 
   // Get participants for a specific channel
   const getParticipants = (channelId: string): VoiceParticipant[] => {
-    return state().participants.get(channelId) || [];
+    return state().participants[channelId] || [];
   };
 
   // Get participants for current channel
   const currentParticipants = (): VoiceParticipant[] => {
     const channelId = state().currentChannelId;
     if (!channelId) return [];
-    return state().participants.get(channelId) || [];
+    return state().participants[channelId] || [];
   };
 
   // Set connecting state
@@ -243,13 +243,10 @@ function createVoiceStore() {
     is_streaming?: boolean;
   }) => {
     setState(prev => {
-      const newParticipants = new Map(prev.participants);
-      const channelParticipants = [...(newParticipants.get(channelId) || [])];
+      const channelParticipants = [...(prev.participants[channelId] || [])];
       
-      // Don't add if already exists
       const existingIndex = channelParticipants.findIndex(p => p.userId === user.id);
       if (existingIndex !== -1) {
-        // User already exists - update their info but preserve streaming state if not provided
         const existing = channelParticipants[existingIndex];
         channelParticipants[existingIndex] = {
           ...existing,
@@ -258,10 +255,9 @@ function createVoiceStore() {
           avatarUrl: user.avatar_url || null,
           isStreaming: user.is_streaming ?? existing.isStreaming,
         };
-        newParticipants.set(channelId, channelParticipants);
         return {
           ...prev,
-          participants: newParticipants,
+          participants: { ...prev.participants, [channelId]: channelParticipants },
         };
       }
       
@@ -277,12 +273,11 @@ function createVoiceStore() {
         isStreaming: user.is_streaming || false,
       });
       
-      newParticipants.set(channelId, channelParticipants);
       console.log('[VoiceStore] Channel now has', channelParticipants.length, 'participants');
       
       return {
         ...prev,
-        participants: newParticipants,
+        participants: { ...prev.participants, [channelId]: channelParticipants },
       };
     });
   };
@@ -290,8 +285,7 @@ function createVoiceStore() {
   // Remove a participant from a channel
   const removeParticipant = (channelId: string, userId: string) => {
     setState(prev => {
-      const newParticipants = new Map(prev.participants);
-      const existing = newParticipants.get(channelId) || [];
+      const existing = prev.participants[channelId] || [];
       const channelParticipants = existing.filter(p => p.userId !== userId);
       
       if (channelParticipants.length === existing.length) {
@@ -300,14 +294,14 @@ function createVoiceStore() {
       }
       
       console.log('[VoiceStore] Removing participant:', userId, 'from channel:', channelId);
-      
-      if (channelParticipants.length > 0) {
-        newParticipants.set(channelId, channelParticipants);
-      } else {
-        newParticipants.delete(channelId);
-      }
-      
       console.log('[VoiceStore] Channel now has', channelParticipants.length, 'participants');
+      
+      const newParticipants = { ...prev.participants };
+      if (channelParticipants.length > 0) {
+        newParticipants[channelId] = channelParticipants;
+      } else {
+        delete newParticipants[channelId];
+      }
       
       return {
         ...prev,
@@ -324,8 +318,7 @@ function createVoiceStore() {
     isStreaming?: boolean;
   }) => {
     setState(prev => {
-      const newParticipants = new Map(prev.participants);
-      const channelParticipants = [...(newParticipants.get(channelId) || [])];
+      const channelParticipants = [...(prev.participants[channelId] || [])];
       
       const index = channelParticipants.findIndex(p => p.userId === userId);
       if (index === -1) return prev;
@@ -335,11 +328,9 @@ function createVoiceStore() {
         ...updates,
       };
       
-      newParticipants.set(channelId, channelParticipants);
-      
       return {
         ...prev,
-        participants: newParticipants,
+        participants: { ...prev.participants, [channelId]: channelParticipants },
       };
     });
   };
@@ -347,27 +338,20 @@ function createVoiceStore() {
   // Set participants for a channel (from initial fetch) - merges with existing to avoid race conditions
   const setChannelParticipants = (channelId: string, participants: VoiceParticipant[]) => {
     setState(prev => {
-      const newParticipants = new Map(prev.participants);
-      const existing = newParticipants.get(channelId) || [];
+      const existing = prev.participants[channelId] || [];
       
-      // Build a map of existing participants by userId to preserve real-time state
       const existingMap = new Map(existing.map(p => [p.userId, p]));
       
-      // Merge: keep existing participants that are not in the new list (they may have joined via socket event)
-      // and update/add participants from the new list, preserving real-time state like isStreaming, isSpeaking
       const merged: VoiceParticipant[] = [];
       const seenIds = new Set<string>();
       
-      // First, add all incoming participants but preserve real-time state from existing
       for (const p of participants) {
         const existingParticipant = existingMap.get(p.userId);
         if (existingParticipant) {
-          // Preserve real-time state (isStreaming, isSpeaking) from existing participant
-          // Use incoming data for server-authoritative state (isMuted, isDeafened)
           merged.push({
             ...p,
             isSpeaking: existingParticipant.isSpeaking,
-            isStreaming: p.isStreaming || existingParticipant.isStreaming, // Keep streaming if either says true
+            isStreaming: p.isStreaming || existingParticipant.isStreaming,
           });
         } else {
           merged.push(p);
@@ -375,8 +359,6 @@ function createVoiceStore() {
         seenIds.add(p.userId);
       }
       
-      // Then, add any existing participants not in the incoming list
-      // (these might have joined via socket event after the fetch started)
       for (const p of existing) {
         if (!seenIds.has(p.userId)) {
           console.log('[VoiceStore] Preserving participant added by socket event:', p.userId);
@@ -384,11 +366,9 @@ function createVoiceStore() {
         }
       }
       
-      newParticipants.set(channelId, merged);
-      
       return {
         ...prev,
-        participants: newParticipants,
+        participants: { ...prev.participants, [channelId]: merged },
       };
     });
   };
@@ -396,8 +376,8 @@ function createVoiceStore() {
   // Clear all participants for a channel
   const clearChannelParticipants = (channelId: string) => {
     setState(prev => {
-      const newParticipants = new Map(prev.participants);
-      newParticipants.delete(channelId);
+      const newParticipants = { ...prev.participants };
+      delete newParticipants[channelId];
       
       return {
         ...prev,

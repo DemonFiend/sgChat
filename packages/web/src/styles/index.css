@@ -28,10 +28,12 @@
   --color-interactive-active: #ffffff;
   --color-interactive-muted: #4e5058;
 
-  /* Accent colors */
+  /* Accent / brand colors */
   --color-accent: #5865f2;
   --color-accent-hover: #4752c4;
   --color-accent-active: #3c45a5;
+  --color-brand-primary: #5865f2;
+  --color-brand-primary-hover: #4752c4;
 
   /* Status colors */
   --color-success: #23a55a;
@@ -91,6 +93,9 @@
   --color-interactive-active: #060607;
   --color-interactive-muted: #c4c9ce;
 
+  --color-brand-primary: #5865f2;
+  --color-brand-primary-hover: #4752c4;
+
   --color-border: #e1e2e4;
   --color-border-strong: #c4c5c8;
   --color-divider: #e1e2e4;
@@ -121,6 +126,9 @@
   --color-interactive-hover: #dcddde;
   --color-interactive-active: #ffffff;
   --color-interactive-muted: #4f545c;
+
+  --color-brand-primary: #5865f2;
+  --color-brand-primary-hover: #4752c4;
 
   --color-border: #1a1a1a;
   --color-border-strong: #2a2a2a;
@@ -156,6 +164,8 @@
   --color-accent: #5e81ac;
   --color-accent-hover: #81a1c1;
   --color-accent-active: #88c0d0;
+  --color-brand-primary: #5e81ac;
+  --color-brand-primary-hover: #81a1c1;
 
   --color-success: #a3be8c;
   --color-warning: #ebcb8b;
@@ -202,6 +212,8 @@
   --color-accent: var(--color-accent);
   --color-accent-hover: var(--color-accent-hover);
   --color-accent-active: var(--color-accent-active);
+  --color-brand-primary: var(--color-brand-primary);
+  --color-brand-primary-hover: var(--color-brand-primary-hover);
 
   --color-success: var(--color-success);
   --color-warning: var(--color-warning);

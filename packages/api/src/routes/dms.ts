@@ -156,18 +156,26 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
         status: message.status,
       };
 
-      // Broadcast via event bus (consistent with Socket.IO handler)
+      const eventPayload = {
+        from_user_id: request.user!.id,
+        message: formattedMessage,
+      };
+
+      // Broadcast via event bus to DM channel room
       await publishEvent({
         type: 'dm.message.new',
         actorId: request.user!.id,
         resourceId: `dm:${id}`,
-        payload: {
-          from_user_id: request.user!.id,
-          message: formattedMessage,
-        },
+        payload: eventPayload,
       });
 
-      // TODO: Handle offline user - send push notification
+      // Also emit to recipient's user room for reliability
+      await publishEvent({
+        type: 'dm.message.new',
+        actorId: request.user!.id,
+        resourceId: `user:${recipientId}`,
+        payload: eventPayload,
+      });
 
       return message;
     },
@@ -248,8 +256,10 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
 
       // Find or create DM channel
       let dm = await db.dmChannels.findByUsers(request.user!.id, userId);
+      let isNewChannel = false;
       if (!dm) {
         dm = await db.dmChannels.create(request.user!.id, userId);
+        isNewChannel = true;
       }
 
       const message = await db.messages.create({
@@ -289,15 +299,26 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
         status: message.status,
       };
 
-      // Broadcast via event bus (consistent with Socket.IO handler)
+      const eventPayload = {
+        from_user_id: request.user!.id,
+        message: formattedMessage,
+      };
+
+      // Broadcast via event bus to DM channel room
       await publishEvent({
         type: 'dm.message.new',
         actorId: request.user!.id,
         resourceId: `dm:${dm.id}`,
-        payload: {
-          from_user_id: request.user!.id,
-          message: formattedMessage,
-        },
+        payload: eventPayload,
+      });
+
+      // Also emit to recipient's user room so they receive
+      // the event even if they haven't joined the DM room yet
+      await publishEvent({
+        type: 'dm.message.new',
+        actorId: request.user!.id,
+        resourceId: `user:${userId}`,
+        payload: eventPayload,
       });
 
       // Return in expected format

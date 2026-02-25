@@ -174,9 +174,12 @@ export function DMPage(): JSX.Element {
 
     // New DM message received
     const handleDMMessage = (data: { from_user_id: string; message: DMMessage }) => {
-      // If we're chatting with this user, add message to conversation
+      // Deduplicate: event may arrive via both DM room and user room
       if (selectedFriend()?.id === data.from_user_id) {
-        setMessages(prev => [...prev, data.message]);
+        setMessages(prev => {
+          if (prev.some(m => m.id === data.message.id)) return prev;
+          return [...prev, data.message];
+        });
       } else {
         // Update unread count for this friend and play notification sound
         setFriends(prev => prev.map(f => 

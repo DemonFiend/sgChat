@@ -25,3 +25,4 @@ export { PingIndicator, ConnectionStatusDot } from './PingIndicator';
 export { DMVoiceControls, DMCallStatusBar } from './DMVoiceControls';
 export { SessionExpiredOverlay } from './SessionExpiredOverlay';
 export { StreamViewer } from './StreamViewer';
+export { ChannelSettingsModal } from './ChannelSettingsModal';

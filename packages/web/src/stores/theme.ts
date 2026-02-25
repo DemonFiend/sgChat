@@ -17,7 +17,7 @@ function getInitialTheme(): Theme {
     return 'light';
   }
   
-  return 'dark';
+  return 'nord';
 }
 
 // Apply theme to document

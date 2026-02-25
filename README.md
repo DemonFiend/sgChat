@@ -1,4 +1,4 @@
-# sgChat - Self-hosted Discord/Revolt/Guilded Clone
+# sgChat - Self-hosted Voice Community Application.
 
 [![GitHub License](https://img.shields.io/github/license/DemonFiend/sgChat)](https://github.com/DemonFiend/sgChat/blob/main/LICENSE)
 [![GitHub Issues](https://img.shields.io/github/issues/DemonFiend/sgChat)](https://github.com/DemonFiend/sgChat/issues)
@@ -8,7 +8,11 @@ A modern, self-hosted chat platform that combines the best features of Discord, 
 
 ## 🚀 Live Demo
 
-[![Deploy](https://img.shields.io/badge/Deploy-Click%20Here-blue)](https://sgchat.vercel.app)
+Demo is currently Down till all the core features are implemented.
+
+All Features are Experimental until the Official V1.0.0 Release. 
+
+Features may experience visual bugs or unexpected behaviour, please report this via the issues section. 
 
 ## 🔧 Technologies Used
 
@@ -18,6 +22,7 @@ A modern, self-hosted chat platform that combines the best features of Discord, 
 - **Database**: PostgreSQL 16
 - **Cache**: Redis 7
 - **Storage**: MinIO (S3-compatible)
+- **Voice/Video**: LiveKit
 - **Push Notifications**: ntfy
 
 ### Frontend
@@ -30,55 +35,117 @@ A modern, self-hosted chat platform that combines the best features of Discord, 
 
 ## 📋 Features Implemented
 
-✅ Real-time Text Messaging  
-✅ Direct Messages with delivery status  
-✅ Light/Dark/AMOLED themes with custom CSS support  
+### 💬 Messaging
+✅ Real-time text messaging with Socket.IO  
+✅ Message editing and deletion  
+✅ Message reactions (emoji)  
+✅ Message pinning  
+✅ Message replies with cross-segment reference handling  
+✅ File attachments with type/size validation  
+✅ Typing indicators  
+✅ Read receipts and unread message counts  
+✅ Giphy integration (trending/search)  
+
+### 📞 Voice & Video
+✅ Voice channels with LiveKit integration  
+✅ Video streaming (permission-based)  
+✅ Screen sharing (permission-based)  
+✅ DM voice calls  
+✅ Temporary voice channels (auto-cleanup when empty)  
+✅ Voice state tracking (mute, deafen, streaming)  
+✅ AFK channel auto-move  
+✅ Voice participant management (move, disconnect, mute)  
+✅ User limits and bitrate configuration  
+
+### 💌 Direct Messages
+✅ DM channels with auto-creation on friendship  
+✅ Message status tracking (sent/received/read)  
+✅ DM voice calls  
+✅ Friend system (requests, accept/reject)  
+✅ User blocking  
+
+### 🏠 Server Management
+✅ Server creation, update, and deletion  
+✅ Channel management with reordering  
+✅ Category management with permission overrides  
+✅ Role management with templates and bulk operations  
 ✅ Granular role-based permissions system  
-✅ Auto-detection and AFK channel management  
-✅ Self-hosted push notifications via ntfy  
-✅ Admin panel for server management  
+✅ Channel permission overrides (role and user level)  
+✅ Member management (kick, ban, timeout)  
+✅ Invite system with expiration and max uses  
+✅ Server transfer ownership  
+✅ Welcome channel and announcement channels  
+✅ Server popup configuration (welcome messages)  
+✅ Audit logging for server actions  
+
+### 🔐 Security & Authentication
+✅ JWT access tokens + httpOnly refresh token cookies  
+✅ Password hashing with Argon2  
+✅ Password reset via email  
+✅ Credential encryption (AES-GCM for "Remember me")  
+✅ Rate limiting (per-endpoint)  
+✅ Admin claim code system  
+✅ Session management with token rotation  
+
+### 🎨 User Experience
+✅ User status (online, idle, dnd, offline)  
+✅ Custom status with text, emoji, and expiration  
+✅ Themes (Dark, Light, OLED, Nord) with system preference detection  
+✅ Avatar management with history tracking  
+✅ Display names and profile customization  
+✅ Timezone support (public/private)  
+✅ User search by username  
+✅ Presence coalescing (throttled updates)  
+
+### 🏗️ Infrastructure
+✅ Message archiving to MinIO cold storage (gzip compressed)  
+✅ Message segmentation for efficient history management  
+✅ Retention policies (time-based and size-based)  
+✅ Message export (JSON/CSV with date range filtering)  
+✅ Storage statistics per channel/DM  
+✅ Event bus system (pub/sub for real-time events)  
+✅ SSE fallback gateway with sequence tracking  
+✅ Idempotency support (Idempotency-Key header)  
+✅ Redis caching (sessions, presence, voice state)  
+✅ Health checks  
+
+### 🔔 Notifications
+✅ Push notifications via ntfy  
+✅ Mention notifications  
+✅ Friend request notifications  
+✅ Reaction notifications  
+✅ Priority levels  
 
 ## 🔮 Planned Features (TODO List)
 
 ### 💬 Messaging Improvements
 - [ ] Message search functionality with filters
-- [ ] Message pinning and archiving
-- [ ] Rich text formatting (bold, italic, etc.)
-- [ ] Custom emoji support
-- [ ] Sticker packs and GIFs
-- [ ] Message scheduling and reminders
-
-### 📱 Mobile Experience
-- [ ] Native mobile app improvements for iOS/Android
-- [ ] Push notification optimization for mobile
-- [ ] Offline message sync capabilities
-- [ ] Mobile-specific UI enhancements
+- [ ] Custom emoji support (server-specific)
+- [ ] Sticker packs
+- [ ] Message scheduling UI (backend supports queued_at)
+- [ ] Rich text editor (markdown rendering exists)
 
 ### 🔐 Security & Privacy
-- [ ] Two-factor authentication (2FA)
-- [ ] Session management and device tracking
+- [ ] Two-factor authentication (2FA/TOTP)
+- [ ] Device tracking and session management UI
 - [ ] Message encryption at rest
-- [ ] Data export and account deletion features
+- [ ] End-to-end encryption for voice/video calls
 
 ### 🎨 User Experience
-- [ ] Customizable user status and presence indicators
-- [ ] Chat theme customization with preview
-- [ ] Keyboard shortcuts for desktop client
-- [ ] Accessibility improvements (screen readers, etc.)
-- [ ] Language localization support
+- [ ] Comprehensive keyboard shortcuts
+- [ ] Accessibility improvements (screen readers, ARIA labels)
+- [ ] Language localization (i18n)
+- [ ] Theme customization with live preview
 
 ### 🏗️ Infrastructure & Performance
 - [ ] Load balancing and horizontal scaling
-- [ ] Database optimization and indexing
-- [ ] Caching strategy improvements
 - [ ] CDN integration for media files
 - [ ] Analytics dashboard for server metrics
+- [ ] Advanced database optimization
 
-### 🎤 Voice & Video Features (Planned)
-- [ ] Voice chat capabilities with LiveKit
-- [ ] Screen sharing functionality  
-- [ ] End-to-end encryption for voice/video calls
-- [ ] Call recording capabilities
+### 🎤 Voice & Video Enhancements
+- [ ] Audio Check
+- [ ] Bringing in Video (Webcam) 
 - [ ] Virtual backgrounds and effects
 
 ## 🚀 Getting Started

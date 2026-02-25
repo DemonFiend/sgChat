@@ -107,7 +107,7 @@ export function ScreenShareButton(props: ScreenShareButtonProps) {
 
       {/* Quality Selection Menu - for starting screen share */}
       <Show when={showMenu()}>
-        <div class="absolute bottom-full right-0 mb-3 w-56 bg-bg-primary border-2 border-brand-primary/50 rounded-xl shadow-2xl overflow-hidden z-50">
+        <div class="absolute bottom-full left-1/2 mb-3 w-56 bg-bg-primary border-2 border-brand-primary/50 rounded-xl shadow-2xl overflow-hidden z-50">
           {/* Header with icon */}
           <div class="p-3 bg-brand-primary/10 border-b border-brand-primary/30">
             <div class="flex items-center gap-2">
@@ -176,7 +176,7 @@ export function ScreenShareButton(props: ScreenShareButtonProps) {
 
       {/* Settings Menu - for changing quality while streaming */}
       <Show when={showSettingsMenu()}>
-        <div class="absolute bottom-full right-0 mb-3 w-56 bg-bg-primary border-2 border-status-online/50 rounded-xl shadow-2xl overflow-hidden z-50">
+        <div class="absolute bottom-full left-1/2 mb-3 w-56 bg-bg-primary border-2 border-status-online/50 rounded-xl shadow-2xl overflow-hidden z-50">
           {/* Header */}
           <div class="p-3 bg-status-online/10 border-b border-status-online/30">
             <div class="flex items-center gap-2">

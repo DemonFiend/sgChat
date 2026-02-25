@@ -59,9 +59,11 @@ interface ChatPanelProps {
 export function ChatPanel(props: ChatPanelProps) {
   const [messageInput, setMessageInput] = createSignal('');
   const [showGifPicker, setShowGifPicker] = createSignal(false);
+  const [showEmojiPicker, setShowEmojiPicker] = createSignal(false);
   let messagesEndRef: HTMLDivElement | undefined;
   let inputRef: HTMLTextAreaElement | undefined;
   let gifButtonRef: HTMLButtonElement | undefined;
+  let emojiButtonRef: HTMLButtonElement | undefined;
   let typingTimeout: ReturnType<typeof setTimeout> | null = null;
   let isTyping = false;
 
@@ -293,11 +295,28 @@ export function ChatPanel(props: ChatPanelProps) {
             />
 
             {/* Emoji button */}
-            <button class="p-3 text-text-muted hover:text-text-primary transition-colors">
+            <button
+              ref={emojiButtonRef}
+              onClick={() => setShowEmojiPicker(!showEmojiPicker())}
+              class={`p-3 transition-colors ${showEmojiPicker() ? 'text-brand-primary' : 'text-text-muted hover:text-text-primary'}`}
+              title="Emoji"
+            >
               <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </button>
+
+            {/* Emoji Picker */}
+            <ReactionPicker
+              isOpen={showEmojiPicker()}
+              onClose={() => setShowEmojiPicker(false)}
+              onSelect={(emoji) => {
+                setMessageInput(prev => prev + emoji);
+                setShowEmojiPicker(false);
+                inputRef?.focus();
+              }}
+              anchorRef={emojiButtonRef}
+            />
 
             {/* GIF button */}
             <button
@@ -465,7 +484,7 @@ function MessageItem(props: MessageItemProps) {
         </div>
 
         {/* Hover Action Buttons */}
-        <div class="absolute top-0 right-4 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div class="absolute top-0 right-4 -translate-y-1/2 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity">
           <div class="flex items-center gap-0.5 bg-bg-secondary border border-border-subtle rounded shadow-lg">
             <button
               ref={(el) => setActionMenuAnchor(el)}
@@ -525,7 +544,7 @@ function MessageItem(props: MessageItemProps) {
       </div>
 
       {/* Hover Action Buttons */}
-      <div class="absolute top-0 right-4 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div class="absolute top-0 right-4 -translate-y-1/2 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity">
         <div class="flex items-center gap-0.5 bg-bg-secondary border border-border-subtle rounded shadow-lg">
           <button
             ref={(el) => setActionMenuAnchor(el)}

@@ -6,9 +6,11 @@ import { networkStore } from '@/stores/network';
 import { voiceStore } from '@/stores/voice';
 import { voiceService } from '@/lib/voiceService';
 import { serverPopupStore } from '@/stores';
+import { canManageChannels } from '@/stores/permissions';
 import { Channel, Category, ChannelType } from './ChannelList';
 import { InlineParticipants } from '@/components/ui/VoiceParticipantsList';
 import { VoiceConnectedBar } from '@/components/ui/VoiceConnectedBar';
+import { ChannelSettingsModal } from '@/components/ui/ChannelSettingsModal';
 
 // Sidebar resize constants
 const MIN_WIDTH = 192; // 240px - 20% = 192px
@@ -37,6 +39,13 @@ export function ServerSidebar(props: ServerSidebarProps) {
   const [collapsedSections, setCollapsedSections] = createSignal<Set<string>>(new Set());
   const [width, setWidth] = createSignal(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = createSignal(false);
+  const [settingsChannelId, setSettingsChannelId] = createSignal<string | null>(null);
+
+  const settingsChannel = () => {
+    const id = settingsChannelId();
+    if (!id) return null;
+    return props.channels.find(c => c.id === id) || null;
+  };
 
   // Load saved width from localStorage on mount
   onMount(() => {
@@ -92,12 +101,37 @@ export function ServerSidebar(props: ServerSidebarProps) {
 
   // Group channels by type
   const textChannels = () => props.channels.filter(c => c.type === 'text').sort((a, b) => a.position - b.position);
-  // Filter out AFK channel from regular voice channels (use is_afk_channel flag or fallback to name check)
-  const voiceChannels = () => props.channels.filter(c => 
-    (c.type === 'voice' || c.type === 'temp_voice' || c.type === 'temp_voice_generator' || c.type === 'music') && 
-    !c.is_afk_channel && 
-    c.name.toLowerCase() !== 'afk'
-  ).sort((a, b) => a.position - b.position);
+  // Filter out AFK channel from regular voice channels
+  // Sort temp_voice channels directly after their generator (same category_id)
+  const voiceChannels = () => {
+    const channels = props.channels.filter(c => 
+      (c.type === 'voice' || c.type === 'temp_voice' || c.type === 'temp_voice_generator' || c.type === 'music') && 
+      !c.is_afk_channel && 
+      c.name.toLowerCase() !== 'afk'
+    );
+    
+    const nonTemp = channels.filter(c => c.type !== 'temp_voice').sort((a, b) => a.position - b.position);
+    const tempChannels = channels.filter(c => c.type === 'temp_voice').sort((a, b) => a.position - b.position);
+    
+    const result: typeof channels = [];
+    for (const ch of nonTemp) {
+      result.push(ch);
+      if (ch.type === 'temp_voice_generator') {
+        for (const temp of tempChannels) {
+          if (temp.category_id === ch.category_id) {
+            result.push(temp);
+          }
+        }
+      }
+    }
+    // Add orphaned temp channels not matched to a generator
+    for (const temp of tempChannels) {
+      if (!result.includes(temp)) {
+        result.push(temp);
+      }
+    }
+    return result;
+  };
   // Find AFK channel using is_afk_channel flag first, then fallback to name
   const afkChannel = () => props.channels.find(c => c.is_afk_channel) || 
     props.channels.find(c => c.type === 'voice' && c.name.toLowerCase() === 'afk');
@@ -119,9 +153,26 @@ export function ServerSidebar(props: ServerSidebarProps) {
       list.push(channel);
     }
 
-    // Sort channels within each category
-    for (const list of categorized.values()) {
-      list.sort((a, b) => a.position - b.position);
+    // Sort channels within each category, placing temp_voice after their generator
+    for (const [key, list] of categorized.entries()) {
+      const nonTemp = list.filter(c => c.type !== 'temp_voice').sort((a, b) => a.position - b.position);
+      const tempChs = list.filter(c => c.type === 'temp_voice').sort((a, b) => a.position - b.position);
+      
+      if (tempChs.length > 0) {
+        const sorted: Channel[] = [];
+        for (const ch of nonTemp) {
+          sorted.push(ch);
+          if (ch.type === 'temp_voice_generator') {
+            sorted.push(...tempChs.filter(t => t.category_id === ch.category_id));
+          }
+        }
+        for (const t of tempChs) {
+          if (!sorted.includes(t)) sorted.push(t);
+        }
+        categorized.set(key, sorted);
+      } else {
+        list.sort((a, b) => a.position - b.position);
+      }
     }
 
     return { categorized, sortedCategories };
@@ -304,6 +355,7 @@ export function ServerSidebar(props: ServerSidebarProps) {
                         channel={channel}
                         isActive={params.channelId === channel.id}
                         icon={channelIcon(channel.type)}
+                        onSettingsClick={(id) => setSettingsChannelId(id)}
                       />
                     )}
                   </For>
@@ -337,6 +389,7 @@ export function ServerSidebar(props: ServerSidebarProps) {
                         isActive={params.channelId === channel.id}
                         icon={channelIcon(channel.type)}
                         isVoice
+                        onSettingsClick={(id) => setSettingsChannelId(id)}
                       />
                     )}
                   </For>
@@ -356,6 +409,7 @@ export function ServerSidebar(props: ServerSidebarProps) {
                     isActive={params.channelId === channel.id}
                     icon={channelIcon(channel.type)}
                     isVoice={isVoiceChannel(channel.type)}
+                    onSettingsClick={(id) => setSettingsChannelId(id)}
                   />
                 )}
               </For>
@@ -391,6 +445,7 @@ export function ServerSidebar(props: ServerSidebarProps) {
                         isActive={params.channelId === channel.id}
                         icon={channelIcon(channel.type)}
                         isVoice={isVoiceChannel(channel.type)}
+                        onSettingsClick={(id) => setSettingsChannelId(id)}
                       />
                     )}
                   </For>
@@ -415,6 +470,7 @@ export function ServerSidebar(props: ServerSidebarProps) {
                 </svg>
               }
               isVoice
+              onSettingsClick={(id) => setSettingsChannelId(id)}
             />
           </div>
         </Show>
@@ -422,6 +478,25 @@ export function ServerSidebar(props: ServerSidebarProps) {
 
       {/* Voice Connected Bar - Fixed at bottom when in voice */}
       <VoiceConnectedBar />
+
+      {/* Channel Settings Modal */}
+      <Show when={settingsChannel()}>
+        {(ch) => (
+          <ChannelSettingsModal
+            isOpen={!!settingsChannelId()}
+            onClose={() => setSettingsChannelId(null)}
+            channel={{
+              id: ch().id,
+              name: ch().name,
+              type: ch().type,
+              topic: ch().topic,
+              bitrate: ch().bitrate,
+              user_limit: ch().user_limit,
+              server_id: props.server?.id || '',
+            }}
+          />
+        )}
+      </Show>
     </div>
   );
 }
@@ -431,6 +506,7 @@ interface ChannelItemProps {
   isActive: boolean;
   icon: any;
   isVoice?: boolean;
+  onSettingsClick?: (channelId: string) => void;
 }
 
 function ChannelItem(props: ChannelItemProps) {
@@ -455,7 +531,7 @@ function ChannelItem(props: ChannelItemProps) {
   // Voice channels use a button instead of a link
   if (props.isVoice) {
     return (
-      <div class="mb-0.5">
+      <div class="mb-0.5 group relative">
         <button
           onClick={handleVoiceChannelClick}
           class={clsx(
@@ -483,9 +559,26 @@ function ChannelItem(props: ChannelItemProps) {
           </Show>
         </button>
 
+        {/* Settings gear - shown on hover for admins */}
+        <Show when={props.onSettingsClick && canManageChannels()}>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              props.onSettingsClick?.(props.channel.id);
+            }}
+            class="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-text-muted hover:text-text-primary opacity-0 group-hover:opacity-100 transition-all"
+            title="Channel Settings"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
+        </Show>
+
         {/* Show participants when there are users in the channel */}
         <Show when={participantCount() > 0}>
-          <InlineParticipants channelId={props.channel.id} maxShow={5} />
+          <InlineParticipants channelId={props.channel.id} channelName={props.channel.name} maxShow={5} />
         </Show>
       </div>
     );
@@ -493,38 +586,58 @@ function ChannelItem(props: ChannelItemProps) {
 
   // Text channels use navigation
   return (
-    <A
-      href={`/channels/${props.channel.id}`}
-      class={clsx(
-        'relative flex items-center gap-1.5 px-2 py-1.5 mb-0.5 rounded text-sm transition-colors',
-        props.isActive
-          ? 'bg-bg-modifier-selected text-text-primary'
-          : hasUnread()
-            ? 'text-text-primary font-medium hover:bg-bg-modifier-hover'
-            : 'text-text-muted hover:bg-bg-modifier-hover hover:text-text-secondary'
-      )}
-    >
-      {/* Unread indicator dot */}
-      <Show when={hasUnread() && !props.isActive}>
-        <span class="absolute -left-1 w-1 h-2 bg-text-primary rounded-r" />
-      </Show>
+    <div class="group relative">
+      <A
+        href={`/channels/${props.channel.id}`}
+        class={clsx(
+          'relative flex items-center gap-1.5 px-2 py-1.5 mb-0.5 rounded text-sm transition-colors',
+          props.isActive
+            ? 'bg-bg-modifier-selected text-text-primary'
+            : hasUnread()
+              ? 'text-text-primary font-medium hover:bg-bg-modifier-hover'
+              : 'text-text-muted hover:bg-bg-modifier-hover hover:text-text-secondary'
+        )}
+      >
+        {/* Unread indicator dot */}
+        <Show when={hasUnread() && !props.isActive}>
+          <span class="absolute -left-1 w-1 h-2 bg-text-primary rounded-r" />
+        </Show>
 
-      {props.icon}
-      <span class="truncate flex-1">{props.channel.name}</span>
+        {props.icon}
+        <span class="truncate flex-1">{props.channel.name}</span>
 
-      {/* Unread count badge */}
-      <Show when={hasUnread() && !props.isActive}>
-        <span
-          class={clsx(
-            "inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-xs font-bold",
-            props.channel.has_mentions
-              ? "bg-danger text-white"
-              : "bg-text-muted text-bg-primary"
-          )}
+        {/* Unread count badge */}
+        <Show when={hasUnread() && !props.isActive}>
+          <span
+            class={clsx(
+              "inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-xs font-bold",
+              props.channel.has_mentions
+                ? "bg-danger text-white"
+                : "bg-text-muted text-bg-primary"
+            )}
+          >
+            {(props.channel.unread_count ?? 0) > 99 ? '99+' : props.channel.unread_count}
+          </span>
+        </Show>
+      </A>
+
+      {/* Settings gear - shown on hover for admins */}
+      <Show when={props.onSettingsClick && canManageChannels()}>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            props.onSettingsClick?.(props.channel.id);
+          }}
+          class="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-text-muted hover:text-text-primary opacity-0 group-hover:opacity-100 transition-all"
+          title="Channel Settings"
         >
-          {(props.channel.unread_count ?? 0) > 99 ? '99+' : props.channel.unread_count}
-        </span>
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </button>
       </Show>
-    </A>
+    </div>
   );
 }

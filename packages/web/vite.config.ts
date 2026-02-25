@@ -46,13 +46,35 @@ export default defineConfig({
             },
           },
           {
-            urlPattern: /\.(png|jpg|jpeg|webp|gif)$/i,
+            urlPattern: /\.(png|jpg|jpeg|webp)$/i,
             handler: 'CacheFirst',
             options: {
               cacheName: 'image-cache',
               expiration: {
                 maxEntries: 500,
                 maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
+              },
+            },
+          },
+          {
+            urlPattern: /\.gif$/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'gif-cache',
+              expiration: {
+                maxEntries: 50,
+                maxAgeSeconds: 60 * 60 * 24 * 3, // 3 days for GIFs
+              },
+            },
+          },
+          {
+            urlPattern: /giphy\.com|tenor\.com/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'gif-cache',
+              expiration: {
+                maxEntries: 50,
+                maxAgeSeconds: 60 * 60 * 24 * 3, // 3 days for GIF providers
               },
             },
           },

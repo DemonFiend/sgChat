@@ -152,6 +152,7 @@ function VoiceParticipantItem(props: VoiceParticipantItemProps) {
 // Inline participant list for sidebar (more compact)
 interface InlineParticipantsProps {
   channelId: string;
+  channelName?: string;
   maxShow?: number;
 }
 
@@ -161,6 +162,22 @@ export function InlineParticipants(props: InlineParticipantsProps) {
   const visibleParticipants = () => participants().slice(0, maxShow());
   const hiddenCount = () => Math.max(0, participants().length - maxShow());
   const streamingCount = () => participants().filter(p => p.isStreaming).length;
+
+  const handleWatchStream = (participant: VoiceParticipant, e: Event) => {
+    e.stopPropagation();
+    streamViewerStore.watchStream({
+      streamerId: participant.userId,
+      streamerName: participant.displayName || participant.username,
+      streamerAvatar: participant.avatarUrl,
+      channelId: props.channelId,
+      channelName: props.channelName || 'Voice Channel',
+    });
+
+    const existingVideo = voiceService.getVideoElementForStreamer(participant.userId);
+    if (existingVideo) {
+      streamViewerStore.setVideoElement(existingVideo);
+    }
+  };
 
   return (
     <Show when={participants().length > 0}>
@@ -188,7 +205,13 @@ export function InlineParticipants(props: InlineParticipantsProps) {
                 {participant.displayName || participant.username}
               </span>
               <Show when={participant.isStreaming}>
-                <span class="ml-auto text-[10px] font-semibold bg-purple-500/30 px-1 rounded">LIVE</span>
+                <button
+                  onClick={(e) => handleWatchStream(participant, e)}
+                  class="ml-auto text-[10px] font-semibold bg-purple-500/30 px-1 rounded hover:bg-purple-500/50 transition-colors cursor-pointer"
+                  title={`Watch ${participant.displayName || participant.username}'s stream`}
+                >
+                  LIVE
+                </button>
               </Show>
             </div>
           )}

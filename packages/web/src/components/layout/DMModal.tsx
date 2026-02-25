@@ -235,14 +235,18 @@ export function DMModal(props: DMModalProps) {
                   {(message) => {
                     const isMe = message.sender_id === props.currentUserId;
                     return (
-                      <div class={`flex mb-3 ${isMe ? 'justify-end' : 'justify-start'}`}>
-                        <div class={`max-w-[70%] rounded-2xl px-4 py-2 ${isMe
-                            ? 'bg-brand-primary text-white rounded-br-md'
-                            : 'bg-bg-tertiary text-text-primary rounded-bl-md'
-                          }`}>
-                          <MessageContent content={message.content} compact={true} />
-                          <div class={`text-[10px] mt-1 ${isMe ? 'text-white/70' : 'text-text-muted'}`}>
-                            {formatTime(message.created_at)}
+                      <div class="flex mb-3 justify-start">
+                        <div class="max-w-[85%]">
+                          <div class="flex items-baseline gap-2 mb-0.5">
+                            <span class={`text-xs font-medium ${isMe ? 'text-brand-primary' : 'text-text-primary'}`}>
+                              {isMe ? 'You' : (selectedUser()!.display_name || selectedUser()!.username)}
+                            </span>
+                            <span class="text-[10px] text-text-muted">
+                              {formatTime(message.created_at)}
+                            </span>
+                          </div>
+                          <div class="text-text-primary">
+                            <MessageContent content={message.content} compact={true} />
                           </div>
                         </div>
                       </div>

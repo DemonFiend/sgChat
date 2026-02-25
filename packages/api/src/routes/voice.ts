@@ -32,6 +32,9 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       let channel = await db.channels.findById(channel_id);
+      let actualChannelId = channel_id;
+      let isTempRedirect = false;
+
       if (!channel) {
         return notFound(reply, 'Voice channel');
       }
@@ -48,8 +51,10 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
           channel_id
         );
 
-        // Redirect to the temp channel
         channel = await db.channels.findById(tempChannelId);
+        actualChannelId = tempChannelId;
+        isTempRedirect = true;
+
         if (!channel) {
           return badRequest(reply, 'Failed to create temp channel');
         }
@@ -60,7 +65,7 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       // Check permissions
-      const perms = await calculatePermissions(request.user!.id, channel.server_id, channel.id);
+      const perms = await calculatePermissions(request.user!.id, channel.server_id, actualChannelId);
 
       if (!hasPermission(perms.voice, VoicePermissions.CONNECT)) {
         return forbidden(reply, 'You don\'t have permission to join this voice channel');
@@ -68,10 +73,10 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
 
       // Mark temp channel as occupied
       if (channel.is_temp_channel) {
-        await markTempChannelOccupied(channel.id);
+        await markTempChannelOccupied(actualChannelId);
       }
 
-      const roomName = `voice:${channel.id}`;
+      const roomName = `voice:${actualChannelId}`;
 
       // For music/stage channels, default to listener mode unless user has SPEAK permission
       const isStageChannel = channel.type === 'music';
@@ -88,7 +93,7 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       // Track voice state in Redis
-      await redis.joinVoiceChannel(request.user!.id, channel_id);
+      await redis.joinVoiceChannel(request.user!.id, actualChannelId);
 
       // Get user info for socket event
       const user = await db.users.findById(request.user!.id);
@@ -99,13 +104,15 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
         actorId: request.user!.id,
         resourceId: `server:${channel.server_id}`,
         payload: {
-          channel_id,
+          channel_id: actualChannelId,
           user: {
             id: user.id,
             username: user.username,
             display_name: user.display_name || user.username,
             avatar_url: user.avatar_url,
           },
+          is_temp_channel: channel.is_temp_channel || false,
+          redirected_from: isTempRedirect ? channel_id : undefined,
         },
       });
 
@@ -113,6 +120,8 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
         token,
         url: getLiveKitUrl(),
         room_name: roomName,
+        channel_id: actualChannelId,
+        is_temp_channel: channel.is_temp_channel || false,
       };
     },
   });
