@@ -1093,47 +1093,7 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
     },
   });
 
-  // Delete channel
-  fastify.delete<{ Params: { id: string } }>('/channels/:id', {
-    onRequest: [authenticate],
-    handler: async (request, reply) => {
-      const server = await getDefaultServer();
-      if (!server) {
-        return notFound(reply, 'Server');
-      }
-
-      const { id } = request.params;
-
-      // Check channel exists and belongs to this server
-      const [channel] = await db.sql`
-        SELECT * FROM channels WHERE id = ${id} AND server_id = ${server.id}
-      `;
-      if (!channel) {
-        return notFound(reply, 'Channel');
-      }
-
-      // Check permission
-      const isOwner = server.owner_id === request.user!.id;
-      const hasPermission = isOwner || await checkServerPermission(request.user!.id, server.id, 'MANAGE_CHANNELS');
-      
-      if (!hasPermission) {
-        return forbidden(reply, 'You do not have permission to delete channels');
-      }
-
-      // Don't allow deleting the welcome channel
-      if (server.welcome_channel_id === id) {
-        return badRequest(reply, 'Cannot delete the welcome channel');
-      }
-
-      // Delete the channel
-      await db.sql`DELETE FROM channels WHERE id = ${id}`;
-
-      // Emit socket event
-      fastify.io?.to(`server:${server.id}`).emit('channel.delete', { id });
-
-      return { message: 'Channel deleted' };
-    },
-  });
+  // Note: DELETE /channels/:id is handled by channelRoutes in channels.ts
 };
 
 // Helper function to check server permissions

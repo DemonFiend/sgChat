@@ -500,6 +500,12 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
         return badRequest(reply, 'Cannot delete the last channel in a server');
       }
 
+      // Don't allow deleting the welcome channel
+      const [server] = await db.sql`SELECT welcome_channel_id FROM servers WHERE id = ${channel.server_id}`;
+      if (server?.welcome_channel_id === id) {
+        return badRequest(reply, 'Cannot delete the welcome channel');
+      }
+
       await db.sql`DELETE FROM channels WHERE id = ${id}`;
 
       // Audit log
