@@ -653,6 +653,125 @@ export const globalServerRoutes: FastifyPluginAsync = async (fastify) => {
       };
     },
   });
+
+  /**
+   * POST /server/storage/alerts/check - Run storage alert check and notify admins
+   */
+  fastify.post('/storage/alerts/check', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) ||
+                      server.owner_id === request.user!.id;
+
+      if (!isAdmin) {
+        return forbidden(reply, 'Only administrators can trigger alert checks');
+      }
+
+      const { generateStorageAlerts, notifyAdminsOfStorageAlerts } = await import('../services/trimming.js');
+      
+      const { warning, critical } = await generateStorageAlerts();
+      const allAlerts = [...warning, ...critical];
+
+      const serverAlerts = allAlerts.filter(a => a.server_id === server.id);
+      let notificationResult = { notified: 0, adminIds: [] as string[] };
+
+      if (serverAlerts.length > 0) {
+        notificationResult = await notifyAdminsOfStorageAlerts(server.id, serverAlerts);
+      }
+
+      return {
+        warning_count: warning.length,
+        critical_count: critical.length,
+        server_alerts: serverAlerts.length,
+        admins_notified: notificationResult.notified,
+        alerts: serverAlerts,
+      };
+    },
+  });
+
+  /**
+   * GET /server/storage/alerts - Get current storage alerts (without notifying)
+   */
+  fastify.get('/storage/alerts', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) ||
+                      server.owner_id === request.user!.id;
+
+      if (!isAdmin) {
+        return forbidden(reply, 'Only administrators can view storage alerts');
+      }
+
+      const { generateStorageAlerts } = await import('../services/trimming.js');
+      const { warning, critical } = await generateStorageAlerts();
+
+      const serverAlerts = {
+        warning: warning.filter(a => a.server_id === server.id),
+        critical: critical.filter(a => a.server_id === server.id),
+      };
+
+      return {
+        ...serverAlerts,
+        total_warning: serverAlerts.warning.length,
+        total_critical: serverAlerts.critical.length,
+      };
+    },
+  });
+
+  /**
+   * GET /server/storage/comprehensive - Get comprehensive server storage stats
+   */
+  fastify.get('/storage/comprehensive', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) ||
+                      server.owner_id === request.user!.id;
+
+      if (!isAdmin) {
+        return forbidden(reply, 'Only administrators can view storage statistics');
+      }
+
+      // Get all channels in this server
+      const channels = await db.sql`
+        SELECT id, name FROM channels WHERE server_id = ${server.id}
+      `;
+
+      const { getComprehensiveStorageStats } = await import('../services/trimming.js');
+      
+      const channelStats = await Promise.all(
+        channels.map(async (ch: any) => ({
+          channel_id: ch.id,
+          channel_name: ch.name,
+          stats: await getComprehensiveStorageStats(ch.id, null),
+        }))
+      );
+
+      const totals = {
+        message_storage_bytes: 0,
+        media_storage_bytes: 0,
+        total_bytes: 0,
+        channel_count: channels.length,
+      };
+
+      for (const cs of channelStats) {
+        totals.message_storage_bytes += cs.stats.message_storage.total_size_bytes;
+        totals.media_storage_bytes += cs.stats.media_storage.total_size_bytes;
+        totals.total_bytes += cs.stats.total_size_bytes;
+      }
+
+      return {
+        server_id: server.id,
+        totals,
+        channels: channelStats,
+      };
+    },
+  });
 };
 
 // Export helper for other routes to use

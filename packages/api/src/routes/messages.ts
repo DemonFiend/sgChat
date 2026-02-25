@@ -5,6 +5,8 @@ import { publishEvent } from '../lib/eventBus.js';
 import { calculatePermissions } from '../services/permissions.js';
 import { TextPermissions, hasPermission } from '@sgchat/shared';
 import { notFound, forbidden } from '../utils/errors.js';
+import { handleCrossSegmentEdit, handleCrossSegmentDelete } from '../services/archive.js';
+import { onMessageDeleted } from '../services/segmentation.js';
 
 export const messageRoutes: FastifyPluginAsync = async (fastify) => {
   // Edit message
@@ -31,6 +33,13 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
         content,
         edited_at: new Date(),
       });
+
+      // Track cross-segment reference impacts (edits may affect reply previews in archives)
+      try {
+        await handleCrossSegmentEdit(id, content);
+      } catch (err) {
+        console.error('Failed to track cross-segment edit:', err);
+      }
 
       const author = await db.users.findById(message.author_id);
 
@@ -93,6 +102,22 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
         }
       } else if (!canDelete) {
         return forbidden(reply, 'Cannot delete this message');
+      }
+
+      // Track cross-segment reference impacts (deletions break reply chains)
+      try {
+        await handleCrossSegmentDelete(id, message.channel_id, message.dm_channel_id);
+      } catch (err) {
+        console.error('Failed to track cross-segment delete:', err);
+      }
+
+      // Update segment statistics before deletion
+      if (message.segment_id) {
+        try {
+          await onMessageDeleted(message.segment_id, message.content, message.attachments || []);
+        } catch (err) {
+          console.error('Failed to update segment stats on delete:', err);
+        }
       }
 
       await db.messages.delete(id);
