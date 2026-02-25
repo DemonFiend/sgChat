@@ -22,4 +22,5 @@ export { VoiceParticipantsList, InlineParticipants } from './VoiceParticipantsLi
 export { MuteButton, DeafenButton, DisconnectButton, SpeakerIcon } from './VoiceControls';
 export { ScreenShareButton, ScreenShareQualityIndicator } from './ScreenShareButton';
 export { PingIndicator, ConnectionStatusDot } from './PingIndicator';
+export { DMVoiceControls, DMCallStatusBar } from './DMVoiceControls';
 export { SessionExpiredOverlay } from './SessionExpiredOverlay';

@@ -13,6 +13,7 @@ export interface Friend {
   timezone?: string | null;
   timezone_public?: boolean;
   timezone_dst_enabled?: boolean;
+  dm_channel_id?: string | null;
 }
 
 export interface FriendRequest {

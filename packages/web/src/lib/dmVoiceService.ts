@@ -1,0 +1,466 @@
+import { Room, RoomEvent, Track, RemoteTrack, RemoteParticipant, ConnectionState, ConnectionQuality } from 'livekit-client';
+import { api } from '@/api';
+import { voiceStore, type VoicePermissions, type ConnectionQualityLevel, type ScreenShareQuality, type ConnectionQualityState } from '@/stores/voice';
+import { socketService } from './socket';
+import { soundService } from './soundService';
+import { SCREEN_SHARE_QUALITIES } from '@sgchat/shared';
+
+interface JoinDMVoiceResponse {
+  token: string;
+  url: string;
+  room_name: string;
+  dm_channel_id: string;
+  permissions: {
+    canSpeak: boolean;
+    canVideo: boolean;
+    canStream: boolean;
+  };
+}
+
+interface VoiceSettings {
+  audio_input_device_id: string | null;
+  audio_output_device_id: string | null;
+  audio_input_volume: number;
+  audio_output_volume: number;
+  audio_input_sensitivity: number;
+  audio_auto_gain_control: boolean;
+  audio_echo_cancellation: boolean;
+  audio_noise_suppression: boolean;
+  voice_activity_detection: boolean;
+  enable_voice_join_sounds: boolean;
+}
+
+class DMVoiceServiceClass {
+  private room: Room | null = null;
+  private audioElements: Map<string, HTMLAudioElement> = new Map();
+  private audioContainer: HTMLElement | null = null;
+  private voiceSettings: VoiceSettings | null = null;
+  private outputVolume: number = 100;
+  private connectionQualityInterval: ReturnType<typeof setInterval> | null = null;
+  private currentDMChannelId: string | null = null;
+
+  setAudioContainer(container: HTMLElement) {
+    this.audioContainer = container;
+  }
+
+  private async loadVoiceSettings(): Promise<VoiceSettings> {
+    try {
+      const settings = await api.get<any>('/users/me/settings');
+      this.voiceSettings = {
+        audio_input_device_id: settings?.audio_input_device_id || null,
+        audio_output_device_id: settings?.audio_output_device_id || null,
+        audio_input_volume: settings?.audio_input_volume ?? 100,
+        audio_output_volume: settings?.audio_output_volume ?? 100,
+        audio_input_sensitivity: settings?.audio_input_sensitivity ?? 50,
+        audio_auto_gain_control: settings?.audio_auto_gain_control ?? true,
+        audio_echo_cancellation: settings?.audio_echo_cancellation ?? true,
+        audio_noise_suppression: settings?.audio_noise_suppression ?? true,
+        voice_activity_detection: settings?.voice_activity_detection ?? true,
+        enable_voice_join_sounds: settings?.enable_voice_join_sounds ?? true,
+      };
+      this.outputVolume = this.voiceSettings.audio_output_volume;
+      return this.voiceSettings;
+    } catch (err) {
+      console.warn('[DMVoiceService] Could not load voice settings:', err);
+      return {
+        audio_input_device_id: null,
+        audio_output_device_id: null,
+        audio_input_volume: 100,
+        audio_output_volume: 100,
+        audio_input_sensitivity: 50,
+        audio_auto_gain_control: true,
+        audio_echo_cancellation: true,
+        audio_noise_suppression: true,
+        voice_activity_detection: true,
+        enable_voice_join_sounds: true,
+      };
+    }
+  }
+
+  private playSound(type: 'join' | 'leave'): void {
+    if (type === 'join') {
+      soundService.playVoiceJoin();
+    } else {
+      soundService.playVoiceLeave();
+    }
+  }
+
+  async join(dmChannelId: string, friendName: string): Promise<void> {
+    if (voiceStore.isConnected()) {
+      await this.leave();
+    }
+
+    try {
+      voiceStore.setConnecting(dmChannelId, `Call with ${friendName}`);
+      console.log('[DMVoiceService] Joining DM voice call:', dmChannelId);
+
+      const settings = await this.loadVoiceSettings();
+
+      const response = await api.post<JoinDMVoiceResponse>(`/dms/${dmChannelId}/voice/join`, {});
+      const { token, url, permissions } = response;
+
+      console.log('[DMVoiceService] Got token, connecting to LiveKit at:', url);
+
+      this.room = new Room({
+        adaptiveStream: true,
+        dynacast: true,
+        audioCaptureDefaults: {
+          deviceId: settings.audio_input_device_id || undefined,
+          autoGainControl: settings.audio_auto_gain_control,
+          echoCancellation: settings.audio_echo_cancellation,
+          noiseSuppression: settings.audio_noise_suppression,
+        },
+        publishDefaults: {
+          audioBitrate: 64000,
+          dtx: true,
+          red: true,
+        },
+      });
+
+      this.playSound('join');
+      this.setupRoomEventListeners();
+      await this.room.connect(url, token);
+
+      console.log('[DMVoiceService] Connected to LiveKit room');
+
+      this.currentDMChannelId = dmChannelId;
+
+      const voicePermissions: VoicePermissions = {
+        canSpeak: permissions.canSpeak,
+        canVideo: permissions.canVideo,
+        canStream: permissions.canStream,
+        canMuteMembers: false,
+        canMoveMembers: false,
+      };
+      voiceStore.setConnected(voicePermissions);
+
+      if (!voiceStore.isMuted()) {
+        await this.room.localParticipant.setMicrophoneEnabled(true);
+        console.log('[DMVoiceService] Microphone enabled');
+      }
+
+      this.startConnectionQualityMonitoring();
+
+      socketService.emit('dm:voice:join', { dm_channel_id: dmChannelId });
+    } catch (err: any) {
+      console.error('[DMVoiceService] Failed to join DM voice call:', err);
+      voiceStore.setError(err?.message || 'Failed to join voice call');
+      throw err;
+    }
+  }
+
+  async leave(): Promise<void> {
+    const dmChannelId = this.currentDMChannelId;
+
+    if (!this.room) {
+      voiceStore.setDisconnected();
+      return;
+    }
+
+    try {
+      console.log('[DMVoiceService] Leaving DM voice call:', dmChannelId);
+
+      this.stopConnectionQualityMonitoring();
+
+      if (voiceStore.isScreenSharing()) {
+        await this.stopScreenShare();
+      }
+
+      this.playSound('leave');
+
+      if (dmChannelId) {
+        socketService.emit('dm:voice:leave', { dm_channel_id: dmChannelId });
+        try {
+          await api.post(`/dms/${dmChannelId}/voice/leave`, {});
+        } catch (err) {
+          console.warn('[DMVoiceService] Failed to notify server of leave:', err);
+        }
+      }
+
+      await this.room.disconnect();
+      this.room = null;
+      this.currentDMChannelId = null;
+
+      this.cleanupAudioElements();
+      voiceStore.setDisconnected();
+
+      console.log('[DMVoiceService] Disconnected from DM voice call');
+    } catch (err) {
+      console.error('[DMVoiceService] Error leaving DM voice call:', err);
+      this.room = null;
+      this.currentDMChannelId = null;
+      this.stopConnectionQualityMonitoring();
+      voiceStore.setDisconnected();
+    }
+  }
+
+  async toggleMute(): Promise<void> {
+    const currentMuted = voiceStore.isMuted();
+    await this.setMuted(!currentMuted);
+  }
+
+  async setMuted(muted: boolean): Promise<void> {
+    if (!this.room) return;
+
+    try {
+      await this.room.localParticipant.setMicrophoneEnabled(!muted);
+      voiceStore.setMuted(muted);
+      console.log('[DMVoiceService] Mute state:', muted);
+    } catch (err) {
+      console.error('[DMVoiceService] Failed to toggle mute:', err);
+    }
+  }
+
+  async toggleDeafen(): Promise<void> {
+    const currentDeafened = voiceStore.isDeafened();
+    await this.setDeafened(!currentDeafened);
+  }
+
+  async setDeafened(deafened: boolean): Promise<void> {
+    if (!this.room) return;
+
+    try {
+      if (deafened) {
+        await this.room.localParticipant.setMicrophoneEnabled(false);
+        this.audioElements.forEach(audio => {
+          audio.muted = true;
+        });
+      } else {
+        this.audioElements.forEach(audio => {
+          audio.muted = false;
+        });
+        if (!voiceStore.isMuted()) {
+          await this.room.localParticipant.setMicrophoneEnabled(true);
+        }
+      }
+
+      voiceStore.setDeafened(deafened);
+      console.log('[DMVoiceService] Deafen state:', deafened);
+    } catch (err) {
+      console.error('[DMVoiceService] Failed to toggle deafen:', err);
+    }
+  }
+
+  async startScreenShare(quality: ScreenShareQuality = 'standard'): Promise<void> {
+    if (!this.room) {
+      console.warn('[DMVoiceService] Cannot start screen share: not connected');
+      return;
+    }
+
+    try {
+      const qualityConfig = SCREEN_SHARE_QUALITIES[quality.toUpperCase() as keyof typeof SCREEN_SHARE_QUALITIES];
+
+      const constraints: DisplayMediaStreamOptions = {
+        video: quality === 'native' ? true : {
+          width: { ideal: qualityConfig.width },
+          height: { ideal: qualityConfig.height },
+          frameRate: { ideal: qualityConfig.fps },
+        },
+        audio: true,
+      };
+
+      await this.room.localParticipant.setScreenShareEnabled(true, constraints, {
+        screenShareEncoding: {
+          maxBitrate: qualityConfig.bitrate,
+          maxFramerate: qualityConfig.fps,
+        },
+      });
+
+      voiceStore.setScreenSharing(true);
+      voiceStore.setScreenShareQuality(quality);
+      console.log('[DMVoiceService] Screen share started with quality:', quality);
+    } catch (err: any) {
+      console.error('[DMVoiceService] Failed to start screen share:', err);
+      if (err.name === 'NotAllowedError') {
+        voiceStore.setError('Screen sharing was cancelled');
+      } else {
+        voiceStore.setError(err?.message || 'Failed to start screen share');
+      }
+    }
+  }
+
+  async stopScreenShare(): Promise<void> {
+    if (!this.room) return;
+
+    try {
+      await this.room.localParticipant.setScreenShareEnabled(false);
+      voiceStore.setScreenSharing(false);
+      console.log('[DMVoiceService] Screen share stopped');
+    } catch (err) {
+      console.error('[DMVoiceService] Failed to stop screen share:', err);
+    }
+  }
+
+  async toggleScreenShare(quality?: ScreenShareQuality): Promise<void> {
+    if (voiceStore.isScreenSharing()) {
+      await this.stopScreenShare();
+    } else {
+      await this.startScreenShare(quality || voiceStore.screenShareQuality());
+    }
+  }
+
+  getRoom(): Room | null {
+    return this.room;
+  }
+
+  isInDMCall(dmChannelId: string): boolean {
+    return voiceStore.isConnected() && this.currentDMChannelId === dmChannelId;
+  }
+
+  private setupRoomEventListeners(): void {
+    if (!this.room) return;
+
+    this.room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+      console.log('[DMVoiceService] Track subscribed:', track.kind, 'from', participant.identity);
+
+      if (track.kind === Track.Kind.Audio) {
+        this.attachAudioTrack(track as RemoteTrack, participant);
+      }
+    });
+
+    this.room.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+      console.log('[DMVoiceService] Track unsubscribed:', track.kind, 'from', participant.identity);
+
+      if (track.kind === Track.Kind.Audio) {
+        this.detachAudioTrack(participant.identity);
+      }
+    });
+
+    this.room.on(RoomEvent.ParticipantConnected, (participant) => {
+      console.log('[DMVoiceService] Participant connected:', participant.identity);
+    });
+
+    this.room.on(RoomEvent.ParticipantDisconnected, (participant) => {
+      console.log('[DMVoiceService] Participant disconnected:', participant.identity);
+      this.detachAudioTrack(participant.identity);
+    });
+
+    this.room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+      if (this.room?.localParticipant) {
+        const speakerIds = new Set(speakers.map(s => s.identity));
+        const localIsSpeaking = speakerIds.has(this.room.localParticipant.identity);
+        voiceStore.setSpeaking(localIsSpeaking);
+      }
+    });
+
+    this.room.on(RoomEvent.ConnectionStateChanged, (state) => {
+      console.log('[DMVoiceService] Connection state changed:', state);
+
+      if (state === ConnectionState.Reconnecting) {
+        voiceStore.setReconnecting();
+      } else if (state === ConnectionState.Disconnected) {
+        voiceStore.setDisconnected();
+        this.cleanupAudioElements();
+      }
+    });
+
+    this.room.on(RoomEvent.Disconnected, (reason) => {
+      console.log('[DMVoiceService] Disconnected:', reason);
+      voiceStore.setDisconnected();
+      this.cleanupAudioElements();
+    });
+  }
+
+  private attachAudioTrack(track: RemoteTrack, participant: RemoteParticipant): void {
+    const audio = document.createElement('audio');
+    audio.autoplay = true;
+    audio.volume = this.outputVolume / 100;
+
+    if (voiceStore.isDeafened()) {
+      audio.muted = true;
+    }
+
+    track.attach(audio);
+
+    if (this.audioContainer) {
+      this.audioContainer.appendChild(audio);
+    } else {
+      document.body.appendChild(audio);
+    }
+
+    this.audioElements.set(participant.identity, audio);
+    console.log('[DMVoiceService] Audio track attached for:', participant.identity);
+  }
+
+  private detachAudioTrack(participantIdentity: string): void {
+    const audio = this.audioElements.get(participantIdentity);
+    if (audio) {
+      audio.pause();
+      audio.srcObject = null;
+      audio.remove();
+      this.audioElements.delete(participantIdentity);
+      console.log('[DMVoiceService] Audio track detached for:', participantIdentity);
+    }
+  }
+
+  private cleanupAudioElements(): void {
+    this.audioElements.forEach((audio) => {
+      audio.pause();
+      audio.srcObject = null;
+      audio.remove();
+    });
+    this.audioElements.clear();
+    console.log('[DMVoiceService] All audio elements cleaned up');
+  }
+
+  private startConnectionQualityMonitoring(): void {
+    if (this.connectionQualityInterval) {
+      clearInterval(this.connectionQualityInterval);
+    }
+
+    this.connectionQualityInterval = setInterval(() => {
+      this.updateConnectionQuality();
+    }, 2000);
+
+    this.updateConnectionQuality();
+  }
+
+  private stopConnectionQualityMonitoring(): void {
+    if (this.connectionQualityInterval) {
+      clearInterval(this.connectionQualityInterval);
+      this.connectionQualityInterval = null;
+    }
+  }
+
+  private async updateConnectionQuality(): Promise<void> {
+    if (!this.room?.localParticipant) return;
+
+    const quality = this.room.localParticipant.connectionQuality;
+    const level = this.mapConnectionQuality(quality);
+
+    let ping: number | null = null;
+
+    try {
+      const engine = (this.room as any).engine;
+      if (engine?.client?.rtt) {
+        ping = Math.round(engine.client.rtt);
+      }
+    } catch {
+      // Stats not available
+    }
+
+    voiceStore.setConnectionQuality({
+      level,
+      ping,
+      jitter: null,
+      packetLoss: null,
+    });
+  }
+
+  private mapConnectionQuality(quality: ConnectionQuality): ConnectionQualityLevel {
+    switch (quality) {
+      case ConnectionQuality.Excellent:
+        return 'excellent';
+      case ConnectionQuality.Good:
+        return 'good';
+      case ConnectionQuality.Poor:
+        return 'poor';
+      case ConnectionQuality.Lost:
+        return 'lost';
+      default:
+        return 'unknown';
+    }
+  }
+}
+
+export const dmVoiceService = new DMVoiceServiceClass();

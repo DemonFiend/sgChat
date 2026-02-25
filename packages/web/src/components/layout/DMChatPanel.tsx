@@ -1,8 +1,9 @@
 import { createSignal, For, Show, createEffect, onCleanup, JSX } from 'solid-js';
-import { Avatar, MessageContent } from '@/components/ui';
+import { Avatar, MessageContent, DMVoiceControls, DMCallStatusBar } from '@/components/ui';
 import { BendyLine } from '@/components/ui/BendyLine';
 import { GifPicker } from '@/components/ui/GifPicker';
 import type { Friend } from './DMSidebar';
+import { api } from '@/api';
 
 export interface DMMessage {
   id: string;
@@ -209,6 +210,13 @@ export function DMChatPanel(props: DMChatPanelProps): JSX.Element {
                 </p>
               </div>
 
+              {/* Voice Call Controls */}
+              <DMVoiceControls
+                dmChannelId={friend().dm_channel_id || ''}
+                friendId={friend().id}
+                friendName={friend().display_name || friend().username}
+              />
+
               {/* Friend's Local Time */}
               <div class="relative">
                 <div
@@ -325,6 +333,12 @@ export function DMChatPanel(props: DMChatPanelProps): JSX.Element {
             </For>
             <div ref={messagesEndRef} />
           </div>
+
+          {/* DM Voice Call Status Bar */}
+          <DMCallStatusBar
+            dmChannelId={friend().dm_channel_id || ''}
+            friendName={friend().display_name || friend().username}
+          />
 
           {/* Bottom Section with Bendy Line and Actions */}
           <div class="relative">

@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
-import { sendMessageSchema } from '@sgchat/shared';
+import { sendMessageSchema, RATE_LIMITS } from '@sgchat/shared';
 import { notFound, forbidden, badRequest } from '../utils/errors.js';
 import { areFriends, isBlocked } from './friends.js';
 import { z } from 'zod';
@@ -9,6 +9,8 @@ import { getDMStorageStats, getSegmentsForDM, getOrCreateSegment, onMessageCreat
 import { getEffectiveDMRetention, applyRetentionPolicy } from '../services/trimming.js';
 import { loadArchivedMessages } from '../services/archive.js';
 import { publishEvent } from '../lib/eventBus.js';
+import { generateLiveKitToken, getLiveKitUrl } from '../services/livekit.js';
+import { redis } from '../lib/redis.js';
 
 export const dmRoutes: FastifyPluginAsync = async (fastify) => {
   // Get user's DM channels
@@ -358,6 +360,196 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
       return {
         total: unreadCounts.reduce((sum, c) => sum + c.count, 0),
         channels: unreadCounts,
+      };
+    },
+  });
+
+  // ============================================================
+  // DM VOICE CALLS
+  // ============================================================
+
+  /**
+   * POST /dms/:id/voice/join - Join DM voice call
+   * Creates a private voice room for the two DM participants
+   */
+  fastify.post<{ Params: { id: string } }>('/:id/voice/join', {
+    onRequest: [authenticate],
+    config: {
+      rateLimit: {
+        max: RATE_LIMITS.VOICE_JOIN.max,
+        timeWindow: `${RATE_LIMITS.VOICE_JOIN.window} seconds`,
+      },
+    },
+    handler: async (request, reply) => {
+      const { id } = request.params;
+
+      const dm = await db.dmChannels.findById(id);
+      if (!dm) {
+        return notFound(reply, 'DM channel');
+      }
+
+      // Verify user is part of this DM
+      if (dm.user1_id !== request.user!.id && dm.user2_id !== request.user!.id) {
+        return forbidden(reply, 'Not part of this DM');
+      }
+
+      const otherUserId = dm.user1_id === request.user!.id ? dm.user2_id : dm.user1_id;
+
+      // Check if users are still friends
+      if (!await areFriends(request.user!.id, otherUserId)) {
+        return forbidden(reply, 'You must be friends to start a voice call');
+      }
+
+      // Check for blocks
+      if (await isBlocked(request.user!.id, otherUserId)) {
+        return forbidden(reply, 'Cannot call this user');
+      }
+
+      const roomName = `dm:${id}`;
+
+      // Generate token with full permissions (DMs don't have role-based permissions)
+      const token = await generateLiveKitToken({
+        identity: request.user!.id,
+        room: roomName,
+        canPublish: true,
+        canPublishVideo: true,
+        canPublishScreen: true,
+        canSubscribe: true,
+      });
+
+      // Track DM voice state in Redis
+      await redis.set(`dm_voice:${id}:${request.user!.id}`, JSON.stringify({
+        user_id: request.user!.id,
+        joined_at: new Date().toISOString(),
+      }), 'EX', 3600); // 1 hour expiry
+
+      // Get user info for notification
+      const user = await db.users.findById(request.user!.id);
+
+      // Notify the other user about the call
+      await publishEvent({
+        type: 'voice.join',
+        actorId: request.user!.id,
+        resourceId: `dm:${id}`,
+        payload: {
+          dm_channel_id: id,
+          is_dm_call: true,
+          user: {
+            id: user.id,
+            username: user.username,
+            display_name: user.display_name || user.username,
+            avatar_url: user.avatar_url,
+          },
+        },
+      });
+
+      return {
+        token,
+        url: getLiveKitUrl(),
+        room_name: roomName,
+        dm_channel_id: id,
+        permissions: {
+          canSpeak: true,
+          canVideo: true,
+          canStream: true,
+        },
+      };
+    },
+  });
+
+  /**
+   * POST /dms/:id/voice/leave - Leave DM voice call
+   */
+  fastify.post<{ Params: { id: string } }>('/:id/voice/leave', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params;
+
+      const dm = await db.dmChannels.findById(id);
+      if (!dm) {
+        return notFound(reply, 'DM channel');
+      }
+
+      // Verify user is part of this DM
+      if (dm.user1_id !== request.user!.id && dm.user2_id !== request.user!.id) {
+        return forbidden(reply, 'Not part of this DM');
+      }
+
+      // Remove from Redis voice state
+      await redis.del(`dm_voice:${id}:${request.user!.id}`);
+
+      // Get user info for notification
+      const user = await db.users.findById(request.user!.id);
+
+      // Notify the other user
+      await publishEvent({
+        type: 'voice.leave',
+        actorId: request.user!.id,
+        resourceId: `dm:${id}`,
+        payload: {
+          dm_channel_id: id,
+          is_dm_call: true,
+          user: {
+            id: user.id,
+            username: user.username,
+            display_name: user.display_name || user.username,
+            avatar_url: user.avatar_url,
+          },
+        },
+      });
+
+      return { message: 'Left DM voice call' };
+    },
+  });
+
+  /**
+   * GET /dms/:id/voice/status - Get DM voice call status
+   */
+  fastify.get<{ Params: { id: string } }>('/:id/voice/status', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params;
+
+      const dm = await db.dmChannels.findById(id);
+      if (!dm) {
+        return notFound(reply, 'DM channel');
+      }
+
+      // Verify user is part of this DM
+      if (dm.user1_id !== request.user!.id && dm.user2_id !== request.user!.id) {
+        return forbidden(reply, 'Not part of this DM');
+      }
+
+      const user1State = await redis.get(`dm_voice:${id}:${dm.user1_id}`);
+      const user2State = await redis.get(`dm_voice:${id}:${dm.user2_id}`);
+
+      const participants = [];
+      if (user1State) {
+        const state = JSON.parse(user1State);
+        const user = await db.users.findById(dm.user1_id);
+        participants.push({
+          user_id: user.id,
+          username: user.username,
+          display_name: user.display_name,
+          avatar_url: user.avatar_url,
+          joined_at: state.joined_at,
+        });
+      }
+      if (user2State) {
+        const state = JSON.parse(user2State);
+        const user = await db.users.findById(dm.user2_id);
+        participants.push({
+          user_id: user.id,
+          username: user.username,
+          display_name: user.display_name,
+          avatar_url: user.avatar_url,
+          joined_at: state.joined_at,
+        });
+      }
+
+      return {
+        is_active: participants.length > 0,
+        participants,
       };
     },
   });
