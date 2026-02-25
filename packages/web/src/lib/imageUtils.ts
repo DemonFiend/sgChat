@@ -12,10 +12,17 @@ const IMAGE_HOSTING_DOMAINS = [
     'giphy.com',
     'media.giphy.com',
     'i.giphy.com',
+    'media0.giphy.com',
+    'media1.giphy.com',
+    'media2.giphy.com',
+    'media3.giphy.com',
+    'media4.giphy.com',
     'imgur.com',
     'i.imgur.com',
     'media.tenor.com',
     'c.tenor.com',
+    'media.discordapp.net',
+    'cdn.discordapp.com',
 ];
 
 /**
