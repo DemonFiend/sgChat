@@ -44,8 +44,15 @@ export function ServerSidebar(props: ServerSidebarProps) {
 
   // Group channels by type
   const textChannels = () => props.channels.filter(c => c.type === 'text').sort((a, b) => a.position - b.position);
-  const voiceChannels = () => props.channels.filter(c => c.type === 'voice' && c.name.toLowerCase() !== 'afk' && c.name.toLowerCase() !== 'away channel').sort((a, b) => a.position - b.position);
-  const afkChannel = () => props.channels.find(c => c.type === 'voice' && (c.name.toLowerCase() === 'afk' || c.name.toLowerCase() === 'away channel'));
+  // Filter out AFK channel from regular voice channels (use is_afk_channel flag or fallback to name check)
+  const voiceChannels = () => props.channels.filter(c => 
+    (c.type === 'voice' || c.type === 'temp_voice' || c.type === 'temp_voice_generator' || c.type === 'music') && 
+    !c.is_afk_channel && 
+    c.name.toLowerCase() !== 'afk'
+  ).sort((a, b) => a.position - b.position);
+  // Find AFK channel using is_afk_channel flag first, then fallback to name
+  const afkChannel = () => props.channels.find(c => c.is_afk_channel) || 
+    props.channels.find(c => c.type === 'voice' && c.name.toLowerCase() === 'afk');
 
   // Organize channels by category
   const organizedChannels = () => {

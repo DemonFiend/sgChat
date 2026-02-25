@@ -3,7 +3,7 @@ import { A, useParams } from '@solidjs/router';
 import { clsx } from 'clsx';
 import { UnreadIndicator } from '@/components/ui';
 
-export type ChannelType = 'text' | 'voice' | 'announcement' | 'music';
+export type ChannelType = 'text' | 'voice' | 'announcement' | 'music' | 'temp_voice_generator' | 'temp_voice';
 
 export interface Channel {
   id: string;
@@ -14,6 +14,8 @@ export interface Channel {
   topic?: string;
   unread_count?: number;
   has_mentions?: boolean;
+  is_afk_channel?: boolean;
+  is_temp_channel?: boolean;
 }
 
 export interface Category {
