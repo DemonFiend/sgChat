@@ -1280,11 +1280,12 @@ interface ChannelCategory {
 interface ChannelData {
   id: string;
   name: string;
-  type: 'text' | 'voice' | 'announcement';
+  type: 'text' | 'voice' | 'announcement' | 'music' | 'temp_voice_generator' | 'temp_voice';
   category_id: string | null;
   position: number;
   topic?: string;
   slowmode_seconds?: number;
+  is_temp_channel?: boolean;
 }
 
 function ChannelsTab() {
@@ -1422,6 +1423,19 @@ function ChannelsTab() {
         return (
           <svg class="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
+          </svg>
+        );
+      case 'temp_voice_generator':
+        return (
+          <svg class="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+          </svg>
+        );
+      case 'temp_voice':
+        return (
+          <svg class="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M9 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            <circle cx="18" cy="6" r="2" fill="currentColor" />
           </svg>
         );
       default:
@@ -1578,7 +1592,13 @@ function ChannelsTab() {
                   <option value="voice">Voice</option>
                   <option value="announcement">Announcement</option>
                   <option value="music">Music / Stage</option>
+                  <option value="temp_voice_generator">Temp Voice Generator (Create-on-Join)</option>
                 </select>
+                <p class="text-xs text-text-muted mt-1">
+                  {newChannelType() === 'temp_voice_generator' && 
+                    'Users joining this channel will automatically get their own temporary voice channel.'
+                  }
+                </p>
               </div>
 
               <div>
