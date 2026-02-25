@@ -1,4 +1,4 @@
-import { Room, RoomEvent, Track, RemoteTrack, RemoteParticipant, LocalParticipant, ConnectionState, ConnectionQuality, LocalTrackPublication } from 'livekit-client';
+import { Room, RoomEvent, Track, RemoteTrack, RemoteParticipant, ConnectionState, ConnectionQuality } from 'livekit-client';
 import { api } from '@/api';
 import { voiceStore, type VoicePermissions, type VoiceParticipant, type ConnectionQualityLevel, type ScreenShareQuality, type ConnectionQualityState } from '@/stores/voice';
 import { socketService } from './socket';
@@ -53,7 +53,6 @@ class VoiceServiceClass {
   private audioContainer: HTMLElement | null = null;
   private voiceSettings: VoiceSettings | null = null;
   private outputVolume: number = 100;
-  private screenShareTrack: LocalTrackPublication | null = null;
   private connectionQualityInterval: ReturnType<typeof setInterval> | null = null;
 
   /**
@@ -395,17 +394,14 @@ class VoiceServiceClass {
     try {
       const qualityConfig = SCREEN_SHARE_QUALITIES[quality.toUpperCase() as keyof typeof SCREEN_SHARE_QUALITIES];
       
-      // For native quality, we don't constrain resolution
-      const constraints: DisplayMediaStreamOptions = {
-        video: quality === 'native' ? true : {
-          width: { ideal: qualityConfig.width },
-          height: { ideal: qualityConfig.height },
-          frameRate: { ideal: qualityConfig.fps },
-        },
+      await this.room.localParticipant.setScreenShareEnabled(true, {
         audio: true,
-      };
-
-      await this.room.localParticipant.setScreenShareEnabled(true, constraints, {
+        resolution: quality === 'native' ? undefined : {
+          width: qualityConfig.width,
+          height: qualityConfig.height,
+          frameRate: qualityConfig.fps,
+        },
+      }, {
         screenShareEncoding: {
           maxBitrate: qualityConfig.bitrate,
           maxFramerate: qualityConfig.fps,
@@ -587,7 +583,7 @@ class VoiceServiceClass {
     if (!this.room) return;
 
     // Track subscribed - attach audio
-    this.room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+    this.room.on(RoomEvent.TrackSubscribed, (track, _publication, participant) => {
       console.log('[VoiceService] Track subscribed:', track.kind, 'from', participant.identity);
       
       if (track.kind === Track.Kind.Audio) {
@@ -596,7 +592,7 @@ class VoiceServiceClass {
     });
 
     // Track unsubscribed - detach audio
-    this.room.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+    this.room.on(RoomEvent.TrackUnsubscribed, (track, _publication, participant) => {
       console.log('[VoiceService] Track unsubscribed:', track.kind, 'from', participant.identity);
       
       if (track.kind === Track.Kind.Audio) {
@@ -618,24 +614,20 @@ class VoiceServiceClass {
     });
 
     // Track muted
-    this.room.on(RoomEvent.TrackMuted, (publication, participant) => {
-      if (publication.kind === Track.Kind.Audio) {
-        console.log('[VoiceService] Participant muted:', participant.identity);
-        const channelId = voiceStore.currentChannelId();
-        if (channelId) {
-          voiceStore.updateParticipantState(channelId, participant.identity, { isMuted: true });
-        }
+    this.room.on(RoomEvent.TrackMuted, (_publication, participant) => {
+      console.log('[VoiceService] Participant muted:', participant.identity);
+      const channelId = voiceStore.currentChannelId();
+      if (channelId) {
+        voiceStore.updateParticipantState(channelId, participant.identity, { isMuted: true });
       }
     });
 
     // Track unmuted
-    this.room.on(RoomEvent.TrackUnmuted, (publication, participant) => {
-      if (publication.kind === Track.Kind.Audio) {
-        console.log('[VoiceService] Participant unmuted:', participant.identity);
-        const channelId = voiceStore.currentChannelId();
-        if (channelId) {
-          voiceStore.updateParticipantState(channelId, participant.identity, { isMuted: false });
-        }
+    this.room.on(RoomEvent.TrackUnmuted, (_publication, participant) => {
+      console.log('[VoiceService] Participant unmuted:', participant.identity);
+      const channelId = voiceStore.currentChannelId();
+      if (channelId) {
+        voiceStore.updateParticipantState(channelId, participant.identity, { isMuted: false });
       }
     });
 
@@ -724,7 +716,7 @@ class VoiceServiceClass {
   }
 
   private cleanupAudioElements(): void {
-    this.audioElements.forEach((audio, identity) => {
+    this.audioElements.forEach((audio) => {
       audio.pause();
       audio.srcObject = null;
       audio.remove();

@@ -1,9 +1,8 @@
 import { Room, RoomEvent, Track, RemoteTrack, RemoteParticipant, ConnectionState, ConnectionQuality } from 'livekit-client';
 import { api } from '@/api';
-import { voiceStore, type VoicePermissions, type ConnectionQualityLevel, type ScreenShareQuality, type ConnectionQualityState } from '@/stores/voice';
+import { voiceStore, type VoicePermissions, type ConnectionQualityLevel, type ScreenShareQuality } from '@/stores/voice';
 import { socketService } from './socket';
 import { soundService } from './soundService';
-import { SCREEN_SHARE_QUALITIES } from '@sgchat/shared';
 
 interface JoinDMVoiceResponse {
   token: string;
@@ -247,19 +246,24 @@ class DMVoiceServiceClass {
       return;
     }
 
+    // Quality presets
+    const qualityPresets = {
+      standard: { width: 1280, height: 720, fps: 30, bitrate: 2_500_000 },
+      high: { width: 1920, height: 1080, fps: 60, bitrate: 6_000_000 },
+      native: { width: 0, height: 0, fps: 30, bitrate: 8_000_000 },
+    };
+
     try {
-      const qualityConfig = SCREEN_SHARE_QUALITIES[quality.toUpperCase() as keyof typeof SCREEN_SHARE_QUALITIES];
+      const qualityConfig = qualityPresets[quality];
 
-      const constraints: DisplayMediaStreamOptions = {
-        video: quality === 'native' ? true : {
-          width: { ideal: qualityConfig.width },
-          height: { ideal: qualityConfig.height },
-          frameRate: { ideal: qualityConfig.fps },
-        },
+      await this.room.localParticipant.setScreenShareEnabled(true, {
         audio: true,
-      };
-
-      await this.room.localParticipant.setScreenShareEnabled(true, constraints, {
+        resolution: quality === 'native' ? undefined : {
+          width: qualityConfig.width,
+          height: qualityConfig.height,
+          frameRate: qualityConfig.fps,
+        },
+      }, {
         screenShareEncoding: {
           maxBitrate: qualityConfig.bitrate,
           maxFramerate: qualityConfig.fps,
@@ -310,7 +314,7 @@ class DMVoiceServiceClass {
   private setupRoomEventListeners(): void {
     if (!this.room) return;
 
-    this.room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+    this.room.on(RoomEvent.TrackSubscribed, (track, _publication, participant) => {
       console.log('[DMVoiceService] Track subscribed:', track.kind, 'from', participant.identity);
 
       if (track.kind === Track.Kind.Audio) {
@@ -318,7 +322,7 @@ class DMVoiceServiceClass {
       }
     });
 
-    this.room.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+    this.room.on(RoomEvent.TrackUnsubscribed, (track, _publication, participant) => {
       console.log('[DMVoiceService] Track unsubscribed:', track.kind, 'from', participant.identity);
 
       if (track.kind === Track.Kind.Audio) {

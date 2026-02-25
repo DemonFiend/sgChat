@@ -3,7 +3,6 @@ import { Avatar, MessageContent, DMVoiceControls, DMCallStatusBar } from '@/comp
 import { BendyLine } from '@/components/ui/BendyLine';
 import { GifPicker } from '@/components/ui/GifPicker';
 import type { Friend } from './DMSidebar';
-import { api } from '@/api';
 
 export interface DMMessage {
   id: string;
