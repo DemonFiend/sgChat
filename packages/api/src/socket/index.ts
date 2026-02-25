@@ -705,7 +705,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       }
     });
 
-    socket.on('voice:update', async (data: { muted?: boolean; deafened?: boolean }) => {
+    socket.on('voice:update', async (data: { muted?: boolean; deafened?: boolean; screen_sharing?: boolean }) => {
       try {
         const channelId = await redis.getUserVoiceChannel(userId);
         if (!channelId) return;
@@ -716,6 +716,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         await redis.updateVoiceState(channelId, userId, {
           is_muted: data.muted,
           is_deafened: data.deafened,
+          is_streaming: data.screen_sharing,
         });
 
         await publishEvent({
@@ -727,6 +728,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
             user_id: userId,
             is_muted: data.muted ?? false,
             is_deafened: data.deafened ?? false,
+            is_streaming: data.screen_sharing ?? false,
           },
         });
       } catch (err) {

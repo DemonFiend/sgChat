@@ -171,6 +171,37 @@ export function MainLayout() {
 
       setMembers(normalizedMembers);
 
+      // Fetch voice participants for all channels to show who's in voice
+      try {
+        const voiceResponse = await api.get<{ channels: Record<string, Array<{
+          user_id: string;
+          username: string;
+          display_name: string | null;
+          avatar_url: string | null;
+          is_muted: boolean;
+          is_deafened: boolean;
+          is_streaming?: boolean;
+        }>> }>('/voice/participants');
+        
+        if (voiceResponse.channels) {
+          for (const [channelId, participants] of Object.entries(voiceResponse.channels)) {
+            const voiceParticipants = participants.map(p => ({
+              userId: p.user_id,
+              username: p.username,
+              displayName: p.display_name,
+              avatarUrl: p.avatar_url,
+              isMuted: p.is_muted,
+              isDeafened: p.is_deafened,
+              isSpeaking: false,
+            }));
+            voiceStore.setChannelParticipants(channelId, voiceParticipants);
+          }
+          console.log('[MainLayout] Voice participants loaded for', Object.keys(voiceResponse.channels).length, 'channels');
+        }
+      } catch (voiceErr) {
+        console.warn('[MainLayout] Failed to fetch voice participants:', voiceErr);
+      }
+
       // Auto-navigate to first channel if none selected and we have channels (but not on DM route)
       if (!params.channelId && !isDMRoute() && fetchedChannels.length > 0) {
         const firstTextChannel = fetchedChannels.find((c) => c.type === 'text');
@@ -618,11 +649,13 @@ export function MainLayout() {
       user_id: string;
       is_muted: boolean;
       is_deafened: boolean;
+      is_streaming?: boolean;
     }) => {
-      console.log('[MainLayout] Voice mute update:', data.user_id, 'muted:', data.is_muted, 'deafened:', data.is_deafened);
+      console.log('[MainLayout] Voice state update:', data.user_id, 'muted:', data.is_muted, 'deafened:', data.is_deafened, 'streaming:', data.is_streaming);
       voiceStore.updateParticipantState(data.channel_id, data.user_id, {
         isMuted: data.is_muted,
         isDeafened: data.is_deafened,
+        isStreaming: data.is_streaming,
       });
     };
 

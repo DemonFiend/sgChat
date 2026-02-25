@@ -201,6 +201,7 @@ export const redis = {
     joined_at: string;
     is_muted: boolean;
     is_deafened: boolean;
+    is_streaming?: boolean;
   } | null> {
     const state = await client.hgetall(`voice:state:${channelId}:${userId}`);
     if (!state || Object.keys(state).length === 0) return null;
@@ -208,13 +209,15 @@ export const redis = {
       joined_at: state.joined_at,
       is_muted: state.is_muted === 'true',
       is_deafened: state.is_deafened === 'true',
+      is_streaming: state.is_streaming === 'true',
     };
   },
 
-  async updateVoiceState(channelId: string, userId: string, updates: { is_muted?: boolean; is_deafened?: boolean }) {
+  async updateVoiceState(channelId: string, userId: string, updates: { is_muted?: boolean; is_deafened?: boolean; is_streaming?: boolean }) {
     const data: Record<string, string> = {};
     if (updates.is_muted !== undefined) data.is_muted = updates.is_muted.toString();
     if (updates.is_deafened !== undefined) data.is_deafened = updates.is_deafened.toString();
+    if (updates.is_streaming !== undefined) data.is_streaming = updates.is_streaming.toString();
     if (Object.keys(data).length > 0) {
       await client.hset(`voice:state:${channelId}:${userId}`, data);
     }

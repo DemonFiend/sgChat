@@ -8,6 +8,7 @@ export interface VoiceParticipant {
   isMuted: boolean;
   isDeafened: boolean;
   isSpeaking: boolean;
+  isStreaming?: boolean;
 }
 
 export interface VoicePermissions {
@@ -288,11 +289,12 @@ function createVoiceStore() {
     });
   };
 
-  // Update a participant's mute/deafen state
+  // Update a participant's mute/deafen/streaming state
   const updateParticipantState = (channelId: string, userId: string, updates: {
     isMuted?: boolean;
     isDeafened?: boolean;
     isSpeaking?: boolean;
+    isStreaming?: boolean;
   }) => {
     setState(prev => {
       const newParticipants = new Map(prev.participants);

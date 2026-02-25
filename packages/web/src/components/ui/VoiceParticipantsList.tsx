@@ -45,6 +45,14 @@ function VoiceParticipantItem(props: VoiceParticipantItemProps) {
           size="sm"
         />
         <span class="truncate">{displayName()}</span>
+        {/* Streaming indicator */}
+        <Show when={props.participant.isStreaming}>
+          <span class="ml-auto flex items-center gap-1 text-purple-400" title="Streaming">
+            <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+          </span>
+        </Show>
       </div>
     );
   }
@@ -53,15 +61,29 @@ function VoiceParticipantItem(props: VoiceParticipantItemProps) {
     <div 
       class={`flex items-center gap-2 py-1 px-2 rounded transition-colors hover:bg-bg-modifier-hover ${
         props.participant.isSpeaking ? 'bg-status-online/10' : ''
-      }`}
+      } ${props.participant.isStreaming ? 'bg-purple-500/10' : ''}`}
     >
-      {/* Avatar with speaking ring */}
-      <div class={`relative ${props.participant.isSpeaking ? 'ring-2 ring-status-online ring-offset-1 ring-offset-bg-secondary rounded-full' : ''}`}>
+      {/* Avatar with speaking/streaming ring */}
+      <div class={`relative ${
+        props.participant.isStreaming 
+          ? 'ring-2 ring-purple-400 ring-offset-1 ring-offset-bg-secondary rounded-full'
+          : props.participant.isSpeaking 
+            ? 'ring-2 ring-status-online ring-offset-1 ring-offset-bg-secondary rounded-full' 
+            : ''
+      }`}>
         <Avatar
           src={props.participant.avatarUrl}
           alt={displayName()}
           size="xs"
         />
+        {/* Streaming badge */}
+        <Show when={props.participant.isStreaming}>
+          <div class="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-purple-500 rounded-full flex items-center justify-center">
+            <svg class="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+          </div>
+        </Show>
       </div>
 
       {/* Name */}
@@ -69,13 +91,29 @@ function VoiceParticipantItem(props: VoiceParticipantItemProps) {
         {displayName()}
       </span>
 
-      {/* Status icon */}
-      <SpeakerIcon
-        isMuted={props.participant.isMuted}
-        isDeafened={props.participant.isDeafened}
-        isSpeaking={props.participant.isSpeaking}
-        size="sm"
-      />
+      {/* Streaming indicator - clickable */}
+      <Show when={props.participant.isStreaming}>
+        <button
+          class="flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-purple-400 bg-purple-500/20 rounded hover:bg-purple-500/30 transition-colors"
+          title={`Watch ${displayName()}'s stream`}
+        >
+          <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+          </svg>
+          <span>LIVE</span>
+        </button>
+      </Show>
+
+      {/* Status icon - only show when not streaming */}
+      <Show when={!props.participant.isStreaming}>
+        <SpeakerIcon
+          isMuted={props.participant.isMuted}
+          isDeafened={props.participant.isDeafened}
+          isSpeaking={props.participant.isSpeaking}
+          size="sm"
+        />
+      </Show>
     </div>
   );
 }
@@ -91,28 +129,48 @@ export function InlineParticipants(props: InlineParticipantsProps) {
   const maxShow = () => props.maxShow ?? 5;
   const visibleParticipants = () => participants().slice(0, maxShow());
   const hiddenCount = () => Math.max(0, participants().length - maxShow());
+  const streamingCount = () => participants().filter(p => p.isStreaming).length;
 
   return (
     <Show when={participants().length > 0}>
       <div class="pl-6 mt-0.5 space-y-0.5">
         <For each={visibleParticipants()}>
           {(participant) => (
-            <div class="flex items-center gap-1.5 py-0.5 text-xs text-text-muted">
-              <SpeakerIcon
-                isMuted={participant.isMuted}
-                isDeafened={participant.isDeafened}
-                isSpeaking={participant.isSpeaking}
-                size="sm"
-              />
+            <div class={`flex items-center gap-1.5 py-0.5 text-xs ${participant.isStreaming ? 'text-purple-400' : 'text-text-muted'}`}>
+              {/* Show stream icon if streaming, otherwise speaker */}
+              <Show 
+                when={participant.isStreaming}
+                fallback={
+                  <SpeakerIcon
+                    isMuted={participant.isMuted}
+                    isDeafened={participant.isDeafened}
+                    isSpeaking={participant.isSpeaking}
+                    size="sm"
+                  />
+                }
+              >
+                <svg class="w-3.5 h-3.5 flex-shrink-0 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+              </Show>
               <span class="truncate">
                 {participant.displayName || participant.username}
               </span>
+              <Show when={participant.isStreaming}>
+                <span class="ml-auto text-[10px] font-semibold bg-purple-500/30 px-1 rounded">LIVE</span>
+              </Show>
             </div>
           )}
         </For>
         <Show when={hiddenCount() > 0}>
           <div class="text-xs text-text-muted pl-5">
             +{hiddenCount()} more
+          </div>
+        </Show>
+        {/* Show streaming summary if any hidden users are streaming */}
+        <Show when={streamingCount() > 0 && hiddenCount() > 0}>
+          <div class="text-xs text-purple-400 pl-5">
+            {streamingCount()} streaming
           </div>
         </Show>
       </div>

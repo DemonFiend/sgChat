@@ -666,7 +666,8 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
         return notFound(reply, 'Channel');
       }
 
-      if (channel.type !== 'voice') {
+      // Allow voice, temp_voice, and music channels
+      if (channel.type !== 'voice' && channel.type !== 'temp_voice' && channel.type !== 'music') {
         return badRequest(reply, 'Not a voice channel');
       }
 

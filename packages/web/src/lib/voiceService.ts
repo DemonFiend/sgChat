@@ -9,6 +9,8 @@ interface JoinVoiceResponse {
   token: string;
   url: string;
   room_name?: string;
+  channel_id?: string;
+  is_temp_channel?: boolean;
   bitrate?: number;
   user_limit?: number;
   permissions?: {
@@ -128,17 +130,28 @@ class VoiceServiceClass {
       // 0. Load user's voice settings
       const settings = await this.loadVoiceSettings();
 
-      // 1. Get token from server
+      // 1. Get token from server (may redirect to temp channel)
       const response = await api.post<JoinVoiceResponse>(`/voice/join/${channelId}`, {});
-      const { token, url, permissions, bitrate, user_limit } = response;
+      const { token, url, permissions, bitrate, user_limit, channel_id: actualChannelId, is_temp_channel } = response;
+      
+      // Use the actual channel ID returned by the server (may differ for temp_voice_generator)
+      const targetChannelId = actualChannelId || channelId;
+      const targetChannelName = is_temp_channel ? `${channelName} (Temp)` : channelName;
+      
+      if (targetChannelId !== channelId) {
+        console.log('[VoiceService] Redirected to temp channel:', targetChannelId);
+        // Update the connecting state with the actual channel ID
+        voiceStore.setConnecting(targetChannelId, targetChannelName);
+      }
       
       console.log('[VoiceService] Got token, connecting to LiveKit at:', url);
       console.log('[VoiceService] Channel bitrate:', bitrate || 64000, 'user_limit:', user_limit || 0);
+      console.log('[VoiceService] Is temp channel:', is_temp_channel);
 
-      // 2. Fetch current participants
+      // 2. Fetch current participants for the actual channel
       try {
         const participantsResponse = await api.get<VoiceParticipantResponse>(
-          `/channels/${channelId}/voice-participants`
+          `/channels/${targetChannelId}/voice-participants`
         );
         
         if (participantsResponse.participants) {
@@ -151,7 +164,7 @@ class VoiceServiceClass {
             isDeafened: p.is_deafened,
             isSpeaking: false,
           }));
-          voiceStore.setChannelParticipants(channelId, participants);
+          voiceStore.setChannelParticipants(targetChannelId, participants);
         }
       } catch (err) {
         console.warn('[VoiceService] Could not fetch participants:', err);
@@ -205,8 +218,8 @@ class VoiceServiceClass {
       // 8. Start connection quality monitoring
       this.startConnectionQualityMonitoring();
 
-      // 9. Emit socket event to notify server
-      socketService.emit('voice:join', { channel_id: channelId });
+      // 9. Emit socket event to notify server with actual channel ID
+      socketService.emit('voice:join', { channel_id: targetChannelId });
 
     } catch (err: any) {
       console.error('[VoiceService] Failed to join voice channel:', err);

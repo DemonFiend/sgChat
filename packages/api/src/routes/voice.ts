@@ -441,4 +441,55 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
       return result;
     },
   });
+
+  /**
+   * GET /voice/participants - Get all voice participants across all channels
+   * Returns a map of channel_id -> participants for all voice channels with users
+   */
+  fastify.get('/participants', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      // Get all voice-type channels
+      const voiceChannels = await db.sql`
+        SELECT id, name, type FROM channels
+        WHERE type IN ('voice', 'temp_voice', 'temp_voice_generator', 'music')
+      `;
+
+      const result: Record<string, Array<{
+        user_id: string;
+        username: string;
+        display_name: string | null;
+        avatar_url: string | null;
+        is_muted: boolean;
+        is_deafened: boolean;
+        is_streaming?: boolean;
+      }>> = {};
+
+      // Fetch participants for each channel
+      for (const channel of voiceChannels) {
+        const participantIds = await redis.getVoiceChannelParticipants(channel.id);
+        
+        if (participantIds.length > 0) {
+          const participants = await Promise.all(participantIds.map(async (userId: string) => {
+            const user = await db.users.findById(userId);
+            const voiceState = await redis.getVoiceState(channel.id, userId);
+            
+            return {
+              user_id: userId,
+              username: user?.username || 'Unknown',
+              display_name: user?.display_name || null,
+              avatar_url: user?.avatar_url || null,
+              is_muted: voiceState?.is_muted || false,
+              is_deafened: voiceState?.is_deafened || false,
+              is_streaming: voiceState?.is_streaming || false,
+            };
+          }));
+          
+          result[channel.id] = participants;
+        }
+      }
+
+      return { channels: result };
+    },
+  });
 };

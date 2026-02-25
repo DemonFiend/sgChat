@@ -136,19 +136,22 @@ export async function createTempVoiceChannel(
     `;
   }
 
-  // Publish channel create event
+  // Publish channel create event (wrap in { channel: ... } to match frontend expectations)
   await publishEvent({
     type: 'channel.create',
     actorId: userId,
     resourceId: `server:${generator.server_id}`,
     payload: {
-      id: tempChannel.id,
-      name: tempChannel.name,
-      type: 'temp_voice',
-      server_id: generator.server_id,
-      category_id: generator.category_id,
-      is_temp_channel: true,
-      temp_channel_owner_id: userId,
+      channel: {
+        id: tempChannel.id,
+        name: tempChannel.name,
+        type: 'temp_voice',
+        server_id: generator.server_id,
+        category_id: generator.category_id,
+        position: Date.now(),
+        is_temp_channel: true,
+        temp_channel_owner_id: userId,
+      },
     },
   });
 
@@ -195,14 +198,13 @@ export async function deleteTempVoiceChannel(channelId: string): Promise<void> {
   // Delete the channel
   await db.sql`DELETE FROM channels WHERE id = ${channelId}`;
 
-  // Publish channel delete event
+  // Publish channel delete event (use channel_id to match frontend expectations)
   await publishEvent({
     type: 'channel.delete',
     actorId: null,
     resourceId: `server:${channel.server_id}`,
     payload: {
-      id: channelId,
-      name: channel.name,
+      channel_id: channelId,
     },
   });
 
