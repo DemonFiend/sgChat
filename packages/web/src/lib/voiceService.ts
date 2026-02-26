@@ -573,9 +573,15 @@ class VoiceServiceClass {
       voiceStore.setScreenShareQuality(quality);
       console.log('[VoiceService] Screen share started with quality:', quality);
 
-      // Notify server
+      // Notify server and update local participant state
       const channelId = voiceStore.currentChannelId();
       if (channelId) {
+        // Update local participant's isStreaming state immediately
+        const userId = this.room?.localParticipant.identity;
+        if (userId) {
+          voiceStore.updateParticipantState(channelId, userId, { isStreaming: true });
+        }
+        
         socketService.emit('voice:update', {
           muted: voiceStore.isMuted(),
           deafened: voiceStore.isDeafened(),
@@ -603,9 +609,15 @@ class VoiceServiceClass {
       voiceStore.setScreenSharing(false);
       console.log('[VoiceService] Screen share stopped');
 
-      // Notify server
+      // Notify server and update local participant state
       const channelId = voiceStore.currentChannelId();
       if (channelId) {
+        // Update local participant's isStreaming state immediately
+        const userId = this.room?.localParticipant.identity;
+        if (userId) {
+          voiceStore.updateParticipantState(channelId, userId, { isStreaming: false });
+        }
+        
         socketService.emit('voice:update', {
           muted: voiceStore.isMuted(),
           deafened: voiceStore.isDeafened(),
@@ -818,6 +830,12 @@ class VoiceServiceClass {
           // Notify server that screen sharing stopped
           const channelId = voiceStore.currentChannelId();
           if (channelId) {
+            // Update local participant's isStreaming state immediately
+            const userId = this.room?.localParticipant.identity;
+            if (userId) {
+              voiceStore.updateParticipantState(channelId, userId, { isStreaming: false });
+            }
+            
             socketService.emit('voice:update', {
               muted: voiceStore.isMuted(),
               deafened: voiceStore.isDeafened(),

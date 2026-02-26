@@ -14,8 +14,28 @@ function createSocketService() {
   let refreshRetryCount = 0;
   const MAX_REFRESH_RETRIES = 3;
   
+  // Heartbeat timer
+  let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  let heartbeatInterval = 30000; // Default, will be updated from gateway.hello
+  
   // Queue of pending event handlers to register when socket connects
   const pendingHandlers: Map<string, Set<(data: unknown) => void>> = new Map();
+  
+  const startHeartbeat = () => {
+    stopHeartbeat();
+    heartbeatTimer = setInterval(() => {
+      if (socket?.connected) {
+        socket.emit('gateway.heartbeat');
+      }
+    }, heartbeatInterval);
+  };
+  
+  const stopHeartbeat = () => {
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+  };
 
   const registerPendingHandlers = () => {
     if (!socket) return;
@@ -61,9 +81,22 @@ function createSocketService() {
       refreshRetryCount = 0; // Reset retry counter on successful connect
       console.log('[Socket] Connected');
     });
+    
+    // Handle gateway.hello to get heartbeat interval and start heartbeat
+    socket.on('gateway.hello', (data: { heartbeat_interval: number; session_id: string }) => {
+      console.log('[Socket] Received gateway.hello, heartbeat_interval:', data.heartbeat_interval);
+      heartbeatInterval = data.heartbeat_interval;
+      startHeartbeat();
+    });
+    
+    // Handle heartbeat acknowledgment (optional logging)
+    socket.on('gateway.heartbeat_ack', () => {
+      // Heartbeat acknowledged, connection is healthy
+    });
 
     socket.on('disconnect', async (reason) => {
       setConnectionState('disconnected');
+      stopHeartbeat();
       console.log('[Socket] Disconnected:', reason);
 
       // Server disconnected us - likely token expired
@@ -123,6 +156,7 @@ function createSocketService() {
   };
 
   const disconnect = () => {
+    stopHeartbeat();
     socket?.disconnect();
     socket = null;
     setConnectionState('disconnected');
