@@ -1,13 +1,15 @@
-import { createSignal, Show, For, onCleanup, createEffect } from 'solid-js';
+import { createSignal, Show, For, onCleanup, createEffect, createMemo } from 'solid-js';
 import clsx from 'clsx';
 import { voiceStore } from '@/stores/voice';
 import { Avatar } from './Avatar';
+import { voiceService } from '@/lib/voiceService';
 
 export interface StreamViewerProps {
   streamerId: string;
   streamerName: string;
   streamerAvatar?: string | null;
   channelId: string;
+  channelName?: string;
   videoElement?: HTMLVideoElement | null;
   onClose: () => void;
   onMinimize: () => void;
@@ -28,6 +30,34 @@ export function StreamViewer(props: StreamViewerProps) {
   const viewers = () => {
     const participants = voiceStore.getParticipants(props.channelId);
     return participants.filter(p => p.userId !== props.streamerId);
+  };
+  
+  // Check if we're in the same voice channel as the streamer
+  const isInSameChannel = createMemo(() => {
+    return voiceStore.isConnected() && voiceStore.currentChannelId() === props.channelId;
+  });
+  
+  // Connection status message
+  const connectionStatus = createMemo(() => {
+    if (props.videoElement) {
+      return { status: 'connected', message: '' };
+    }
+    if (!voiceStore.isConnected()) {
+      return { status: 'not-connected', message: 'Join the voice channel to watch this stream' };
+    }
+    if (voiceStore.currentChannelId() !== props.channelId) {
+      return { status: 'wrong-channel', message: 'Join this voice channel to watch the stream' };
+    }
+    return { status: 'waiting', message: 'Connecting to stream...' };
+  });
+  
+  // Handle joining the voice channel to watch the stream
+  const handleJoinChannel = async () => {
+    try {
+      await voiceService.join(props.channelId, props.channelName || 'Voice Channel');
+    } catch (err) {
+      console.error('[StreamViewer] Failed to join channel:', err);
+    }
   };
 
   // Handle fullscreen toggle
@@ -220,10 +250,27 @@ export function StreamViewer(props: StreamViewerProps) {
                 />
               </div>
               <p class="text-white text-xl font-medium">{props.streamerName}'s Stream</p>
-              <p class="text-gray-400 text-sm mt-2">Connecting to stream...</p>
-              <div class="mt-4">
-                <div class="animate-spin rounded-full h-8 w-8 border-2 border-purple-500 border-t-transparent mx-auto" />
-              </div>
+              <p class="text-gray-400 text-sm mt-2">{connectionStatus().message}</p>
+              
+              {/* Show join button if not in the voice channel */}
+              <Show when={connectionStatus().status === 'not-connected' || connectionStatus().status === 'wrong-channel'}>
+                <button
+                  onClick={handleJoinChannel}
+                  class="mt-4 px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2 mx-auto"
+                >
+                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                  </svg>
+                  Join Voice Channel
+                </button>
+              </Show>
+              
+              {/* Show loading spinner if waiting for video */}
+              <Show when={connectionStatus().status === 'waiting'}>
+                <div class="mt-4">
+                  <div class="animate-spin rounded-full h-8 w-8 border-2 border-purple-500 border-t-transparent mx-auto" />
+                </div>
+              </Show>
             </div>
           }
         >

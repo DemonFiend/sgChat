@@ -44,11 +44,15 @@ function VoiceParticipantItem(props: VoiceParticipantItemProps) {
 
   const handleWatchStream = (e: Event) => {
     e.stopPropagation();
-    console.log('[VoiceParticipantsList] Watch stream clicked for:', props.participant.userId);
+    const streamerId = props.participant.userId;
+    console.log('[VoiceParticipantsList] Watch stream clicked for:', streamerId);
+    console.log('[VoiceParticipantsList] Current voice channel:', voiceStore.currentChannelId());
+    console.log('[VoiceParticipantsList] Stream channel:', props.channelId);
+    console.log('[VoiceParticipantsList] Is connected to voice:', voiceStore.isConnected());
     
     // Start watching the stream
     streamViewerStore.watchStream({
-      streamerId: props.participant.userId,
+      streamerId: streamerId,
       streamerName: displayName(),
       streamerAvatar: props.participant.avatarUrl,
       channelId: props.channelId,
@@ -56,12 +60,18 @@ function VoiceParticipantItem(props: VoiceParticipantItemProps) {
     });
     
     // If video element already exists (track already subscribed), set it immediately
-    const existingVideo = voiceService.getVideoElementForStreamer(props.participant.userId);
+    const existingVideo = voiceService.getVideoElementForStreamer(streamerId);
+    console.log('[VoiceParticipantsList] Existing video element:', existingVideo ? 'found' : 'not found');
+    
     if (existingVideo) {
       console.log('[VoiceParticipantsList] Video element already exists, setting it');
       streamViewerStore.setVideoElement(existingVideo);
     } else {
-      console.log('[VoiceParticipantsList] No video element yet, will be set when track subscribes');
+      console.log('[VoiceParticipantsList] No video element yet - you may need to be in the same voice channel');
+      // Check if we're in the voice channel
+      if (!voiceStore.isConnected() || voiceStore.currentChannelId() !== props.channelId) {
+        console.warn('[VoiceParticipantsList] Not in the same voice channel - cannot receive video track');
+      }
     }
   };
 

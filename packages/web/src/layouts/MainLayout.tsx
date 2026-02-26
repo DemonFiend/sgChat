@@ -979,37 +979,39 @@ export function MainLayout() {
             onServerSettingsClick={canAccessSettings() ? handleServerSettingsClick : undefined}
           />
 
-          {/* Main content area - Stream Viewer or Chat */}
-          <div class="flex-1 flex flex-col min-w-0">
-            <Show 
-              when={streamViewerStore.activeStream() && !streamViewerStore.isMinimized()}
-              fallback={
-                <ChatPanel
-                  channel={currentChannel()}
-                  messages={messages()}
-                  onSendMessage={handleSendMessage}
-                  onReactionAdd={handleReactionAdd}
-                  onReactionRemove={handleReactionRemove}
-                  onTypingStart={handleTypingStart}
-                  onTypingStop={handleTypingStop}
-                  currentUserId={authStore.state().user?.id}
-                  typingUsers={typingUsers()}
-                  isMemberListOpen={isMemberListOpen()}
-                  onToggleMemberList={toggleMemberList}
-                />
-              }
-            >
+          {/* Main content area - Chat with optional Stream Viewer overlay */}
+          <div class="flex-1 flex flex-col min-w-0 relative">
+            {/* Chat Panel - always rendered */}
+            <ChatPanel
+              channel={currentChannel()}
+              messages={messages()}
+              onSendMessage={handleSendMessage}
+              onReactionAdd={handleReactionAdd}
+              onReactionRemove={handleReactionRemove}
+              onTypingStart={handleTypingStart}
+              onTypingStop={handleTypingStop}
+              currentUserId={authStore.state().user?.id}
+              typingUsers={typingUsers()}
+              isMemberListOpen={isMemberListOpen()}
+              onToggleMemberList={toggleMemberList}
+            />
+            
+            {/* Stream Viewer Overlay - shown on top of chat when watching */}
+            <Show when={streamViewerStore.activeStream() && !streamViewerStore.isMinimized()}>
               {(stream) => (
-                <StreamViewer
-                  streamerId={stream().streamerId}
-                  streamerName={stream().streamerName}
-                  streamerAvatar={stream().streamerAvatar}
-                  channelId={stream().channelId}
-                  videoElement={streamViewerStore.videoElement()}
-                  onClose={streamViewerStore.leaveStream}
-                  onMinimize={streamViewerStore.toggleMinimize}
-                  isMinimized={false}
-                />
+                <div class="absolute inset-0 z-40">
+                  <StreamViewer
+                    streamerId={stream().streamerId}
+                    streamerName={stream().streamerName}
+                    streamerAvatar={stream().streamerAvatar}
+                    channelId={stream().channelId}
+                    channelName={stream().channelName}
+                    videoElement={streamViewerStore.videoElement()}
+                    onClose={streamViewerStore.leaveStream}
+                    onMinimize={streamViewerStore.toggleMinimize}
+                    isMinimized={false}
+                  />
+                </div>
               )}
             </Show>
           </div>
@@ -1088,6 +1090,7 @@ export function MainLayout() {
             streamerName={stream().streamerName}
             streamerAvatar={stream().streamerAvatar}
             channelId={stream().channelId}
+            channelName={stream().channelName}
             videoElement={streamViewerStore.videoElement()}
             onClose={streamViewerStore.leaveStream}
             onMinimize={streamViewerStore.toggleMinimize}
