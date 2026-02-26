@@ -690,11 +690,16 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         const channel = await db.channels.findById(channelId);
         if (!channel) return;
 
-        await redis.updateVoiceState(channelId, userId, {
-          is_muted: data.muted,
-          is_deafened: data.deafened,
-          is_streaming: data.screen_sharing,
-        });
+        // Only update fields that were explicitly provided
+        const stateUpdates: { is_muted?: boolean; is_deafened?: boolean; is_streaming?: boolean } = {};
+        if (data.muted !== undefined) stateUpdates.is_muted = data.muted;
+        if (data.deafened !== undefined) stateUpdates.is_deafened = data.deafened;
+        if (data.screen_sharing !== undefined) stateUpdates.is_streaming = data.screen_sharing;
+
+        await redis.updateVoiceState(channelId, userId, stateUpdates);
+
+        // Get current state to include in the event (for fields not being updated)
+        const currentState = await redis.getVoiceState(channelId, userId);
 
         await publishEvent({
           type: 'voice.state_update',
@@ -703,9 +708,12 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
           payload: {
             channel_id: channelId,
             user_id: userId,
-            is_muted: data.muted ?? false,
-            is_deafened: data.deafened ?? false,
-            is_streaming: data.screen_sharing ?? false,
+            is_muted: data.muted ?? currentState?.is_muted ?? false,
+            is_deafened: data.deafened ?? currentState?.is_deafened ?? false,
+            // Only include is_streaming if it was explicitly changed, otherwise use current state
+            is_streaming: data.screen_sharing !== undefined 
+              ? data.screen_sharing 
+              : currentState?.is_streaming ?? false,
           },
         });
       } catch (err) {

@@ -664,11 +664,19 @@ export function MainLayout() {
       is_streaming?: boolean;
     }) => {
       console.log('[MainLayout] Voice state update:', data.user_id, 'muted:', data.is_muted, 'deafened:', data.is_deafened, 'streaming:', data.is_streaming);
-      voiceStore.updateParticipantState(data.channel_id, data.user_id, {
+      
+      // Build update object, only including isStreaming if explicitly provided
+      const updates: { isMuted: boolean; isDeafened: boolean; isStreaming?: boolean } = {
         isMuted: data.is_muted,
         isDeafened: data.is_deafened,
-        isStreaming: data.is_streaming,
-      });
+      };
+      
+      // Only update streaming state if it was explicitly included in the event
+      if (data.is_streaming !== undefined) {
+        updates.isStreaming = data.is_streaming;
+      }
+      
+      voiceStore.updateParticipantState(data.channel_id, data.user_id, updates);
     };
 
     const handleVoiceForceMove = async (data: { to_channel_id: string; to_channel_name?: string }) => {

@@ -58,24 +58,26 @@ export default defineConfig({
           },
           {
             urlPattern: /\.gif$/i,
-            handler: 'CacheFirst',
+            handler: 'NetworkFirst',
             options: {
               cacheName: 'gif-cache',
               expiration: {
                 maxEntries: 50,
                 maxAgeSeconds: 60 * 60 * 24 * 3, // 3 days for GIFs
               },
+              networkTimeoutSeconds: 10,
             },
           },
           {
-            urlPattern: /giphy\.com|tenor\.com/i,
-            handler: 'CacheFirst',
+            urlPattern: /giphy\.com|tenor\.com|media\d*\.giphy\.com/i,
+            handler: 'NetworkFirst',
             options: {
               cacheName: 'gif-cache',
               expiration: {
                 maxEntries: 50,
                 maxAgeSeconds: 60 * 60 * 24 * 3, // 3 days for GIF providers
               },
+              networkTimeoutSeconds: 10,
             },
           },
         ],

@@ -1,6 +1,6 @@
 import { createSignal, Show, For, onCleanup, createEffect } from 'solid-js';
 import clsx from 'clsx';
-import { voiceStore, type VoiceParticipant } from '@/stores/voice';
+import { voiceStore } from '@/stores/voice';
 import { Avatar } from './Avatar';
 
 export interface StreamViewerProps {
@@ -20,7 +20,8 @@ export function StreamViewer(props: StreamViewerProps) {
   const [volume, setVolume] = createSignal(100);
   const [showControls, setShowControls] = createSignal(true);
   let containerRef: HTMLDivElement | undefined;
-  let videoRef: HTMLVideoElement | undefined;
+  let videoContainerRef: HTMLDivElement | undefined;
+  let pipVideoContainerRef: HTMLDivElement | undefined;
   let controlsTimeout: ReturnType<typeof setTimeout>;
 
   // Get viewers (participants in the channel who are not streaming)
@@ -36,10 +37,8 @@ export function StreamViewer(props: StreamViewerProps) {
     try {
       if (!document.fullscreenElement) {
         await containerRef.requestFullscreen();
-        setIsFullscreen(true);
       } else {
         await document.exitFullscreen();
-        setIsFullscreen(false);
       }
     } catch (err) {
       console.error('Fullscreen error:', err);
@@ -58,12 +57,54 @@ export function StreamViewer(props: StreamViewerProps) {
     });
   });
 
+  // Attach video element to the appropriate container based on minimized state
+  createEffect(() => {
+    const video = props.videoElement;
+    const isMinimized = props.isMinimized;
+    const container = isMinimized ? pipVideoContainerRef : videoContainerRef;
+    
+    if (video && container) {
+      // Style the video element
+      video.style.width = '100%';
+      video.style.height = '100%';
+      video.style.objectFit = 'contain';
+      video.style.maxWidth = '100%';
+      video.style.maxHeight = '100%';
+      video.autoplay = true;
+      video.playsInline = true;
+      
+      // Apply current mute/volume settings
+      video.muted = isMuted();
+      video.volume = volume() / 100;
+      
+      // Only append if not already in this container
+      if (video.parentElement !== container) {
+        container.innerHTML = '';
+        container.appendChild(video);
+        console.log('[StreamViewer] Video element attached to', isMinimized ? 'PIP' : 'main', 'container');
+      }
+    }
+  });
+  
+  // Sync mute state with video element
+  createEffect(() => {
+    const muted = isMuted();
+    if (props.videoElement) {
+      props.videoElement.muted = muted;
+    }
+  });
+  
+  // Sync volume with video element
+  createEffect(() => {
+    const vol = volume();
+    if (props.videoElement) {
+      props.videoElement.volume = vol / 100;
+    }
+  });
+
   // Handle mute toggle
   const toggleMute = () => {
     setIsMuted(!isMuted());
-    if (videoRef) {
-      videoRef.muted = !isMuted();
-    }
   };
 
   // Handle volume change
@@ -71,9 +112,6 @@ export function StreamViewer(props: StreamViewerProps) {
     const target = e.target as HTMLInputElement;
     const newVolume = parseInt(target.value, 10);
     setVolume(newVolume);
-    if (videoRef) {
-      videoRef.volume = newVolume / 100;
-    }
     if (newVolume === 0) {
       setIsMuted(true);
     } else if (isMuted()) {
@@ -103,7 +141,7 @@ export function StreamViewer(props: StreamViewerProps) {
         class="fixed bottom-20 right-4 w-80 h-48 bg-black rounded-lg shadow-2xl overflow-hidden z-50 cursor-pointer group border-2 border-purple-500/50"
         onClick={props.onMinimize}
       >
-        {/* Video placeholder */}
+        {/* Video container */}
         <div class="w-full h-full bg-gradient-to-br from-purple-900/50 to-black flex items-center justify-center">
           <Show 
             when={props.videoElement}
@@ -115,14 +153,13 @@ export function StreamViewer(props: StreamViewerProps) {
                   size="lg"
                 />
                 <p class="text-white text-sm mt-2">{props.streamerName}'s Stream</p>
+                <p class="text-gray-400 text-xs mt-1">Connecting...</p>
               </div>
             }
           >
-            <video
-              ref={videoRef}
-              class="w-full h-full object-contain"
-              autoplay
-              muted={isMuted()}
+            <div 
+              ref={pipVideoContainerRef} 
+              class="w-full h-full flex items-center justify-center"
             />
           </Show>
         </div>
@@ -134,7 +171,7 @@ export function StreamViewer(props: StreamViewerProps) {
         </div>
         
         {/* Expand hint on hover */}
-        <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+        <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
           <div class="bg-white/20 rounded-full p-3">
             <svg class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
@@ -184,14 +221,15 @@ export function StreamViewer(props: StreamViewerProps) {
               </div>
               <p class="text-white text-xl font-medium">{props.streamerName}'s Stream</p>
               <p class="text-gray-400 text-sm mt-2">Connecting to stream...</p>
+              <div class="mt-4">
+                <div class="animate-spin rounded-full h-8 w-8 border-2 border-purple-500 border-t-transparent mx-auto" />
+              </div>
             </div>
           }
         >
-          <video
-            ref={videoRef}
-            class="max-w-full max-h-full object-contain"
-            autoplay
-            muted={isMuted()}
+          <div 
+            ref={videoContainerRef} 
+            class="w-full h-full flex items-center justify-center"
           />
         </Show>
         
@@ -234,7 +272,7 @@ export function StreamViewer(props: StreamViewerProps) {
       <div
         class={clsx(
           'absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-4 transition-opacity duration-300',
-          showControls() ? 'opacity-100' : 'opacity-0'
+          showControls() ? 'opacity-100' : 'opacity-0 pointer-events-none'
         )}
       >
         {/* Streamer info */}
@@ -247,7 +285,7 @@ export function StreamViewer(props: StreamViewerProps) {
             />
             <div>
               <p class="text-white font-medium">{props.streamerName}</p>
-              <p class="text-gray-400 text-xs">Streaming</p>
+              <p class="text-gray-400 text-xs">Streaming in {props.channelId ? 'voice channel' : 'channel'}</p>
             </div>
           </div>
         </div>
@@ -292,10 +330,10 @@ export function StreamViewer(props: StreamViewerProps) {
             <button
               onClick={props.onMinimize}
               class="text-white hover:text-purple-400 transition-colors"
-              title="Minimize"
+              title="Minimize to PiP"
             >
               <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
               </svg>
             </button>
             

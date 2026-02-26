@@ -311,6 +311,7 @@ function createVoiceStore() {
   };
 
   // Update a participant's mute/deafen/streaming state
+  // Only updates fields that are explicitly provided (not undefined)
   const updateParticipantState = (channelId: string, userId: string, updates: {
     isMuted?: boolean;
     isDeafened?: boolean;
@@ -323,9 +324,16 @@ function createVoiceStore() {
       const index = channelParticipants.findIndex(p => p.userId === userId);
       if (index === -1) return prev;
       
+      // Filter out undefined values to avoid overwriting existing state
+      const filteredUpdates: Partial<VoiceParticipant> = {};
+      if (updates.isMuted !== undefined) filteredUpdates.isMuted = updates.isMuted;
+      if (updates.isDeafened !== undefined) filteredUpdates.isDeafened = updates.isDeafened;
+      if (updates.isSpeaking !== undefined) filteredUpdates.isSpeaking = updates.isSpeaking;
+      if (updates.isStreaming !== undefined) filteredUpdates.isStreaming = updates.isStreaming;
+      
       channelParticipants[index] = {
         ...channelParticipants[index],
-        ...updates,
+        ...filteredUpdates,
       };
       
       return {

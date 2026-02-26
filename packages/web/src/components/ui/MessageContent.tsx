@@ -1,5 +1,7 @@
-import { createSignal, Show, createEffect, createMemo, For } from 'solid-js';
+import { createSignal, Show, createEffect, createMemo, For, onCleanup } from 'solid-js';
 import { isImageUrl, getImageType, extractImageUrls } from '@/lib/imageUtils';
+
+const GIF_AUTOPLAY_DURATION = 6000; // 6 seconds (~3 loops for typical GIFs)
 
 export interface MessageContentProps {
     content: string;
@@ -83,9 +85,237 @@ export function MessageContent(props: MessageContentProps) {
 }
 
 /**
- * Separate component for rendering images with loading states
+ * Shared helper functions for image/GIF rendering
  */
-function ImageRenderer(props: { src: string; isOwnMessage?: boolean; compact?: boolean }) {
+function getImageClasses(compact?: boolean, isOwnMessage?: boolean): string {
+    if (compact) {
+        return 'max-w-[200px] max-h-[150px] rounded-lg';
+    }
+    if (isOwnMessage !== undefined) {
+        return 'max-w-[300px] max-h-[250px] rounded-2xl';
+    }
+    return 'max-w-[400px] max-h-[300px] rounded-lg';
+}
+
+function getContainerClasses(compact?: boolean): string {
+    const base = 'relative';
+    if (compact) {
+        return `${base} inline-block`;
+    }
+    return `${base} my-1`;
+}
+
+/**
+ * Error fallback component for failed image/GIF loads
+ */
+function ImageErrorFallback(props: { src: string; isGif: boolean; compact?: boolean }) {
+    return (
+        <div class={`flex items-center gap-2 px-3 py-2 bg-bg-tertiary rounded-lg border border-border text-text-muted ${props.compact ? 'text-xs' : 'text-sm'}`}>
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <div class="flex flex-col gap-0.5 min-w-0">
+                <span class="text-text-muted">
+                    {props.isGif ? 'Unable to load GIF' : 'Unable to load image'}
+                </span>
+                <a 
+                    href={props.src} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    class="text-brand-primary hover:underline truncate text-xs"
+                >
+                    {props.src}
+                </a>
+            </div>
+        </div>
+    );
+}
+
+/**
+ * GIF renderer with autoplay control (plays ~3 loops then pauses)
+ */
+function GifRenderer(props: { src: string; isOwnMessage?: boolean; compact?: boolean }) {
+    const [isPlaying, setIsPlaying] = createSignal(true);
+    const [imageLoaded, setImageLoaded] = createSignal(false);
+    const [imageError, setImageError] = createSignal(false);
+    const [staticFrame, setStaticFrame] = createSignal<string | null>(null);
+    
+    let autoplayTimer: ReturnType<typeof setTimeout> | null = null;
+    let imgRef: HTMLImageElement | undefined;
+    let canvasRef: HTMLCanvasElement | undefined;
+
+    // Capture current frame to canvas for static display
+    const captureFrame = () => {
+        if (!imgRef || !canvasRef || !imageLoaded()) return;
+        
+        try {
+            const ctx = canvasRef.getContext('2d');
+            if (!ctx) return;
+            
+            // Set canvas size to match image natural dimensions
+            canvasRef.width = imgRef.naturalWidth;
+            canvasRef.height = imgRef.naturalHeight;
+            
+            // Draw current frame
+            ctx.drawImage(imgRef, 0, 0);
+            
+            // Get data URL
+            const dataUrl = canvasRef.toDataURL('image/png');
+            setStaticFrame(dataUrl);
+        } catch (e) {
+            // CORS error - can't capture frame, just hide the image instead
+            console.warn('[GifRenderer] Could not capture frame (CORS):', e);
+            setStaticFrame('cors-blocked');
+        }
+    };
+
+    // Start autoplay timer when GIF loads
+    const startAutoplayTimer = () => {
+        if (autoplayTimer) {
+            clearTimeout(autoplayTimer);
+        }
+        
+        autoplayTimer = setTimeout(() => {
+            captureFrame();
+            setIsPlaying(false);
+        }, GIF_AUTOPLAY_DURATION);
+    };
+
+    // Handle GIF load
+    const handleLoad = () => {
+        setImageLoaded(true);
+        setImageError(false);
+        
+        if (isPlaying()) {
+            startAutoplayTimer();
+        }
+    };
+
+    // Handle GIF error
+    const handleError = () => {
+        setImageLoaded(false);
+        setImageError(true);
+        if (autoplayTimer) {
+            clearTimeout(autoplayTimer);
+        }
+    };
+
+    // Handle click to replay
+    const handleClick = () => {
+        if (isPlaying()) return;
+        
+        setIsPlaying(true);
+        setStaticFrame(null);
+        
+        // Force reload the GIF to restart animation
+        if (imgRef) {
+            const src = imgRef.src;
+            imgRef.src = '';
+            imgRef.src = src;
+        }
+        
+        startAutoplayTimer();
+    };
+
+    // Reset state when src changes
+    createEffect(() => {
+        const _ = props.src;
+        setIsPlaying(true);
+        setImageLoaded(false);
+        setImageError(false);
+        setStaticFrame(null);
+        
+        if (autoplayTimer) {
+            clearTimeout(autoplayTimer);
+        }
+    });
+
+    // Cleanup timer on unmount
+    onCleanup(() => {
+        if (autoplayTimer) {
+            clearTimeout(autoplayTimer);
+        }
+    });
+
+    const imageClasses = () => getImageClasses(props.compact, props.isOwnMessage);
+    const containerClasses = () => getContainerClasses(props.compact);
+
+    return (
+        <div class={containerClasses()}>
+            {/* Hidden canvas for frame capture */}
+            <canvas ref={canvasRef} class="hidden" />
+            
+            {/* Loading skeleton */}
+            <Show when={!imageLoaded() && !imageError()}>
+                <div
+                    class={`${imageClasses()} bg-bg-tertiary animate-pulse`}
+                    style={{ 
+                        width: props.compact ? '200px' : '300px', 
+                        height: props.compact ? '150px' : '200px' 
+                    }}
+                    aria-label="Loading GIF..."
+                />
+            </Show>
+
+            {/* Error state */}
+            <Show when={imageError()}>
+                <ImageErrorFallback src={props.src} isGif={true} compact={props.compact} />
+            </Show>
+
+            {/* GIF display */}
+            <Show when={!imageError()}>
+                <div 
+                    class={`relative cursor-pointer group ${imageLoaded() ? 'block' : 'hidden'}`}
+                    onClick={handleClick}
+                >
+                    {/* Animated GIF (hidden when paused with captured frame) */}
+                    <img
+                        ref={imgRef}
+                        src={props.src}
+                        alt="GIF animation"
+                        class={`${imageClasses()} object-contain bg-bg-tertiary ${!isPlaying() && staticFrame() && staticFrame() !== 'cors-blocked' ? 'hidden' : ''}`}
+                        crossorigin="anonymous"
+                        loading="lazy"
+                        onLoad={handleLoad}
+                        onError={handleError}
+                    />
+                    
+                    {/* Static frame (shown when paused) */}
+                    <Show when={!isPlaying() && staticFrame() && staticFrame() !== 'cors-blocked'}>
+                        <img
+                            src={staticFrame()!}
+                            alt="GIF (paused)"
+                            class={`${imageClasses()} object-contain bg-bg-tertiary`}
+                        />
+                    </Show>
+                    
+                    {/* Play button overlay (shown when paused) */}
+                    <Show when={!isPlaying() && imageLoaded()}>
+                        <div class="absolute inset-0 flex items-center justify-center bg-black/30 rounded-lg transition-opacity group-hover:bg-black/40">
+                            <div class="w-12 h-12 rounded-full bg-white/90 flex items-center justify-center shadow-lg transform transition-transform group-hover:scale-110">
+                                <svg class="w-6 h-6 text-gray-800 ml-1" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M8 5v14l11-7z" />
+                                </svg>
+                            </div>
+                        </div>
+                    </Show>
+                    
+                    {/* GIF badge */}
+                    <Show when={imageLoaded()}>
+                        <div class="absolute bottom-2 left-2 px-1.5 py-0.5 bg-black/60 rounded text-[10px] font-bold text-white uppercase">
+                            GIF
+                        </div>
+                    </Show>
+                </div>
+            </Show>
+        </div>
+    );
+}
+
+/**
+ * Separate component for rendering static images with loading states
+ */
+function StaticImageRenderer(props: { src: string; isOwnMessage?: boolean; compact?: boolean }) {
     const [imageLoaded, setImageLoaded] = createSignal(false);
     const [imageError, setImageError] = createSignal(false);
 
@@ -106,33 +336,15 @@ function ImageRenderer(props: { src: string; isOwnMessage?: boolean; compact?: b
         setImageError(true);
     };
 
-    const getImageClasses = () => {
-        if (props.compact) {
-            return 'max-w-[200px] max-h-[150px] rounded-lg';
-        }
-        if (props.isOwnMessage !== undefined) {
-            return 'max-w-[300px] max-h-[250px] rounded-2xl';
-        }
-        return 'max-w-[400px] max-h-[300px] rounded-lg';
-    };
-
-    const getContainerClasses = () => {
-        const base = 'relative';
-        if (props.compact) {
-            return `${base} inline-block`;
-        }
-        return `${base} my-1`;
-    };
-
-    const imageType = createMemo(() => getImageType(props.src));
-    const altText = createMemo(() => imageType() === 'gif' ? 'GIF animation' : 'Shared image');
+    const imageClasses = () => getImageClasses(props.compact, props.isOwnMessage);
+    const containerClasses = () => getContainerClasses(props.compact);
 
     return (
-        <div class={getContainerClasses()}>
+        <div class={containerClasses()}>
             {/* Loading skeleton */}
             <Show when={!imageLoaded() && !imageError()}>
                 <div
-                    class={`${getImageClasses()} bg-bg-tertiary animate-pulse`}
+                    class={`${imageClasses()} bg-bg-tertiary animate-pulse`}
                     style={{ 
                         width: props.compact ? '200px' : '300px', 
                         height: props.compact ? '150px' : '200px' 
@@ -145,8 +357,8 @@ function ImageRenderer(props: { src: string; isOwnMessage?: boolean; compact?: b
             <Show when={!imageError()}>
                 <img
                     src={props.src}
-                    alt={altText()}
-                    class={`${getImageClasses()} object-contain bg-bg-tertiary ${imageLoaded() ? 'opacity-100' : 'opacity-0 absolute'}`}
+                    alt="Shared image"
+                    class={`${imageClasses()} object-contain bg-bg-tertiary ${imageLoaded() ? 'opacity-100' : 'opacity-0 absolute'}`}
                     style={{
                         transition: 'opacity 0.2s ease-in',
                         display: imageLoaded() ? 'block' : 'none'
@@ -157,27 +369,27 @@ function ImageRenderer(props: { src: string; isOwnMessage?: boolean; compact?: b
                 />
             </Show>
 
-            {/* Error state - show descriptive fallback with link */}
+            {/* Error state */}
             <Show when={imageError()}>
-                <div class={`flex items-center gap-2 px-3 py-2 bg-bg-tertiary rounded-lg border border-border text-text-muted ${props.compact ? 'text-xs' : 'text-sm'}`}>
-                    <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    <div class="flex flex-col gap-0.5 min-w-0">
-                        <span class="text-text-muted">
-                            {imageType() === 'gif' ? 'Unable to load GIF' : 'Unable to load image'}
-                        </span>
-                        <a 
-                            href={props.src} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            class="text-brand-primary hover:underline truncate text-xs"
-                        >
-                            {props.src}
-                        </a>
-                    </div>
-                </div>
+                <ImageErrorFallback src={props.src} isGif={false} compact={props.compact} />
             </Show>
         </div>
+    );
+}
+
+/**
+ * Main image renderer that delegates to GIF or static image renderer
+ */
+function ImageRenderer(props: { src: string; isOwnMessage?: boolean; compact?: boolean }) {
+    const imageType = createMemo(() => getImageType(props.src));
+    const isGif = () => imageType() === 'gif';
+
+    return (
+        <Show 
+            when={isGif()} 
+            fallback={<StaticImageRenderer src={props.src} isOwnMessage={props.isOwnMessage} compact={props.compact} />}
+        >
+            <GifRenderer src={props.src} isOwnMessage={props.isOwnMessage} compact={props.compact} />
+        </Show>
     );
 }
