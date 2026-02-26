@@ -1,4 +1,5 @@
 import { createSignal, Show, For, onCleanup, createEffect, createMemo } from 'solid-js';
+import { Portal } from 'solid-js/web';
 import clsx from 'clsx';
 import { voiceStore } from '@/stores/voice';
 import { Avatar } from './Avatar';
@@ -201,18 +202,20 @@ export function StreamViewer(props: StreamViewerProps) {
   });
 
   return (
-    <>
+    <Portal>
       {/* 
-        The video container is always rendered to maintain the same DOM element.
-        It gets repositioned based on isMinimized state.
+        Stream Viewer rendered via Portal to ensure it overlays all content.
+        The container is repositioned based on isMinimized state:
+        - Full view: fixed inset-0 covering entire viewport
+        - PIP: small fixed window in bottom-right corner
       */}
       <div
         ref={fullViewContainerRef}
         class={clsx(
           'bg-black overflow-hidden transition-all duration-300',
           props.isMinimized 
-            ? 'fixed bottom-20 right-4 w-80 h-48 rounded-lg shadow-2xl z-50 border-2 border-purple-500/50 cursor-pointer group'
-            : 'fixed inset-0 z-40 flex flex-col',
+            ? 'fixed bottom-20 right-4 w-80 h-48 rounded-lg shadow-2xl z-[60] border-2 border-purple-500/50 cursor-pointer group'
+            : 'fixed inset-0 z-[55] flex flex-col',
           isFullscreen() && !props.isMinimized && 'z-[100]'
         )}
         onClick={props.isMinimized ? props.onToggleMinimize : undefined}
@@ -491,7 +494,7 @@ export function StreamViewer(props: StreamViewerProps) {
           </div>
         </Show>
       </div>
-    </>
+    </Portal>
   );
 }
 
