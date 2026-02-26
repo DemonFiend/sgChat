@@ -274,7 +274,6 @@ function GifRenderer(props: { src: string; isOwnMessage?: boolean; compact?: boo
                         src={props.src}
                         alt="GIF animation"
                         class={`${imageClasses()} object-contain bg-bg-tertiary ${!isPlaying() && staticFrame() && staticFrame() !== 'cors-blocked' ? 'hidden' : ''}`}
-                        crossorigin="anonymous"
                         loading="lazy"
                         onLoad={handleLoad}
                         onError={handleError}

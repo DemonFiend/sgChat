@@ -1050,24 +1050,6 @@ export function MainLayout() {
               onToggleMemberList={toggleMemberList}
             />
             
-            {/* Stream Viewer Overlay - shown on top of chat when watching */}
-            <Show when={streamViewerStore.activeStream() && !streamViewerStore.isMinimized()}>
-              {(stream) => (
-                <div class="absolute inset-0 z-40">
-                  <StreamViewer
-                    streamerId={stream().streamerId}
-                    streamerName={stream().streamerName}
-                    streamerAvatar={stream().streamerAvatar}
-                    channelId={stream().channelId}
-                    channelName={stream().channelName}
-                    videoElement={streamViewerStore.videoElement()}
-                    onClose={streamViewerStore.leaveStream}
-                    onMinimize={streamViewerStore.toggleMinimize}
-                    isMinimized={false}
-                  />
-                </div>
-              )}
-            </Show>
           </div>
 
           {/* Right Sidebar - Member List (collapsible) */}
@@ -1136,8 +1118,8 @@ export function MainLayout() {
       {/* Server Welcome Popup */}
       <ServerWelcomePopup />
 
-      {/* Minimized Stream Viewer (Picture-in-Picture) */}
-      <Show when={streamViewerStore.activeStream() && streamViewerStore.isMinimized()}>
+      {/* Stream Viewer - single component that handles both minimized (PIP) and full view modes */}
+      <Show when={streamViewerStore.activeStream()}>
         {(stream) => (
           <StreamViewer
             streamerId={stream().streamerId}
@@ -1147,8 +1129,8 @@ export function MainLayout() {
             channelName={stream().channelName}
             videoElement={streamViewerStore.videoElement()}
             onClose={streamViewerStore.leaveStream}
-            onMinimize={streamViewerStore.toggleMinimize}
-            isMinimized={true}
+            onToggleMinimize={streamViewerStore.toggleMinimize}
+            isMinimized={streamViewerStore.isMinimized()}
           />
         )}
       </Show>
