@@ -11,6 +11,7 @@ export interface StreamInfo {
 function createStreamViewerStore() {
   const [activeStream, setActiveStream] = createSignal<StreamInfo | null>(null);
   const [videoElement, setVideoElement] = createSignal<HTMLVideoElement | null>(null);
+  const [audioAvailableVersion, setAudioAvailableVersion] = createSignal(0);
 
   const watchStream = (stream: StreamInfo) => {
     console.log('[StreamViewerStore] watchStream called:', stream);
@@ -28,6 +29,11 @@ function createStreamViewerStore() {
 
   const isWatchingStreamer = (streamerId: string) => activeStream()?.streamerId === streamerId;
 
+  const notifyAudioAvailable = () => {
+    console.log('[StreamViewerStore] Audio track became available');
+    setAudioAvailableVersion(v => v + 1);
+  };
+
   return {
     activeStream,
     videoElement,
@@ -36,6 +42,8 @@ function createStreamViewerStore() {
     leaveStream,
     isWatchingStream,
     isWatchingStreamer,
+    audioAvailableVersion,
+    notifyAudioAvailable,
   };
 }
 

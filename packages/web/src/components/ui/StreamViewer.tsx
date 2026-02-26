@@ -4,6 +4,7 @@ import clsx from 'clsx';
 import { voiceStore } from '@/stores/voice';
 import { Avatar } from './Avatar';
 import { voiceService } from '@/lib/voiceService';
+import { streamViewerStore } from '@/stores/streamViewer';
 
 export interface StreamViewerProps {
   streamerId: string;
@@ -17,6 +18,7 @@ export interface StreamViewerProps {
 
 export function StreamViewer(props: StreamViewerProps) {
   const [isFullscreen, setIsFullscreen] = createSignal(false);
+  const [isPiP, setIsPiP] = createSignal(false);
   const [isMuted, setIsMuted] = createSignal(false);
   const [volume, setVolume] = createSignal(100);
   const [showControls, setShowControls] = createSignal(true);
@@ -32,10 +34,30 @@ export function StreamViewer(props: StreamViewerProps) {
     return participants.filter(p => p.userId !== props.streamerId);
   };
   
+  // Check if current user is the host/streamer
+  const isHostPreview = createMemo(() => {
+    return voiceService.isLocalUserStreamer(props.streamerId);
+  });
+
+  // Get the effective video element (either from props or local preview for host)
+  const effectiveVideoElement = createMemo(() => {
+    if (props.videoElement) {
+      return props.videoElement;
+    }
+    // If this is the host viewing their own stream, get local preview
+    if (isHostPreview()) {
+      return voiceService.getLocalScreenShareVideo();
+    }
+    return null;
+  });
+
   // Connection status message
   const connectionStatus = createMemo(() => {
-    if (props.videoElement) {
+    if (effectiveVideoElement()) {
       return { status: 'connected', message: '' };
+    }
+    if (isHostPreview()) {
+      return { status: 'waiting', message: 'Setting up your stream preview...' };
     }
     if (!voiceStore.isConnected()) {
       return { status: 'not-connected', message: 'Join the voice channel to watch this stream' };
@@ -70,6 +92,27 @@ export function StreamViewer(props: StreamViewerProps) {
     }
   };
 
+  // Handle Picture-in-Picture toggle
+  const togglePiP = async () => {
+    const video = effectiveVideoElement();
+    if (!video) {
+      console.warn('[StreamViewer] No video element for PiP');
+      return;
+    }
+    
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+      } else if (document.pictureInPictureEnabled) {
+        await video.requestPictureInPicture();
+      } else {
+        console.warn('[StreamViewer] PiP not supported');
+      }
+    } catch (err) {
+      console.error('[StreamViewer] PiP error:', err);
+    }
+  };
+
   // Listen for fullscreen changes
   createEffect(() => {
     const handleFullscreenChange = () => {
@@ -82,19 +125,48 @@ export function StreamViewer(props: StreamViewerProps) {
     });
   });
 
-  // Attach screen share audio when available
+  // Listen for PiP changes
+  createEffect(() => {
+    const handlePiPEnter = () => setIsPiP(true);
+    const handlePiPExit = () => setIsPiP(false);
+    
+    const video = effectiveVideoElement();
+    if (video) {
+      video.addEventListener('enterpictureinpicture', handlePiPEnter);
+      video.addEventListener('leavepictureinpicture', handlePiPExit);
+      
+      onCleanup(() => {
+        video.removeEventListener('enterpictureinpicture', handlePiPEnter);
+        video.removeEventListener('leavepictureinpicture', handlePiPExit);
+      });
+    }
+  });
+
+  // Attach screen share audio when available (reactive to audioAvailableVersion + polling fallback)
   createEffect(() => {
     const streamerId = props.streamerId;
-    const hasAudio = voiceService.hasScreenShareAudio(streamerId);
-    setHasStreamAudio(hasAudio);
+    // React to audioAvailableVersion changes from streamViewerStore
+    const _audioVersion = streamViewerStore.audioAvailableVersion();
     
-    if (hasAudio) {
-      console.log('[StreamViewer] Attaching screen share audio for:', streamerId);
-      streamAudioElement = voiceService.attachScreenShareAudio(streamerId, volume(), isMuted());
-    }
+    const checkAndAttachAudio = () => {
+      const hasAudio = voiceService.hasScreenShareAudio(streamerId);
+      setHasStreamAudio(hasAudio);
+      
+      if (hasAudio && !streamAudioElement) {
+        console.log('[StreamViewer] Attaching screen share audio for:', streamerId);
+        streamAudioElement = voiceService.attachScreenShareAudio(streamerId, volume(), isMuted());
+      }
+    };
+    
+    // Check immediately
+    checkAndAttachAudio();
+    
+    // Also poll every 500ms as a fallback (in case audio track arrives late)
+    const pollInterval = setInterval(checkAndAttachAudio, 500);
     
     // Cleanup when component unmounts or streamer changes
     onCleanup(() => {
+      clearInterval(pollInterval);
       if (streamAudioElement) {
         console.log('[StreamViewer] Detaching screen share audio for:', streamerId);
         voiceService.detachScreenShareAudio(streamerId);
@@ -115,7 +187,7 @@ export function StreamViewer(props: StreamViewerProps) {
 
   // Attach video element to the video container
   createEffect(() => {
-    const video = props.videoElement;
+    const video = effectiveVideoElement();
     const container = videoContainerRef;
     
     if (video && container) {
@@ -128,15 +200,15 @@ export function StreamViewer(props: StreamViewerProps) {
       video.autoplay = true;
       video.playsInline = true;
       
-      // Apply current mute/volume settings
-      video.muted = isMuted();
-      video.volume = volume() / 100;
+      // Apply current mute/volume settings (muted for host preview to avoid feedback)
+      video.muted = isHostPreview() ? true : isMuted();
+      video.volume = isHostPreview() ? 0 : volume() / 100;
       
       // Only append if not already in this container
       if (video.parentElement !== container) {
         container.innerHTML = '';
         container.appendChild(video);
-        console.log('[StreamViewer] Video element attached to container');
+        console.log('[StreamViewer] Video element attached to container', isHostPreview() ? '(host preview)' : '');
       }
     }
   });
@@ -144,16 +216,20 @@ export function StreamViewer(props: StreamViewerProps) {
   // Sync mute state with video element
   createEffect(() => {
     const muted = isMuted();
-    if (props.videoElement) {
-      props.videoElement.muted = muted;
+    const video = effectiveVideoElement();
+    // Don't change mute for host preview
+    if (video && !isHostPreview()) {
+      video.muted = muted;
     }
   });
   
   // Sync volume with video element
   createEffect(() => {
     const vol = volume();
-    if (props.videoElement) {
-      props.videoElement.volume = vol / 100;
+    const video = effectiveVideoElement();
+    // Don't change volume for host preview
+    if (video && !isHostPreview()) {
+      video.volume = vol / 100;
     }
   });
 
@@ -207,7 +283,7 @@ export function StreamViewer(props: StreamViewerProps) {
         {/* Video area */}
         <div class="flex-1 flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-purple-900/20 to-black">
           <Show 
-            when={props.videoElement}
+            when={effectiveVideoElement()}
             fallback={
               <div class="text-center p-4">
                 <div class="w-32 h-32 rounded-full bg-purple-500/20 flex items-center justify-center mb-4 mx-auto">
@@ -256,9 +332,16 @@ export function StreamViewer(props: StreamViewerProps) {
           </Show>
           
           {/* Live indicator */}
-          <div class="absolute top-4 left-4 flex items-center gap-2 bg-red-600 rounded px-3 py-1.5">
-            <span class="w-2 h-2 bg-white rounded-full animate-pulse" />
-            <span class="text-white text-sm font-semibold">LIVE</span>
+          <div class="absolute top-4 left-4 flex items-center gap-2">
+            <div class="flex items-center gap-2 bg-red-600 rounded px-3 py-1.5">
+              <span class="w-2 h-2 bg-white rounded-full animate-pulse" />
+              <span class="text-white text-sm font-semibold">LIVE</span>
+            </div>
+            <Show when={isHostPreview()}>
+              <div class="bg-purple-600 rounded px-3 py-1.5">
+                <span class="text-white text-sm font-semibold">YOUR STREAM</span>
+              </div>
+            </Show>
           </div>
           
           {/* Viewers */}
@@ -351,6 +434,32 @@ export function StreamViewer(props: StreamViewerProps) {
             </div>
 
             <div class="flex items-center gap-4">
+              {/* Picture-in-Picture */}
+              <Show when={effectiveVideoElement() && document.pictureInPictureEnabled}>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    togglePiP();
+                  }}
+                  class="text-white hover:text-purple-400 transition-colors"
+                  title={isPiP() ? 'Exit Picture-in-Picture' : 'Picture-in-Picture'}
+                >
+                  <Show
+                    when={isPiP()}
+                    fallback={
+                      <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 6v12a2 2 0 002 2h4M4 6l4 4m8-4v4a2 2 0 002 2h4m-6-6l6 6" />
+                        <rect x="12" y="12" width="8" height="6" rx="1" stroke-width="2" />
+                      </svg>
+                    }
+                  >
+                    <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </Show>
+                </button>
+              </Show>
+              
               {/* Fullscreen */}
               <button
                 onClick={(e) => {

@@ -64,6 +64,7 @@ class VoiceServiceClass {
   private videoElements: Map<string, HTMLVideoElement> = new Map();
   private screenShareAudioTracks: Map<string, RemoteTrack> = new Map();
   private screenShareAudioElements: Map<string, HTMLAudioElement> = new Map();
+  private localScreenShareVideoElement: HTMLVideoElement | null = null;
   private audioContainer: HTMLElement | null = null;
   private voiceSettings: VoiceSettings | null = null;
   private outputVolume: number = 100;
@@ -575,6 +576,9 @@ class VoiceServiceClass {
       voiceStore.setScreenShareQuality(quality);
       console.log('[VoiceService] Screen share started with quality:', quality);
 
+      // Create local video element for host preview
+      this.createLocalScreenSharePreview();
+
       // Notify server and update local participant state
       const channelId = voiceStore.currentChannelId();
       if (channelId) {
@@ -611,6 +615,9 @@ class VoiceServiceClass {
       voiceStore.setScreenSharing(false);
       console.log('[VoiceService] Screen share stopped');
 
+      // Clean up local preview
+      this.cleanupLocalScreenSharePreview();
+
       // Notify server and update local participant state
       const channelId = voiceStore.currentChannelId();
       if (channelId) {
@@ -629,6 +636,66 @@ class VoiceServiceClass {
     } catch (err) {
       console.error('[VoiceService] Failed to stop screen share:', err);
     }
+  }
+
+  /**
+   * Create local video element for host to preview their own screen share
+   */
+  private createLocalScreenSharePreview(): void {
+    if (!this.room) return;
+
+    // Find the local screen share track
+    const screenShareTrack = this.room.localParticipant.getTrackPublication(TrackTypes.Source.ScreenShare);
+    if (!screenShareTrack?.track) {
+      console.log('[VoiceService] No local screen share track found for preview');
+      return;
+    }
+
+    // Create video element
+    const video = document.createElement('video');
+    video.autoplay = true;
+    video.playsInline = true;
+    video.muted = true; // Mute to avoid audio feedback
+    
+    // Attach the track
+    screenShareTrack.track.attach(video);
+    
+    this.localScreenShareVideoElement = video;
+    console.log('[VoiceService] Local screen share preview created');
+
+    // If the host is watching their own stream, update the StreamViewer
+    const userId = this.room.localParticipant.identity;
+    if (streamViewerStore.isWatchingStreamer(userId)) {
+      streamViewerStore.setVideoElement(video);
+    }
+  }
+
+  /**
+   * Clean up local screen share preview
+   */
+  private cleanupLocalScreenSharePreview(): void {
+    if (this.localScreenShareVideoElement) {
+      this.localScreenShareVideoElement.pause();
+      this.localScreenShareVideoElement.srcObject = null;
+      this.localScreenShareVideoElement.remove();
+      this.localScreenShareVideoElement = null;
+      console.log('[VoiceService] Local screen share preview cleaned up');
+    }
+  }
+
+  /**
+   * Get local screen share video element for host preview
+   */
+  getLocalScreenShareVideo(): HTMLVideoElement | null {
+    return this.localScreenShareVideoElement;
+  }
+
+  /**
+   * Check if current user is the streamer
+   */
+  isLocalUserStreamer(streamerId: string): boolean {
+    if (!this.room) return false;
+    return this.room.localParticipant.identity === streamerId;
   }
 
   /**
@@ -766,9 +833,10 @@ class VoiceServiceClass {
         if (publication.source === TrackTypes.Source.ScreenShareAudio) {
           console.log('[VoiceService] Screen share audio track from:', participant.identity, '- storing for stream viewer');
           this.screenShareAudioTracks.set(participant.identity, track as RemoteTrack);
-          // If already watching this streamer, attach the audio
+          // If already watching this streamer, notify the StreamViewer to attach audio
           if (streamViewerStore.isWatchingStreamer(participant.identity)) {
-            console.log('[VoiceService] Already watching this streamer, will attach audio when stream viewer requests it');
+            console.log('[VoiceService] Already watching this streamer, notifying StreamViewer to attach audio');
+            streamViewerStore.notifyAudioAvailable();
           }
         } else {
           // Regular microphone audio - attach normally
