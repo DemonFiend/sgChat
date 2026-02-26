@@ -745,11 +745,6 @@ export function MainLayout() {
           topic: channel.topic,
           type: channel.type
         });
-
-        // Minimize stream viewer when navigating to a text channel
-        if (channel.type === 'text' && streamViewerStore.isWatchingStream() && !streamViewerStore.isMinimized()) {
-          streamViewerStore.minimizeStream();
-        }
       }
 
       // Check cache first - immediately show cached messages if available
@@ -1118,7 +1113,7 @@ export function MainLayout() {
       {/* Server Welcome Popup */}
       <ServerWelcomePopup />
 
-      {/* Stream Viewer - single component that handles both minimized (PIP) and full view modes */}
+      {/* Stream Viewer - full-screen overlay for watching streams */}
       <Show when={streamViewerStore.activeStream()}>
         {(stream) => (
           <StreamViewer
@@ -1129,8 +1124,6 @@ export function MainLayout() {
             channelName={stream().channelName}
             videoElement={streamViewerStore.videoElement()}
             onClose={streamViewerStore.leaveStream}
-            onToggleMinimize={streamViewerStore.toggleMinimize}
-            isMinimized={streamViewerStore.isMinimized()}
           />
         )}
       </Show>

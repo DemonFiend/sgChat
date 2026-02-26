@@ -13,8 +13,6 @@ export interface StreamViewerProps {
   channelName?: string;
   videoElement?: HTMLVideoElement | null;
   onClose: () => void;
-  onToggleMinimize: () => void;
-  isMinimized: boolean;
 }
 
 export function StreamViewer(props: StreamViewerProps) {
@@ -33,11 +31,6 @@ export function StreamViewer(props: StreamViewerProps) {
     const participants = voiceStore.getParticipants(props.channelId);
     return participants.filter(p => p.userId !== props.streamerId);
   };
-  
-  // Check if we're in the same voice channel as the streamer
-  const isInSameChannel = createMemo(() => {
-    return voiceStore.isConnected() && voiceStore.currentChannelId() === props.channelId;
-  });
   
   // Connection status message
   const connectionStatus = createMemo(() => {
@@ -181,14 +174,12 @@ export function StreamViewer(props: StreamViewerProps) {
     }
   };
 
-  // Auto-hide controls (only in full view)
+  // Auto-hide controls after inactivity
   const handleMouseMove = () => {
     setShowControls(true);
     clearTimeout(controlsTimeout);
     controlsTimeout = setTimeout(() => {
-      if (!props.isMinimized) {
-        setShowControls(false);
-      }
+      setShowControls(false);
     }, 3000);
   };
 
@@ -203,65 +194,38 @@ export function StreamViewer(props: StreamViewerProps) {
 
   return (
     <Portal>
-      {/* 
-        Stream Viewer rendered via Portal to ensure it overlays all content.
-        The container is repositioned based on isMinimized state:
-        - Full view: fixed inset-0 covering entire viewport
-        - PIP: small fixed window in bottom-right corner
-      */}
+      {/* Full-screen Stream Viewer overlay */}
       <div
         ref={fullViewContainerRef}
         class={clsx(
-          'bg-black overflow-hidden transition-all duration-300',
-          props.isMinimized 
-            ? 'fixed bottom-20 right-4 w-80 h-48 rounded-lg shadow-2xl z-[60] border-2 border-purple-500/50 cursor-pointer group'
-            : 'fixed inset-0 z-[55] flex flex-col',
-          isFullscreen() && !props.isMinimized && 'z-[100]'
+          'fixed inset-0 z-[55] flex flex-col bg-black overflow-hidden',
+          isFullscreen() && 'z-[100]'
         )}
-        onClick={props.isMinimized ? props.onToggleMinimize : undefined}
-        onMouseMove={!props.isMinimized ? handleMouseMove : undefined}
-        onMouseLeave={!props.isMinimized ? () => setShowControls(false) : undefined}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setShowControls(false)}
       >
-        {/* Video area - always present */}
-        <div class={clsx(
-          'flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-purple-900/20 to-black',
-          props.isMinimized ? 'w-full h-full' : 'flex-1'
-        )}>
+        {/* Video area */}
+        <div class="flex-1 flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-purple-900/20 to-black">
           <Show 
             when={props.videoElement}
             fallback={
               <div class="text-center p-4">
-                <Show when={!props.isMinimized}>
-                  <div class="w-32 h-32 rounded-full bg-purple-500/20 flex items-center justify-center mb-4 mx-auto">
-                    <Avatar
-                      src={props.streamerAvatar}
-                      alt={props.streamerName}
-                      size="xl"
-                    />
-                  </div>
-                </Show>
-                <Show when={props.isMinimized}>
+                <div class="w-32 h-32 rounded-full bg-purple-500/20 flex items-center justify-center mb-4 mx-auto">
                   <Avatar
                     src={props.streamerAvatar}
                     alt={props.streamerName}
-                    size="lg"
+                    size="xl"
                   />
-                </Show>
-                <p class={clsx(
-                  'text-white',
-                  props.isMinimized ? 'text-sm mt-2' : 'text-xl font-medium'
-                )}>
+                </div>
+                <p class="text-white text-xl font-medium">
                   {props.streamerName}'s Stream
                 </p>
-                <p class={clsx(
-                  'text-gray-400',
-                  props.isMinimized ? 'text-xs mt-1' : 'text-sm mt-2'
-                )}>
+                <p class="text-gray-400 text-sm mt-2">
                   {connectionStatus().message || 'Connecting...'}
                 </p>
                 
-                {/* Show join button if not in the voice channel (full view only) */}
-                <Show when={!props.isMinimized && (connectionStatus().status === 'not-connected' || connectionStatus().status === 'wrong-channel')}>
+                {/* Show join button if not in the voice channel */}
+                <Show when={connectionStatus().status === 'not-connected' || connectionStatus().status === 'wrong-channel'}>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -276,8 +240,8 @@ export function StreamViewer(props: StreamViewerProps) {
                   </button>
                 </Show>
                 
-                {/* Show loading spinner if waiting for video (full view only) */}
-                <Show when={!props.isMinimized && connectionStatus().status === 'waiting'}>
+                {/* Show loading spinner if waiting for video */}
+                <Show when={connectionStatus().status === 'waiting'}>
                   <div class="mt-4">
                     <div class="animate-spin rounded-full h-8 w-8 border-2 border-purple-500 border-t-transparent mx-auto" />
                   </div>
@@ -291,208 +255,142 @@ export function StreamViewer(props: StreamViewerProps) {
             />
           </Show>
           
-          {/* Live indicator (full view) */}
-          <Show when={!props.isMinimized}>
-            <div class="absolute top-4 left-4 flex items-center gap-2 bg-red-600 rounded px-3 py-1.5">
-              <span class="w-2 h-2 bg-white rounded-full animate-pulse" />
-              <span class="text-white text-sm font-semibold">LIVE</span>
-            </div>
-          </Show>
+          {/* Live indicator */}
+          <div class="absolute top-4 left-4 flex items-center gap-2 bg-red-600 rounded px-3 py-1.5">
+            <span class="w-2 h-2 bg-white rounded-full animate-pulse" />
+            <span class="text-white text-sm font-semibold">LIVE</span>
+          </div>
           
-          {/* Viewers (full view) */}
-          <Show when={!props.isMinimized}>
-            <div class="absolute top-4 right-4 flex items-center gap-2">
-              <div class="flex -space-x-2">
-                <For each={viewers().slice(0, 5)}>
-                  {(viewer) => (
-                    <div 
-                      class="w-8 h-8 rounded-full border-2 border-black overflow-hidden"
-                      title={viewer.displayName || viewer.username}
-                    >
-                      <Avatar
-                        src={viewer.avatarUrl}
-                        alt={viewer.displayName || viewer.username}
-                        size="xs"
-                      />
-                    </div>
-                  )}
-                </For>
-                <Show when={viewers().length > 5}>
-                  <div class="w-8 h-8 rounded-full border-2 border-black bg-gray-700 flex items-center justify-center text-white text-xs font-medium">
-                    +{viewers().length - 5}
+          {/* Viewers */}
+          <div class="absolute top-4 right-4 flex items-center gap-2">
+            <div class="flex -space-x-2">
+              <For each={viewers().slice(0, 5)}>
+                {(viewer) => (
+                  <div 
+                    class="w-8 h-8 rounded-full border-2 border-black overflow-hidden"
+                    title={viewer.displayName || viewer.username}
+                  >
+                    <Avatar
+                      src={viewer.avatarUrl}
+                      alt={viewer.displayName || viewer.username}
+                      size="xs"
+                    />
                   </div>
-                </Show>
-              </div>
-              <span class="text-white text-sm bg-black/60 px-2 py-1 rounded">
-                {viewers().length} watching
-              </span>
+                )}
+              </For>
+              <Show when={viewers().length > 5}>
+                <div class="w-8 h-8 rounded-full border-2 border-black bg-gray-700 flex items-center justify-center text-white text-xs font-medium">
+                  +{viewers().length - 5}
+                </div>
+              </Show>
             </div>
-          </Show>
+            <span class="text-white text-sm bg-black/60 px-2 py-1 rounded">
+              {viewers().length} watching
+            </span>
+          </div>
         </div>
 
-        {/* Minimized overlay elements */}
-        <Show when={props.isMinimized}>
-          {/* Streamer info badge */}
-          <div class="absolute top-2 left-2 flex items-center gap-2 bg-black/60 rounded px-2 py-1">
-            <span class="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-            <span class="text-white text-xs font-medium">{props.streamerName}</span>
-          </div>
-          
-          {/* Expand hint on hover */}
-          <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-            <div class="bg-white/20 rounded-full p-3">
-              <svg class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-              </svg>
-            </div>
-          </div>
-          
-          {/* Expand button */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              props.onToggleMinimize();
-            }}
-            class="absolute bottom-2 right-10 w-6 h-6 bg-black/60 hover:bg-purple-500/80 rounded-full flex items-center justify-center transition-colors"
-            title="Expand"
-          >
-            <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-            </svg>
-          </button>
-          
-          {/* Close button */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              props.onClose();
-            }}
-            class="absolute bottom-2 right-2 w-6 h-6 bg-black/60 hover:bg-red-500/80 rounded-full flex items-center justify-center transition-colors"
-            title="Close"
-          >
-            <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </Show>
-
-        {/* Full view controls bar */}
-        <Show when={!props.isMinimized}>
-          <div
-            class={clsx(
-              'absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-4 transition-opacity duration-300',
-              showControls() ? 'opacity-100' : 'opacity-0 pointer-events-none'
-            )}
-          >
-            {/* Streamer info */}
-            <div class="flex items-center justify-between mb-4">
-              <div class="flex items-center gap-3">
-                <Avatar
-                  src={props.streamerAvatar}
-                  alt={props.streamerName}
-                  size="sm"
-                />
-                <div>
-                  <p class="text-white font-medium">{props.streamerName}</p>
-                  <p class="text-gray-400 text-xs">Streaming in voice channel</p>
-                </div>
+        {/* Controls bar */}
+        <div
+          class={clsx(
+            'absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-4 transition-opacity duration-300',
+            showControls() ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          )}
+        >
+          {/* Streamer info */}
+          <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-3">
+              <Avatar
+                src={props.streamerAvatar}
+                alt={props.streamerName}
+                size="sm"
+              />
+              <div>
+                <p class="text-white font-medium">{props.streamerName}</p>
+                <p class="text-gray-400 text-xs">Streaming in voice channel</p>
               </div>
             </div>
+          </div>
 
-            {/* Control buttons */}
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-4">
-                {/* Mute/Unmute */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleMute();
-                  }}
-                  class="text-white hover:text-purple-400 transition-colors"
-                  title={isMuted() ? 'Unmute' : 'Mute'}
-                >
-                  <Show
-                    when={isMuted()}
-                    fallback={
-                      <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                      </svg>
-                    }
-                  >
+          {/* Control buttons */}
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-4">
+              {/* Mute/Unmute */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleMute();
+                }}
+                class="text-white hover:text-purple-400 transition-colors"
+                title={isMuted() ? 'Unmute' : 'Mute'}
+              >
+                <Show
+                  when={isMuted()}
+                  fallback={
                     <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
                     </svg>
-                  </Show>
-                </button>
-                
-                {/* Volume slider */}
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={volume()}
-                  onInput={handleVolumeChange}
-                  class="w-24 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-purple-500"
-                />
-              </div>
-
-              <div class="flex items-center gap-4">
-                {/* Minimize */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    props.onToggleMinimize();
-                  }}
-                  class="text-white hover:text-purple-400 transition-colors"
-                  title="Minimize to PiP"
+                  }
                 >
                   <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
                   </svg>
-                </button>
-                
-                {/* Fullscreen */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleFullscreen();
-                  }}
-                  class="text-white hover:text-purple-400 transition-colors"
-                  title={isFullscreen() ? 'Exit Fullscreen' : 'Fullscreen'}
-                >
-                  <Show
-                    when={isFullscreen()}
-                    fallback={
-                      <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                      </svg>
-                    }
-                  >
+                </Show>
+              </button>
+              
+              {/* Volume slider */}
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={volume()}
+                onInput={handleVolumeChange}
+                class="w-24 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-purple-500"
+              />
+            </div>
+
+            <div class="flex items-center gap-4">
+              {/* Fullscreen */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleFullscreen();
+                }}
+                class="text-white hover:text-purple-400 transition-colors"
+                title={isFullscreen() ? 'Exit Fullscreen' : 'Fullscreen'}
+              >
+                <Show
+                  when={isFullscreen()}
+                  fallback={
                     <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 9V5m0 0H5m4 0L4 10m11-1V5m0 0h4m-4 0l5 5M9 15v4m0 0H5m4 0l-5-5m11 5l5-5m-5 5v-4m0 4h4" />
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
                     </svg>
-                  </Show>
-                </button>
-                
-                {/* Leave stream */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    props.onClose();
-                  }}
-                  class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
-                  title="Leave Stream"
+                  }
                 >
-                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                  <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 9V5m0 0H5m4 0L4 10m11-1V5m0 0h4m-4 0l5 5M9 15v4m0 0H5m4 0l-5-5m11 5l5-5m-5 5v-4m0 4h4" />
                   </svg>
-                  Leave
-                </button>
-              </div>
+                </Show>
+              </button>
+              
+              {/* Leave stream */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  props.onClose();
+                }}
+                class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
+                title="Leave Stream"
+              >
+                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                Leave
+              </button>
             </div>
           </div>
-        </Show>
+        </div>
       </div>
     </Portal>
   );
