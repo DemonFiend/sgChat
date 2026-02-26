@@ -21,9 +21,11 @@ export function StreamViewer(props: StreamViewerProps) {
   const [isMuted, setIsMuted] = createSignal(false);
   const [volume, setVolume] = createSignal(100);
   const [showControls, setShowControls] = createSignal(true);
+  const [hasStreamAudio, setHasStreamAudio] = createSignal(false);
   let fullViewContainerRef: HTMLDivElement | undefined;
   let videoContainerRef: HTMLDivElement | undefined;
   let controlsTimeout: ReturnType<typeof setTimeout>;
+  let streamAudioElement: HTMLAudioElement | null = null;
 
   // Get viewers (participants in the channel who are not streaming)
   const viewers = () => {
@@ -84,6 +86,37 @@ export function StreamViewer(props: StreamViewerProps) {
     onCleanup(() => {
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
     });
+  });
+
+  // Attach screen share audio when available
+  createEffect(() => {
+    const streamerId = props.streamerId;
+    const hasAudio = voiceService.hasScreenShareAudio(streamerId);
+    setHasStreamAudio(hasAudio);
+    
+    if (hasAudio) {
+      console.log('[StreamViewer] Attaching screen share audio for:', streamerId);
+      streamAudioElement = voiceService.attachScreenShareAudio(streamerId, volume(), isMuted());
+    }
+    
+    // Cleanup when component unmounts or streamer changes
+    onCleanup(() => {
+      if (streamAudioElement) {
+        console.log('[StreamViewer] Detaching screen share audio for:', streamerId);
+        voiceService.detachScreenShareAudio(streamerId);
+        streamAudioElement = null;
+      }
+    });
+  });
+
+  // Sync volume/mute with screen share audio
+  createEffect(() => {
+    const vol = volume();
+    const muted = isMuted();
+    const streamerId = props.streamerId;
+    
+    // Update screen share audio if it exists
+    voiceService.updateScreenShareAudio(streamerId, vol, muted);
   });
 
   // Attach video element to the video container
@@ -160,6 +193,11 @@ export function StreamViewer(props: StreamViewerProps) {
 
   onCleanup(() => {
     clearTimeout(controlsTimeout);
+    // Ensure screen share audio is cleaned up
+    if (streamAudioElement) {
+      voiceService.detachScreenShareAudio(props.streamerId);
+      streamAudioElement = null;
+    }
   });
 
   return (
@@ -306,13 +344,28 @@ export function StreamViewer(props: StreamViewerProps) {
             </div>
           </div>
           
+          {/* Expand button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              props.onToggleMinimize();
+            }}
+            class="absolute bottom-2 right-10 w-6 h-6 bg-black/60 hover:bg-purple-500/80 rounded-full flex items-center justify-center transition-colors"
+            title="Expand"
+          >
+            <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+            </svg>
+          </button>
+          
           {/* Close button */}
           <button
             onClick={(e) => {
               e.stopPropagation();
               props.onClose();
             }}
-            class="absolute top-2 right-2 w-6 h-6 bg-black/60 hover:bg-red-500/80 rounded-full flex items-center justify-center transition-colors"
+            class="absolute bottom-2 right-2 w-6 h-6 bg-black/60 hover:bg-red-500/80 rounded-full flex items-center justify-center transition-colors"
+            title="Close"
           >
             <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -348,7 +401,10 @@ export function StreamViewer(props: StreamViewerProps) {
               <div class="flex items-center gap-4">
                 {/* Mute/Unmute */}
                 <button
-                  onClick={toggleMute}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleMute();
+                  }}
                   class="text-white hover:text-purple-400 transition-colors"
                   title={isMuted() ? 'Unmute' : 'Mute'}
                 >
@@ -381,7 +437,10 @@ export function StreamViewer(props: StreamViewerProps) {
               <div class="flex items-center gap-4">
                 {/* Minimize */}
                 <button
-                  onClick={props.onToggleMinimize}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    props.onToggleMinimize();
+                  }}
                   class="text-white hover:text-purple-400 transition-colors"
                   title="Minimize to PiP"
                 >
@@ -392,7 +451,10 @@ export function StreamViewer(props: StreamViewerProps) {
                 
                 {/* Fullscreen */}
                 <button
-                  onClick={toggleFullscreen}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleFullscreen();
+                  }}
                   class="text-white hover:text-purple-400 transition-colors"
                   title={isFullscreen() ? 'Exit Fullscreen' : 'Fullscreen'}
                 >
@@ -412,7 +474,10 @@ export function StreamViewer(props: StreamViewerProps) {
                 
                 {/* Leave stream */}
                 <button
-                  onClick={props.onClose}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    props.onClose();
+                  }}
                   class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
                   title="Leave Stream"
                 >

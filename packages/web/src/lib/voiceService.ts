@@ -62,6 +62,8 @@ class VoiceServiceClass {
   private room: Room | null = null;
   private audioElements: Map<string, HTMLAudioElement> = new Map();
   private videoElements: Map<string, HTMLVideoElement> = new Map();
+  private screenShareAudioTracks: Map<string, RemoteTrack> = new Map();
+  private screenShareAudioElements: Map<string, HTMLAudioElement> = new Map();
   private audioContainer: HTMLElement | null = null;
   private voiceSettings: VoiceSettings | null = null;
   private outputVolume: number = 100;
@@ -760,7 +762,18 @@ class VoiceServiceClass {
       console.log('[VoiceService] Track subscribed:', track.kind, 'source:', publication.source, 'from', participant.identity);
       
       if (track.kind === Track.Kind.Audio) {
-        this.attachAudioTrack(track as RemoteTrack, participant);
+        // Check if this is screen share audio - store separately, don't auto-attach
+        if (publication.source === TrackTypes.Source.ScreenShareAudio) {
+          console.log('[VoiceService] Screen share audio track from:', participant.identity, '- storing for stream viewer');
+          this.screenShareAudioTracks.set(participant.identity, track as RemoteTrack);
+          // If already watching this streamer, attach the audio
+          if (streamViewerStore.isWatchingStreamer(participant.identity)) {
+            console.log('[VoiceService] Already watching this streamer, will attach audio when stream viewer requests it');
+          }
+        } else {
+          // Regular microphone audio - attach normally
+          this.attachAudioTrack(track as RemoteTrack, participant);
+        }
       } else if (track.kind === Track.Kind.Video) {
         console.log('[VoiceService] Video track subscribed from:', participant.identity, 'source:', publication.source);
         this.attachVideoTrack(track as RemoteTrack, participant, publication);
@@ -772,7 +785,13 @@ class VoiceServiceClass {
       console.log('[VoiceService] Track unsubscribed:', track.kind, 'source:', publication.source, 'from', participant.identity);
       
       if (track.kind === Track.Kind.Audio) {
-        this.detachAudioTrack(participant.identity);
+        // Check if this is screen share audio
+        if (publication.source === TrackTypes.Source.ScreenShareAudio) {
+          console.log('[VoiceService] Screen share audio track unsubscribed from:', participant.identity);
+          this.detachScreenShareAudio(participant.identity);
+        } else {
+          this.detachAudioTrack(participant.identity);
+        }
       } else if (track.kind === Track.Kind.Video) {
         console.log('[VoiceService] Video track unsubscribed from:', participant.identity);
         this.detachVideoTrack(participant.identity);
@@ -1001,6 +1020,82 @@ class VoiceServiceClass {
     return this.videoElements.get(streamerId) || null;
   }
 
+  /**
+   * Get screen share audio track for a specific streamer
+   */
+  getScreenShareAudioTrack(streamerId: string): RemoteTrack | null {
+    return this.screenShareAudioTracks.get(streamerId) || null;
+  }
+
+  /**
+   * Attach screen share audio for a streamer (called by StreamViewer)
+   */
+  attachScreenShareAudio(streamerId: string, volume: number = 100, muted: boolean = false): HTMLAudioElement | null {
+    const track = this.screenShareAudioTracks.get(streamerId);
+    if (!track) {
+      console.log('[VoiceService] No screen share audio track for:', streamerId);
+      return null;
+    }
+
+    // Check if already attached
+    let audio = this.screenShareAudioElements.get(streamerId);
+    if (audio) {
+      // Update volume/muted state
+      audio.volume = volume / 100;
+      audio.muted = muted;
+      return audio;
+    }
+
+    // Create new audio element
+    audio = document.createElement('audio');
+    audio.autoplay = true;
+    audio.volume = volume / 100;
+    audio.muted = muted;
+
+    // Attach track to audio element
+    track.attach(audio);
+
+    // Store reference
+    this.screenShareAudioElements.set(streamerId, audio);
+
+    console.log('[VoiceService] Screen share audio attached for:', streamerId);
+    return audio;
+  }
+
+  /**
+   * Update screen share audio volume/mute state
+   */
+  updateScreenShareAudio(streamerId: string, volume: number, muted: boolean): void {
+    const audio = this.screenShareAudioElements.get(streamerId);
+    if (audio) {
+      audio.volume = volume / 100;
+      audio.muted = muted;
+    }
+  }
+
+  /**
+   * Detach screen share audio for a streamer (called when leaving stream viewer)
+   */
+  detachScreenShareAudio(streamerId: string): void {
+    const audio = this.screenShareAudioElements.get(streamerId);
+    if (audio) {
+      audio.pause();
+      audio.srcObject = null;
+      audio.remove();
+      this.screenShareAudioElements.delete(streamerId);
+      console.log('[VoiceService] Screen share audio detached for:', streamerId);
+    }
+    // Also remove the track reference if it exists
+    this.screenShareAudioTracks.delete(streamerId);
+  }
+
+  /**
+   * Check if screen share audio is available for a streamer
+   */
+  hasScreenShareAudio(streamerId: string): boolean {
+    return this.screenShareAudioTracks.has(streamerId);
+  }
+
   private detachAudioTrack(participantIdentity: string): void {
     const audio = this.audioElements.get(participantIdentity);
     if (audio) {
@@ -1019,6 +1114,15 @@ class VoiceServiceClass {
       audio.remove();
     });
     this.audioElements.clear();
+    
+    // Also cleanup screen share audio
+    this.screenShareAudioElements.forEach((audio) => {
+      audio.pause();
+      audio.srcObject = null;
+      audio.remove();
+    });
+    this.screenShareAudioElements.clear();
+    this.screenShareAudioTracks.clear();
     console.log('[VoiceService] All audio elements cleaned up');
   }
 
