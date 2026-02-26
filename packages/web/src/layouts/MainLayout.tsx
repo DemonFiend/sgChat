@@ -15,7 +15,7 @@ import {
 import { UserSettingsModal, ServerSettingsModal, ClaimAdminModal, TransferOwnershipModal, UnclaimedServerBanner, ServerWelcomePopup, StreamViewer } from '@/components/ui';
 import { api } from '@/api';
 import { authStore } from '@/stores/auth';
-import { permissions, voiceStore, serverPopupStore } from '@/stores';
+import { permissions, voiceStore, serverPopupStore, messageCache } from '@/stores';
 import { streamViewerStore } from '@/stores/streamViewer';
 import { socketService } from '@/lib/socket';
 import { voiceService } from '@/lib/voiceService';
@@ -356,6 +356,11 @@ export function MainLayout() {
       console.log('[MainLayout] Adding message to chat:', message.id, 'author:', message.author.username);
       setMessages(prev => [...prev, message]);
 
+      // Also update the cache (invalidates hash so next fetch will check server)
+      if (messageChannelId) {
+        messageCache.appendMessage(messageChannelId, message);
+      }
+
       // Play notification sound if user is mentioned
       const currentUsername = authStore.state().user?.username;
       if (currentUsername && message.content?.includes(`@${currentUsername}`)) {
@@ -548,12 +553,16 @@ export function MainLayout() {
       setMessages(prev => prev.map(m =>
         m.id === data.message.id ? data.message : m
       ));
+      // Update cache as well
+      messageCache.updateMessage(data.channel_id, data.message.id, () => data.message);
     };
 
     const handleMessageDelete = (data: { message_id: string; channel_id: string }) => {
       if (data.channel_id !== channelId) return;
       console.log('[MainLayout] Message deleted:', data.message_id);
       setMessages(prev => prev.filter(m => m.id !== data.message_id));
+      // Update cache as well
+      messageCache.removeMessage(data.channel_id, data.message_id);
     };
 
     const handleMessageReaction = (data: {
@@ -609,6 +618,8 @@ export function MainLayout() {
 
         return { ...m, reactions };
       }));
+      // Invalidate cache hash so next fetch will check server
+      messageCache.updateMessage(data.channel_id, data.message_id, (msg) => msg);
     };
 
     socketService.on('message.update', handleMessageUpdate);
@@ -715,7 +726,7 @@ export function MainLayout() {
     });
   });
 
-  // Fetch channel data when channelId changes
+  // Fetch channel data when channelId changes (with hash-based caching)
   createEffect(async () => {
     const channelId = params.channelId;
     if (!channelId || channelId === '@me' || isDMRoute()) {
@@ -741,14 +752,42 @@ export function MainLayout() {
         }
       }
 
-      // Fetch messages - handle both array and object response formats
-      const messagesResponse = await api.get<Message[] | { messages: Message[] }>(`/channels/${channelId}/messages`);
+      // Check cache first - immediately show cached messages if available
+      const cached = messageCache.get(channelId);
+      if (cached) {
+        setMessages(cached.messages);
+      }
 
+      // Build request headers for conditional fetch
+      const headers: Record<string, string> = {};
+      if (cached?.hash) {
+        headers['If-None-Match'] = cached.hash;
+      }
+
+      // Fetch messages with conditional request
+      const messagesResponse = await api.get<{ messages: Message[]; hash: string } | null>(
+        `/channels/${channelId}/messages`,
+        { headers }
+      );
+
+      // If response is null (304 Not Modified), cache is valid - nothing more to do
+      if (messagesResponse === null) {
+        console.log('[MainLayout] Cache hit for channel:', channelId);
+        return;
+      }
+
+      // Extract messages and hash from response
       let fetchedMessages: Message[] = [];
-      if (Array.isArray(messagesResponse)) {
-        fetchedMessages = messagesResponse;
-      } else if (messagesResponse && typeof messagesResponse === 'object' && 'messages' in messagesResponse) {
-        fetchedMessages = messagesResponse.messages || [];
+      let responseHash = '';
+      
+      if (messagesResponse && typeof messagesResponse === 'object') {
+        if ('messages' in messagesResponse) {
+          fetchedMessages = messagesResponse.messages || [];
+          responseHash = messagesResponse.hash || '';
+        } else if (Array.isArray(messagesResponse)) {
+          // Fallback for legacy array response
+          fetchedMessages = messagesResponse as unknown as Message[];
+        }
       }
 
       // Normalize messages to ensure author object exists with all required fields
@@ -768,9 +807,24 @@ export function MainLayout() {
         return { ...msg, author };
       });
 
+      // Update cache and state
+      if (responseHash) {
+        messageCache.set(channelId, normalizedMessages, responseHash);
+      }
       setMessages(normalizedMessages);
 
-      // Mark channel as read to clear unread notifications
+    } catch (err) {
+      console.error('Failed to fetch channel data:', err);
+    }
+  });
+
+  // Debounced ACK effect - only send after user stays in channel for 2 seconds
+  createEffect(() => {
+    const channelId = params.channelId;
+    if (!channelId || channelId === '@me' || isDMRoute()) return;
+
+    // Debounce ACK - only send after user stays 2 seconds in the channel
+    const timer = setTimeout(async () => {
       try {
         await api.post(`/channels/${channelId}/ack`);
         // Update local channel state to reflect 0 unread count
@@ -780,9 +834,9 @@ export function MainLayout() {
       } catch (ackErr) {
         console.error('[MainLayout] Failed to mark channel as read:', ackErr);
       }
-    } catch (err) {
-      console.error('Failed to fetch channel data:', err);
-    }
+    }, 2000);
+
+    onCleanup(() => clearTimeout(timer));
   });
 
   const handleSettingsClick = () => {

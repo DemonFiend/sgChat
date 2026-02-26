@@ -4,4 +4,5 @@ export { networkStore, type Network, type NetworkAccount, type ServerInfo, type 
 export { voiceStore, type VoiceState, type VoiceParticipant, type VoicePermissions, type VoiceConnectionState } from './voice';
 export { serverPopupStore } from './serverPopup';
 export { useServerConfigStore } from './serverConfig';
+export { messageCache } from './messageCache';
 export * as permissions from './permissions';

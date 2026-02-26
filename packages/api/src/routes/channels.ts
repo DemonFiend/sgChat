@@ -1,4 +1,5 @@
 import { FastifyPluginAsync } from 'fastify';
+import { createHash } from 'crypto';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { canAccessChannel, calculatePermissions } from '../services/permissions.js';
@@ -222,7 +223,24 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
         system_event: m.system_event || null,
       }));
 
-      return formattedMessages;
+      // Compute channel hash based on last message ID and count for cache validation
+      const lastMessageId = formattedMessages.length > 0 
+        ? formattedMessages[formattedMessages.length - 1].id 
+        : 'empty';
+      const channelHash = createHash('md5')
+        .update(`${lastMessageId}:${formattedMessages.length}`)
+        .digest('hex')
+        .slice(0, 16);
+
+      // Check If-None-Match header for conditional request
+      const clientHash = request.headers['if-none-match'];
+      if (clientHash === channelHash) {
+        return reply.status(304).send();
+      }
+
+      // Set ETag header and return with hash in body
+      reply.header('ETag', channelHash);
+      return { messages: formattedMessages, hash: channelHash };
     },
   });
 

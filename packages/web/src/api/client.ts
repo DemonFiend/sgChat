@@ -95,6 +95,11 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
     }
   }
 
+  // Handle 304 Not Modified - return null to indicate cache is valid
+  if (response.status === 304) {
+    return null as T;
+  }
+
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new ApiError(error.message || 'Request failed', response.status, error);
@@ -174,10 +179,21 @@ async function uploadFile<T>(endpoint: string, file: File, fieldName: string = '
   return response.json();
 }
 
+// Options for GET requests
+interface GetOptions {
+  baseUrl?: string;
+  headers?: Record<string, string>;
+}
+
 // Convenience methods
 export const api = {
-  get: <T>(endpoint: string, baseUrl?: string) => 
-    request<T>(endpoint, { method: 'GET', baseUrl }),
+  get: <T>(endpoint: string, options?: string | GetOptions) => {
+    // Support both old signature (baseUrl string) and new signature (options object)
+    if (typeof options === 'string') {
+      return request<T>(endpoint, { method: 'GET', baseUrl: options });
+    }
+    return request<T>(endpoint, { method: 'GET', baseUrl: options?.baseUrl, headers: options?.headers });
+  },
   
   post: <T>(endpoint: string, body?: unknown, baseUrl?: string) =>
     request<T>(endpoint, { method: 'POST', body, baseUrl }),
