@@ -7,6 +7,7 @@ const MINIO_ACCESS_KEY = process.env.MINIO_ACCESS_KEY || 'minioadmin';
 const MINIO_SECRET_KEY = process.env.MINIO_SECRET_KEY || 'minioadmin';
 const MINIO_BUCKET = process.env.MINIO_BUCKET || 'sgchat-files';
 const MINIO_ARCHIVE_BUCKET = process.env.MINIO_ARCHIVE_BUCKET || 'sgchat-archives';
+const MINIO_PUBLIC_URL = process.env.MINIO_PUBLIC_URL || `http://${MINIO_ENDPOINT}`;
 
 // Parse endpoint (host:port)
 const [endpointHost, endpointPort] = MINIO_ENDPOINT.split(':');
@@ -70,7 +71,7 @@ export const storage = {
     });
     
     // Return the public URL
-    return `http://${MINIO_ENDPOINT}/${MINIO_BUCKET}/${path}`;
+    return `${MINIO_PUBLIC_URL}/${MINIO_BUCKET}/${path}`;
   },
 
   /**
@@ -178,7 +179,7 @@ export const storage = {
         `/${MINIO_BUCKET}/${sourcePath}`
       );
       
-      const url = `http://${MINIO_ENDPOINT}/${MINIO_BUCKET}/${destPath}`;
+      const url = `${MINIO_PUBLIC_URL}/${MINIO_BUCKET}/${destPath}`;
       return { path: destPath, url };
     } catch (error) {
       // Source doesn't exist or copy failed
@@ -204,7 +205,7 @@ export const storage = {
    * Get the public URL for an avatar slot.
    */
   getAvatarUrl(userId: string, slot: 'current' | 'previous'): string {
-    return `http://${MINIO_ENDPOINT}/${MINIO_BUCKET}/avatars/${userId}-${slot}.webp`;
+    return `${MINIO_PUBLIC_URL}/${MINIO_BUCKET}/avatars/${userId}-${slot}.webp`;
   },
 
   /**
