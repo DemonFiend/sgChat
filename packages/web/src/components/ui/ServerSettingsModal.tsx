@@ -6,7 +6,7 @@ import { permissions } from '@/stores';
 import { ServerPopupConfigForm } from './ServerPopupConfigForm';
 import { SERVER_TIMEZONES } from '@/lib/timezones';
 
-type ServerSettingsTab = 'overview' | 'popup-config' | 'roles' | 'members' | 'channels' | 'soundboard' | 'invites' | 'bans' | 'audit-log';
+type ServerSettingsTab = 'overview' | 'popup-config' | 'roles' | 'members' | 'channels' | 'soundboard' | 'afk' | 'invites' | 'bans' | 'audit-log';
 
 interface ServerSettings {
   motd: string;
@@ -29,13 +29,15 @@ interface ServerData {
   owner_id: string;
   member_count: number;
   admin_claimed: boolean;
+  afk_timeout?: number;
+  afk_channel_id?: string | null;
   settings?: ServerSettings;
 }
 
 interface Channel {
   id: string;
   name: string;
-  type: 'text' | 'voice' | 'announcement';
+  type: 'text' | 'voice' | 'announcement' | 'music' | 'temp_voice_generator' | 'temp_voice';
 }
 
 interface ServerSettingsModalProps {
@@ -104,6 +106,16 @@ const tabs: { id: ServerSettingsTab; label: string; icon: JSX.Element; permissio
     icon: (
       <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+      </svg>
+    ),
+    permission: 'manage_server',
+  },
+  {
+    id: 'afk',
+    label: 'AFK',
+    icon: (
+      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
       </svg>
     ),
     permission: 'manage_server',
@@ -295,6 +307,15 @@ export function ServerSettingsModal(props: ServerSettingsModalProps) {
                     </Show>
                     <Show when={activeTab() === 'soundboard'}>
                       <SoundboardSettingsTab serverId={serverData()?.id || ''} />
+                    </Show>
+                    <Show when={activeTab() === 'afk'}>
+                      <AfkSettingsTab
+                        serverId={serverData()?.id || ''}
+                        afkTimeout={serverData()?.afk_timeout || 300}
+                        afkChannelId={serverData()?.afk_channel_id || null}
+                        voiceChannels={channels().filter(c => c.type === 'voice')}
+                        onSave={fetchServerData}
+                      />
                     </Show>
                     <Show when={activeTab() === 'audit-log'}>
                       <AuditLogTab />
@@ -2476,6 +2497,130 @@ function SoundboardSettingsTab(props: SoundboardSettingsTabProps) {
           </div>
         </div>
       </Show>
+    </div>
+  );
+}
+
+// AFK Settings Tab
+interface AfkSettingsTabProps {
+  serverId: string;
+  afkTimeout: number;
+  afkChannelId: string | null;
+  voiceChannels: Channel[];
+  onSave: () => void;
+}
+
+const AFK_TIMEOUT_OPTIONS = [
+  { value: 60, label: '1 minute' },
+  { value: 300, label: '5 minutes' },
+  { value: 600, label: '10 minutes' },
+  { value: 900, label: '15 minutes' },
+  { value: 1800, label: '30 minutes' },
+  { value: 3600, label: '1 hour' },
+];
+
+function AfkSettingsTab(props: AfkSettingsTabProps) {
+  const [afkTimeout, setAfkTimeout] = createSignal(props.afkTimeout);
+  const [afkChannelId, setAfkChannelId] = createSignal<string | null>(props.afkChannelId);
+  const [saving, setSaving] = createSignal(false);
+  const [saved, setSaved] = createSignal(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSaved(false);
+    try {
+      await api.patch('/server', {
+        afk_timeout: afkTimeout(),
+        afk_channel_id: afkChannelId() || null,
+      });
+      setSaved(true);
+      props.onSave();
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      console.error('Failed to save AFK settings:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div class="space-y-6">
+      <div>
+        <h3 class="text-lg font-semibold text-text-primary mb-1">AFK Settings</h3>
+        <p class="text-sm text-text-muted">
+          Configure when idle users are automatically moved to the AFK channel.
+          Users who are streaming are exempt from the AFK timer.
+        </p>
+      </div>
+
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-text-secondary mb-1">
+            AFK Channel
+          </label>
+          <select
+            value={afkChannelId() || ''}
+            onChange={(e) => setAfkChannelId(e.currentTarget.value || null)}
+            class="w-full bg-bg-tertiary border border-bg-modifier-accent rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-primary"
+          >
+            <option value="">No AFK Channel</option>
+            <For each={props.voiceChannels}>
+              {(channel) => (
+                <option value={channel.id}>{channel.name}</option>
+              )}
+            </For>
+          </select>
+          <p class="text-xs text-text-muted mt-1">
+            Idle users in voice channels will be moved to this channel.
+          </p>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-text-secondary mb-1">
+            AFK Timeout
+          </label>
+          <select
+            value={afkTimeout()}
+            onChange={(e) => setAfkTimeout(parseInt(e.currentTarget.value))}
+            class="w-full bg-bg-tertiary border border-bg-modifier-accent rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-primary"
+          >
+            <For each={AFK_TIMEOUT_OPTIONS}>
+              {(option) => (
+                <option value={option.value}>{option.label}</option>
+              )}
+            </For>
+          </select>
+          <p class="text-xs text-text-muted mt-1">
+            How long a user must be idle before being moved to the AFK channel.
+          </p>
+        </div>
+
+        <div class="bg-bg-tertiary rounded-md p-4">
+          <h4 class="text-sm font-medium text-text-primary mb-2">What counts as activity?</h4>
+          <ul class="text-xs text-text-muted space-y-1">
+            <li>Speaking into the microphone</li>
+            <li>Sending messages or typing</li>
+            <li>Toggling mute, deafen, or screen share</li>
+            <li>Any mouse, keyboard, or touch interaction</li>
+          </ul>
+          <p class="text-xs text-text-muted mt-2">
+            Users who are screen sharing are never moved to AFK.
+          </p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button
+          onClick={handleSave}
+          class="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white rounded-md text-sm font-medium transition-colors disabled:opacity-50"
+          disabled={saving()}
+        >
+          {saving() ? 'Saving...' : 'Save Changes'}
+        </button>
+        <Show when={saved()}>
+          <span class="text-sm text-green-400">Saved!</span>
+        </Show>
+      </div>
     </div>
   );
 }

@@ -6,6 +6,7 @@
  */
 
 import { db } from '../lib/db.js';
+import { redis } from '../lib/redis.js';
 import { publishEvent } from '../lib/eventBus.js';
 
 export interface TempChannelSettings {
@@ -18,7 +19,7 @@ export interface TempChannelSettings {
 
 const DEFAULT_TEMP_SETTINGS: TempChannelSettings = {
   empty_timeout_seconds: 300, // 5 minutes
-  max_temp_channels_per_user: 1,
+  max_temp_channels_per_user: 2,
   inherit_generator_permissions: true,
   default_user_limit: 0,
   default_bitrate: 64000,
@@ -77,34 +78,44 @@ export async function createTempVoiceChannel(
 
   const settings = await getTempChannelSettings();
 
-  // Check if user already has a temp channel (if limit is enforced)
-  if (settings.max_temp_channels_per_user > 0) {
-    const [existingCount] = await db.sql`
-      SELECT COUNT(*)::int as count
-      FROM channels
-      WHERE is_temp_channel = true 
-        AND temp_channel_owner_id = ${userId}
-        AND server_id = ${generator.server_id}
-    `;
+  // Get all existing temp channels for this user in this server (ordered by creation)
+  const existingChannels = await db.sql`
+    SELECT id, name FROM channels
+    WHERE is_temp_channel = true
+      AND temp_channel_owner_id = ${userId}
+      AND server_id = ${generator.server_id}
+    ORDER BY temp_channel_created_at ASC
+  `;
 
-    if (existingCount.count >= settings.max_temp_channels_per_user) {
-      // Return the existing temp channel instead of creating new
-      const [existing] = await db.sql`
-        SELECT id, name FROM channels
-        WHERE is_temp_channel = true 
-          AND temp_channel_owner_id = ${userId}
-          AND server_id = ${generator.server_id}
-        LIMIT 1
-      `;
-      
-      if (existing) {
-        return { channelId: existing.id, channelName: existing.name };
-      }
+  if (existingChannels.length > 0) {
+    // Check occupancy of each channel via Redis
+    const channelsWithOccupancy = await Promise.all(
+      existingChannels.map(async (ch: { id: string; name: string }) => ({
+        ...ch,
+        participantCount: (await redis.getVoiceChannelParticipants(ch.id)).length,
+      }))
+    );
+
+    // Find first empty channel — reuse it instead of creating new
+    const emptyChannel = channelsWithOccupancy.find(ch => ch.participantCount === 0);
+    if (emptyChannel) {
+      return { channelId: emptyChannel.id, channelName: emptyChannel.name };
     }
+
+    // All existing channels are occupied — check if at limit
+    const maxChannels = settings.max_temp_channels_per_user || 2;
+    if (existingChannels.length >= maxChannels) {
+      // At limit — return the first (oldest) channel
+      return { channelId: existingChannels[0].id, channelName: existingChannels[0].name };
+    }
+
+    // Under limit and all occupied — fall through to create a new channel
   }
 
-  // Create the temp channel with user's name
-  const channelName = `${user.display_name || user.username}'s Channel`;
+  // Create the temp channel with user's name (append number for 2nd+ channels)
+  const channelNumber = existingChannels.length + 1;
+  const baseName = `${user.display_name || user.username}'s Channel`;
+  const channelName = channelNumber > 1 ? `${baseName} ${channelNumber}` : baseName;
 
   const [tempChannel] = await db.sql`
     INSERT INTO channels (

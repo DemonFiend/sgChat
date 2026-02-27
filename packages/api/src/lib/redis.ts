@@ -177,6 +177,8 @@ export const redis = {
       is_muted: 'false',
       is_deafened: 'false',
     });
+    // Set initial voice activity timestamp
+    await client.set(`voice:activity:${userId}`, Date.now().toString());
   },
 
   async leaveVoiceChannel(userId: string) {
@@ -186,6 +188,7 @@ export const redis = {
       await client.del(`voice:state:${channelId}:${userId}`);
     }
     await client.del(`voice:user:${userId}`);
+    await client.del(`voice:activity:${userId}`);
     return channelId; // Return the channel they left for socket events
   },
 
@@ -221,6 +224,20 @@ export const redis = {
     if (Object.keys(data).length > 0) {
       await client.hset(`voice:state:${channelId}:${userId}`, data);
     }
+  },
+
+  // Voice activity tracking (for AFK detection)
+  async updateVoiceActivity(userId: string): Promise<void> {
+    await client.set(`voice:activity:${userId}`, Date.now().toString());
+  },
+
+  async getVoiceActivity(userId: string): Promise<number | null> {
+    const ts = await client.get(`voice:activity:${userId}`);
+    return ts ? parseInt(ts, 10) : null;
+  },
+
+  async clearVoiceActivity(userId: string): Promise<void> {
+    await client.del(`voice:activity:${userId}`);
   },
 
   // ── Gateway session management (A0: resume support) ──────────

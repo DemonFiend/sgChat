@@ -7,12 +7,13 @@ import { calculatePermissions } from '../services/permissions.js';
 import { generateLiveKitToken, getLiveKitUrl } from '../services/livekit.js';
 import { VoicePermissions, hasPermission, RATE_LIMITS } from '@sgchat/shared';
 import { notFound, forbidden, badRequest } from '../utils/errors.js';
-import { 
-  createTempVoiceChannel, 
-  markTempChannelEmpty, 
+import {
+  createTempVoiceChannel,
+  markTempChannelEmpty,
   markTempChannelOccupied,
-  isTempVoiceGenerator 
+  isTempVoiceGenerator
 } from '../services/tempChannels.js';
+import { scheduleTempChannelCreation, cancelPendingCreation } from '../services/tempChannelTimers.js';
 
 export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
   // Get voice token for a channel (GET endpoint as specified in SERVER_HANDOFF.md)
@@ -39,25 +40,59 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
         return notFound(reply, 'Voice channel');
       }
 
-      // Handle temp voice generator - create temp channel and redirect
+      // Handle temp voice generator - join generator with 5s delay before creating temp channel
       if (channel.type === 'temp_voice_generator') {
         const perms = await calculatePermissions(request.user!.id, channel.server_id, channel_id);
         if (!hasPermission(perms.voice, VoicePermissions.CONNECT)) {
           return forbidden(reply, 'You don\'t have permission to create a temp channel');
         }
 
-        const { channelId: tempChannelId, channelName } = await createTempVoiceChannel(
-          request.user!.id,
-          channel_id
-        );
+        // Join the generator channel itself (user will be auto-moved after 5s)
+        const token = await generateLiveKitToken({
+          identity: request.user!.id,
+          room: `voice:${channel_id}`,
+          canPublish: hasPermission(perms.voice, VoicePermissions.SPEAK),
+          canPublishVideo: false,
+          canPublishScreen: false,
+          canSubscribe: true,
+        });
 
-        channel = await db.channels.findById(tempChannelId);
-        actualChannelId = tempChannelId;
-        isTempRedirect = true;
+        await redis.joinVoiceChannel(request.user!.id, channel_id);
 
-        if (!channel) {
-          return badRequest(reply, 'Failed to create temp channel');
-        }
+        // Schedule temp channel creation after 5 seconds
+        scheduleTempChannelCreation(request.user!.id, channel_id, channel.server_id);
+
+        // Get user info for socket event
+        const user = await db.users.findById(request.user!.id);
+
+        // Check for custom join sound
+        const customJoinSound = await db.userVoiceSounds.findByUserServerType(request.user!.id, channel.server_id, 'join');
+
+        await publishEvent({
+          type: 'voice.join',
+          actorId: request.user!.id,
+          resourceId: `server:${channel.server_id}`,
+          payload: {
+            channel_id: channel_id,
+            user: {
+              id: user.id,
+              username: user.username,
+              display_name: user.display_name || user.username,
+              avatar_url: user.avatar_url,
+            },
+            is_temp_channel: false,
+            custom_sound_url: customJoinSound?.sound_url || null,
+          },
+        });
+
+        return {
+          token,
+          url: getLiveKitUrl(),
+          room_name: `voice:${channel_id}`,
+          channel_id: channel_id,
+          is_temp_channel: false,
+          is_temp_generator: true,
+        };
       }
 
       if (channel.type !== 'voice' && channel.type !== 'music' && channel.type !== 'temp_voice') {
@@ -115,7 +150,6 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
             avatar_url: user.avatar_url,
           },
           is_temp_channel: channel.is_temp_channel || false,
-          redirected_from: isTempRedirect ? channel_id : undefined,
           custom_sound_url: customJoinSound?.sound_url || null,
         },
       });
@@ -149,25 +183,70 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
         return notFound(reply, 'Channel');
       }
 
-      // Handle temp voice generator - create temp channel and redirect
+      // Handle temp voice generator - join generator with 5s delay before creating temp channel
       if (channel.type === 'temp_voice_generator') {
         const perms = await calculatePermissions(request.user!.id, channel.server_id, channelId);
         if (!hasPermission(perms.voice, VoicePermissions.CONNECT)) {
           return forbidden(reply, 'You don\'t have permission to create a temp channel');
         }
 
-        const { channelId: tempChannelId, channelName } = await createTempVoiceChannel(
-          request.user!.id,
-          channelId
-        );
+        // Join the generator channel itself (user will be auto-moved after 5s)
+        const token = await generateLiveKitToken({
+          identity: request.user!.id,
+          room: `voice:${channelId}`,
+          canPublish: hasPermission(perms.voice, VoicePermissions.SPEAK),
+          canPublishVideo: false,
+          canPublishScreen: false,
+          canSubscribe: true,
+        });
 
-        // Use the temp channel instead
-        channel = await db.channels.findById(tempChannelId);
-        actualChannelId = tempChannelId;
-        
-        if (!channel) {
-          return badRequest(reply, 'Failed to create temp channel');
-        }
+        await redis.joinVoiceChannel(request.user!.id, channelId);
+
+        // Schedule temp channel creation after 5 seconds
+        scheduleTempChannelCreation(request.user!.id, channelId, channel.server_id);
+
+        // Get user info for socket event
+        const user = await db.users.findById(request.user!.id);
+
+        // Check for custom join sound
+        const customJoinSound = await db.userVoiceSounds.findByUserServerType(request.user!.id, channel.server_id, 'join');
+
+        await publishEvent({
+          type: 'voice.join',
+          actorId: request.user!.id,
+          resourceId: `server:${channel.server_id}`,
+          payload: {
+            channel_id: channelId,
+            user: {
+              id: user.id,
+              username: user.username,
+              display_name: user.display_name || user.username,
+              avatar_url: user.avatar_url,
+            },
+            is_temp_channel: false,
+            custom_sound_url: customJoinSound?.sound_url || null,
+          },
+        });
+
+        return {
+          token,
+          url: getLiveKitUrl(),
+          room_name: `voice:${channelId}`,
+          channel_id: channelId,
+          is_temp_channel: false,
+          is_temp_generator: true,
+          bitrate: channel.bitrate || 64000,
+          user_limit: 0,
+          permissions: {
+            canSpeak: hasPermission(perms.voice, VoicePermissions.SPEAK),
+            canVideo: false,
+            canStream: false,
+            canMuteMembers: false,
+            canMoveMembers: false,
+            canDisconnectMembers: false,
+            canDeafenMembers: false,
+          },
+        };
       }
 
       if (channel.type !== 'voice' && channel.type !== 'music' && channel.type !== 'temp_voice') {
@@ -231,7 +310,6 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
             avatar_url: user.avatar_url,
           },
           is_temp_channel: channel.is_temp_channel || false,
-          redirected_from: channelId !== actualChannelId ? channelId : undefined,
           custom_sound_url: customJoinSound?.sound_url || null,
         },
       });
@@ -387,6 +465,9 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
       if (!channel) {
         return notFound(reply, 'Channel');
       }
+
+      // Cancel any pending temp channel creation (user left before 5s)
+      cancelPendingCreation(request.user!.id);
 
       // Remove from Redis voice state
       await redis.leaveVoiceChannel(request.user!.id);

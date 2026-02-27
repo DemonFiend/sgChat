@@ -36,6 +36,7 @@ import { giphyRoutes } from './routes/giphy.js';
 import { soundboardRoutes } from './routes/soundboard.js';
 import { initSocketIO } from './socket/index.js';
 import { cleanupEmptyTempChannels } from './services/tempChannels.js';
+import { checkAndMoveAfkUsers } from './services/afkService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -274,12 +275,22 @@ async function start() {
     }
   }, 30 * 1000);
 
+  // Start AFK check interval (every 30 seconds)
+  const afkCheckInterval = setInterval(async () => {
+    try {
+      await checkAndMoveAfkUsers();
+    } catch (err) {
+      fastify.log.error({ err }, 'AFK check failed');
+    }
+  }, 30 * 1000);
+
   // Graceful shutdown
   const gracefulShutdown = async (signal: string) => {
     fastify.log.info(`${signal} received, shutting down gracefully...`);
 
     // Stop cleanup intervals
     clearInterval(tempChannelCleanupInterval);
+    clearInterval(afkCheckInterval);
 
     await fastify.close();
     await shutdownEventBus();

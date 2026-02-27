@@ -11,6 +11,7 @@ import { Channel, Category, ChannelType } from './ChannelList';
 import { InlineParticipants } from '@/components/ui/VoiceParticipantsList';
 import { VoiceConnectedBar } from '@/components/ui/VoiceConnectedBar';
 import { ChannelSettingsModal } from '@/components/ui/ChannelSettingsModal';
+import { SoundboardPanel } from '@/components/ui/SoundboardPanel';
 
 // Sidebar resize constants
 const MIN_WIDTH = 192; // 240px - 20% = 192px
@@ -475,6 +476,11 @@ export function ServerSidebar(props: ServerSidebarProps) {
           </div>
         </Show>
       </div>
+
+      {/* Soundboard Panel - shown when in voice */}
+      <Show when={voiceStore.isConnected() && props.server?.id}>
+        <SoundboardPanel serverId={props.server!.id} />
+      </Show>
 
       {/* Voice Connected Bar - Fixed at bottom when in voice */}
       <VoiceConnectedBar />

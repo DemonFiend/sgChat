@@ -2,8 +2,10 @@ import { api } from '@/api';
 
 // Sound URLs
 const SOUNDS = {
-  voiceJoin: '/sounds/join.mp3',
-  voiceLeave: '/sounds/leave.mp3',
+  voiceJoin: '/sounds/JoinVoice.mp3',
+  voiceLeave: '/sounds/LeaveVoice.mp3',
+  streamJoin: '/sounds/stream-join.mp3',
+  streamLeave: '/sounds/stream-leave.mp3',
   notification: '/sounds/notification.mp3',
 } as const;
 
@@ -78,7 +80,7 @@ class SoundServiceClass {
     }
 
     // Check voice-specific setting
-    if ((type === 'voiceJoin' || type === 'voiceLeave') && !this.settings.enable_voice_join_sounds) {
+    if (['voiceJoin', 'voiceLeave', 'streamJoin', 'streamLeave'].includes(type) && !this.settings.enable_voice_join_sounds) {
       return;
     }
 
@@ -106,6 +108,20 @@ class SoundServiceClass {
    */
   playVoiceLeave(): void {
     this.play('voiceLeave');
+  }
+
+  /**
+   * Play stream viewer joined notification (host only)
+   */
+  playStreamJoin(): void {
+    this.play('streamJoin');
+  }
+
+  /**
+   * Play stream viewer left notification (host only)
+   */
+  playStreamLeave(): void {
+    this.play('streamLeave');
   }
 
   /**

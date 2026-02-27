@@ -658,6 +658,11 @@ export function MainLayout() {
         } else {
           soundService.playVoiceJoin();
         }
+
+        // Stream viewer notification: if WE are streaming, play stream-join for host
+        if (voiceStore.isScreenSharing()) {
+          soundService.playStreamJoin();
+        }
       }
     };
 
@@ -673,6 +678,11 @@ export function MainLayout() {
           soundService.playCustomSound(data.custom_sound_url);
         } else {
           soundService.playVoiceLeave();
+        }
+
+        // Stream viewer notification: if WE are streaming, play stream-leave for host
+        if (voiceStore.isScreenSharing()) {
+          soundService.playStreamLeave();
         }
       }
     };

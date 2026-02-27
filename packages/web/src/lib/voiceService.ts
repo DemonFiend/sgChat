@@ -70,6 +70,8 @@ class VoiceServiceClass {
   private outputVolume: number = 100;
   private connectionQualityInterval: ReturnType<typeof setInterval> | null = null;
   private isAutoRejoining: boolean = false;
+  private activityDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private activityListeners: Array<{ event: string; handler: () => void }> = [];
 
   /**
    * Set the container element for audio elements
@@ -367,6 +369,9 @@ class VoiceServiceClass {
       // 10. Save to localStorage for persistence across refresh
       this.saveVoiceChannel(targetChannelId, targetChannelName);
 
+      // 11. Start activity tracking for AFK prevention
+      this.setupActivityTracking();
+
     } catch (err: any) {
       console.error('[VoiceService] Failed to join voice channel:', err);
       voiceStore.setError(err?.message || 'Failed to join voice channel');
@@ -390,6 +395,9 @@ class VoiceServiceClass {
 
       // Stop connection quality monitoring
       this.stopConnectionQualityMonitoring();
+
+      // Stop activity tracking
+      this.teardownActivityTracking();
 
       // Stop screen share if active
       if (voiceStore.isScreenSharing()) {
@@ -536,6 +544,47 @@ class VoiceServiceClass {
     console.log('[VoiceService] Force moved to channel:', toChannelId);
     await this.leave();
     await this.join(toChannelId, toChannelName);
+  }
+
+  /**
+   * Send activity ping to server (debounced to max once per 60s)
+   */
+  private sendActivityPing(): void {
+    if (this.activityDebounceTimer) return; // Already debounced
+    socketService.emit('voice:activity', {});
+    this.activityDebounceTimer = setTimeout(() => {
+      this.activityDebounceTimer = null;
+    }, 60_000);
+  }
+
+  /**
+   * Set up UI interaction listeners that send activity pings to prevent AFK
+   */
+  private setupActivityTracking(): void {
+    this.teardownActivityTracking();
+
+    const handler = () => this.sendActivityPing();
+
+    const events = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'];
+    for (const event of events) {
+      document.addEventListener(event, handler, { passive: true });
+      this.activityListeners.push({ event, handler });
+    }
+  }
+
+  /**
+   * Remove activity tracking listeners
+   */
+  private teardownActivityTracking(): void {
+    for (const { event, handler } of this.activityListeners) {
+      document.removeEventListener(event, handler);
+    }
+    this.activityListeners = [];
+
+    if (this.activityDebounceTimer) {
+      clearTimeout(this.activityDebounceTimer);
+      this.activityDebounceTimer = null;
+    }
   }
 
   /**
@@ -984,6 +1033,11 @@ class VoiceServiceClass {
       if (this.room?.localParticipant) {
         const localIsSpeaking = speakerIds.has(this.room.localParticipant.identity);
         voiceStore.setSpeaking(localIsSpeaking);
+
+        // Speaking counts as activity for AFK prevention
+        if (localIsSpeaking) {
+          this.sendActivityPing();
+        }
       }
     });
 

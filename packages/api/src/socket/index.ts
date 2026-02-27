@@ -9,6 +9,7 @@ import { TextPermissions, VoicePermissions, hasPermission } from '@sgchat/shared
 import type { EventEnvelope, GatewayHello, GatewayReady, GatewayResume, GatewayResumed } from '@sgchat/shared';
 import { isBlocked } from '../routes/friends.js';
 import { createNotification } from '../routes/notifications.js';
+import { cancelPendingCreation } from '../services/tempChannelTimers.js';
 
 // ── Constants ──────────────────────────────────────────────────
 /** Heartbeat interval sent to client in gateway.hello (ms) */
@@ -267,6 +268,9 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       idempotency_key?: string;
     }) => {
       try {
+        // Update voice activity on message send
+        redis.updateVoiceActivity(userId).catch(() => {});
+
         if (!data.content || data.content.trim().length === 0) {
           socket.emit('error', { message: 'Message cannot be empty' });
           return;
@@ -485,8 +489,11 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
 
     // Handler for typing start (supports both dot and colon notation for backwards compat)
     const handleTypingStart = async (data: { channel_id: string }) => {
+      // Update voice activity on typing (user is active)
+      redis.updateVoiceActivity(userId).catch(() => {});
+
       const key = `${userId}:${data.channel_id}`;
-      
+
       if (typingTimeouts.has(key)) {
         clearTimeout(typingTimeouts.get(key)!);
       }
@@ -651,19 +658,37 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
             is_deafened: data.deafened,
           });
         }
+
+        // Update voice activity on join
+        await redis.updateVoiceActivity(userId);
       } catch (err) {
         fastify.log.error(err);
         socket.emit('error', { message: 'Failed to update voice state' });
       }
     });
 
+    // Voice activity ping (frontend sends this on user interaction while in voice)
+    socket.on('voice:activity', async () => {
+      try {
+        await redis.updateVoiceActivity(userId);
+      } catch (err) {
+        // Silently ignore activity tracking errors
+      }
+    });
+
     socket.on('voice:leave', async (data?: { channel_id?: string }) => {
       try {
+        // Cancel any pending temp channel creation
+        cancelPendingCreation(userId);
+
+        // Clear voice activity tracking
+        await redis.clearVoiceActivity(userId);
+
         const channelId = data?.channel_id || await redis.getUserVoiceChannel(userId);
         if (!channelId) return;
 
         const channel = await db.channels.findById(channelId);
-        
+
         await redis.leaveVoiceChannel(userId);
 
         if (channel) {
@@ -689,6 +714,9 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
 
         const channel = await db.channels.findById(channelId);
         if (!channel) return;
+
+        // Update voice activity (mute/deafen/stream toggle = user interaction)
+        await redis.updateVoiceActivity(userId);
 
         // Only update fields that were explicitly provided
         const stateUpdates: { is_muted?: boolean; is_deafened?: boolean; is_streaming?: boolean } = {};
@@ -946,6 +974,9 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       // Remove this session from presence tracking.
       // Only broadcast offline if this was the user's LAST session.
       const isLastSession = await redis.removeSession(userId, sessionId);
+
+      // Cancel any pending temp channel creation
+      cancelPendingCreation(userId);
 
       // Clean up voice state
       const voiceChannelId = await redis.getUserVoiceChannel(userId);
