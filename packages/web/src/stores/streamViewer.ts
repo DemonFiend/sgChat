@@ -12,10 +12,12 @@ function createStreamViewerStore() {
   const [activeStream, setActiveStream] = createSignal<StreamInfo | null>(null);
   const [videoElement, setVideoElement] = createSignal<HTMLVideoElement | null>(null);
   const [audioAvailableVersion, setAudioAvailableVersion] = createSignal(0);
+  const [isMinimized, setIsMinimized] = createSignal(false);
 
   const watchStream = (stream: StreamInfo) => {
     console.log('[StreamViewerStore] watchStream called:', stream);
     setActiveStream(stream);
+    setIsMinimized(false); // Always start in full view
     console.log('[StreamViewerStore] activeStream is now:', activeStream());
   };
 
@@ -23,6 +25,21 @@ function createStreamViewerStore() {
     console.log('[StreamViewerStore] leaveStream called');
     setActiveStream(null);
     setVideoElement(null);
+    setIsMinimized(false);
+  };
+
+  const minimizeStream = () => {
+    console.log('[StreamViewerStore] minimizeStream called');
+    setIsMinimized(true);
+  };
+
+  const maximizeStream = () => {
+    console.log('[StreamViewerStore] maximizeStream called');
+    setIsMinimized(false);
+  };
+
+  const toggleMinimize = () => {
+    setIsMinimized(prev => !prev);
   };
 
   const isWatchingStream = () => activeStream() !== null;
@@ -44,6 +61,10 @@ function createStreamViewerStore() {
     isWatchingStreamer,
     audioAvailableVersion,
     notifyAudioAvailable,
+    isMinimized,
+    minimizeStream,
+    maximizeStream,
+    toggleMinimize,
   };
 }
 

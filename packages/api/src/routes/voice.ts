@@ -98,6 +98,9 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
       // Get user info for socket event
       const user = await db.users.findById(request.user!.id);
 
+      // Check for custom join sound
+      const customJoinSound = await db.userVoiceSounds.findByUserServerType(request.user!.id, channel.server_id, 'join');
+
       // Publish voice.join event through event bus
       await publishEvent({
         type: 'voice.join',
@@ -113,6 +116,7 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
           },
           is_temp_channel: channel.is_temp_channel || false,
           redirected_from: isTempRedirect ? channel_id : undefined,
+          custom_sound_url: customJoinSound?.sound_url || null,
         },
       });
 
@@ -210,6 +214,9 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
       // Get user info for socket event
       const user = await db.users.findById(request.user!.id);
 
+      // Check for custom join sound
+      const customJoinSound = await db.userVoiceSounds.findByUserServerType(request.user!.id, channel.server_id, 'join');
+
       // Publish voice.join event through event bus
       await publishEvent({
         type: 'voice.join',
@@ -225,6 +232,7 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
           },
           is_temp_channel: channel.is_temp_channel || false,
           redirected_from: channelId !== actualChannelId ? channelId : undefined,
+          custom_sound_url: customJoinSound?.sound_url || null,
         },
       });
 
@@ -386,6 +394,9 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
       // Get user info for socket event
       const user = await db.users.findById(request.user!.id);
 
+      // Check for custom leave sound
+      const customLeaveSound = await db.userVoiceSounds.findByUserServerType(request.user!.id, channel.server_id, 'leave');
+
       // Publish voice.leave event
       await publishEvent({
         type: 'voice.leave',
@@ -399,6 +410,7 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
             display_name: user.display_name || user.username,
             avatar_url: user.avatar_url,
           },
+          custom_sound_url: customLeaveSound?.sound_url || null,
         },
       });
 

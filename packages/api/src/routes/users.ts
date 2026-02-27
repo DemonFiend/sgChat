@@ -11,6 +11,9 @@ import { notFound, badRequest, unauthorized, forbidden } from '../utils/errors.j
 import argon2 from 'argon2';
 import { getDefaultServer } from './server.js';
 import { processAvatarImage, validateImage } from '../lib/imageProcessor.js';
+import { nanoid } from 'nanoid';
+
+const ALLOWED_AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/ogg'];
 
 // ── A2: Presence coalescing ─────────────────────────────────────
 // Prevents rapid-fire presence events by throttling per-user updates.
@@ -1137,6 +1140,90 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
         request_direction: u.has_outgoing_request ? 'outgoing' : u.has_incoming_request ? 'incoming' : null,
         is_blocked: u.is_blocked,
       }));
+    },
+  });
+
+  // ── Custom Join/Leave Voice Sounds ────────────────────────────
+
+  // GET /users/me/servers/:serverId/sounds - Get user's join/leave sounds
+  fastify.get('/me/servers/:serverId/sounds', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { serverId } = request.params as { serverId: string };
+      const sounds = await db.userVoiceSounds.findByUserAndServer(request.user!.id, serverId);
+      const result: Record<string, any> = { join: null, leave: null };
+      for (const s of sounds) {
+        result[s.sound_type] = s;
+      }
+      return result;
+    },
+  });
+
+  // PUT /users/me/servers/:serverId/sounds/:type - Upload join or leave sound
+  fastify.put('/me/servers/:serverId/sounds/:type', {
+    onRequest: [authenticate],
+    config: {
+      rateLimit: { max: 10, timeWindow: '1 minute' },
+    },
+    handler: async (request, reply) => {
+      const { serverId, type } = request.params as { serverId: string; type: string };
+
+      if (type !== 'join' && type !== 'leave') {
+        return badRequest(reply, 'Type must be "join" or "leave"');
+      }
+
+      const member = await db.members.findByUserAndServer(request.user!.id, serverId);
+      if (!member) return forbidden(reply, 'Not a server member');
+
+      const data = await request.file();
+      if (!data) return badRequest(reply, 'No file uploaded');
+
+      if (!ALLOWED_AUDIO_TYPES.includes(data.mimetype)) {
+        return badRequest(reply, `Audio type not allowed: ${data.mimetype}`);
+      }
+
+      const buffer = await data.toBuffer();
+      const maxSize = 1 * 1024 * 1024; // 1MB
+      if (buffer.length > maxSize) {
+        return badRequest(reply, 'File too large. Maximum size is 1MB');
+      }
+
+      // Get duration from form field
+      const fields = data.fields as any;
+      const duration = parseFloat(fields?.duration?.value || '0');
+      if (duration <= 0 || duration > 5) {
+        return badRequest(reply, 'Duration must be between 0 and 5 seconds');
+      }
+
+      const ext = data.filename.split('.').pop() || 'mp3';
+      const storagePath = `user-sounds/${request.user!.id}/${serverId}/${type}-${nanoid(12)}.${ext}`;
+      const url = await storage.uploadFile(buffer, storagePath, data.mimetype);
+
+      const sound = await db.userVoiceSounds.upsert({
+        user_id: request.user!.id,
+        server_id: serverId,
+        sound_type: type,
+        sound_url: url,
+        duration_seconds: duration,
+        file_size_bytes: buffer.length,
+      });
+
+      return sound;
+    },
+  });
+
+  // DELETE /users/me/servers/:serverId/sounds/:type - Remove custom sound
+  fastify.delete('/me/servers/:serverId/sounds/:type', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { serverId, type } = request.params as { serverId: string; type: string };
+
+      if (type !== 'join' && type !== 'leave') {
+        return badRequest(reply, 'Type must be "join" or "leave"');
+      }
+
+      await db.userVoiceSounds.delete(request.user!.id, serverId, type);
+      return { message: 'Sound removed' };
     },
   });
 };

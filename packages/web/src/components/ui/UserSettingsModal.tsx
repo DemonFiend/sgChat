@@ -3,7 +3,7 @@ import { Portal } from 'solid-js/web';
 import { useNavigate } from '@solidjs/router';
 import { clsx } from 'clsx';
 import { authStore } from '@/stores/auth';
-import { networkStore } from '@/stores/network';
+import { networkStore, getEffectiveUrl } from '@/stores/network';
 import { theme, setTheme, themeNames, type Theme } from '@/stores/theme';
 import { Avatar } from './Avatar';
 import { AvatarPicker } from './AvatarPicker';
@@ -1123,11 +1123,219 @@ function VoiceTab() {
           </div>
         </div>
 
+        {/* Custom Join/Leave Sounds */}
+        <div class="border-t border-border-subtle pt-6">
+          <h3 class="text-sm font-bold text-text-primary mb-4">Custom Join/Leave Sounds</h3>
+          <p class="text-sm text-text-muted mb-4">Upload custom sounds that play when you join or leave a voice channel.</p>
+          <CustomVoiceSoundsSection />
+        </div>
+
         {/* Saving indicator */}
         <Show when={saving()}>
           <p class="text-xs text-text-muted">Saving...</p>
         </Show>
       </div>
     </div>
+  );
+}
+
+function CustomVoiceSoundsSection() {
+  const [joinSound, setJoinSound] = createSignal<any>(null);
+  const [leaveSound, setLeaveSound] = createSignal<any>(null);
+  const [uploading, setUploading] = createSignal<string | null>(null);
+  const [error, setError] = createSignal<string | null>(null);
+  const [serverId, setServerId] = createSignal<string | null>(null);
+
+  onMount(async () => {
+    try {
+      // Fetch the server ID (single-tenant)
+      const serverData = await api.get<any>('/server');
+      const sid = serverData?.id;
+      if (!sid) return;
+      setServerId(sid);
+
+      const response = await api.get<{ join: any; leave: any }>(`/users/me/servers/${sid}/sounds`);
+      setJoinSound(response.join);
+      setLeaveSound(response.leave);
+    } catch (err) {
+      console.error('[CustomSounds] Failed to fetch sounds:', err);
+    }
+  });
+
+  const handleUpload = (type: 'join' | 'leave') => {
+    const sid = serverId();
+    if (!sid) return;
+
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'audio/mpeg,audio/wav,audio/ogg,.mp3,.wav,.ogg';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+
+      setError(null);
+
+      if (file.size > 1 * 1024 * 1024) {
+        setError('File too large. Max 1MB');
+        return;
+      }
+
+      // Measure duration
+      let duration: number;
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const audioCtx = new AudioContext();
+        const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+        duration = audioBuffer.duration;
+        audioCtx.close();
+      } catch {
+        setError('Could not read audio file');
+        return;
+      }
+
+      if (duration > 5) {
+        setError(`Sound too long. Max 5s (got ${duration.toFixed(1)}s)`);
+        return;
+      }
+
+      setUploading(type);
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('duration', duration.toString());
+
+        const token = authStore.getAccessToken();
+        const response = await fetch(
+          `${getEffectiveUrl(null)}/users/me/servers/${sid}/sounds/${type}`,
+          {
+            method: 'PUT',
+            headers: { ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
+            credentials: 'include',
+            body: formData,
+          }
+        );
+
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({ error: 'Upload failed' }));
+          setError(err.error || err.message || 'Upload failed');
+          return;
+        }
+
+        const sound = await response.json();
+        if (type === 'join') setJoinSound(sound);
+        else setLeaveSound(sound);
+      } catch (err: any) {
+        setError(err.message || 'Upload failed');
+      } finally {
+        setUploading(null);
+      }
+    };
+    input.click();
+  };
+
+  const handleDelete = async (type: 'join' | 'leave') => {
+    const sid = serverId();
+    if (!sid) return;
+    try {
+      await api.delete(`/users/me/servers/${sid}/sounds/${type}`);
+      if (type === 'join') setJoinSound(null);
+      else setLeaveSound(null);
+    } catch (err) {
+      console.error('[CustomSounds] Failed to delete sound:', err);
+    }
+  };
+
+  const handlePreview = (url: string) => {
+    const audio = new Audio(url);
+    audio.volume = 0.5;
+    audio.play().catch(() => {});
+  };
+
+  return (
+    <Show when={serverId()} fallback={<p class="text-sm text-text-muted">Connect to a server to manage custom sounds.</p>}>
+      <div class="space-y-3">
+        <Show when={error()}>
+          <div class="text-xs text-red-400">{error()}</div>
+        </Show>
+
+        {/* Join Sound */}
+        <div class="flex items-center justify-between p-3 bg-bg-secondary rounded-lg">
+          <div>
+            <div class="text-sm font-medium text-text-primary">Join Sound</div>
+            <Show when={joinSound()} fallback={
+              <div class="text-xs text-text-muted">No custom sound set (default will play)</div>
+            }>
+              <div class="text-xs text-text-secondary">
+                {joinSound()?.duration_seconds?.toFixed(1)}s
+                <button
+                  class="ml-2 text-accent-primary hover:underline"
+                  onClick={() => handlePreview(joinSound().sound_url)}
+                >
+                  Preview
+                </button>
+              </div>
+            </Show>
+          </div>
+          <div class="flex items-center gap-2">
+            <Show when={joinSound()}>
+              <button
+                class="text-xs px-2 py-1 text-red-400 hover:text-red-300 transition-colors"
+                onClick={() => handleDelete('join')}
+              >
+                Remove
+              </button>
+            </Show>
+            <button
+              class="text-xs px-3 py-1 bg-accent-primary hover:bg-accent-primary/80 text-white rounded transition-colors disabled:opacity-50"
+              onClick={() => handleUpload('join')}
+              disabled={uploading() === 'join'}
+            >
+              {uploading() === 'join' ? 'Uploading...' : joinSound() ? 'Replace' : 'Upload'}
+            </button>
+          </div>
+        </div>
+
+        {/* Leave Sound */}
+        <div class="flex items-center justify-between p-3 bg-bg-secondary rounded-lg">
+          <div>
+            <div class="text-sm font-medium text-text-primary">Leave Sound</div>
+            <Show when={leaveSound()} fallback={
+              <div class="text-xs text-text-muted">No custom sound set (default will play)</div>
+            }>
+              <div class="text-xs text-text-secondary">
+                {leaveSound()?.duration_seconds?.toFixed(1)}s
+                <button
+                  class="ml-2 text-accent-primary hover:underline"
+                  onClick={() => handlePreview(leaveSound().sound_url)}
+                >
+                  Preview
+                </button>
+              </div>
+            </Show>
+          </div>
+          <div class="flex items-center gap-2">
+            <Show when={leaveSound()}>
+              <button
+                class="text-xs px-2 py-1 text-red-400 hover:text-red-300 transition-colors"
+                onClick={() => handleDelete('leave')}
+              >
+                Remove
+              </button>
+            </Show>
+            <button
+              class="text-xs px-3 py-1 bg-accent-primary hover:bg-accent-primary/80 text-white rounded transition-colors disabled:opacity-50"
+              onClick={() => handleUpload('leave')}
+              disabled={uploading() === 'leave'}
+            >
+              {uploading() === 'leave' ? 'Uploading...' : leaveSound() ? 'Replace' : 'Upload'}
+            </button>
+          </div>
+        </div>
+
+        <p class="text-[11px] text-text-muted">
+          Accepted formats: MP3, WAV, OGG. Max 1MB, max 5 seconds.
+        </p>
+      </div>
+    </Show>
   );
 }

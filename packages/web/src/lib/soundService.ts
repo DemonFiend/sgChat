@@ -114,6 +114,27 @@ class SoundServiceClass {
   playNotification(): void {
     this.play('notification');
   }
+
+  /**
+   * Play a custom sound from a URL (for soundboard, custom join/leave sounds)
+   */
+  async playCustomSound(url: string): Promise<void> {
+    if (!this.settingsLoaded) {
+      await this.loadSettings();
+    }
+
+    if (!this.settings.enable_sounds) {
+      return;
+    }
+
+    try {
+      const audio = new Audio(url);
+      audio.volume = (this.settings.audio_output_volume / 100) * 0.5;
+      await audio.play();
+    } catch (err) {
+      console.debug('[SoundService] Could not play custom sound:', err);
+    }
+  }
 }
 
 // Export singleton instance

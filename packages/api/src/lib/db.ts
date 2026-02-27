@@ -789,6 +789,95 @@ export const db = {
     },
   },
 
+  // Soundboard
+  soundboard: {
+    async findByServer(serverId: string) {
+      return sql`
+        SELECT ss.*, u.username as uploader_username
+        FROM soundboard_sounds ss
+        LEFT JOIN users u ON ss.uploader_id = u.id
+        WHERE ss.server_id = ${serverId}
+        ORDER BY ss.created_at DESC
+      `;
+    },
+    async findById(id: string) {
+      const [sound] = await sql`SELECT * FROM soundboard_sounds WHERE id = ${id}`;
+      return sound;
+    },
+    async countByUploaderAndServer(uploaderId: string, serverId: string) {
+      const [result] = await sql`
+        SELECT COUNT(*)::int as count FROM soundboard_sounds
+        WHERE uploader_id = ${uploaderId} AND server_id = ${serverId}
+      `;
+      return result.count;
+    },
+    async create(data: {
+      server_id: string;
+      uploader_id: string;
+      name: string;
+      emoji?: string;
+      sound_url: string;
+      duration_seconds: number;
+      file_size_bytes: number;
+    }) {
+      const [sound] = await sql`
+        INSERT INTO soundboard_sounds (server_id, uploader_id, name, emoji, sound_url, duration_seconds, file_size_bytes)
+        VALUES (${data.server_id}, ${data.uploader_id}, ${data.name}, ${data.emoji || null}, ${data.sound_url}, ${data.duration_seconds}, ${data.file_size_bytes})
+        RETURNING *
+      `;
+      return sound;
+    },
+    async delete(id: string) {
+      await sql`DELETE FROM soundboard_sounds WHERE id = ${id}`;
+    },
+    async incrementPlayCount(id: string) {
+      await sql`UPDATE soundboard_sounds SET play_count = play_count + 1 WHERE id = ${id}`;
+    },
+  },
+
+  // User Voice Sounds (custom join/leave)
+  userVoiceSounds: {
+    async findByUserAndServer(userId: string, serverId: string) {
+      return sql`
+        SELECT * FROM user_voice_sounds
+        WHERE user_id = ${userId} AND server_id = ${serverId}
+      `;
+    },
+    async findByUserServerType(userId: string, serverId: string, soundType: string) {
+      const [sound] = await sql`
+        SELECT * FROM user_voice_sounds
+        WHERE user_id = ${userId} AND server_id = ${serverId} AND sound_type = ${soundType}
+      `;
+      return sound;
+    },
+    async upsert(data: {
+      user_id: string;
+      server_id: string;
+      sound_type: string;
+      sound_url: string;
+      duration_seconds: number;
+      file_size_bytes: number;
+    }) {
+      const [sound] = await sql`
+        INSERT INTO user_voice_sounds (user_id, server_id, sound_type, sound_url, duration_seconds, file_size_bytes)
+        VALUES (${data.user_id}, ${data.server_id}, ${data.sound_type}, ${data.sound_url}, ${data.duration_seconds}, ${data.file_size_bytes})
+        ON CONFLICT (user_id, server_id, sound_type) DO UPDATE SET
+          sound_url = ${data.sound_url},
+          duration_seconds = ${data.duration_seconds},
+          file_size_bytes = ${data.file_size_bytes},
+          created_at = NOW()
+        RETURNING *
+      `;
+      return sound;
+    },
+    async delete(userId: string, serverId: string, soundType: string) {
+      await sql`
+        DELETE FROM user_voice_sounds
+        WHERE user_id = ${userId} AND server_id = ${serverId} AND sound_type = ${soundType}
+      `;
+    },
+  },
+
   // Helper to run transactions
   transaction: sql.begin,
 

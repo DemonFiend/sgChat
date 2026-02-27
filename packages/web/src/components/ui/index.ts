@@ -26,3 +26,5 @@ export { DMVoiceControls, DMCallStatusBar } from './DMVoiceControls';
 export { SessionExpiredOverlay } from './SessionExpiredOverlay';
 export { StreamViewer } from './StreamViewer';
 export { ChannelSettingsModal } from './ChannelSettingsModal';
+export { SoundboardPanel } from './SoundboardPanel';
+export { NotificationToast } from './NotificationToast';

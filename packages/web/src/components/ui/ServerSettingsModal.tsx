@@ -6,7 +6,7 @@ import { permissions } from '@/stores';
 import { ServerPopupConfigForm } from './ServerPopupConfigForm';
 import { SERVER_TIMEZONES } from '@/lib/timezones';
 
-type ServerSettingsTab = 'overview' | 'popup-config' | 'roles' | 'members' | 'channels' | 'invites' | 'bans' | 'audit-log';
+type ServerSettingsTab = 'overview' | 'popup-config' | 'roles' | 'members' | 'channels' | 'soundboard' | 'invites' | 'bans' | 'audit-log';
 
 interface ServerSettings {
   motd: string;
@@ -97,6 +97,16 @@ const tabs: { id: ServerSettingsTab; label: string; icon: JSX.Element; permissio
       </svg>
     ),
     permission: 'manage_channels',
+  },
+  {
+    id: 'soundboard',
+    label: 'Soundboard',
+    icon: (
+      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+      </svg>
+    ),
+    permission: 'manage_server',
   },
   {
     id: 'invites',
@@ -282,6 +292,9 @@ export function ServerSettingsModal(props: ServerSettingsModalProps) {
                     </Show>
                     <Show when={activeTab() === 'bans'}>
                       <BansTab />
+                    </Show>
+                    <Show when={activeTab() === 'soundboard'}>
+                      <SoundboardSettingsTab serverId={serverData()?.id || ''} />
                     </Show>
                     <Show when={activeTab() === 'audit-log'}>
                       <AuditLogTab />
@@ -2323,6 +2336,145 @@ function AuditLogTab() {
             </For>
           </div>
         </Show>
+      </Show>
+    </div>
+  );
+}
+
+// Soundboard Settings Tab
+interface SoundboardSettingsTabProps {
+  serverId: string;
+}
+
+function SoundboardSettingsTab(props: SoundboardSettingsTabProps) {
+  const [config, setConfig] = createSignal({
+    enabled: true,
+    max_sounds_per_user: 3,
+    max_sound_duration_seconds: 5,
+    max_sound_size_bytes: 1048576,
+  });
+  const [loading, setLoading] = createSignal(true);
+  const [saving, setSaving] = createSignal(false);
+  const [saved, setSaved] = createSignal(false);
+
+  const fetchConfig = async () => {
+    try {
+      setLoading(true);
+      const response = await api.get<any>(`/servers/${props.serverId}/soundboard/settings`);
+      setConfig(response);
+    } catch (err) {
+      console.error('[SoundboardSettings] Failed to fetch config:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  createEffect(() => {
+    if (props.serverId) {
+      fetchConfig();
+    }
+  });
+
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      const updated = await api.patch<any>(`/servers/${props.serverId}/soundboard/settings`, config());
+      setConfig(updated);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      console.error('[SoundboardSettings] Failed to save config:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div class="space-y-6">
+      <div>
+        <h3 class="text-lg font-semibold text-text-primary mb-1">Soundboard Settings</h3>
+        <p class="text-sm text-text-secondary">Configure the soundboard for this server.</p>
+      </div>
+
+      <Show when={!loading()} fallback={<div class="text-text-muted">Loading...</div>}>
+        <div class="space-y-4">
+          {/* Enable toggle */}
+          <label class="flex items-center justify-between p-3 bg-bg-secondary rounded-lg">
+            <div>
+              <div class="text-sm font-medium text-text-primary">Enable Soundboard</div>
+              <div class="text-xs text-text-secondary">Allow members to upload and play sounds</div>
+            </div>
+            <input
+              type="checkbox"
+              checked={config().enabled}
+              onChange={(e) => setConfig(prev => ({ ...prev, enabled: e.currentTarget.checked }))}
+              class="w-5 h-5 rounded"
+            />
+          </label>
+
+          {/* Max sounds per user */}
+          <div class="p-3 bg-bg-secondary rounded-lg">
+            <label class="block text-sm font-medium text-text-primary mb-1">
+              Max Sounds Per User
+            </label>
+            <input
+              type="number"
+              min="1"
+              max="10"
+              value={config().max_sounds_per_user}
+              onInput={(e) => setConfig(prev => ({ ...prev, max_sounds_per_user: parseInt(e.currentTarget.value) || 3 }))}
+              class="w-20 px-2 py-1 bg-bg-primary border border-border-primary rounded text-sm text-text-primary"
+            />
+            <span class="text-xs text-text-muted ml-2">(1-10)</span>
+          </div>
+
+          {/* Max duration */}
+          <div class="p-3 bg-bg-secondary rounded-lg">
+            <label class="block text-sm font-medium text-text-primary mb-1">
+              Max Sound Duration (seconds)
+            </label>
+            <input
+              type="number"
+              min="1"
+              max="10"
+              value={config().max_sound_duration_seconds}
+              onInput={(e) => setConfig(prev => ({ ...prev, max_sound_duration_seconds: parseInt(e.currentTarget.value) || 5 }))}
+              class="w-20 px-2 py-1 bg-bg-primary border border-border-primary rounded text-sm text-text-primary"
+            />
+            <span class="text-xs text-text-muted ml-2">(1-10 seconds)</span>
+          </div>
+
+          {/* Max file size */}
+          <div class="p-3 bg-bg-secondary rounded-lg">
+            <label class="block text-sm font-medium text-text-primary mb-1">
+              Max Sound File Size (MB)
+            </label>
+            <input
+              type="number"
+              min="0.1"
+              max="10"
+              step="0.1"
+              value={Math.round(config().max_sound_size_bytes / 1024 / 1024 * 10) / 10}
+              onInput={(e) => setConfig(prev => ({ ...prev, max_sound_size_bytes: Math.round((parseFloat(e.currentTarget.value) || 1) * 1024 * 1024) }))}
+              class="w-20 px-2 py-1 bg-bg-primary border border-border-primary rounded text-sm text-text-primary"
+            />
+            <span class="text-xs text-text-muted ml-2">(0.1-10 MB)</span>
+          </div>
+
+          {/* Save button */}
+          <div class="flex items-center gap-3">
+            <button
+              class="px-4 py-2 bg-accent-primary hover:bg-accent-primary/80 text-white rounded text-sm font-medium disabled:opacity-50 transition-colors"
+              onClick={handleSave}
+              disabled={saving()}
+            >
+              {saving() ? 'Saving...' : 'Save Changes'}
+            </button>
+            <Show when={saved()}>
+              <span class="text-sm text-green-400">Saved!</span>
+            </Show>
+          </div>
+        </div>
       </Show>
     </div>
   );

@@ -26,12 +26,12 @@ Features may experience visual bugs or unexpected behaviour, please report this 
 - **Push Notifications**: ntfy
 
 ### Frontend
-- **Desktop Client**: Tauri 2.0 + React + TypeScript + Vite
+- **Desktop Client**: Tauri 2.0 + SolidJS + TypeScript + Vite
 - **Mobile Client**: React Native (V2)
-- **Web Fallback**: React + TypeScript
+- **Web Client**: SolidJS + TypeScript + Vite
 - **Admin Panel**: React-admin
 - **Styling**: Tailwind CSS + CSS Variables
-- **State Management**: Zustand
+- **State Management**: SolidJS Signals + Custom Stores
 
 ## 📋 Features Implemented
 
@@ -56,6 +56,16 @@ Features may experience visual bugs or unexpected behaviour, please report this 
 ✅ AFK channel auto-move  
 ✅ Voice participant management (move, disconnect, mute)  
 ✅ User limits and bitrate configuration  
+
+### 📺 Live Streaming / Screen Share
+✅ Full-screen stream viewer overlay  
+✅ Host preview (see your own stream)  
+✅ Picture-in-Picture (PiP) mode via browser API  
+✅ Minimize to audio-only mode (listen while browsing)  
+✅ Stream audio controls (volume slider, mute)  
+✅ Live viewer count display  
+✅ Quality selection (720p, 1080p, Native)  
+✅ Browser fullscreen support  
 
 ### 💌 Direct Messages
 ✅ DM channels with auto-creation on friendship  
@@ -108,6 +118,8 @@ Features may experience visual bugs or unexpected behaviour, please report this 
 ✅ Idempotency support (Idempotency-Key header)  
 ✅ Redis caching (sessions, presence, voice state)  
 ✅ Health checks  
+✅ Client-side message caching with ETag/hash-based sync  
+✅ Debounced ACK requests (reduces server load)  
 
 ### 🔔 Notifications
 ✅ Push notifications via ntfy  
@@ -147,6 +159,26 @@ Features may experience visual bugs or unexpected behaviour, please report this 
 - [ ] Audio Check
 - [ ] Bringing in Video (Webcam) 
 - [ ] Virtual backgrounds and effects
+
+## ⚠️ Known Limitations
+
+### Screen Share Audio Capture (Browser Limitation)
+The `getDisplayMedia()` browser API has inherent limitations for audio capture:
+
+| Share Type | Audio Behavior |
+|------------|----------------|
+| **Browser Tab** | Captures tab audio only |
+| **Window** | No isolated app audio (system audio or nothing) |
+| **Entire Screen** | Captures all system audio |
+
+**Why can't I share audio from a specific app (Spotify, YouTube, etc.)?**
+
+Browsers intentionally do not expose per-application audio routing for privacy and security reasons. The `getDisplayMedia()` API cannot isolate audio streams from individual applications.
+
+**Workarounds:**
+- Share a **browser tab** if your content is web-based (captures that tab's audio only)
+- Use **system audio** and close other audio sources
+- For advanced use cases, a native desktop application or browser extension with elevated permissions would be required
 
 ## 🚀 Getting Started
 

@@ -12,11 +12,12 @@ import {
   type ChannelInfo,
   type TypingUser
 } from '@/components/layout';
-import { UserSettingsModal, ServerSettingsModal, ClaimAdminModal, TransferOwnershipModal, UnclaimedServerBanner, ServerWelcomePopup, StreamViewer } from '@/components/ui';
+import { UserSettingsModal, ServerSettingsModal, ClaimAdminModal, TransferOwnershipModal, UnclaimedServerBanner, ServerWelcomePopup, StreamViewer, NotificationToast } from '@/components/ui';
 import { api } from '@/api';
 import { authStore } from '@/stores/auth';
 import { permissions, voiceStore, serverPopupStore, messageCache } from '@/stores';
 import { streamViewerStore } from '@/stores/streamViewer';
+import { toastStore } from '@/stores/toastNotifications';
 import { socketService } from '@/lib/socket';
 import { voiceService } from '@/lib/voiceService';
 import { soundService } from '@/lib/soundService';
@@ -643,6 +644,7 @@ export function MainLayout() {
         display_name?: string | null;
         avatar_url?: string | null;
       };
+      custom_sound_url?: string | null;
     }) => {
       console.log('[MainLayout] Voice user joined:', data.user.username, 'in channel:', data.channel_id);
       voiceStore.addParticipant(data.channel_id, data.user);
@@ -651,11 +653,15 @@ export function MainLayout() {
       const currentUserId = authStore.state().user?.id;
       const currentChannelId = voiceStore.currentChannelId();
       if (currentChannelId === data.channel_id && data.user.id !== currentUserId) {
-        soundService.playVoiceJoin();
+        if (data.custom_sound_url) {
+          soundService.playCustomSound(data.custom_sound_url);
+        } else {
+          soundService.playVoiceJoin();
+        }
       }
     };
 
-    const handleVoiceUserLeft = (data: { channel_id: string; user_id: string }) => {
+    const handleVoiceUserLeft = (data: { channel_id: string; user_id: string; custom_sound_url?: string | null }) => {
       console.log('[MainLayout] Voice user left:', data.user_id, 'from channel:', data.channel_id);
       voiceStore.removeParticipant(data.channel_id, data.user_id);
 
@@ -663,7 +669,11 @@ export function MainLayout() {
       const currentUserId = authStore.state().user?.id;
       const currentChannelId = voiceStore.currentChannelId();
       if (currentChannelId === data.channel_id && data.user_id !== currentUserId) {
-        soundService.playVoiceLeave();
+        if (data.custom_sound_url) {
+          soundService.playCustomSound(data.custom_sound_url);
+        } else {
+          soundService.playVoiceLeave();
+        }
       }
     };
 
@@ -724,6 +734,41 @@ export function MainLayout() {
         voiceService.leave();
       }
     });
+  });
+
+  // Socket event handler for DM toast notifications
+  createEffect(() => {
+    const handleDMMessage = (data: { from_user_id: string; message: any }) => {
+      const currentUserId = authStore.state().user?.id;
+      // Don't show toast for own messages
+      if (data.message?.author?.id === currentUserId) return;
+      // Only show toast if not currently on the DM route
+      if (!isDMRoute()) {
+        const author = data.message?.author;
+        toastStore.addToast({
+          type: 'dm',
+          title: author?.display_name || author?.username || 'Unknown',
+          message: (data.message?.content || '').slice(0, 100),
+          avatarUrl: author?.avatar_url,
+          onClick: () => navigate('/channels/@me'),
+        });
+        soundService.playNotification();
+      }
+    };
+
+    socketService.on('dm.message.new', handleDMMessage);
+    onCleanup(() => socketService.off('dm.message.new', handleDMMessage as any));
+  });
+
+  // Socket event handler for soundboard play
+  createEffect(() => {
+    const handleSoundboardPlay = (data: { sound_url: string; sound_name: string; played_by: string }) => {
+      console.log('[MainLayout] Soundboard play:', data.sound_name, 'by', data.played_by);
+      soundService.playCustomSound(data.sound_url);
+    };
+
+    socketService.on('soundboard.play', handleSoundboardPlay);
+    onCleanup(() => socketService.off('soundboard.play', handleSoundboardPlay as any));
   });
 
   // Fetch channel data when channelId changes (with hash-based caching)
@@ -1113,6 +1158,9 @@ export function MainLayout() {
       {/* Server Welcome Popup */}
       <ServerWelcomePopup />
 
+      {/* Toast Notifications (DM alerts, etc.) */}
+      <NotificationToast />
+
       {/* Stream Viewer - full-screen overlay for watching streams */}
       <Show when={streamViewerStore.activeStream()}>
         {(stream) => (
@@ -1125,6 +1173,47 @@ export function MainLayout() {
             videoElement={streamViewerStore.videoElement()}
             onClose={streamViewerStore.leaveStream}
           />
+        )}
+      </Show>
+
+      {/* Minimized stream indicator bar - shows when stream is minimized */}
+      <Show when={streamViewerStore.activeStream() && streamViewerStore.isMinimized()}>
+        {(stream) => (
+          <div class="fixed bottom-0 left-0 right-0 z-[60] bg-gray-900 border-t border-gray-700 px-4 py-2 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="flex items-center gap-2 bg-red-600 rounded px-2 py-1">
+                <span class="w-2 h-2 bg-white rounded-full animate-pulse" />
+                <span class="text-white text-xs font-semibold">LIVE</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <svg class="w-5 h-5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                </svg>
+                <span class="text-white text-sm">
+                  Listening to {streamViewerStore.activeStream()?.streamerName}'s stream
+                </span>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <button
+                onClick={() => streamViewerStore.maximizeStream()}
+                class="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg font-medium transition-colors flex items-center gap-2"
+                title="Expand Stream"
+              >
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
+                </svg>
+                Expand
+              </button>
+              <button
+                onClick={() => streamViewerStore.leaveStream()}
+                class="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-sm rounded-lg font-medium transition-colors"
+                title="Leave Stream"
+              >
+                Leave
+              </button>
+            </div>
+          </div>
         )}
       </Show>
     </div>

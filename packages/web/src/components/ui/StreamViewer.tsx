@@ -259,6 +259,56 @@ export function StreamViewer(props: StreamViewerProps) {
     }, 3000);
   };
 
+  // Handle leaving the stream properly
+  const handleLeave = async () => {
+    console.log('[StreamViewer] handleLeave called');
+    
+    // Exit fullscreen first if active
+    if (document.fullscreenElement) {
+      try {
+        await document.exitFullscreen();
+      } catch (err) {
+        console.error('[StreamViewer] Error exiting fullscreen:', err);
+      }
+    }
+    
+    // Exit PiP if active
+    if (document.pictureInPictureElement) {
+      try {
+        await document.exitPictureInPicture();
+      } catch (err) {
+        console.error('[StreamViewer] Error exiting PiP:', err);
+      }
+    }
+    
+    // Detach audio before leaving
+    if (streamAudioElement) {
+      console.log('[StreamViewer] Detaching audio on leave');
+      voiceService.detachScreenShareAudio(props.streamerId);
+      streamAudioElement = null;
+    }
+    
+    // Now call the close handler
+    props.onClose();
+  };
+
+  // Handle minimize - hides the full view but keeps audio playing
+  const handleMinimize = async () => {
+    console.log('[StreamViewer] handleMinimize called, isPiP:', isPiP());
+    
+    // Exit fullscreen if active
+    if (document.fullscreenElement) {
+      try {
+        await document.exitFullscreen();
+      } catch (err) {
+        console.error('[StreamViewer] Error exiting fullscreen:', err);
+      }
+    }
+    
+    // Minimize the stream viewer
+    streamViewerStore.minimizeStream();
+  };
+
   onCleanup(() => {
     clearTimeout(controlsTimeout);
     // Ensure screen share audio is cleaned up
@@ -270,16 +320,17 @@ export function StreamViewer(props: StreamViewerProps) {
 
   return (
     <Portal>
-      {/* Full-screen Stream Viewer overlay */}
-      <div
-        ref={fullViewContainerRef}
-        class={clsx(
-          'fixed inset-0 z-[55] flex flex-col bg-black overflow-hidden',
-          isFullscreen() && 'z-[100]'
-        )}
-        onMouseMove={handleMouseMove}
-        onMouseLeave={() => setShowControls(false)}
-      >
+      {/* Full-screen Stream Viewer overlay - hidden when minimized */}
+      <Show when={!streamViewerStore.isMinimized()}>
+        <div
+          ref={fullViewContainerRef}
+          class={clsx(
+            'fixed inset-0 z-[55] flex flex-col bg-black overflow-hidden',
+            isFullscreen() && 'z-[100]'
+          )}
+          onMouseMove={handleMouseMove}
+          onMouseLeave={() => setShowControls(false)}
+        >
         {/* Video area */}
         <div class="flex-1 flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-purple-900/20 to-black">
           <Show 
@@ -483,11 +534,25 @@ export function StreamViewer(props: StreamViewerProps) {
                 </Show>
               </button>
               
+              {/* Minimize (to audio-only or PiP) */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleMinimize();
+                }}
+                class="text-white hover:text-purple-400 transition-colors"
+                title="Minimize (keep audio)"
+              >
+                <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              
               {/* Leave stream */}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  props.onClose();
+                  handleLeave();
                 }}
                 class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
                 title="Leave Stream"
@@ -501,6 +566,7 @@ export function StreamViewer(props: StreamViewerProps) {
           </div>
         </div>
       </div>
+      </Show>
     </Portal>
   );
 }

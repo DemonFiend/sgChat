@@ -459,6 +459,10 @@ export type EventType =
   | 'channel.overwrite.updated'
   // Message reactions
   | 'message.reaction'
+  // Soundboard
+  | 'soundboard.play'
+  | 'soundboard.added'
+  | 'soundboard.removed'
   // DM typing
   | 'dm.typing.start'
   | 'dm.typing.stop'

@@ -33,6 +33,7 @@ import { uploadRoutes } from './routes/upload.js';
 import { gatewayRoutes } from './routes/gateway.js';
 import { notificationRoutes } from './routes/notifications.js';
 import { giphyRoutes } from './routes/giphy.js';
+import { soundboardRoutes } from './routes/soundboard.js';
 import { initSocketIO } from './socket/index.js';
 import { cleanupEmptyTempChannels } from './services/tempChannels.js';
 
@@ -166,6 +167,9 @@ async function start() {
     // Giphy proxy routes
     await api.register(giphyRoutes, { prefix: '/giphy' });
 
+    // Soundboard routes
+    await api.register(soundboardRoutes, { prefix: '/servers' });
+
     // Health check with server info for client network discovery
     api.get('/health', async () => {
       return {
@@ -206,6 +210,7 @@ async function start() {
   await fastify.register(gatewayRoutes);
   await fastify.register(notificationRoutes, { prefix: '/notifications' });
   await fastify.register(giphyRoutes, { prefix: '/giphy' });
+  await fastify.register(soundboardRoutes, { prefix: '/servers' });
 
   // ============================================================
   // Web Client - serve built SPA from packages/web/dist
