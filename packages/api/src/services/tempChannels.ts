@@ -90,8 +90,9 @@ export async function createTempVoiceChannel(
   if (existingChannels.length > 0) {
     // Check occupancy of each channel via Redis
     const channelsWithOccupancy = await Promise.all(
-      existingChannels.map(async (ch: { id: string; name: string }) => ({
-        ...ch,
+      existingChannels.map(async (ch) => ({
+        id: ch.id as string,
+        name: ch.name as string,
         participantCount: (await redis.getVoiceChannelParticipants(ch.id)).length,
       }))
     );
