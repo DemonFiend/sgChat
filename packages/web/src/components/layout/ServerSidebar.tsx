@@ -32,6 +32,8 @@ interface ServerSidebarProps {
   categories: Category[];
   onServerSettingsClick?: () => void;
   onLogout?: () => void;
+  onUserClick?: (userId: string, rect: DOMRect) => void;
+  onUserContextMenu?: (userId: string, e: MouseEvent) => void;
 }
 
 export function ServerSidebar(props: ServerSidebarProps) {
@@ -391,6 +393,8 @@ export function ServerSidebar(props: ServerSidebarProps) {
                         icon={channelIcon(channel.type)}
                         isVoice
                         onSettingsClick={(id) => setSettingsChannelId(id)}
+                        onUserClick={props.onUserClick}
+                        onUserContextMenu={props.onUserContextMenu}
                       />
                     )}
                   </For>
@@ -411,6 +415,8 @@ export function ServerSidebar(props: ServerSidebarProps) {
                     icon={channelIcon(channel.type)}
                     isVoice={isVoiceChannel(channel.type)}
                     onSettingsClick={(id) => setSettingsChannelId(id)}
+                    onUserClick={props.onUserClick}
+                    onUserContextMenu={props.onUserContextMenu}
                   />
                 )}
               </For>
@@ -447,6 +453,8 @@ export function ServerSidebar(props: ServerSidebarProps) {
                         icon={channelIcon(channel.type)}
                         isVoice={isVoiceChannel(channel.type)}
                         onSettingsClick={(id) => setSettingsChannelId(id)}
+                        onUserClick={props.onUserClick}
+                        onUserContextMenu={props.onUserContextMenu}
                       />
                     )}
                   </For>
@@ -472,6 +480,8 @@ export function ServerSidebar(props: ServerSidebarProps) {
               }
               isVoice
               onSettingsClick={(id) => setSettingsChannelId(id)}
+              onUserClick={props.onUserClick}
+              onUserContextMenu={props.onUserContextMenu}
             />
           </div>
         </Show>
@@ -513,6 +523,8 @@ interface ChannelItemProps {
   icon: any;
   isVoice?: boolean;
   onSettingsClick?: (channelId: string) => void;
+  onUserClick?: (userId: string, rect: DOMRect) => void;
+  onUserContextMenu?: (userId: string, e: MouseEvent) => void;
 }
 
 function ChannelItem(props: ChannelItemProps) {
@@ -584,7 +596,13 @@ function ChannelItem(props: ChannelItemProps) {
 
         {/* Show participants when there are users in the channel */}
         <Show when={participantCount() > 0}>
-          <InlineParticipants channelId={props.channel.id} channelName={props.channel.name} maxShow={5} />
+          <InlineParticipants
+            channelId={props.channel.id}
+            channelName={props.channel.name}
+            maxShow={5}
+            onUserClick={props.onUserClick}
+            onUserContextMenu={props.onUserContextMenu}
+          />
         </Show>
       </div>
     );

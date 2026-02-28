@@ -27,21 +27,24 @@ export async function initStorage() {
     if (!exists) {
       await minioClient.makeBucket(MINIO_BUCKET);
       console.log(`✅ Created MinIO bucket: ${MINIO_BUCKET}`);
-      
-      // Set bucket policy to allow public read for avatars
-      const policy = {
-        Version: '2012-10-17',
-        Statement: [
-          {
-            Effect: 'Allow',
-            Principal: { AWS: ['*'] },
-            Action: ['s3:GetObject'],
-            Resource: [`arn:aws:s3:::${MINIO_BUCKET}/avatars/*`],
-          },
-        ],
-      };
-      await minioClient.setBucketPolicy(MINIO_BUCKET, JSON.stringify(policy));
     }
+
+    // Always set bucket policy (ensures new paths like soundboard are added)
+    const policy = {
+      Version: '2012-10-17',
+      Statement: [
+        {
+          Effect: 'Allow',
+          Principal: { AWS: ['*'] },
+          Action: ['s3:GetObject'],
+          Resource: [
+            `arn:aws:s3:::${MINIO_BUCKET}/avatars/*`,
+            `arn:aws:s3:::${MINIO_BUCKET}/soundboard/*`,
+          ],
+        },
+      ],
+    };
+    await minioClient.setBucketPolicy(MINIO_BUCKET, JSON.stringify(policy));
     
     // Initialize archive bucket for message segments
     const archiveExists = await minioClient.bucketExists(MINIO_ARCHIVE_BUCKET);

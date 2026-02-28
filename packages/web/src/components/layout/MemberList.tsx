@@ -22,7 +22,8 @@ interface MemberGroup {
 interface MemberListProps {
   groups: MemberGroup[];
   ownerId?: string;
-  onMemberClick?: (member: Member) => void;
+  onMemberClick?: (member: Member, rect: DOMRect) => void;
+  onMemberContextMenu?: (member: Member, e: MouseEvent) => void;
 }
 
 // Owner crown icon component
@@ -118,7 +119,14 @@ export function MemberList(props: MemberListProps) {
                 <For each={group.members}>
                   {(member) => (
                     <button
-                      onClick={() => props.onMemberClick?.(member)}
+                      onClick={(e: MouseEvent) => {
+                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        props.onMemberClick?.(member, rect);
+                      }}
+                      onContextMenu={(e: MouseEvent) => {
+                        e.preventDefault();
+                        props.onMemberContextMenu?.(member, e);
+                      }}
                       class={clsx(
                         'flex items-center gap-3 w-full px-2 py-1.5 rounded',
                         'hover:bg-bg-modifier-hover transition-colors text-left'

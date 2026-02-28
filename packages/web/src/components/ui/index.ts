@@ -28,3 +28,5 @@ export { StreamViewer } from './StreamViewer';
 export { ChannelSettingsModal } from './ChannelSettingsModal';
 export { SoundboardPanel } from './SoundboardPanel';
 export { NotificationToast } from './NotificationToast';
+export { UserProfilePopover } from './UserProfilePopover';
+export { UserContextMenu } from './UserContextMenu';

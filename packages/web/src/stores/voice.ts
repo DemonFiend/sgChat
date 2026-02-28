@@ -17,6 +17,8 @@ export interface VoicePermissions {
   canStream: boolean;
   canMuteMembers: boolean;
   canMoveMembers: boolean;
+  canDisconnectMembers: boolean;
+  canDeafenMembers: boolean;
 }
 
 export type ConnectionQualityLevel = 'excellent' | 'good' | 'poor' | 'lost' | 'unknown';

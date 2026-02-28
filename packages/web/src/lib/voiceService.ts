@@ -51,6 +51,8 @@ interface VoiceSettings {
 }
 
 const VOICE_CHANNEL_STORAGE_KEY = 'sgchat_voice_channel';
+const USER_VOLUMES_STORAGE_KEY = 'sgchat_user_volumes';
+const LOCAL_MUTES_STORAGE_KEY = 'sgchat_local_mutes';
 
 interface StoredVoiceChannel {
   channelId: string;
@@ -72,6 +74,8 @@ class VoiceServiceClass {
   private isAutoRejoining: boolean = false;
   private activityDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   private activityListeners: Array<{ event: string; handler: () => void }> = [];
+  private userVolumes: Map<string, number> = new Map();
+  private localMutes: Set<string> = new Set();
 
   /**
    * Set the container element for audio elements
@@ -268,8 +272,9 @@ class VoiceServiceClass {
       voiceStore.setConnecting(channelId, channelName);
       console.log('[VoiceService] Joining voice channel:', channelId, channelName);
 
-      // 0. Load user's voice settings
+      // 0. Load user's voice settings and per-user overrides
       const settings = await this.loadVoiceSettings();
+      this.loadPerUserSettings();
 
       // 1. Get token from server (may redirect to temp channel)
       const response = await api.post<JoinVoiceResponse>(`/voice/join/${channelId}`, {});
@@ -347,6 +352,8 @@ class VoiceServiceClass {
         canStream: false,
         canMuteMembers: false,
         canMoveMembers: false,
+        canDisconnectMembers: false,
+        canDeafenMembers: false,
       };
       voiceStore.setConnected(voicePermissions);
 
@@ -442,9 +449,67 @@ class VoiceServiceClass {
    */
   setOutputVolume(volume: number): void {
     this.outputVolume = volume;
-    this.audioElements.forEach(audio => {
-      audio.volume = volume / 100;
+    this.audioElements.forEach((audio, userId) => {
+      const userVol = this.userVolumes.get(userId) ?? 100;
+      audio.volume = Math.min(1, (userVol / 100) * (volume / 100));
     });
+  }
+
+  /**
+   * Set per-user volume (client-side only, 0-200%)
+   */
+  setUserVolume(userId: string, volume: number): void {
+    this.userVolumes.set(userId, volume);
+    const audio = this.audioElements.get(userId);
+    if (audio) {
+      audio.volume = Math.min(1, (volume / 100) * (this.outputVolume / 100));
+    }
+    this.persistUserVolumes();
+  }
+
+  getUserVolume(userId: string): number {
+    return this.userVolumes.get(userId) ?? 100;
+  }
+
+  /**
+   * Toggle local mute for a specific user (client-side only)
+   */
+  toggleLocalMute(userId: string): void {
+    if (this.localMutes.has(userId)) {
+      this.localMutes.delete(userId);
+      const audio = this.audioElements.get(userId);
+      if (audio) audio.muted = voiceStore.isDeafened();
+    } else {
+      this.localMutes.add(userId);
+      const audio = this.audioElements.get(userId);
+      if (audio) audio.muted = true;
+    }
+    this.persistLocalMutes();
+  }
+
+  isLocallyMuted(userId: string): boolean {
+    return this.localMutes.has(userId);
+  }
+
+  private persistUserVolumes(): void {
+    try {
+      localStorage.setItem(USER_VOLUMES_STORAGE_KEY, JSON.stringify(Object.fromEntries(this.userVolumes)));
+    } catch {}
+  }
+
+  private persistLocalMutes(): void {
+    try {
+      localStorage.setItem(LOCAL_MUTES_STORAGE_KEY, JSON.stringify([...this.localMutes]));
+    } catch {}
+  }
+
+  private loadPerUserSettings(): void {
+    try {
+      const volumes = localStorage.getItem(USER_VOLUMES_STORAGE_KEY);
+      if (volumes) this.userVolumes = new Map(Object.entries(JSON.parse(volumes)).map(([k, v]) => [k, Number(v)]));
+      const mutes = localStorage.getItem(LOCAL_MUTES_STORAGE_KEY);
+      if (mutes) this.localMutes = new Set(JSON.parse(mutes));
+    } catch {}
   }
 
   /**
@@ -510,9 +575,9 @@ class VoiceServiceClass {
           audio.muted = true;
         });
       } else {
-        // When undeafening, restore audio but keep mic muted if it was muted before
-        this.audioElements.forEach(audio => {
-          audio.muted = false;
+        // When undeafening, restore audio but keep locally muted users muted
+        this.audioElements.forEach((audio, userId) => {
+          audio.muted = this.localMutes.has(userId);
         });
         // Only enable mic if not previously muted
         if (!voiceStore.isMuted()) {
@@ -544,6 +609,27 @@ class VoiceServiceClass {
     console.log('[VoiceService] Force moved to channel:', toChannelId);
     await this.leave();
     await this.join(toChannelId, toChannelName);
+  }
+
+  /**
+   * Move a member to a different voice channel (moderator action)
+   */
+  async moveMember(userId: string, fromChannelId: string, toChannelId: string): Promise<void> {
+    await api.post('/voice/move-member', {
+      user_id: userId,
+      from_channel_id: fromChannelId,
+      to_channel_id: toChannelId,
+    });
+  }
+
+  /**
+   * Disconnect a member from voice (moderator action)
+   */
+  async disconnectMember(userId: string, channelId: string): Promise<void> {
+    await api.post('/voice/disconnect-member', {
+      user_id: userId,
+      channel_id: channelId,
+    });
   }
 
   /**
@@ -1067,12 +1153,13 @@ class VoiceServiceClass {
     // Create audio element
     const audio = document.createElement('audio');
     audio.autoplay = true;
-    
-    // Apply output volume from settings
-    audio.volume = this.outputVolume / 100;
-    
-    // Apply deafen state
-    if (voiceStore.isDeafened()) {
+
+    // Apply per-user volume (or global default)
+    const userVol = this.userVolumes.get(participant.identity) ?? 100;
+    audio.volume = Math.min(1, (userVol / 100) * (this.outputVolume / 100));
+
+    // Apply deafen state or local mute
+    if (voiceStore.isDeafened() || this.localMutes.has(participant.identity)) {
       audio.muted = true;
     }
 

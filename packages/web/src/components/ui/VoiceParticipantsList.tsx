@@ -9,6 +9,8 @@ interface VoiceParticipantsListProps {
   channelId: string;
   channelName?: string;
   compact?: boolean;
+  onUserClick?: (userId: string, rect: DOMRect) => void;
+  onUserContextMenu?: (userId: string, e: MouseEvent) => void;
 }
 
 export function VoiceParticipantsList(props: VoiceParticipantsListProps) {
@@ -19,11 +21,13 @@ export function VoiceParticipantsList(props: VoiceParticipantsListProps) {
       <div class="ml-4 mt-1 space-y-0.5">
         <For each={participants()}>
           {(participant) => (
-            <VoiceParticipantItem 
-              participant={participant} 
+            <VoiceParticipantItem
+              participant={participant}
               channelId={props.channelId}
               channelName={props.channelName}
-              compact={props.compact} 
+              compact={props.compact}
+              onUserClick={props.onUserClick}
+              onUserContextMenu={props.onUserContextMenu}
             />
           )}
         </For>
@@ -37,6 +41,8 @@ interface VoiceParticipantItemProps {
   channelId: string;
   channelName?: string;
   compact?: boolean;
+  onUserClick?: (userId: string, rect: DOMRect) => void;
+  onUserContextMenu?: (userId: string, e: MouseEvent) => void;
 }
 
 function VoiceParticipantItem(props: VoiceParticipantItemProps) {
@@ -98,10 +104,19 @@ function VoiceParticipantItem(props: VoiceParticipantItemProps) {
   }
 
   return (
-    <div 
-      class={`flex items-center gap-2 py-1 px-2 rounded transition-colors hover:bg-bg-modifier-hover ${
+    <div
+      class={`flex items-center gap-2 py-1 px-2 rounded transition-colors hover:bg-bg-modifier-hover cursor-pointer ${
         props.participant.isSpeaking ? 'bg-status-online/10' : ''
       } ${props.participant.isStreaming ? 'bg-purple-500/10' : ''}`}
+      onClick={(e: MouseEvent) => {
+        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        props.onUserClick?.(props.participant.userId, rect);
+      }}
+      onContextMenu={(e: MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        props.onUserContextMenu?.(props.participant.userId, e);
+      }}
     >
       {/* Avatar with speaking/streaming ring */}
       <div class={`relative ${
@@ -164,6 +179,8 @@ interface InlineParticipantsProps {
   channelId: string;
   channelName?: string;
   maxShow?: number;
+  onUserClick?: (userId: string, rect: DOMRect) => void;
+  onUserContextMenu?: (userId: string, e: MouseEvent) => void;
 }
 
 export function InlineParticipants(props: InlineParticipantsProps) {
@@ -194,7 +211,19 @@ export function InlineParticipants(props: InlineParticipantsProps) {
       <div class="pl-6 mt-0.5 space-y-0.5">
         <For each={visibleParticipants()}>
           {(participant) => (
-            <div class={`flex items-center gap-1.5 py-0.5 text-xs ${participant.isStreaming ? 'text-purple-400' : 'text-text-muted'}`}>
+            <div
+              class={`flex items-center gap-1.5 py-0.5 text-xs cursor-pointer hover:bg-bg-modifier-hover rounded px-0.5 ${participant.isStreaming ? 'text-purple-400' : 'text-text-muted'}`}
+              onClick={(e: MouseEvent) => {
+                e.stopPropagation();
+                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                props.onUserClick?.(participant.userId, rect);
+              }}
+              onContextMenu={(e: MouseEvent) => {
+                e.preventDefault();
+                e.stopPropagation();
+                props.onUserContextMenu?.(participant.userId, e);
+              }}
+            >
               {/* Show stream icon if streaming, otherwise speaker */}
               <Show 
                 when={participant.isStreaming}

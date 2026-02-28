@@ -13,6 +13,8 @@ import {
   type TypingUser
 } from '@/components/layout';
 import { UserSettingsModal, ServerSettingsModal, ClaimAdminModal, TransferOwnershipModal, UnclaimedServerBanner, ServerWelcomePopup, StreamViewer, NotificationToast } from '@/components/ui';
+import { UserProfilePopover } from '@/components/ui/UserProfilePopover';
+import { UserContextMenu, type ContextMenuItem } from '@/components/ui/UserContextMenu';
 import { api } from '@/api';
 import { authStore } from '@/stores/auth';
 import { permissions, voiceStore, serverPopupStore, messageCache } from '@/stores';
@@ -74,6 +76,14 @@ export function MainLayout() {
   const [isMemberListOpen, setIsMemberListOpen] = createSignal(true);
 
   const toggleMemberList = () => setIsMemberListOpen(prev => !prev);
+
+  // User profile popover state
+  const [popoverUserId, setPopoverUserId] = createSignal<string | null>(null);
+  const [popoverAnchorRect, setPopoverAnchorRect] = createSignal<DOMRect | null>(null);
+
+  // Context menu state
+  const [contextMenuUserId, setContextMenuUserId] = createSignal<string | null>(null);
+  const [contextMenuPosition, setContextMenuPosition] = createSignal<{ x: number; y: number }>({ x: 0, y: 0 });
 
   // Fetch server details on mount
   const fetchServerData = async () => {
@@ -1049,6 +1059,112 @@ export function MainLayout() {
     ];
   };
 
+  // User profile popover helpers
+  const getUserInfo = (userId: string) => {
+    const member = members().find(m => m.id === userId);
+    const channelId = voiceStore.currentChannelId();
+    const voiceParticipant = channelId
+      ? voiceStore.getParticipants(channelId).find(p => p.userId === userId)
+      : null;
+
+    return {
+      username: member?.username || voiceParticipant?.username || 'Unknown',
+      displayName: member?.display_name || voiceParticipant?.displayName || null,
+      avatarUrl: member?.avatar_url || voiceParticipant?.avatarUrl || null,
+      status: (member?.status || 'offline') as 'online' | 'idle' | 'dnd' | 'offline',
+      roleColor: member?.role_color || null,
+      customStatus: member?.custom_status || null,
+    };
+  };
+
+  const isUserInVoice = (userId: string): boolean => {
+    const channelId = voiceStore.currentChannelId();
+    if (!channelId) return false;
+    return voiceStore.getParticipants(channelId).some(p => p.userId === userId);
+  };
+
+  const handleUserPopoverOpen = (userId: string, rect: DOMRect) => {
+    setPopoverUserId(userId);
+    setPopoverAnchorRect(rect);
+  };
+
+  const handleUserContextMenu = (userId: string, e: MouseEvent) => {
+    e.preventDefault();
+    setContextMenuUserId(userId);
+    setContextMenuPosition({ x: e.clientX, y: e.clientY });
+  };
+
+  const closePopover = () => {
+    setPopoverUserId(null);
+    setPopoverAnchorRect(null);
+  };
+
+  const closeContextMenu = () => {
+    setContextMenuUserId(null);
+  };
+
+  const getContextMenuItems = (userId: string): ContextMenuItem[] => {
+    const items: ContextMenuItem[] = [];
+    const isCurrentUser = userId === authStore.state().user?.id;
+    const perms = voiceStore.permissions();
+    const currentChannelId = voiceStore.currentChannelId();
+    const isTargetInVoice = currentChannelId
+      ? voiceStore.getParticipants(currentChannelId).some(p => p.userId === userId)
+      : false;
+
+    items.push({
+      label: 'Profile',
+      icon: (
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+        </svg>
+      ),
+      onClick: () => {
+        const rect = new DOMRect(
+          contextMenuPosition().x,
+          contextMenuPosition().y,
+          0,
+          0,
+        );
+        handleUserPopoverOpen(userId, rect);
+      },
+    });
+
+    if (!isCurrentUser && isTargetInVoice) {
+      items.push({
+        label: voiceService.isLocallyMuted(userId) ? 'Unmute (Local)' : 'Mute (Local)',
+        separator: true,
+        icon: (
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+          </svg>
+        ),
+        onClick: () => voiceService.toggleLocalMute(userId),
+      });
+
+      if (perms?.canDisconnectMembers) {
+        items.push({
+          label: 'Disconnect from Voice',
+          separator: true,
+          danger: true,
+          icon: (
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+            </svg>
+          ),
+          onClick: () => {
+            if (currentChannelId) {
+              voiceService.disconnectMember(userId, currentChannelId);
+            }
+          },
+        });
+      }
+    }
+
+    return items;
+  };
+
   // Check if current user can access server settings
   const canAccessSettings = () => {
     const server = currentServer();
@@ -1081,6 +1197,8 @@ export function MainLayout() {
             channels={channels()}
             categories={categories()}
             onServerSettingsClick={canAccessSettings() ? handleServerSettingsClick : undefined}
+            onUserClick={handleUserPopoverOpen}
+            onUserContextMenu={handleUserContextMenu}
           />
 
           {/* Main content area - Chat with optional Stream Viewer overlay */}
@@ -1104,7 +1222,12 @@ export function MainLayout() {
 
           {/* Right Sidebar - Member List (collapsible) */}
           <Show when={params.channelId && isMemberListOpen()}>
-            <MemberList groups={memberGroups()} ownerId={currentServer()?.owner_id} />
+            <MemberList
+              groups={memberGroups()}
+              ownerId={currentServer()?.owner_id}
+              onMemberClick={(member, rect) => handleUserPopoverOpen(member.id, rect)}
+              onMemberContextMenu={(member, e) => handleUserContextMenu(member.id, e)}
+            />
           </Show>
         </Show>
       </div>
@@ -1170,6 +1293,43 @@ export function MainLayout() {
 
       {/* Toast Notifications (DM alerts, etc.) */}
       <NotificationToast />
+
+      {/* User Profile Popover */}
+      <Show when={popoverUserId() && popoverAnchorRect()}>
+        {(_) => {
+          const userId = popoverUserId()!;
+          const info = getUserInfo(userId);
+          const perms = voiceStore.permissions();
+          return (
+            <UserProfilePopover
+              onClose={closePopover}
+              anchorRect={popoverAnchorRect()!}
+              userId={userId}
+              username={info.username}
+              displayName={info.displayName}
+              avatarUrl={info.avatarUrl}
+              status={info.status}
+              roleColor={info.roleColor}
+              customStatus={info.customStatus}
+              isInVoice={isUserInVoice(userId)}
+              voiceChannelId={voiceStore.currentChannelId() || undefined}
+              canMoveMembers={perms?.canMoveMembers}
+              canDisconnectMembers={perms?.canDisconnectMembers}
+              isCurrentUser={userId === authStore.state().user?.id}
+            />
+          );
+        }}
+      </Show>
+
+      {/* User Context Menu */}
+      <Show when={contextMenuUserId()}>
+        <UserContextMenu
+          isOpen={!!contextMenuUserId()}
+          onClose={closeContextMenu}
+          position={contextMenuPosition()}
+          items={getContextMenuItems(contextMenuUserId()!)}
+        />
+      </Show>
 
       {/* Stream Viewer - full-screen overlay for watching streams */}
       <Show when={streamViewerStore.activeStream()}>
