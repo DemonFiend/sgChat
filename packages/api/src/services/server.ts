@@ -111,70 +111,30 @@ export async function createServer(
       RETURNING *
     `;
 
-    // 7. Create default "Server Misc" category
-    const [serverMiscCategory] = await tx`
+    // 7. Create default "Server Info" category
+    const [serverInfoCategory] = await tx`
       INSERT INTO categories (server_id, name, position)
-      VALUES (${server.id}, 'Server Misc', 0)
+      VALUES (${server.id}, 'Server Info', 0)
       RETURNING *
     `;
 
-    // 8. Create default "Social" category
-    const [socialCategory] = await tx`
+    // 8. Create default "General Chat" category
+    const [generalChatCategory] = await tx`
       INSERT INTO categories (server_id, name, position)
-      VALUES (${server.id}, 'Social', 1)
+      VALUES (${server.id}, 'General Chat', 1)
       RETURNING *
     `;
 
-    // 9. Create default "Misc" category
-    const [miscCategory] = await tx`
+    // 9. Create default "Voice Channels" category
+    const [voiceCategory] = await tx`
       INSERT INTO categories (server_id, name, position)
-      VALUES (${server.id}, 'Misc', 2)
+      VALUES (${server.id}, 'Voice Channels', 2)
       RETURNING *
     `;
 
-    // 10. Create #moderator-chat in Server Misc (restricted to Moderator+)
-    const [moderatorChannel] = await tx`
-      INSERT INTO channels (
-        server_id, name, type, topic, position, category_id
-      )
-      VALUES (
-        ${server.id},
-        'moderator-chat',
-        'text',
-        'Private channel for moderators and admins',
-        0,
-        ${serverMiscCategory.id}
-      )
-      RETURNING *
-    `;
+    // --- Server Info channels ---
 
-    // 10a. Add permission override for moderator-chat: deny @everyone VIEW_CHANNEL
-    await tx`
-      INSERT INTO channel_permission_overrides (
-        channel_id, role_id, text_permissions_allow, text_permissions_deny
-      )
-      VALUES (
-        ${moderatorChannel.id},
-        ${everyoneRole.id},
-        '0',
-        ${1n << 10n}  -- Deny VIEW_CHANNEL (bit 10)
-      )
-    `;
-
-    // 10b. Add permission override for moderator-chat: allow Moderator VIEW_CHANNEL
-    await tx`
-      INSERT INTO channel_permission_overrides (
-        channel_id, role_id, text_permissions_allow, text_permissions_deny
-      )
-      VALUES (
-        ${moderatorChannel.id},
-        ${moderatorRole.id},
-        ${1n << 10n},  -- Allow VIEW_CHANNEL (bit 10)
-        '0'
-      )
-    `;
-
-    // 11. Create #announcements channel (announcement type, view-only for @everyone)
+    // 10. Create #announcements channel (announcement type) in Server Info
     const [announcementsChannel] = await tx`
       INSERT INTO channels (
         server_id, name, type, topic, position, category_id
@@ -184,13 +144,44 @@ export async function createServer(
         'announcements',
         'announcement',
         'Important server announcements',
-        1,
-        ${serverMiscCategory.id}
+        0,
+        ${serverInfoCategory.id}
       )
       RETURNING *
     `;
 
-    // 12. Create #welcome text channel in Social category (read-only for @everyone)
+    // 11. Create #roles channel (text, read-only + reactions allowed) in Server Info
+    const [rolesChannel] = await tx`
+      INSERT INTO channels (
+        server_id, name, type, topic, position, category_id
+      )
+      VALUES (
+        ${server.id},
+        'roles',
+        'text',
+        'React to assign yourself roles',
+        1,
+        ${serverInfoCategory.id}
+      )
+      RETURNING *
+    `;
+
+    // 11a. Deny @everyone SEND_MESSAGES on #roles (reactions still allowed by default perms)
+    await tx`
+      INSERT INTO channel_permission_overrides (
+        channel_id, role_id, text_permissions_allow, text_permissions_deny
+      )
+      VALUES (
+        ${rolesChannel.id},
+        ${everyoneRole.id},
+        '0',
+        ${1n << 11n}
+      )
+    `;
+
+    // --- General Chat channels ---
+
+    // 12. Create #welcome text channel (read-only for @everyone) in General Chat
     const [welcomeChannel] = await tx`
       INSERT INTO channels (
         server_id, name, type, topic, position, category_id
@@ -201,12 +192,12 @@ export async function createServer(
         'text',
         'Welcome new members! Join and leave messages appear here.',
         0,
-        ${socialCategory.id}
+        ${generalChatCategory.id}
       )
       RETURNING *
     `;
 
-    // 12a. Add permission override for welcome: deny @everyone SEND_MESSAGES
+    // 12a. Deny @everyone SEND_MESSAGES on #welcome
     await tx`
       INSERT INTO channel_permission_overrides (
         channel_id, role_id, text_permissions_allow, text_permissions_deny
@@ -215,11 +206,11 @@ export async function createServer(
         ${welcomeChannel.id},
         ${everyoneRole.id},
         '0',
-        ${1n << 11n}  -- Deny SEND_MESSAGES (bit 11)
+        ${1n << 11n}
       )
     `;
 
-    // 13. Create #general text channel in Social
+    // 13. Create #general text channel in General Chat
     const [generalChannel] = await tx`
       INSERT INTO channels (
         server_id, name, type, topic, position, category_id
@@ -230,12 +221,56 @@ export async function createServer(
         'text',
         'General discussion',
         1,
-        ${socialCategory.id}
+        ${generalChatCategory.id}
       )
       RETURNING *
     `;
 
-    // 14. Create Lounge voice channel in Social
+    // 14. Create #moderator-chat in General Chat (restricted to Moderator+)
+    const [moderatorChannel] = await tx`
+      INSERT INTO channels (
+        server_id, name, type, topic, position, category_id
+      )
+      VALUES (
+        ${server.id},
+        'moderator-chat',
+        'text',
+        'Private channel for moderators and admins',
+        2,
+        ${generalChatCategory.id}
+      )
+      RETURNING *
+    `;
+
+    // 14a. Deny @everyone VIEW_CHANNEL on #moderator-chat
+    await tx`
+      INSERT INTO channel_permission_overrides (
+        channel_id, role_id, text_permissions_allow, text_permissions_deny
+      )
+      VALUES (
+        ${moderatorChannel.id},
+        ${everyoneRole.id},
+        '0',
+        ${1n << 10n}
+      )
+    `;
+
+    // 14b. Allow Moderator VIEW_CHANNEL on #moderator-chat
+    await tx`
+      INSERT INTO channel_permission_overrides (
+        channel_id, role_id, text_permissions_allow, text_permissions_deny
+      )
+      VALUES (
+        ${moderatorChannel.id},
+        ${moderatorRole.id},
+        ${1n << 10n},
+        '0'
+      )
+    `;
+
+    // --- Voice Channels ---
+
+    // 15. Create Lounge voice channel in Voice Channels
     const [loungeVoice] = await tx`
       INSERT INTO channels (
         server_id, name, type, position, bitrate, category_id
@@ -244,30 +279,30 @@ export async function createServer(
         ${server.id},
         'Lounge',
         'voice',
-        2,
+        0,
         64000,
-        ${socialCategory.id}
+        ${voiceCategory.id}
       )
       RETURNING *
     `;
 
-    // 15. Create Music Channel (music/stage type) in Social
+    // 16. Create Music/Stage channel (music type) in Voice Channels
     const [musicChannel] = await tx`
       INSERT INTO channels (
         server_id, name, type, position, bitrate, category_id
       )
       VALUES (
         ${server.id},
-        'Music Channel',
+        'Music/Stage',
         'music',
-        3,
+        1,
         128000,
-        ${socialCategory.id}
+        ${voiceCategory.id}
       )
       RETURNING *
     `;
 
-    // 16. Create AFK channel in Misc category
+    // 17. Create AFK Channel in Voice Channels
     const [afkChannel] = await tx`
       INSERT INTO channels (
         server_id, name, type, position, bitrate, is_afk_channel, category_id
@@ -276,15 +311,15 @@ export async function createServer(
         ${server.id},
         'AFK Channel',
         'voice',
-        0,
+        2,
         8000,
         true,
-        ${miscCategory.id}
+        ${voiceCategory.id}
       )
       RETURNING *
     `;
 
-    // 17. Update server with special channel references
+    // 18. Update server with special channel references
     await tx`
       UPDATE servers
       SET welcome_channel_id = ${welcomeChannel.id},
@@ -292,13 +327,13 @@ export async function createServer(
       WHERE id = ${server.id}
     `;
 
-    // 18. Add owner as member
+    // 19. Add owner as member
     await tx`
       INSERT INTO members (user_id, server_id)
       VALUES (${ownerId}, ${server.id})
     `;
 
-    // 19. Assign Admin role to owner
+    // 20. Assign Admin role to owner
     await tx`
       INSERT INTO member_roles (member_user_id, member_server_id, role_id)
       VALUES (${ownerId}, ${server.id}, ${adminRole.id})
@@ -310,15 +345,16 @@ export async function createServer(
       welcome_channel_id: welcomeChannel.id,
       afk_channel_id: afkChannel.id,
       channels: [
-        moderatorChannel,
         announcementsChannel,
+        rolesChannel,
         welcomeChannel,
         generalChannel,
+        moderatorChannel,
         loungeVoice,
         musicChannel,
         afkChannel,
       ],
-      categories: [serverMiscCategory, socialCategory, miscCategory],
+      categories: [serverInfoCategory, generalChatCategory, voiceCategory],
       roles: [everyoneRole, adminRole, moderatorRole, memberRole],
     };
   });

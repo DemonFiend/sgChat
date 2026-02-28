@@ -113,11 +113,11 @@ export const categoryRoutes: FastifyPluginAsync = async (fastify) => {
       // Log audit
       await db.sql`
         INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
-        VALUES (${server.id}, ${request.user!.id}, 'category.create', 'category', ${category.id}, ${JSON.stringify({ name: body.name })})
+        VALUES (${server.id}, ${request.user!.id}, 'category_create', 'category', ${category.id}, ${JSON.stringify({ name: body.name })})
       `;
 
-      // Emit socket event
-      fastify.io?.to(`server:${server.id}`).emit('category.create', category);
+      // Emit socket event (wrapped to match frontend expecting { category: Category })
+      fastify.io?.to(`server:${server.id}`).emit('category.create', { category });
 
       reply.code(201);
       return category;
@@ -169,11 +169,11 @@ export const categoryRoutes: FastifyPluginAsync = async (fastify) => {
       // Log audit
       await db.sql`
         INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
-        VALUES (${server.id}, ${request.user!.id}, 'category.update', 'category', ${id}, ${JSON.stringify(body)})
+        VALUES (${server.id}, ${request.user!.id}, 'category_update', 'category', ${id}, ${JSON.stringify(body)})
       `;
 
-      // Emit socket event
-      fastify.io?.to(`server:${server.id}`).emit('category.update', category);
+      // Emit socket event (wrapped to match frontend expecting { category: Category })
+      fastify.io?.to(`server:${server.id}`).emit('category.update', { category });
 
       return category;
     },
@@ -216,11 +216,11 @@ export const categoryRoutes: FastifyPluginAsync = async (fastify) => {
       // Log audit
       await db.sql`
         INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
-        VALUES (${server.id}, ${request.user!.id}, 'category.delete', 'category', ${id}, ${JSON.stringify({ name: existing.name })})
+        VALUES (${server.id}, ${request.user!.id}, 'category_delete', 'category', ${id}, ${JSON.stringify({ name: existing.name })})
       `;
 
-      // Emit socket event
-      fastify.io?.to(`server:${server.id}`).emit('category.delete', { id });
+      // Emit socket event (frontend expects { category_id: string })
+      fastify.io?.to(`server:${server.id}`).emit('category.delete', { category_id: id });
 
       return { message: 'Category deleted' };
     },

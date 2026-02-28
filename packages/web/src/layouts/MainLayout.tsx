@@ -47,6 +47,15 @@ interface ServerMember {
   status: 'online' | 'idle' | 'dnd' | 'offline';
   role_color?: string | null;
   custom_status?: string | null;
+  roles?: string[];
+}
+
+interface RoleInfo {
+  id: string;
+  name: string;
+  color: string | null;
+  position: number;
+  is_hoisted: boolean;
 }
 
 export function MainLayout() {
@@ -62,6 +71,7 @@ export function MainLayout() {
   const [categories, setCategories] = createSignal<Category[]>([]);
   const [messages, setMessages] = createSignal<Message[]>([]);
   const [members, setMembers] = createSignal<ServerMember[]>([]);
+  const [serverRoles, setServerRoles] = createSignal<RoleInfo[]>([]);
   const [currentChannel, setCurrentChannel] = createSignal<ChannelInfo | null>(null);
   const [typingUsers, setTypingUsers] = createSignal<TypingUser[]>([]);
   const [serverTimeOffset, setServerTimeOffset] = createSignal<number>(0); // Offset in minutes from local time
@@ -177,11 +187,22 @@ export function MainLayout() {
           avatar_url: user.avatar_url || user.avatarUrl || user.avatar || m.avatar_url || null,
           status: normalizedStatus as 'online' | 'idle' | 'dnd' | 'offline',
           role_color: user.role_color || user.roleColor || m.role_color || null,
-          custom_status: user.custom_status || rawMember.custom_status || m.custom_status || null
+          custom_status: user.custom_status || rawMember.custom_status || m.custom_status || null,
+          roles: rawMember.roles || m.roles || [],
         } as ServerMember;
       });
 
       setMembers(normalizedMembers);
+
+      // Fetch roles for hoisted role grouping in member list
+      try {
+        const rolesResponse = await api.get<RoleInfo[]>('/roles');
+        if (Array.isArray(rolesResponse)) {
+          setServerRoles(rolesResponse);
+        }
+      } catch (err) {
+        console.error('[MainLayout] Failed to fetch roles:', err);
+      }
 
       // Fetch voice participants for all channels to show who's in voice
       try {
@@ -1048,15 +1069,78 @@ export function MainLayout() {
     socketService.emit('typing.stop', { channel_id: channelId });
   };
 
-  // Group members by status and add owner info
+  // Group members by hoisted roles (online) + generic Online + Offline
   const memberGroups = () => {
     const ownerId = currentServer()?.owner_id;
     const online = members().filter(m => m.status !== 'offline');
     const offline = members().filter(m => m.status === 'offline');
-    return [
-      { name: 'Online', members: online, ownerId },
-      { name: 'Offline', members: offline, ownerId },
-    ];
+    const roles = serverRoles();
+
+    // Get hoisted roles sorted by position DESC (highest first)
+    const hoistedRoles = roles
+      .filter(r => r.is_hoisted && r.name !== '@everyone')
+      .sort((a, b) => b.position - a.position);
+
+    if (hoistedRoles.length === 0) {
+      // No hoisted roles — simple online/offline split
+      return [
+        { name: 'Online', members: online, ownerId },
+        { name: 'Offline', members: offline, ownerId },
+      ];
+    }
+
+    // Build a map of roleId -> role position for quick lookup
+    const rolePositionMap = new Map<string, number>();
+    for (const r of roles) {
+      rolePositionMap.set(r.id, r.position);
+    }
+
+    // For each online member, find their highest-position hoisted role
+    const hoistedGroupMap = new Map<string, ServerMember[]>();
+    const ungroupedOnline: ServerMember[] = [];
+
+    for (const member of online) {
+      const memberRoles = member.roles || [];
+      // Find the highest-position hoisted role this member has
+      let bestHoisted: RoleInfo | null = null;
+      for (const roleId of memberRoles) {
+        const hoisted = hoistedRoles.find(r => r.id === roleId);
+        if (hoisted && (!bestHoisted || hoisted.position > bestHoisted.position)) {
+          bestHoisted = hoisted;
+        }
+      }
+
+      if (bestHoisted) {
+        const group = hoistedGroupMap.get(bestHoisted.id) || [];
+        group.push(member);
+        hoistedGroupMap.set(bestHoisted.id, group);
+      } else {
+        ungroupedOnline.push(member);
+      }
+    }
+
+    // Build groups array: hoisted roles (with members) -> Online -> Offline
+    const groups: { name: string; color?: string; members: ServerMember[]; ownerId?: string }[] = [];
+
+    for (const role of hoistedRoles) {
+      const roleMembers = hoistedGroupMap.get(role.id);
+      if (roleMembers && roleMembers.length > 0) {
+        groups.push({
+          name: role.name,
+          color: role.color || undefined,
+          members: roleMembers,
+          ownerId,
+        });
+      }
+    }
+
+    if (ungroupedOnline.length > 0) {
+      groups.push({ name: 'Online', members: ungroupedOnline, ownerId });
+    }
+
+    groups.push({ name: 'Offline', members: offline, ownerId });
+
+    return groups;
   };
 
   // User profile popover helpers

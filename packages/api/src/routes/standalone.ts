@@ -1085,8 +1085,19 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
         RETURNING id, name, type, topic, category_id, position, bitrate, user_limit, created_at
       `;
 
-      // Emit socket event
-      fastify.io?.to(`server:${server.id}`).emit('channel.create', channel);
+      // Emit socket event (wrapped to match frontend expecting { channel: Channel })
+      fastify.io?.to(`server:${server.id}`).emit('channel.create', {
+        channel: {
+          id: channel.id,
+          name: channel.name,
+          type: channel.type,
+          category_id: channel.category_id || null,
+          position: channel.position,
+          topic: channel.topic || null,
+          unread_count: 0,
+          has_mentions: false,
+        },
+      });
 
       reply.code(201);
       return channel;

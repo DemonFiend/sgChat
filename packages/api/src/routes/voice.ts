@@ -115,16 +115,18 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
 
       // For music/stage channels, default to listener mode unless user has SPEAK permission
       const isStageChannel = channel.type === 'music';
+      const isAfkChannel = channel.is_afk_channel === true;
       const canSpeak = hasPermission(perms.voice, VoicePermissions.SPEAK);
 
       // Generate LiveKit token with appropriate grants
+      // AFK channel: no publish/subscribe — full silence, no audio in or out
       const token = await generateLiveKitToken({
         identity: request.user!.id,
         room: roomName,
-        canPublish: isStageChannel ? canSpeak : hasPermission(perms.voice, VoicePermissions.SPEAK),
-        canPublishVideo: hasPermission(perms.voice, VoicePermissions.VIDEO),
-        canPublishScreen: hasPermission(perms.voice, VoicePermissions.STREAM),
-        canSubscribe: true,
+        canPublish: isAfkChannel ? false : isStageChannel ? canSpeak : hasPermission(perms.voice, VoicePermissions.SPEAK),
+        canPublishVideo: isAfkChannel ? false : hasPermission(perms.voice, VoicePermissions.VIDEO),
+        canPublishScreen: isAfkChannel ? false : hasPermission(perms.voice, VoicePermissions.STREAM),
+        canSubscribe: !isAfkChannel,
       });
 
       // Track voice state in Redis
@@ -275,16 +277,18 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
 
       // For music/stage channels, default to listener mode unless user has SPEAK permission
       const isStageChannel = channel.type === 'music';
+      const isAfkChannel = channel.is_afk_channel === true;
       const canSpeak = hasPermission(perms.voice, VoicePermissions.SPEAK);
 
       // Generate LiveKit token with appropriate grants
+      // AFK channel: no publish/subscribe — full silence, no audio in or out
       const token = await generateLiveKitToken({
         identity: request.user!.id,
         room: `voice:${actualChannelId}`,
-        canPublish: isStageChannel ? canSpeak : hasPermission(perms.voice, VoicePermissions.SPEAK),
-        canPublishVideo: hasPermission(perms.voice, VoicePermissions.VIDEO),
-        canPublishScreen: hasPermission(perms.voice, VoicePermissions.STREAM),
-        canSubscribe: true, // Can always listen
+        canPublish: isAfkChannel ? false : isStageChannel ? canSpeak : hasPermission(perms.voice, VoicePermissions.SPEAK),
+        canPublishVideo: isAfkChannel ? false : hasPermission(perms.voice, VoicePermissions.VIDEO),
+        canPublishScreen: isAfkChannel ? false : hasPermission(perms.voice, VoicePermissions.STREAM),
+        canSubscribe: !isAfkChannel,
       });
 
       // Track voice state in Redis

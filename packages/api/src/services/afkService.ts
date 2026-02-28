@@ -72,6 +72,12 @@ async function checkServerAfkUsers(
         await redis.leaveVoiceChannel(userId);
         await redis.joinVoiceChannel(userId, afkChannelId);
 
+        // Force mute and deafen in AFK channel — no audio should play
+        await redis.updateVoiceState(afkChannelId, userId, {
+          is_muted: true,
+          is_deafened: true,
+        });
+
         // Publish force_move event to the user
         await publishEvent({
           type: 'voice.force_move',
@@ -116,6 +122,20 @@ async function checkServerAfkUsers(
             },
           });
         }
+
+        // Broadcast mute/deafen state so all clients update the user's UI
+        await publishEvent({
+          type: 'voice.state_update',
+          actorId: null,
+          resourceId: `server:${serverId}`,
+          payload: {
+            channel_id: afkChannelId,
+            user_id: userId,
+            is_muted: true,
+            is_deafened: true,
+            is_streaming: false,
+          },
+        });
       } catch (err) {
         console.error(`[AFK] Error processing user ${userId}:`, err);
       }
