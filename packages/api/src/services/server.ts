@@ -169,7 +169,7 @@ export async function createServer(
     // 11a. Deny @everyone SEND_MESSAGES on #roles (reactions still allowed by default perms)
     await tx`
       INSERT INTO channel_permission_overrides (
-        channel_id, role_id, text_permissions_allow, text_permissions_deny
+        channel_id, role_id, text_allow, text_deny
       )
       VALUES (
         ${rolesChannel.id},
@@ -200,7 +200,7 @@ export async function createServer(
     // 12a. Deny @everyone SEND_MESSAGES on #welcome
     await tx`
       INSERT INTO channel_permission_overrides (
-        channel_id, role_id, text_permissions_allow, text_permissions_deny
+        channel_id, role_id, text_allow, text_deny
       )
       VALUES (
         ${welcomeChannel.id},
@@ -245,7 +245,7 @@ export async function createServer(
     // 14a. Deny @everyone VIEW_CHANNEL on #moderator-chat
     await tx`
       INSERT INTO channel_permission_overrides (
-        channel_id, role_id, text_permissions_allow, text_permissions_deny
+        channel_id, role_id, text_allow, text_deny
       )
       VALUES (
         ${moderatorChannel.id},
@@ -258,7 +258,7 @@ export async function createServer(
     // 14b. Allow Moderator VIEW_CHANNEL on #moderator-chat
     await tx`
       INSERT INTO channel_permission_overrides (
-        channel_id, role_id, text_permissions_allow, text_permissions_deny
+        channel_id, role_id, text_allow, text_deny
       )
       VALUES (
         ${moderatorChannel.id},

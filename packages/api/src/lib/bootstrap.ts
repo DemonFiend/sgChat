@@ -227,7 +227,7 @@ export async function bootstrapServer(): Promise<void> {
   // Deny @everyone SEND_MESSAGES on #roles (reactions still allowed by default perms)
   await db.sql`
     INSERT INTO channel_permission_overrides (
-      channel_id, role_id, text_permissions_allow, text_permissions_deny
+      channel_id, role_id, text_allow, text_deny
     ) VALUES (
       ${rolesChannel.id},
       ${everyoneRole.id},
@@ -257,7 +257,7 @@ export async function bootstrapServer(): Promise<void> {
   // Deny @everyone SEND_MESSAGES on #welcome
   await db.sql`
     INSERT INTO channel_permission_overrides (
-      channel_id, role_id, text_permissions_allow, text_permissions_deny
+      channel_id, role_id, text_allow, text_deny
     ) VALUES (
       ${welcomeChannel.id},
       ${everyoneRole.id},
@@ -296,7 +296,7 @@ export async function bootstrapServer(): Promise<void> {
   // Deny @everyone VIEW_CHANNEL on #moderator-chat
   await db.sql`
     INSERT INTO channel_permission_overrides (
-      channel_id, role_id, text_permissions_allow, text_permissions_deny
+      channel_id, role_id, text_allow, text_deny
     ) VALUES (
       ${moderatorChannel.id},
       ${everyoneRole.id},
@@ -309,7 +309,7 @@ export async function bootstrapServer(): Promise<void> {
   if (moderatorRole) {
     await db.sql`
       INSERT INTO channel_permission_overrides (
-        channel_id, role_id, text_permissions_allow, text_permissions_deny
+        channel_id, role_id, text_allow, text_deny
       ) VALUES (
         ${moderatorChannel.id},
         ${moderatorRole.id},
