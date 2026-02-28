@@ -812,6 +812,68 @@ export function MainLayout() {
     onCleanup(() => socketService.off('soundboard.play', handleSoundboardPlay as any));
   });
 
+  // Socket event handler for member warnings
+  createEffect(() => {
+    const handleMemberWarn = (data: {
+      server_id: string;
+      server_name: string;
+      reason?: string;
+      moderator_username?: string;
+    }) => {
+      toastStore.addToast({
+        type: 'warning' as any,
+        title: `Warning from ${data.server_name}`,
+        message: data.reason || 'You have been warned by a moderator.',
+        duration: 10000,
+      });
+    };
+
+    socketService.on('member.warn', handleMemberWarn);
+    onCleanup(() => socketService.off('member.warn', handleMemberWarn as any));
+  });
+
+  // Socket event handlers for server mute/deafen
+  createEffect(() => {
+    const handleServerMute = (data: {
+      channel_id: string;
+      muted: boolean;
+      muted_by: string;
+    }) => {
+      voiceService.setServerMuted(data.muted);
+      toastStore.addToast({
+        type: 'system',
+        title: data.muted ? 'Server Muted' : 'Server Unmuted',
+        message: data.muted
+          ? 'A moderator has muted you.'
+          : 'You have been unmuted by a moderator.',
+        duration: 5000,
+      });
+    };
+
+    const handleServerDeafen = (data: {
+      channel_id: string;
+      deafened: boolean;
+      deafened_by: string;
+    }) => {
+      voiceService.setServerDeafened(data.deafened);
+      toastStore.addToast({
+        type: 'system',
+        title: data.deafened ? 'Server Deafened' : 'Server Undeafened',
+        message: data.deafened
+          ? 'A moderator has deafened you.'
+          : 'You have been undeafened by a moderator.',
+        duration: 5000,
+      });
+    };
+
+    socketService.on('voice.server_mute', handleServerMute);
+    socketService.on('voice.server_deafen', handleServerDeafen);
+    onCleanup(() => {
+      socketService.off('voice.server_mute', handleServerMute as any);
+      socketService.off('voice.server_deafen', handleServerDeafen as any);
+    });
+  });
+
   // Fetch channel data when channelId changes (with hash-based caching)
   createEffect(async () => {
     const channelId = params.channelId;
@@ -1399,7 +1461,14 @@ export function MainLayout() {
               voiceChannelId={voiceStore.currentChannelId() || undefined}
               canMoveMembers={perms?.canMoveMembers}
               canDisconnectMembers={perms?.canDisconnectMembers}
+              canMuteMembers={perms?.canMuteMembers}
+              canDeafenMembers={perms?.canDeafenMembers}
+              canKickMembers={permissions.canKickMembers()}
+              canBanMembers={permissions.canBanMembers()}
+              canWarnMembers={permissions.isAdmin() || permissions.hasPermission('moderate_members')}
               isCurrentUser={userId === authStore.state().user?.id}
+              serverId={currentServer()?.id}
+              voiceChannels={channels().filter(c => ['voice', 'temp_voice', 'music'].includes(c.type)).map(c => ({ id: c.id, name: c.name }))}
               onSendMessage={() => navigate('/channels/@me')}
             />
           );

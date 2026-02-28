@@ -23,6 +23,8 @@ export interface UserPermissions {
   manage_roles: boolean;
   kick_members: boolean;
   ban_members: boolean;
+  timeout_members: boolean;
+  moderate_members: boolean;
   create_invites: boolean;
   change_nickname: boolean;
   manage_nicknames: boolean;

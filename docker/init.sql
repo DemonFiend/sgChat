@@ -929,6 +929,8 @@ ALTER TABLE audit_log ADD CONSTRAINT audit_log_action_check CHECK (action IN (
   'sticker_create', 'sticker_update', 'sticker_delete',
   'event_create', 'event_update', 'event_delete',
   'thread_create', 'thread_update', 'thread_delete',
+  -- Moderation actions
+  'member_warn',
   -- Trimming/retention actions
   'retention_cleanup', 'segment_archived', 'segment_deleted',
   'size_limit_enforced', 'manual_cleanup_triggered'
@@ -1303,3 +1305,19 @@ CREATE TABLE IF NOT EXISTS user_voice_sounds (
 );
 
 CREATE INDEX IF NOT EXISTS idx_user_voice_sounds_user ON user_voice_sounds(user_id, server_id);
+
+-- ============================================================
+-- WARNINGS TABLE
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS warnings (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  server_id UUID NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  moderator_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  reason TEXT CHECK (length(reason) <= 1024),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_warnings_server_user ON warnings(server_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_warnings_server ON warnings(server_id, created_at DESC);

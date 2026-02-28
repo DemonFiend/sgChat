@@ -76,6 +76,8 @@ class VoiceServiceClass {
   private activityListeners: Array<{ event: string; handler: () => void }> = [];
   private userVolumes: Map<string, number> = new Map();
   private localMutes: Set<string> = new Set();
+  private _isServerMuted: boolean = false;
+  private _isServerDeafened: boolean = false;
 
   /**
    * Set the container element for audio elements
@@ -533,6 +535,9 @@ class VoiceServiceClass {
   async setMuted(muted: boolean): Promise<void> {
     if (!this.room) return;
 
+    // Can't unmute while server-muted
+    if (!muted && this._isServerMuted) return;
+
     try {
       await this.room.localParticipant.setMicrophoneEnabled(!muted);
       voiceStore.setMuted(muted);
@@ -565,6 +570,9 @@ class VoiceServiceClass {
    */
   async setDeafened(deafened: boolean): Promise<void> {
     if (!this.room) return;
+
+    // Can't undeafen while server-deafened
+    if (!deafened && this._isServerDeafened) return;
 
     try {
       // When deafening, also mute and disable all audio
@@ -630,6 +638,56 @@ class VoiceServiceClass {
       user_id: userId,
       channel_id: channelId,
     });
+  }
+
+  /**
+   * Server mute a member (moderator action)
+   */
+  async serverMuteMember(userId: string, channelId: string, muted: boolean): Promise<void> {
+    await api.post('/voice/server-mute', {
+      user_id: userId,
+      channel_id: channelId,
+      muted,
+    });
+  }
+
+  /**
+   * Server deafen a member (moderator action)
+   */
+  async serverDeafenMember(userId: string, channelId: string, deafened: boolean): Promise<void> {
+    await api.post('/voice/server-deafen', {
+      user_id: userId,
+      channel_id: channelId,
+      deafened,
+    });
+  }
+
+  /**
+   * Set server-muted state (called when receiving server mute event)
+   */
+  setServerMuted(muted: boolean): void {
+    this._isServerMuted = muted;
+    if (muted) {
+      this.setMuted(true);
+    }
+  }
+
+  /**
+   * Set server-deafened state (called when receiving server deafen event)
+   */
+  setServerDeafened(deafened: boolean): void {
+    this._isServerDeafened = deafened;
+    if (deafened) {
+      this.setDeafened(true);
+    }
+  }
+
+  get isServerMuted(): boolean {
+    return this._isServerMuted;
+  }
+
+  get isServerDeafened(): boolean {
+    return this._isServerDeafened;
   }
 
   /**

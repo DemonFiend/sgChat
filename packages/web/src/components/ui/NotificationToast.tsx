@@ -17,7 +17,11 @@ export function NotificationToast() {
         <For each={toastStore.toasts()}>
           {(toast) => (
             <div
-              class="pointer-events-auto flex items-start gap-3 bg-bg-secondary border border-border-primary rounded-lg shadow-lg p-3 cursor-pointer hover:bg-bg-tertiary transition-colors animate-slide-in-right"
+              class={`pointer-events-auto flex items-start gap-3 bg-bg-secondary rounded-lg shadow-lg p-3 cursor-pointer hover:bg-bg-tertiary transition-colors animate-slide-in-right ${
+                toast.type === 'warning'
+                  ? 'border-2 border-yellow-500/50'
+                  : 'border border-border-primary'
+              }`}
               onClick={() => handleClick(toast)}
             >
               {/* Avatar */}
@@ -38,6 +42,11 @@ export function NotificationToast() {
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   </Show>
+                  <Show when={toast.type === 'warning'}>
+                    <svg class="w-5 h-5 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                    </svg>
+                  </Show>
                 </div>
               }>
                 <Avatar
@@ -53,6 +62,9 @@ export function NotificationToast() {
                   <span class="text-sm font-semibold text-text-primary truncate">{toast.title}</span>
                   <Show when={toast.type === 'dm'}>
                     <span class="text-xs text-text-muted flex-shrink-0">DM</span>
+                  </Show>
+                  <Show when={toast.type === 'warning'}>
+                    <span class="text-xs text-yellow-500 font-semibold flex-shrink-0">WARNING</span>
                   </Show>
                 </div>
                 <p class="text-sm text-text-secondary truncate mt-0.5">{toast.message}</p>

@@ -2,7 +2,7 @@ import { createSignal } from 'solid-js';
 
 export interface ToastNotification {
   id: string;
-  type: 'dm' | 'mention' | 'system';
+  type: 'dm' | 'mention' | 'system' | 'warning';
   title: string;
   message: string;
   avatarUrl?: string | null;

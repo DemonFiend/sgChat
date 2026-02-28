@@ -1,5 +1,6 @@
 import { createSignal, Show, For, onMount } from 'solid-js';
 import { api } from '@/api';
+import { PermissionEditor } from './PermissionEditor';
 
 interface ChannelSettingsModalProps {
   isOpen: boolean;
@@ -45,6 +46,7 @@ export function ChannelSettingsModal(props: ChannelSettingsModalProps) {
   const [overrides, setOverrides] = createSignal<PermissionOverride[]>([]);
   const [roles, setRoles] = createSignal<Role[]>([]);
   const [error, setError] = createSignal('');
+  const [expandedOverrideId, setExpandedOverrideId] = createSignal<string | null>(null);
 
   const isVoice = () => props.channel.type === 'voice' || props.channel.type === 'temp_voice' || props.channel.type === 'music';
 
@@ -124,7 +126,7 @@ export function ChannelSettingsModal(props: ChannelSettingsModalProps) {
   return (
     <div class="fixed inset-0 z-50 flex items-center justify-center">
       <div class="absolute inset-0 bg-black/60" onClick={props.onClose} />
-      <div class="relative bg-bg-primary rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col border border-border">
+      <div class="relative bg-bg-primary rounded-xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col border border-border">
         {/* Header */}
         <div class="flex items-center justify-between p-4 border-b border-border">
           <h2 class="text-lg font-semibold text-text-primary">
@@ -260,26 +262,74 @@ export function ChannelSettingsModal(props: ChannelSettingsModalProps) {
               <div class="space-y-2">
                 <For each={overrides()}>
                   {(override) => (
-                    <div class="flex items-center justify-between p-3 bg-bg-secondary rounded-lg">
-                      <div class="flex items-center gap-2">
-                        <div
-                          class="w-3 h-3 rounded-full"
-                          style={{ "background-color": override.target_color || 'var(--color-text-muted)' }}
-                        />
-                        <span class="text-sm text-text-primary">{override.target_name}</span>
-                        <span class="text-xs text-text-muted px-1.5 py-0.5 bg-bg-tertiary rounded">
-                          {override.type}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => handleRemoveOverride(override.id, override.type, override.target_id)}
-                        class="p-1 text-text-muted hover:text-danger transition-colors"
-                        title="Remove override"
+                    <div>
+                      {/* Override header row */}
+                      <div
+                        class={`flex items-center justify-between p-3 bg-bg-secondary cursor-pointer hover:bg-bg-modifier-hover transition-colors ${
+                          expandedOverrideId() === override.id ? 'rounded-t-lg' : 'rounded-lg'
+                        }`}
+                        onClick={() => setExpandedOverrideId(
+                          expandedOverrideId() === override.id ? null : override.id
+                        )}
                       >
-                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
+                        <div class="flex items-center gap-2">
+                          <div
+                            class="w-3 h-3 rounded-full"
+                            style={{ "background-color": override.target_color || 'var(--color-text-muted)' }}
+                          />
+                          <span class="text-sm text-text-primary">{override.target_name}</span>
+                          <span class="text-xs text-text-muted px-1.5 py-0.5 bg-bg-tertiary rounded">
+                            {override.type}
+                          </span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveOverride(override.id, override.type, override.target_id);
+                            }}
+                            class="p-1 text-text-muted hover:text-danger transition-colors"
+                            title="Remove override"
+                          >
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                          <svg
+                            class={`w-4 h-4 text-text-muted transition-transform ${
+                              expandedOverrideId() === override.id ? 'rotate-180' : ''
+                            }`}
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </div>
+                      </div>
+
+                      {/* Permission editor (expanded) */}
+                      <Show when={expandedOverrideId() === override.id}>
+                        <PermissionEditor
+                          channelType={props.channel.type}
+                          textAllow={override.text_allow}
+                          textDeny={override.text_deny}
+                          voiceAllow={override.voice_allow}
+                          voiceDeny={override.voice_deny}
+                          onSave={async (values) => {
+                            await api.put(
+                              `/channels/${props.channel.id}/permissions/${override.type === 'role' ? 'roles' : 'users'}/${override.target_id}`,
+                              values
+                            );
+                            const permsData = await api.get<{ overrides: PermissionOverride[] }>(
+                              `/channels/${props.channel.id}/permissions`
+                            );
+                            setOverrides(permsData.overrides || []);
+                            setExpandedOverrideId(null);
+                          }}
+                          onCancel={() => setExpandedOverrideId(null)}
+                        />
+                      </Show>
                     </div>
                   )}
                 </For>

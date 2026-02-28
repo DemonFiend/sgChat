@@ -440,6 +440,8 @@ export type EventType =
   | 'voice.state_update'
   | 'voice.force_move'
   | 'voice.force_disconnect'
+  | 'voice.server_mute'
+  | 'voice.server_deafen'
   // Notifications
   | 'notification.new'
   | 'notification.read'

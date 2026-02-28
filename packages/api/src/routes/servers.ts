@@ -63,6 +63,10 @@ const timeoutMemberSchema = z.object({
   reason: z.string().max(512).optional(),
 });
 
+const warnMemberSchema = z.object({
+  reason: z.string().max(1024).optional(),
+});
+
 const bulkRoleAssignSchema = z.object({
   role_ids: z.array(z.string().uuid()),
 });
@@ -702,6 +706,71 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       return { message: 'Member banned' };
+    },
+  });
+
+  // Warn member
+  fastify.post('/:id/members/:userId/warn', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id, userId } = request.params as { id: string; userId: string };
+      const body = warnMemberSchema.parse(request.body || {});
+
+      const server = await db.servers.findById(id);
+      if (!server) {
+        return notFound(reply, 'Server');
+      }
+
+      // Can't warn owner
+      if (userId === server.owner_id) {
+        return badRequest(reply, 'Cannot warn the server owner');
+      }
+
+      // Can't warn yourself
+      if (userId === request.user!.id) {
+        return badRequest(reply, 'Cannot warn yourself');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, id);
+      if (!hasPermission(perms.server, ServerPermissions.MODERATE_MEMBERS)) {
+        return forbidden(reply, 'Missing MODERATE_MEMBERS permission');
+      }
+
+      // Check role hierarchy
+      const canManage = await canManageMember(request.user!.id, userId, id);
+      if (!canManage) {
+        return forbidden(reply, 'Cannot warn a member with a higher or equal role');
+      }
+
+      const member = await db.members.findByUserAndServer(userId, id);
+      if (!member) {
+        return notFound(reply, 'Member');
+      }
+
+      // Get moderator username for notification
+      const moderator = await db.users.findById(request.user!.id);
+
+      // Insert warning
+      await db.sql`
+        INSERT INTO warnings (server_id, user_id, moderator_id, reason)
+        VALUES (${id}, ${userId}, ${request.user!.id}, ${body.reason || null})
+      `;
+
+      // Audit log
+      await db.sql`
+        INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, reason)
+        VALUES (${id}, ${request.user!.id}, 'member_warn', 'member', ${userId}, ${body.reason || null})
+      `;
+
+      // Notify warned user
+      fastify.io?.to(`user:${userId}`).emit('member.warn', {
+        server_id: id,
+        server_name: server.name,
+        reason: body.reason,
+        moderator_username: moderator?.username,
+      });
+
+      return { message: 'Member warned' };
     },
   });
 

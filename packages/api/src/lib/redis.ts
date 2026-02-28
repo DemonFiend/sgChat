@@ -205,6 +205,8 @@ export const redis = {
     is_muted: boolean;
     is_deafened: boolean;
     is_streaming?: boolean;
+    is_server_muted?: boolean;
+    is_server_deafened?: boolean;
   } | null> {
     const state = await client.hgetall(`voice:state:${channelId}:${userId}`);
     if (!state || Object.keys(state).length === 0) return null;
@@ -213,14 +215,18 @@ export const redis = {
       is_muted: state.is_muted === 'true',
       is_deafened: state.is_deafened === 'true',
       is_streaming: state.is_streaming === 'true',
+      is_server_muted: state.is_server_muted === 'true',
+      is_server_deafened: state.is_server_deafened === 'true',
     };
   },
 
-  async updateVoiceState(channelId: string, userId: string, updates: { is_muted?: boolean; is_deafened?: boolean; is_streaming?: boolean }) {
+  async updateVoiceState(channelId: string, userId: string, updates: { is_muted?: boolean; is_deafened?: boolean; is_streaming?: boolean; is_server_muted?: boolean; is_server_deafened?: boolean }) {
     const data: Record<string, string> = {};
     if (updates.is_muted !== undefined) data.is_muted = updates.is_muted.toString();
     if (updates.is_deafened !== undefined) data.is_deafened = updates.is_deafened.toString();
     if (updates.is_streaming !== undefined) data.is_streaming = updates.is_streaming.toString();
+    if (updates.is_server_muted !== undefined) data.is_server_muted = updates.is_server_muted.toString();
+    if (updates.is_server_deafened !== undefined) data.is_server_deafened = updates.is_server_deafened.toString();
     if (Object.keys(data).length > 0) {
       await client.hset(`voice:state:${channelId}:${userId}`, data);
     }

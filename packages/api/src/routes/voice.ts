@@ -512,6 +512,120 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
     },
   });
 
+  // Server mute member (moderator action)
+  fastify.post('/server-mute', {
+    onRequest: [authenticate],
+    config: {
+      rateLimit: {
+        max: RATE_LIMITS.VOICE_JOIN.max,
+        timeWindow: `${RATE_LIMITS.VOICE_JOIN.window} seconds`,
+      },
+    },
+    handler: async (request, reply) => {
+      const { user_id, channel_id, muted } = request.body as {
+        user_id: string;
+        channel_id: string;
+        muted: boolean;
+      };
+
+      const channel = await db.channels.findById(channel_id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+      const perms = await calculatePermissions(request.user!.id, channel.server_id);
+
+      if (!hasPermission(perms.voice, VoicePermissions.MUTE_MEMBERS)) {
+        return forbidden(reply, 'Missing MUTE_MEMBERS permission');
+      }
+
+      // Update Redis voice state
+      await redis.updateVoiceState(channel_id, user_id, { is_server_muted: muted });
+
+      // Notify target user
+      await publishEvent({
+        type: 'voice.server_mute',
+        actorId: request.user!.id,
+        resourceId: `user:${user_id}`,
+        payload: {
+          channel_id,
+          muted,
+          muted_by: request.user!.id,
+        },
+      });
+
+      // Broadcast state update to server room so others see mute icon
+      await publishEvent({
+        type: 'voice.state_update',
+        actorId: request.user!.id,
+        resourceId: `server:${channel.server_id}`,
+        payload: {
+          channel_id,
+          user_id,
+          is_server_muted: muted,
+        },
+      });
+
+      return { message: muted ? 'Member server muted' : 'Member server unmuted' };
+    },
+  });
+
+  // Server deafen member (moderator action)
+  fastify.post('/server-deafen', {
+    onRequest: [authenticate],
+    config: {
+      rateLimit: {
+        max: RATE_LIMITS.VOICE_JOIN.max,
+        timeWindow: `${RATE_LIMITS.VOICE_JOIN.window} seconds`,
+      },
+    },
+    handler: async (request, reply) => {
+      const { user_id, channel_id, deafened } = request.body as {
+        user_id: string;
+        channel_id: string;
+        deafened: boolean;
+      };
+
+      const channel = await db.channels.findById(channel_id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+      const perms = await calculatePermissions(request.user!.id, channel.server_id);
+
+      if (!hasPermission(perms.voice, VoicePermissions.DEAFEN_MEMBERS)) {
+        return forbidden(reply, 'Missing DEAFEN_MEMBERS permission');
+      }
+
+      // Update Redis voice state
+      await redis.updateVoiceState(channel_id, user_id, { is_server_deafened: deafened });
+
+      // Notify target user
+      await publishEvent({
+        type: 'voice.server_deafen',
+        actorId: request.user!.id,
+        resourceId: `user:${user_id}`,
+        payload: {
+          channel_id,
+          deafened,
+          deafened_by: request.user!.id,
+        },
+      });
+
+      // Broadcast state update to server room
+      await publishEvent({
+        type: 'voice.state_update',
+        actorId: request.user!.id,
+        resourceId: `server:${channel.server_id}`,
+        payload: {
+          channel_id,
+          user_id,
+          is_server_deafened: deafened,
+        },
+      });
+
+      return { message: deafened ? 'Member server deafened' : 'Member server undeafened' };
+    },
+  });
+
   // Get temp channel settings (admin)
   fastify.get('/temp-settings', {
     onRequest: [authenticate],
