@@ -1,339 +1,432 @@
-import { createSignal, createEffect, Show, onMount } from 'solid-js';
+import { createSignal, createEffect, Show, For, onMount } from 'solid-js';
 import { useServerConfigStore } from '@/stores/serverConfig';
 import { Button } from './Button';
 import { Input } from './Input';
+import { RichTextarea } from './RichTextarea';
+import { SERVER_TIMEZONES } from '@/lib/timezones';
 import type { ServerPopupConfig } from '@sgchat/shared';
 
 interface ServerPopupConfigFormProps {
-    serverId: string;
-    onSaveSuccess?: () => void;
+  serverId: string;
+  isOwner?: boolean;
+  onTransferOwnership?: () => void;
+  onSaveSuccess?: () => void;
 }
 
 export function ServerPopupConfigForm(props: ServerPopupConfigFormProps) {
-    const store = useServerConfigStore;
-    const [localConfig, setLocalConfig] = createSignal<ServerPopupConfig | null>(null);
-    const [hasUnsavedChanges, setHasUnsavedChanges] = createSignal(false);
-    const [showSuccessToast, setShowSuccessToast] = createSignal(false);
+  const store = useServerConfigStore;
+  const [localConfig, setLocalConfig] = createSignal<ServerPopupConfig | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = createSignal(false);
+  const [showSuccessToast, setShowSuccessToast] = createSignal(false);
 
-    const state = () => store.state();
-    const config = () => state().config;
-    const isLoading = () => state().isLoading;
-    const isSaving = () => state().isSaving;
-    const error = () => state().error;
+  const state = () => store.state();
+  const config = () => state().config;
+  const channels = () => state().channels;
+  const isLoading = () => state().isLoading;
+  const isSaving = () => state().isSaving;
+  const error = () => state().error;
 
-    // Load config on mount
-    onMount(() => {
-        store.fetchConfig(props.serverId);
-    });
+  const textChannels = () => channels().filter((c) => c.type === 'text');
 
-    // Sync local config with store
-    createEffect(() => {
-        const storeConfig = config();
-        if (storeConfig && !localConfig()) {
-            setLocalConfig({ ...storeConfig });
-        }
-    });
+  // Load config on mount
+  onMount(() => {
+    store.fetchConfig(props.serverId);
+  });
 
-    // Warn before navigating away with unsaved changes
-    createEffect(() => {
-        const handler = (e: BeforeUnloadEvent) => {
-            if (hasUnsavedChanges()) {
-                e.preventDefault();
-                e.returnValue = '';
-            }
-        };
+  // Sync local config with store
+  createEffect(() => {
+    const storeConfig = config();
+    if (storeConfig && !localConfig()) {
+      setLocalConfig({ ...storeConfig });
+    }
+  });
 
-        if (hasUnsavedChanges()) {
-            window.addEventListener('beforeunload', handler);
-            return () => window.removeEventListener('beforeunload', handler);
-        }
-    });
-
-    const handleFieldChange = <K extends keyof ServerPopupConfig>(
-        field: K,
-        value: ServerPopupConfig[K]
-    ) => {
-        const current = localConfig();
-        if (!current) return;
-
-        setLocalConfig({ ...current, [field]: value });
-        setHasUnsavedChanges(true);
+  // Warn before navigating away with unsaved changes
+  createEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges()) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
     };
 
-    const handleSave = async () => {
-        const current = localConfig();
-        if (!current) return;
+    if (hasUnsavedChanges()) {
+      window.addEventListener('beforeunload', handler);
+      return () => window.removeEventListener('beforeunload', handler);
+    }
+  });
 
-        const updates = {
-            serverName: current.serverName,
-            serverIconUrl: current.serverIconUrl,
-            bannerUrl: current.bannerUrl,
-            timeFormat: current.timeFormat,
-            motd: current.motd,
-            welcomeMessage: current.welcomeMessage,
-            events: current.events,
-        };
+  const handleFieldChange = <K extends keyof ServerPopupConfig>(
+    field: K,
+    value: ServerPopupConfig[K],
+  ) => {
+    const current = localConfig();
+    if (!current) return;
+    setLocalConfig({ ...current, [field]: value });
+    setHasUnsavedChanges(true);
+  };
 
-        const success = await store.updateConfig(props.serverId, updates);
+  const handleSave = async () => {
+    const current = localConfig();
+    if (!current) return;
 
-        if (success) {
-            setHasUnsavedChanges(false);
-            setShowSuccessToast(true);
-            setTimeout(() => setShowSuccessToast(false), 3000);
-            props.onSaveSuccess?.();
-        }
+    const updates = {
+      serverName: current.serverName,
+      serverIconUrl: current.serverIconUrl,
+      bannerUrl: current.bannerUrl,
+      timeFormat: current.timeFormat,
+      motd: current.motd,
+      motdEnabled: current.motdEnabled,
+      description: current.description,
+      timezone: current.timezone,
+      welcomeChannelId: current.welcomeChannelId,
+      welcomeMessage: current.welcomeMessage,
+      events: current.events,
     };
 
-    const handleReset = () => {
-        const storeConfig = config();
-        if (storeConfig) {
-            setLocalConfig({ ...storeConfig });
-            setHasUnsavedChanges(false);
-        }
-    };
+    const success = await store.updateConfig(props.serverId, updates);
 
-    const getCharacterCount = (text: string | null) => {
-        return text?.length || 0;
-    };
+    if (success) {
+      setHasUnsavedChanges(false);
+      setShowSuccessToast(true);
+      setTimeout(() => setShowSuccessToast(false), 3000);
+      props.onSaveSuccess?.();
+    }
+  };
 
-    return (
-        <div class="max-w-3xl mx-auto p-6">
-            {/* Success Toast */}
-            <Show when={showSuccessToast()}>
-                <div class="fixed top-4 right-4 z-50 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg animate-in slide-in-from-top">
-                    <div class="flex items-center gap-2">
-                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-                        </svg>
-                        <span>Configuration saved successfully!</span>
-                    </div>
-                </div>
-            </Show>
+  const handleReset = () => {
+    const storeConfig = config();
+    if (storeConfig) {
+      setLocalConfig({ ...storeConfig });
+      setHasUnsavedChanges(false);
+    }
+  };
 
-            {/* Error Alert */}
-            <Show when={error()}>
-                <div class="mb-4 bg-red-600/20 border border-red-600 text-red-300 px-4 py-3 rounded-lg">
-                    <div class="flex items-center gap-2">
-                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
-                        </svg>
-                        <span>{error()}</span>
-                    </div>
-                </div>
-            </Show>
+  return (
+    <div>
+      <h2 class="text-xl font-bold text-text-primary mb-5">General Settings</h2>
 
-            <Show when={isLoading()}>
-                <div class="flex items-center justify-center py-12">
-                    <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-                </div>
-            </Show>
-
-            <Show when={!isLoading() && localConfig()}>
-                <div class="space-y-8">
-                    {/* Header */}
-                    <div class="border-b border-gray-700 pb-4">
-                        <h2 class="text-2xl font-bold text-white">Popup Configuration</h2>
-                        <p class="text-gray-400 mt-1">Customize what users see when they join your server</p>
-                    </div>
-
-                    {/* Basic Info Section */}
-                    <section class="space-y-4">
-                        <h3 class="text-lg font-semibold text-white">Basic Information</h3>
-
-                        <div class="space-y-2">
-                            <label class="block text-sm font-medium text-gray-300">
-                                Server Name *
-                            </label>
-                            <Input
-                                type="text"
-                                value={localConfig()?.serverName || ''}
-                                onInput={(e) => handleFieldChange('serverName', e.currentTarget.value)}
-                                placeholder="Enter server name"
-                                maxLength={100}
-                                class="w-full"
-                            />
-                            <p class="text-xs text-gray-500">Displayed in popup header</p>
-                        </div>
-
-                        <div class="space-y-2">
-                            <label class="block text-sm font-medium text-gray-300">
-                                Server Icon URL
-                            </label>
-                            <Input
-                                type="url"
-                                value={localConfig()?.serverIconUrl || ''}
-                                onInput={(e) => handleFieldChange('serverIconUrl', e.currentTarget.value || null)}
-                                placeholder="https://example.com/icon.png"
-                                class="w-full"
-                            />
-                            <Show when={localConfig()?.serverIconUrl}>
-                                <div class="flex items-center gap-3 p-3 bg-gray-800 rounded border border-gray-700">
-                                    <img
-                                        src={localConfig()!.serverIconUrl!}
-                                        alt="Server icon preview"
-                                        class="w-16 h-16 rounded-lg object-cover"
-                                        onError={(e) => {
-                                            e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="64" height="64"%3E%3Crect fill="%23374151" width="64" height="64"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%239CA3AF" font-size="12"%3EError%3C/text%3E%3C/svg%3E';
-                                        }}
-                                    />
-                                    <span class="text-sm text-gray-400">Preview</span>
-                                </div>
-                            </Show>
-                            <p class="text-xs text-gray-500">Square image recommended (256x256+)</p>
-                        </div>
-                    </section>
-
-                    {/* Visual Section */}
-                    <section class="space-y-4">
-                        <h3 class="text-lg font-semibold text-white">Visual Settings</h3>
-
-                        <div class="space-y-2">
-                            <label class="block text-sm font-medium text-gray-300">
-                                Banner Image URL
-                            </label>
-                            <Input
-                                type="url"
-                                value={localConfig()?.bannerUrl || ''}
-                                onInput={(e) => handleFieldChange('bannerUrl', e.currentTarget.value || null)}
-                                placeholder="https://example.com/banner.jpg"
-                                class="w-full"
-                            />
-                            <Show when={localConfig()?.bannerUrl}>
-                                <div class="p-3 bg-gray-800 rounded border border-gray-700">
-                                    <img
-                                        src={localConfig()!.bannerUrl!}
-                                        alt="Banner preview"
-                                        class="w-full h-32 rounded object-cover"
-                                        onError={(e) => {
-                                            e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="128"%3E%3Crect fill="%23374151" width="400" height="128"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%239CA3AF" font-size="14"%3EError loading image%3C/text%3E%3C/svg%3E';
-                                        }}
-                                    />
-                                    <span class="text-sm text-gray-400 mt-2 block">Preview (16:9 aspect ratio)</span>
-                                </div>
-                            </Show>
-                            <p class="text-xs text-gray-500">Wide image recommended (1920x1080)</p>
-                        </div>
-
-                        <div class="space-y-2">
-                            <label class="block text-sm font-medium text-gray-300">
-                                Server Time Format *
-                            </label>
-                            <select
-                                value={localConfig()?.timeFormat || '24h'}
-                                onChange={(e) => handleFieldChange('timeFormat', e.currentTarget.value as '12h' | '24h')}
-                                class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            >
-                                <option value="24h">24-hour (14:30:00)</option>
-                                <option value="12h">12-hour (2:30:00 PM)</option>
-                            </select>
-                        </div>
-                    </section>
-
-                    {/* Content Section */}
-                    <section class="space-y-4">
-                        <h3 class="text-lg font-semibold text-white">Content</h3>
-
-                        <div class="space-y-2">
-                            <label class="block text-sm font-medium text-gray-300">
-                                Message of the Day
-                            </label>
-                            <textarea
-                                value={localConfig()?.motd || ''}
-                                onInput={(e) => handleFieldChange('motd', e.currentTarget.value || null)}
-                                placeholder="Enter your server's message of the day..."
-                                maxLength={500}
-                                rows={4}
-                                class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                            />
-                            <div class="flex justify-between text-xs">
-                                <span class="text-gray-500">Basic markdown supported: **bold**, *italic*, [links]()</span>
-                                <span class={`${getCharacterCount(localConfig()?.motd || null) > 450 ? 'text-yellow-500' : 'text-gray-500'}`}>
-                                    {getCharacterCount(localConfig()?.motd || null)} / 500
-                                </span>
-                            </div>
-                        </div>
-
-                        <div class="space-y-2">
-                            <label class="block text-sm font-medium text-gray-300">
-                                Welcome Message
-                            </label>
-                            <textarea
-                                value={localConfig()?.welcomeMessage || ''}
-                                onInput={(e) => handleFieldChange('welcomeMessage', e.currentTarget.value || null)}
-                                placeholder="Welcome to our server! Use {username} to insert user's name..."
-                                maxLength={500}
-                                rows={4}
-                                class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                            />
-                            <div class="flex justify-between text-xs">
-                                <span class="text-gray-500">Use {'{username}'} to insert user's name</span>
-                                <span class={`${getCharacterCount(localConfig()?.welcomeMessage || null) > 450 ? 'text-yellow-500' : 'text-gray-500'}`}>
-                                    {getCharacterCount(localConfig()?.welcomeMessage || null)} / 500
-                                </span>
-                            </div>
-                            <Show when={localConfig()?.welcomeMessage?.includes('{username}')}>
-                                <div class="p-2 bg-blue-600/20 border border-blue-600 rounded text-sm text-blue-300">
-                                    <span class="font-medium">Example: </span>
-                                    {localConfig()!.welcomeMessage!.replace('{username}', 'DemonFiend')}
-                                </div>
-                            </Show>
-                        </div>
-                    </section>
-
-                    {/* Events Section (Placeholder) */}
-                    <section class="space-y-4">
-                        <div class="flex items-center gap-2">
-                            <h3 class="text-lg font-semibold text-white">Events</h3>
-                            <span class="px-2 py-0.5 text-xs font-medium bg-gray-700 text-gray-300 rounded">Coming Soon</span>
-                        </div>
-                        <div class="p-6 bg-gray-800/50 border border-gray-700 rounded-lg text-center">
-                            <svg class="w-12 h-12 mx-auto text-gray-600 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                            <p class="text-gray-400 font-medium mb-1">Future Feature: Events</p>
-                            <p class="text-sm text-gray-500">
-                                Create announcements, polls, and scheduled events for your server
-                            </p>
-                        </div>
-                    </section>
-
-                    {/* Action Buttons */}
-                    <div class="sticky bottom-0 bg-gray-900 border-t border-gray-700 pt-4 -mx-6 px-6 -mb-6 pb-6">
-                        <div class="flex items-center justify-between">
-                            <div class="text-sm text-gray-400">
-                                <Show when={hasUnsavedChanges()}>
-                                    <span class="text-yellow-500">• Unsaved changes</span>
-                                </Show>
-                                <Show when={state().lastSaved}>
-                                    <span>Last saved: {new Date(state().lastSaved!).toLocaleTimeString()}</span>
-                                </Show>
-                            </div>
-                            <div class="flex gap-3">
-                                <Button
-                                    onClick={handleReset}
-                                    disabled={!hasUnsavedChanges() || isSaving()}
-                                    variant="secondary"
-                                >
-                                    Reset
-                                </Button>
-                                <Button
-                                    onClick={handleSave}
-                                    disabled={!hasUnsavedChanges() || isSaving()}
-                                    variant="primary"
-                                >
-                                    <Show when={isSaving()}>
-                                        <svg class="animate-spin h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24">
-                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                        </svg>
-                                    </Show>
-                                    {isSaving() ? 'Saving...' : 'Save Changes'}
-                                </Button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </Show>
+      {/* Success Toast */}
+      <Show when={showSuccessToast()}>
+        <div class="fixed top-4 right-4 z-50 bg-success text-white px-6 py-3 rounded-lg shadow-lg">
+          <div class="flex items-center gap-2">
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+              <path
+                fill-rule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                clip-rule="evenodd"
+              />
+            </svg>
+            <span>Settings saved successfully!</span>
+          </div>
         </div>
-    );
+      </Show>
+
+      {/* Error Alert */}
+      <Show when={error()}>
+        <div class="mb-4 bg-danger/20 border border-danger text-danger px-4 py-3 rounded-lg">
+          <div class="flex items-center gap-2">
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+              <path
+                fill-rule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                clip-rule="evenodd"
+              />
+            </svg>
+            <span>{error()}</span>
+          </div>
+        </div>
+      </Show>
+
+      <Show when={isLoading()}>
+        <div class="flex items-center justify-center py-12">
+          <div class="text-text-muted">Loading...</div>
+        </div>
+      </Show>
+
+      <Show when={!isLoading() && localConfig()}>
+        {/* Basic Information */}
+        <div class="flex gap-6 mb-8">
+          {/* Server Icon */}
+          <div class="flex flex-col items-center">
+            <div class="w-24 h-24 rounded-full bg-brand-primary flex items-center justify-center text-white text-3xl font-bold mb-3">
+              <Show
+                when={localConfig()?.serverIconUrl}
+                fallback={(localConfig()?.serverName || 'S').charAt(0).toUpperCase()}
+              >
+                <img
+                  src={localConfig()!.serverIconUrl!}
+                  alt={localConfig()?.serverName}
+                  class="w-full h-full rounded-full object-cover"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              </Show>
+            </div>
+            <p class="text-xs text-text-muted mt-1">Min. 128x128</p>
+          </div>
+
+          {/* Basic Info */}
+          <div class="flex-1 space-y-4">
+            <div>
+              <label class="block text-xs font-bold uppercase text-text-muted mb-2">
+                Server Name
+              </label>
+              <input
+                type="text"
+                value={localConfig()?.serverName || ''}
+                onInput={(e) => handleFieldChange('serverName', e.currentTarget.value)}
+                maxLength={100}
+                class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
+              />
+            </div>
+            <div>
+              <label class="block text-xs font-bold uppercase text-text-muted mb-2">
+                Description
+              </label>
+              <textarea
+                value={localConfig()?.description || ''}
+                onInput={(e) => handleFieldChange('description', e.currentTarget.value || null)}
+                rows={3}
+                maxLength={500}
+                class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary resize-none"
+                placeholder="Tell people about your server..."
+              />
+              <p class="text-xs text-text-muted mt-1">
+                {(localConfig()?.description || '').length}/500
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Icon & Banner URLs */}
+        <div class="mb-8">
+          <h3 class="text-sm font-bold uppercase text-text-muted mb-3">Visual Settings</h3>
+          <div class="bg-bg-secondary rounded-lg p-4 space-y-4">
+            <div>
+              <label class="block text-xs font-bold uppercase text-text-muted mb-2">
+                Server Icon URL
+              </label>
+              <Input
+                type="url"
+                value={localConfig()?.serverIconUrl || ''}
+                onInput={(e) =>
+                  handleFieldChange('serverIconUrl', e.currentTarget.value || null)
+                }
+                placeholder="https://example.com/icon.png"
+                class="w-full"
+              />
+              <p class="text-xs text-text-muted mt-1">Square image recommended (256x256+)</p>
+            </div>
+            <div>
+              <label class="block text-xs font-bold uppercase text-text-muted mb-2">
+                Banner Image URL
+              </label>
+              <Input
+                type="url"
+                value={localConfig()?.bannerUrl || ''}
+                onInput={(e) => handleFieldChange('bannerUrl', e.currentTarget.value || null)}
+                placeholder="https://example.com/banner.jpg"
+                class="w-full"
+              />
+              <Show when={localConfig()?.bannerUrl}>
+                <div class="mt-2 p-3 bg-bg-tertiary rounded border border-border-subtle">
+                  <img
+                    src={localConfig()!.bannerUrl!}
+                    alt="Banner preview"
+                    class="w-full h-32 rounded object-cover"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).alt = 'Failed to load banner';
+                    }}
+                  />
+                  <span class="text-xs text-text-muted mt-2 block">
+                    Preview (16:9 aspect ratio recommended)
+                  </span>
+                </div>
+              </Show>
+              <p class="text-xs text-text-muted mt-1">Wide image recommended (1920x1080)</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Message of the Day */}
+        <div class="mb-8">
+          <h3 class="text-sm font-bold uppercase text-text-muted mb-3">Message of the Day</h3>
+          <div class="bg-bg-secondary rounded-lg p-4">
+            <label class="flex items-center gap-3 mb-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={localConfig()?.motdEnabled ?? true}
+                onChange={(e) => handleFieldChange('motdEnabled', e.currentTarget.checked)}
+                class="w-4 h-4 rounded border-border-subtle bg-bg-tertiary"
+              />
+              <span class="text-sm text-text-primary">Enable MOTD</span>
+            </label>
+            <Show when={localConfig()?.motdEnabled !== false}>
+              <RichTextarea
+                value={localConfig()?.motd || ''}
+                onInput={(v) => handleFieldChange('motd', v || null)}
+                placeholder="Welcome message shown to members..."
+                maxLength={2000}
+                rows={4}
+                showVariables={true}
+                showFormatting={true}
+              />
+            </Show>
+          </div>
+        </div>
+
+        {/* Welcome Message */}
+        <div class="mb-8">
+          <h3 class="text-sm font-bold uppercase text-text-muted mb-3">Welcome Message</h3>
+          <div class="bg-bg-secondary rounded-lg p-4">
+            <RichTextarea
+              value={localConfig()?.welcomeMessage || ''}
+              onInput={(v) => handleFieldChange('welcomeMessage', v || null)}
+              placeholder="Welcome to our server! Use {username} to insert user's name..."
+              maxLength={500}
+              rows={4}
+              showVariables={true}
+              showFormatting={true}
+            />
+            <Show when={localConfig()?.welcomeMessage?.includes('{username}')}>
+              <div class="mt-3 p-2 bg-brand-primary/20 border border-brand-primary rounded text-sm text-brand-primary">
+                <span class="font-medium">Preview: </span>
+                {localConfig()!.welcomeMessage!.replace('{username}', 'DemonFiend')}
+              </div>
+            </Show>
+          </div>
+        </div>
+
+        {/* Server Configuration */}
+        <div class="mb-8">
+          <h3 class="text-sm font-bold uppercase text-text-muted mb-3">Server Configuration</h3>
+          <div class="bg-bg-secondary rounded-lg p-4 space-y-4">
+            <div>
+              <label class="block text-xs font-bold uppercase text-text-muted mb-2">
+                Welcome Channel
+              </label>
+              <select
+                value={localConfig()?.welcomeChannelId || ''}
+                onChange={(e) =>
+                  handleFieldChange('welcomeChannelId', e.currentTarget.value || null)
+                }
+                class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
+              >
+                <option value="">No welcome channel</option>
+                <For each={textChannels()}>
+                  {(channel) => <option value={channel.id}>#{channel.name}</option>}
+                </For>
+              </select>
+              <p class="text-xs text-text-muted mt-1">
+                Channel where welcome messages and announcements are posted
+              </p>
+            </div>
+            <div>
+              <label class="block text-xs font-bold uppercase text-text-muted mb-2">
+                Server Timezone
+              </label>
+              <select
+                value={localConfig()?.timezone || 'UTC'}
+                onChange={(e) => handleFieldChange('timezone', e.currentTarget.value)}
+                class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
+              >
+                <For each={SERVER_TIMEZONES}>
+                  {(tz) => <option value={tz.value}>{tz.label}</option>}
+                </For>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-bold uppercase text-text-muted mb-2">
+                Time Format
+              </label>
+              <select
+                value={localConfig()?.timeFormat || '24h'}
+                onChange={(e) =>
+                  handleFieldChange('timeFormat', e.currentTarget.value as '12h' | '24h')
+                }
+                class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
+              >
+                <option value="24h">24-hour (14:30:00)</option>
+                <option value="12h">12-hour (2:30:00 PM)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Events Section (Placeholder) */}
+        <div class="mb-8">
+          <div class="flex items-center gap-2 mb-3">
+            <h3 class="text-sm font-bold uppercase text-text-muted">Events</h3>
+            <span class="px-2 py-0.5 text-xs font-medium bg-bg-tertiary text-text-muted rounded">
+              Coming Soon
+            </span>
+          </div>
+          <div class="p-6 bg-bg-secondary border border-border-subtle rounded-lg text-center">
+            <svg
+              class="w-12 h-12 mx-auto text-text-muted mb-3"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+              />
+            </svg>
+            <p class="text-text-muted font-medium mb-1">Future Feature: Events</p>
+            <p class="text-sm text-text-muted">
+              Create announcements, polls, and scheduled events for your server
+            </p>
+          </div>
+        </div>
+
+        {/* Save Button */}
+        <div class="flex items-center gap-4 mb-8">
+          <Button onClick={handleSave} disabled={!hasUnsavedChanges() || isSaving()} variant="primary">
+            {isSaving() ? 'Saving...' : 'Save Changes'}
+          </Button>
+          <Button
+            onClick={handleReset}
+            disabled={!hasUnsavedChanges() || isSaving()}
+            variant="secondary"
+          >
+            Reset
+          </Button>
+          <Show when={hasUnsavedChanges()}>
+            <span class="text-sm text-yellow-500">Unsaved changes</span>
+          </Show>
+          <Show when={state().lastSaved}>
+            <span class="text-xs text-text-muted">
+              Last saved: {new Date(state().lastSaved!).toLocaleTimeString()}
+            </span>
+          </Show>
+        </div>
+
+        {/* Danger Zone */}
+        <Show when={props.isOwner}>
+          <div class="border-t border-danger/30 pt-6">
+            <h3 class="text-sm font-bold uppercase text-danger mb-3">Danger Zone</h3>
+            <div class="bg-danger/10 border border-danger/30 rounded-lg p-4">
+              <div class="flex items-center justify-between">
+                <div>
+                  <h4 class="font-medium text-text-primary">Transfer Ownership</h4>
+                  <p class="text-sm text-text-muted">Transfer this server to another member</p>
+                </div>
+                <button
+                  onClick={() => props.onTransferOwnership?.()}
+                  class="px-4 py-2 bg-danger hover:bg-danger/90 text-white text-sm font-medium rounded transition-colors"
+                >
+                  Transfer
+                </button>
+              </div>
+            </div>
+          </div>
+        </Show>
+      </Show>
+    </div>
+  );
 }

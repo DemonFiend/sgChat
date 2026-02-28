@@ -70,6 +70,10 @@ export interface ServerPopupConfig {
   bannerUrl: string | null;
   timeFormat: '12h' | '24h';
   motd: string | null;
+  motdEnabled: boolean;
+  description: string | null;
+  timezone: string;
+  welcomeChannelId: string | null;
   welcomeMessage: string | null;
   events: EventConfig[];
 }

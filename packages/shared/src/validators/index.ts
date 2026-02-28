@@ -190,7 +190,11 @@ export const updatePopupConfigSchema = z.object({
   serverIconUrl: z.string().url().nullable().optional(),
   bannerUrl: z.string().url().nullable().optional(),
   timeFormat: z.enum(['12h', '24h']).optional(),
-  motd: z.string().max(500).nullable().optional(),
+  motd: z.string().max(2000).nullable().optional(),
+  motdEnabled: z.boolean().optional(),
+  description: z.string().max(500).nullable().optional(),
+  timezone: z.string().max(50).optional(),
+  welcomeChannelId: z.string().uuid().nullable().optional(),
   welcomeMessage: z.string().max(500).nullable().optional(),
   events: z.array(eventConfigSchema).optional(),
 });

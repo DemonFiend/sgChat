@@ -2,8 +2,15 @@ import { createSignal, createRoot } from 'solid-js';
 import { api } from '@/api';
 import type { ServerPopupConfig, UpdatePopupConfigInput } from '@sgchat/shared';
 
+interface ChannelInfo {
+    id: string;
+    name: string;
+    type: string;
+}
+
 interface ServerConfigState {
     config: ServerPopupConfig | null;
+    channels: ChannelInfo[];
     isLoading: boolean;
     isSaving: boolean;
     error: string | null;
@@ -13,7 +20,6 @@ interface ServerConfigState {
 
 // LocalStorage helper for draft persistence
 const DRAFT_KEY_PREFIX = 'serverPopupConfig_draft_';
-const DRAFT_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
 interface DraftData {
     config: ServerPopupConfig;
@@ -32,25 +38,6 @@ function saveDraft(serverId: string, config: ServerPopupConfig): void {
     }
 }
 
-function loadDraft(serverId: string): ServerPopupConfig | null {
-    try {
-        const item = localStorage.getItem(`${DRAFT_KEY_PREFIX}${serverId}`);
-        if (!item) return null;
-
-        const draft: DraftData = JSON.parse(item);
-
-        // Check if draft is expired
-        if (Date.now() - draft.timestamp > DRAFT_TTL) {
-            clearDraft(serverId);
-            return null;
-        }
-
-        return draft.config;
-    } catch {
-        return null;
-    }
-}
-
 function clearDraft(serverId: string): void {
     try {
         localStorage.removeItem(`${DRAFT_KEY_PREFIX}${serverId}`);
@@ -62,6 +49,7 @@ function clearDraft(serverId: string): void {
 function createServerConfigStore() {
     const [state, setState] = createSignal<ServerConfigState>({
         config: null,
+        channels: [],
         isLoading: false,
         isSaving: false,
         error: null,
@@ -72,7 +60,7 @@ function createServerConfigStore() {
     /**
      * Fetch popup configuration for the server
      */
-    const fetchConfig = async (serverId: string): Promise<void> => {
+    const fetchConfig = async (_serverId: string): Promise<void> => {
         setState({
             ...state(),
             isLoading: true,
@@ -80,19 +68,15 @@ function createServerConfigStore() {
         });
 
         try {
-            const config = await api.get<ServerPopupConfig>('/server/popup-config');
-
-            // Check for draft
-            const draft = loadDraft(serverId);
-            if (draft) {
-                // Ask user if they want to restore draft
-                // For now, we'll just use the fetched config
-                // This could be enhanced with a UI prompt
-            }
+            const [config, channelsData] = await Promise.all([
+                api.get<ServerPopupConfig>('/server/popup-config'),
+                api.get<{ channels: ChannelInfo[] }>('/channels'),
+            ]);
 
             setState({
                 ...state(),
                 config,
+                channels: channelsData.channels || [],
                 isLoading: false,
                 isDirty: false,
             });
@@ -189,6 +173,7 @@ function createServerConfigStore() {
     const clear = (): void => {
         setState({
             config: null,
+            channels: [],
             isLoading: false,
             isSaving: false,
             error: null,

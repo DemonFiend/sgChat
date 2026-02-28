@@ -4,9 +4,8 @@ import { clsx } from 'clsx';
 import { api } from '@/api';
 import { permissions } from '@/stores';
 import { ServerPopupConfigForm } from './ServerPopupConfigForm';
-import { SERVER_TIMEZONES } from '@/lib/timezones';
 
-type ServerSettingsTab = 'overview' | 'popup-config' | 'roles' | 'members' | 'channels' | 'soundboard' | 'afk' | 'invites' | 'bans' | 'audit-log';
+type ServerSettingsTab = 'general' | 'roles' | 'members' | 'channels' | 'soundboard' | 'afk' | 'invites' | 'bans' | 'audit-log';
 
 interface ServerSettings {
   motd: string;
@@ -51,21 +50,11 @@ interface ServerSettingsModalProps {
 
 const tabs: { id: ServerSettingsTab; label: string; icon: JSX.Element; permission?: string }[] = [
   {
-    id: 'overview',
-    label: 'Overview',
+    id: 'general',
+    label: 'General',
     icon: (
       <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    ),
-    permission: 'manage_server',
-  },
-  {
-    id: 'popup-config',
-    label: 'Welcome Screen',
-    icon: (
-      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
       </svg>
     ),
     permission: 'manage_server',
@@ -153,7 +142,7 @@ const tabs: { id: ServerSettingsTab; label: string; icon: JSX.Element; permissio
 ];
 
 export function ServerSettingsModal(props: ServerSettingsModalProps) {
-  const [activeTab, setActiveTab] = createSignal<ServerSettingsTab>('overview');
+  const [activeTab, setActiveTab] = createSignal<ServerSettingsTab>('general');
   const [serverData, setServerData] = createSignal<ServerData | null>(null);
   const [channels, setChannels] = createSignal<Channel[]>([]);
   const [isLoading, setIsLoading] = createSignal(false);
@@ -275,19 +264,12 @@ export function ServerSettingsModal(props: ServerSettingsModalProps) {
               <div class="max-w-[740px] mx-auto">
                 <Show when={isLoading()} fallback={
                   <>
-                    <Show when={activeTab() === 'popup-config'}>
+                    <Show when={activeTab() === 'general'}>
                       <ServerPopupConfigForm
                         serverId={serverData()?.id || ''}
-                        onSaveSuccess={fetchServerData}
-                      />
-                    </Show>
-                    <Show when={activeTab() === 'overview'}>
-                      <OverviewTab
-                        serverData={serverData()}
-                        channels={channels()}
                         isOwner={permissions.isOwner(props.serverOwnerId)}
                         onTransferOwnership={props.onTransferOwnership}
-                        onRefresh={fetchServerData}
+                        onSaveSuccess={fetchServerData}
                       />
                     </Show>
                     <Show when={activeTab() === 'roles'}>
@@ -297,7 +279,7 @@ export function ServerSettingsModal(props: ServerSettingsModalProps) {
                       <MembersTab />
                     </Show>
                     <Show when={activeTab() === 'channels'}>
-                      <ChannelsTab />
+                      <ChannelsTab serverData={serverData()} onRefresh={fetchServerData} />
                     </Show>
                     <Show when={activeTab() === 'invites'}>
                       <InvitesTab />
@@ -332,319 +314,6 @@ export function ServerSettingsModal(props: ServerSettingsModalProps) {
         </div>
       </Portal>
     </Show >
-  );
-}
-
-// Overview Tab
-interface OverviewTabProps {
-  serverData: ServerData | null;
-  channels: Channel[];
-  isOwner: boolean;
-  onTransferOwnership?: () => void;
-  onRefresh: () => void;
-}
-
-function OverviewTab(props: OverviewTabProps) {
-  const [name, setName] = createSignal('');
-  const [description, setDescription] = createSignal('');
-  const [motd, setMotd] = createSignal('');
-  const [motdEnabled, setMotdEnabled] = createSignal(true);
-  const [announceJoins, setAnnounceJoins] = createSignal(true);
-  const [announceLeaves, setAnnounceLeaves] = createSignal(true);
-  const [announceOnline, setAnnounceOnline] = createSignal(false);
-  const [afkTimeout, setAfkTimeout] = createSignal(300);
-  const [welcomeChannelId, setWelcomeChannelId] = createSignal<string>('');
-  const [afkChannelId, setAfkChannelId] = createSignal<string>('');
-  const [timezone, setTimezone] = createSignal('UTC');
-  const [isSaving, setIsSaving] = createSignal(false);
-  const [saveError, setSaveError] = createSignal<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = createSignal(false);
-
-  // Populate form when server data loads
-  createEffect(() => {
-    const data = props.serverData;
-    if (data) {
-      setName(data.name || '');
-      setDescription(data.description || '');
-      if (data.settings) {
-        setMotd(data.settings.motd || '');
-        setMotdEnabled(data.settings.motd_enabled ?? true);
-        setAnnounceJoins(data.settings.announce_joins ?? true);
-        setAnnounceLeaves(data.settings.announce_leaves ?? true);
-        setAnnounceOnline(data.settings.announce_online ?? false);
-        setAfkTimeout(data.settings.afk_timeout ?? 300);
-        setWelcomeChannelId(data.settings.welcome_channel_id || '');
-        setAfkChannelId(data.settings.afk_channel_id || '');
-        setTimezone(data.settings.timezone || 'UTC');
-      }
-    }
-  });
-
-  const textChannels = () => props.channels.filter(c => c.type === 'text');
-  const voiceChannels = () => props.channels.filter(c => c.type === 'voice');
-
-  const handleSave = async () => {
-    setIsSaving(true);
-    setSaveError(null);
-    setSaveSuccess(false);
-
-    try {
-      await api.patch('/server', {
-        name: name(),
-        description: description() || null,
-        motd: motd() || null,
-        motd_enabled: motdEnabled(),
-        announce_joins: announceJoins(),
-        announce_leaves: announceLeaves(),
-        announce_online: announceOnline(),
-        afk_timeout: afkTimeout(),
-        welcome_channel_id: welcomeChannelId() || null,
-        afk_channel_id: afkChannelId() || null,
-        timezone: timezone(),
-      });
-      setSaveSuccess(true);
-      props.onRefresh();
-      setTimeout(() => setSaveSuccess(false), 3000);
-    } catch (err: any) {
-      setSaveError(err?.message || 'Failed to save settings');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const afkTimeoutOptions = [
-    { value: 60, label: '1 minute' },
-    { value: 300, label: '5 minutes' },
-    { value: 600, label: '10 minutes' },
-    { value: 900, label: '15 minutes' },
-    { value: 1800, label: '30 minutes' },
-    { value: 3600, label: '1 hour' },
-  ];
-
-  return (
-    <div>
-      <h2 class="text-xl font-bold text-text-primary mb-5">Server Overview</h2>
-
-      <div class="flex gap-6 mb-8">
-        {/* Server Icon */}
-        <div class="flex flex-col items-center">
-          <div class="w-24 h-24 rounded-full bg-brand-primary flex items-center justify-center text-white text-3xl font-bold mb-3">
-            {props.serverData?.icon_url ? (
-              <img src={props.serverData.icon_url} alt={props.serverData?.name} class="w-full h-full rounded-full object-cover" />
-            ) : (
-              (props.serverData?.name || 'S').charAt(0).toUpperCase()
-            )}
-          </div>
-          <button class="text-sm text-brand-primary hover:underline">
-            Upload Image
-          </button>
-          <p class="text-xs text-text-muted mt-1">Min. 128x128</p>
-        </div>
-
-        {/* Basic Info */}
-        <div class="flex-1 space-y-4">
-          <div>
-            <label class="block text-xs font-bold uppercase text-text-muted mb-2">
-              Server Name
-            </label>
-            <input
-              type="text"
-              value={name()}
-              onInput={(e) => setName(e.currentTarget.value)}
-              class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
-            />
-          </div>
-          <div>
-            <label class="block text-xs font-bold uppercase text-text-muted mb-2">
-              Description
-            </label>
-            <textarea
-              value={description()}
-              onInput={(e) => setDescription(e.currentTarget.value)}
-              rows={3}
-              maxLength={500}
-              class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary resize-none"
-              placeholder="Tell people about your server..."
-            />
-            <p class="text-xs text-text-muted mt-1">{description().length}/500</p>
-          </div>
-        </div>
-      </div>
-
-      {/* MOTD Section */}
-      <div class="mb-8">
-        <h3 class="text-sm font-bold uppercase text-text-muted mb-3">Message of the Day</h3>
-        <div class="bg-bg-secondary rounded-lg p-4">
-          <label class="flex items-center gap-3 mb-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={motdEnabled()}
-              onChange={(e) => setMotdEnabled(e.currentTarget.checked)}
-              class="w-4 h-4 rounded border-border-subtle bg-bg-tertiary"
-            />
-            <span class="text-sm text-text-primary">Enable MOTD</span>
-          </label>
-          <Show when={motdEnabled()}>
-            <textarea
-              value={motd()}
-              onInput={(e) => setMotd(e.currentTarget.value)}
-              rows={4}
-              maxLength={2000}
-              class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary resize-none"
-              placeholder="Welcome message shown to members..."
-            />
-            <p class="text-xs text-text-muted mt-1">{motd().length}/2000</p>
-          </Show>
-        </div>
-      </div>
-
-      {/* Channel Settings */}
-      <div class="mb-8">
-        <h3 class="text-sm font-bold uppercase text-text-muted mb-3">Channel Settings</h3>
-        <div class="bg-bg-secondary rounded-lg p-4 space-y-4">
-          <div>
-            <label class="block text-xs font-bold uppercase text-text-muted mb-2">
-              Welcome Channel
-            </label>
-            <select
-              value={welcomeChannelId()}
-              onChange={(e) => setWelcomeChannelId(e.currentTarget.value)}
-              class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
-            >
-              <option value="">No welcome channel</option>
-              <For each={textChannels()}>
-                {(channel) => (
-                  <option value={channel.id}>#{channel.name}</option>
-                )}
-              </For>
-            </select>
-          </div>
-          <div>
-            <label class="block text-xs font-bold uppercase text-text-muted mb-2">
-              AFK Channel
-            </label>
-            <select
-              value={afkChannelId()}
-              onChange={(e) => setAfkChannelId(e.currentTarget.value)}
-              class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
-            >
-              <option value="">No AFK channel</option>
-              <For each={voiceChannels()}>
-                {(channel) => (
-                  <option value={channel.id}>🔊 {channel.name}</option>
-                )}
-              </For>
-            </select>
-          </div>
-          <div>
-            <label class="block text-xs font-bold uppercase text-text-muted mb-2">
-              AFK Timeout
-            </label>
-            <select
-              value={afkTimeout()}
-              onChange={(e) => setAfkTimeout(parseInt(e.currentTarget.value))}
-              class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
-            >
-              <For each={afkTimeoutOptions}>
-                {(option) => (
-                  <option value={option.value}>{option.label}</option>
-                )}
-              </For>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* Announcement Settings */}
-      <div class="mb-8">
-        <h3 class="text-sm font-bold uppercase text-text-muted mb-3">Announcements</h3>
-        <div class="bg-bg-secondary rounded-lg p-4 space-y-3">
-          <label class="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={announceJoins()}
-              onChange={(e) => setAnnounceJoins(e.currentTarget.checked)}
-              class="w-4 h-4 rounded border-border-subtle bg-bg-tertiary"
-            />
-            <span class="text-sm text-text-primary">Announce when members join</span>
-          </label>
-          <label class="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={announceLeaves()}
-              onChange={(e) => setAnnounceLeaves(e.currentTarget.checked)}
-              class="w-4 h-4 rounded border-border-subtle bg-bg-tertiary"
-            />
-            <span class="text-sm text-text-primary">Announce when members leave</span>
-          </label>
-          <label class="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={announceOnline()}
-              onChange={(e) => setAnnounceOnline(e.currentTarget.checked)}
-              class="w-4 h-4 rounded border-border-subtle bg-bg-tertiary"
-            />
-            <span class="text-sm text-text-primary">Announce when members come online</span>
-          </label>
-        </div>
-      </div>
-
-      {/* Timezone */}
-      <div class="mb-8">
-        <h3 class="text-sm font-bold uppercase text-text-muted mb-3">Server Timezone</h3>
-        <div class="bg-bg-secondary rounded-lg p-4">
-          <select
-            value={timezone()}
-            onChange={(e) => setTimezone(e.currentTarget.value)}
-            class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
-          >
-            <For each={SERVER_TIMEZONES}>
-              {(tz) => (
-                <option value={tz.value}>{tz.label}</option>
-              )}
-            </For>
-          </select>
-        </div>
-      </div>
-
-      {/* Save Button */}
-      <div class="flex items-center gap-4 mb-8">
-        <button
-          onClick={handleSave}
-          disabled={isSaving()}
-          class="px-4 py-2 bg-success hover:bg-success/90 text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
-        >
-          {isSaving() ? 'Saving...' : 'Save Changes'}
-        </button>
-        <Show when={saveSuccess()}>
-          <span class="text-sm text-success">✓ Changes saved!</span>
-        </Show>
-        <Show when={saveError()}>
-          <span class="text-sm text-danger">{saveError()}</span>
-        </Show>
-      </div>
-
-      {/* Danger Zone */}
-      <Show when={props.isOwner}>
-        <div class="border-t border-danger/30 pt-6">
-          <h3 class="text-sm font-bold uppercase text-danger mb-3">Danger Zone</h3>
-          <div class="bg-danger/10 border border-danger/30 rounded-lg p-4">
-            <div class="flex items-center justify-between">
-              <div>
-                <h4 class="font-medium text-text-primary">Transfer Ownership</h4>
-                <p class="text-sm text-text-muted">Transfer this server to another member</p>
-              </div>
-              <button
-                onClick={props.onTransferOwnership}
-                class="px-4 py-2 bg-danger hover:bg-danger/90 text-white text-sm font-medium rounded transition-colors"
-              >
-                Transfer
-              </button>
-            </div>
-          </div>
-        </div>
-      </Show>
-    </div>
   );
 }
 
@@ -1322,13 +991,48 @@ interface ChannelData {
   is_temp_channel?: boolean;
 }
 
-function ChannelsTab() {
+function ChannelsTab(props: { serverData: ServerData | null; onRefresh: () => void }) {
   const [channels, setChannels] = createSignal<ChannelData[]>([]);
   const [categories, setCategories] = createSignal<ChannelCategory[]>([]);
   const [isLoading, setIsLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
   const [showCreateChannel, setShowCreateChannel] = createSignal(false);
   const [showCreateCategory, setShowCreateCategory] = createSignal(false);
+
+  // Announcement settings
+  const [announceJoins, setAnnounceJoins] = createSignal(true);
+  const [announceLeaves, setAnnounceLeaves] = createSignal(true);
+  const [announceOnline, setAnnounceOnline] = createSignal(false);
+  const [announceSaving, setAnnounceSaving] = createSignal(false);
+  const [announceSuccess, setAnnounceSuccess] = createSignal(false);
+
+  // Populate announcement settings from server data
+  createEffect(() => {
+    const data = props.serverData;
+    if (data?.settings) {
+      setAnnounceJoins(data.settings.announce_joins ?? true);
+      setAnnounceLeaves(data.settings.announce_leaves ?? true);
+      setAnnounceOnline(data.settings.announce_online ?? false);
+    }
+  });
+
+  const handleSaveAnnouncements = async () => {
+    setAnnounceSaving(true);
+    try {
+      await api.patch('/server', {
+        announce_joins: announceJoins(),
+        announce_leaves: announceLeaves(),
+        announce_online: announceOnline(),
+      });
+      setAnnounceSuccess(true);
+      props.onRefresh();
+      setTimeout(() => setAnnounceSuccess(false), 3000);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to save announcement settings');
+    } finally {
+      setAnnounceSaving(false);
+    }
+  };
 
   // Form states
   const [newChannelName, setNewChannelName] = createSignal('');
@@ -1341,19 +1045,16 @@ function ChannelsTab() {
     setIsLoading(true);
     setError(null);
     try {
-      // Fetch channels first - this is required
-      const channelsData = await api.get<ChannelData[]>('/channels');
-      setChannels(channelsData || []);
+      // /channels returns { channels: [...], categories: [...] }
+      const response = await api.get<{ channels: ChannelData[]; categories: ChannelCategory[] } | ChannelData[]>('/channels');
 
-      // Try to fetch categories, but don't fail if it errors
-      try {
-        const categoriesData = await api.get<ChannelCategory[]>('/categories');
-        setCategories(categoriesData || []);
-      } catch (catErr) {
-        // Categories endpoint might not exist or return an error
-        // This is not critical - continue without categories
-        console.warn('[ServerSettingsModal] /categories endpoint failed, continuing without categories:', catErr);
+      if (Array.isArray(response)) {
+        // Legacy: plain array of channels
+        setChannels(response);
         setCategories([]);
+      } else {
+        setChannels(response.channels || []);
+        setCategories(response.categories || []);
       }
     } catch (err: any) {
       setError(err?.message || 'Failed to load channels');
@@ -1704,6 +1405,55 @@ function ChannelsTab() {
           </div>
         </div>
       </Show>
+
+      {/* Announcement Settings */}
+      <div class="mt-8 pt-6 border-t border-border-subtle">
+        <h3 class="text-lg font-bold text-text-primary mb-4">Announcement Settings</h3>
+        <p class="text-sm text-text-muted mb-4">
+          Configure automatic announcements posted in the welcome channel.
+        </p>
+        <div class="bg-bg-secondary rounded-lg p-4 space-y-3">
+          <label class="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={announceJoins()}
+              onChange={(e) => setAnnounceJoins(e.currentTarget.checked)}
+              class="w-4 h-4 rounded border-border-subtle bg-bg-tertiary"
+            />
+            <span class="text-sm text-text-primary">Announce when members join</span>
+          </label>
+          <label class="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={announceLeaves()}
+              onChange={(e) => setAnnounceLeaves(e.currentTarget.checked)}
+              class="w-4 h-4 rounded border-border-subtle bg-bg-tertiary"
+            />
+            <span class="text-sm text-text-primary">Announce when members leave</span>
+          </label>
+          <label class="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={announceOnline()}
+              onChange={(e) => setAnnounceOnline(e.currentTarget.checked)}
+              class="w-4 h-4 rounded border-border-subtle bg-bg-tertiary"
+            />
+            <span class="text-sm text-text-primary">Announce when members come online</span>
+          </label>
+          <div class="pt-2 flex items-center gap-3">
+            <button
+              onClick={handleSaveAnnouncements}
+              disabled={announceSaving()}
+              class="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
+            >
+              {announceSaving() ? 'Saving...' : 'Save Announcements'}
+            </button>
+            <Show when={announceSuccess()}>
+              <span class="text-sm text-success">Saved!</span>
+            </Show>
+          </div>
+        </div>
+      </div>
 
       {/* Temp Channel Settings Section */}
       <TempChannelSettings />
