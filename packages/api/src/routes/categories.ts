@@ -66,7 +66,7 @@ export const categoryRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       const categories = await db.sql`
-        SELECT id, name, position, created_at, updated_at
+        SELECT id, name, position, created_at
         FROM categories
         WHERE server_id = ${server.id}
         ORDER BY position ASC, created_at ASC
@@ -107,7 +107,7 @@ export const categoryRoutes: FastifyPluginAsync = async (fastify) => {
       const [category] = await db.sql`
         INSERT INTO categories (server_id, name, position)
         VALUES (${server.id}, ${body.name}, ${position})
-        RETURNING id, name, position, created_at, updated_at
+        RETURNING id, name, position, created_at
       `;
 
       // Log audit
@@ -151,15 +151,19 @@ export const categoryRoutes: FastifyPluginAsync = async (fastify) => {
         return notFound(reply, 'Category');
       }
 
-      const updates: any = { updated_at: new Date() };
+      const updates: any = {};
       if (body.name !== undefined) updates.name = body.name;
       if (body.position !== undefined) updates.position = body.position;
+
+      if (Object.keys(updates).length === 0) {
+        return existing;
+      }
 
       const [category] = await db.sql`
         UPDATE categories
         SET ${db.sql(updates)}
         WHERE id = ${id}
-        RETURNING id, name, position, created_at, updated_at
+        RETURNING id, name, position, created_at
       `;
 
       // Log audit
@@ -244,14 +248,14 @@ export const categoryRoutes: FastifyPluginAsync = async (fastify) => {
       for (const cat of body.categories) {
         await db.sql`
           UPDATE categories
-          SET position = ${cat.position}, updated_at = NOW()
+          SET position = ${cat.position}
           WHERE id = ${cat.id} AND server_id = ${server.id}
         `;
       }
 
       // Get updated categories
       const categories = await db.sql`
-        SELECT id, name, position, created_at, updated_at
+        SELECT id, name, position, created_at
         FROM categories
         WHERE server_id = ${server.id}
         ORDER BY position ASC

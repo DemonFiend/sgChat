@@ -45,9 +45,12 @@ export function scheduleTempChannelCreation(
         generatorChannelId
       );
 
-      // Move user from generator to temp channel in Redis
-      await redis.leaveVoiceChannel(userId);
-      await redis.joinVoiceChannel(userId, tempChannelId);
+      // NOTE: Do NOT update Redis here. The frontend will handle Redis state
+      // via its leave() + join() cycle when it processes the force_move event.
+      // Updating Redis here causes a race condition: the frontend's leave()
+      // socket handler calls redis.leaveVoiceChannel() which looks up the
+      // user's CURRENT channel (now the temp channel, not the generator),
+      // removing them from the temp channel and corrupting participant tracking.
 
       // Send force_move event so the frontend auto-moves the user
       await publishEvent({

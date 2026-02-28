@@ -130,6 +130,8 @@ class DMVoiceServiceClass {
         canStream: permissions.canStream,
         canMuteMembers: false,
         canMoveMembers: false,
+        canDisconnectMembers: false,
+        canDeafenMembers: false,
       };
       voiceStore.setConnected(voicePermissions);
 
