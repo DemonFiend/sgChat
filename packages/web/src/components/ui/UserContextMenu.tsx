@@ -6,8 +6,11 @@ export interface ContextMenuItem {
   icon?: JSX.Element;
   onClick: () => void;
   danger?: boolean;
+  warning?: boolean;
   disabled?: boolean;
   separator?: boolean;
+  /** Custom render replaces the default button for this item (e.g. volume slider) */
+  customRender?: () => JSX.Element;
 }
 
 interface UserContextMenuProps {
@@ -45,7 +48,7 @@ export function UserContextMenu(props: UserContextMenuProps) {
 
   // Adjust position to keep menu in viewport
   const adjustedPosition = () => {
-    const menuWidth = 200;
+    const menuWidth = 220;
     const menuHeight = props.items.length * 36;
     const x = Math.min(props.position.x, window.innerWidth - menuWidth - 8);
     const y = Math.min(props.position.y, window.innerHeight - menuHeight - 8);
@@ -57,7 +60,7 @@ export function UserContextMenu(props: UserContextMenuProps) {
       <Portal>
         <div
           ref={menuRef}
-          class="fixed z-[100] min-w-[180px] py-1.5 bg-bg-tertiary rounded-md shadow-lg border border-divider"
+          class="fixed z-[100] min-w-[200px] py-1.5 bg-bg-tertiary rounded-md shadow-lg border border-divider"
           style={{
             left: `${adjustedPosition().x}px`,
             top: `${adjustedPosition().y}px`,
@@ -69,27 +72,36 @@ export function UserContextMenu(props: UserContextMenuProps) {
                 <Show when={item.separator}>
                   <div class="my-1 mx-2 border-t border-divider" />
                 </Show>
-                <button
-                  class={`flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left transition-colors ${
-                    item.disabled
-                      ? 'text-text-muted cursor-not-allowed opacity-50'
-                      : item.danger
-                        ? 'text-danger hover:bg-danger/10'
-                        : 'text-text-secondary hover:bg-bg-modifier-hover hover:text-text-primary'
-                  }`}
-                  onClick={() => {
-                    if (!item.disabled) {
-                      item.onClick();
-                      props.onClose();
-                    }
-                  }}
-                  disabled={item.disabled}
+                <Show
+                  when={!item.customRender}
+                  fallback={
+                    <div class="px-3 py-1.5">{item.customRender!()}</div>
+                  }
                 >
-                  <Show when={item.icon}>
-                    <span class="w-4 h-4 flex-shrink-0">{item.icon}</span>
-                  </Show>
-                  {item.label}
-                </button>
+                  <button
+                    class={`flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left transition-colors ${
+                      item.disabled
+                        ? 'text-text-muted cursor-not-allowed opacity-50'
+                        : item.danger
+                          ? 'text-danger hover:bg-danger/10'
+                          : item.warning
+                            ? 'text-yellow-500 hover:bg-yellow-500/10'
+                            : 'text-text-secondary hover:bg-bg-modifier-hover hover:text-text-primary'
+                    }`}
+                    onClick={() => {
+                      if (!item.disabled) {
+                        item.onClick();
+                        props.onClose();
+                      }
+                    }}
+                    disabled={item.disabled}
+                  >
+                    <Show when={item.icon}>
+                      <span class="w-4 h-4 flex-shrink-0">{item.icon}</span>
+                    </Show>
+                    {item.label}
+                  </button>
+                </Show>
               </>
             )}
           </For>

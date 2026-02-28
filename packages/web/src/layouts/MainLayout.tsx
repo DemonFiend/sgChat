@@ -1249,6 +1249,9 @@ export function MainLayout() {
     setContextMenuUserId(null);
   };
 
+  // Volume signal for context menu slider
+  const [ctxVolume, setCtxVolume] = createSignal(100);
+
   const getContextMenuItems = (userId: string): ContextMenuItem[] => {
     const items: ContextMenuItem[] = [];
     const isCurrentUser = userId === authStore.state().user?.id;
@@ -1257,7 +1260,9 @@ export function MainLayout() {
     const isTargetInVoice = currentChannelId
       ? voiceStore.getParticipants(currentChannelId).some(p => p.userId === userId)
       : false;
+    const serverId = currentServer()?.id;
 
+    // Profile
     items.push({
       label: 'Profile',
       icon: (
@@ -1276,10 +1281,39 @@ export function MainLayout() {
       },
     });
 
+    // Voice controls (only when target is in voice and not self)
     if (!isCurrentUser && isTargetInVoice) {
+      // Volume slider
+      setCtxVolume(voiceService.getUserVolume(userId));
+      items.push({
+        label: 'Volume',
+        separator: true,
+        onClick: () => {},
+        customRender: () => (
+          <div class="flex items-center gap-2 w-full">
+            <svg class="w-4 h-4 text-text-muted flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+            </svg>
+            <input
+              type="range"
+              min={0}
+              max={200}
+              value={ctxVolume()}
+              onInput={(e) => {
+                const val = parseInt(e.currentTarget.value);
+                setCtxVolume(val);
+                voiceService.setUserVolume(userId, val);
+              }}
+              class="flex-1 h-1.5 accent-brand-primary cursor-pointer"
+            />
+            <span class="text-xs text-text-muted w-9 text-right">{ctxVolume()}%</span>
+          </div>
+        ),
+      });
+
+      // Local Mute
       items.push({
         label: voiceService.isLocallyMuted(userId) ? 'Unmute (Local)' : 'Mute (Local)',
-        separator: true,
         icon: (
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
@@ -1289,9 +1323,70 @@ export function MainLayout() {
         onClick: () => voiceService.toggleLocalMute(userId),
       });
 
+      // Server Mute (admin)
+      if (perms?.canMuteMembers) {
+        items.push({
+          label: 'Server Mute',
+          separator: true,
+          icon: (
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4M12 1a3 3 0 00-3 3v4a3 3 0 006 0V4a3 3 0 00-3-3z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4l16 16" />
+            </svg>
+          ),
+          onClick: () => {
+            if (currentChannelId) {
+              voiceService.serverMuteMember(userId, currentChannelId, true);
+            }
+          },
+        });
+      }
+
+      // Server Deafen (admin)
+      if (perms?.canDeafenMembers) {
+        items.push({
+          label: 'Server Deafen',
+          icon: (
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4l16 16" />
+            </svg>
+          ),
+          onClick: () => {
+            if (currentChannelId) {
+              voiceService.serverDeafenMember(userId, currentChannelId, true);
+            }
+          },
+        });
+      }
+
+      // Move to Channel (admin)
+      if (perms?.canMoveMembers) {
+        const voiceChannels = channels().filter(
+          (c) =>
+            ['voice', 'temp_voice', 'music'].includes(c.type) && c.id !== currentChannelId,
+        );
+        for (const vc of voiceChannels) {
+          items.push({
+            label: `Move to ${vc.name}`,
+            icon: (
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+              </svg>
+            ),
+            onClick: () => {
+              if (currentChannelId) {
+                voiceService.moveMember(userId, currentChannelId, vc.id);
+              }
+            },
+          });
+        }
+      }
+
+      // Disconnect (admin)
       if (perms?.canDisconnectMembers) {
         items.push({
-          label: 'Disconnect from Voice',
+          label: 'Disconnect',
           separator: true,
           danger: true,
           icon: (
@@ -1302,6 +1397,77 @@ export function MainLayout() {
           onClick: () => {
             if (currentChannelId) {
               voiceService.disconnectMember(userId, currentChannelId);
+            }
+          },
+        });
+      }
+    }
+
+    // Moderation actions (non-voice, always available with perms)
+    if (!isCurrentUser && serverId) {
+      const canWarn =
+        permissions.isAdmin() || permissions.hasPermission('moderate_members');
+
+      if (canWarn) {
+        items.push({
+          label: 'Warn',
+          separator: !isTargetInVoice,
+          warning: true,
+          icon: (
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+          ),
+          onClick: async () => {
+            const reason = prompt('Reason for warning (optional):');
+            if (reason === null) return; // cancelled
+            try {
+              await api.post(`/servers/${serverId}/members/${userId}/warn`, {
+                reason: reason || undefined,
+              });
+            } catch (err: any) {
+              console.error('Failed to warn member:', err);
+            }
+          },
+        });
+      }
+
+      if (permissions.canKickMembers()) {
+        items.push({
+          label: 'Kick',
+          separator: !canWarn && !isTargetInVoice,
+          danger: true,
+          icon: (
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7a4 4 0 11-8 0 4 4 0 018 0zM9 14a6 6 0 00-6 6v1h12v-1a6 6 0 00-6-6zM21 12h-6" />
+            </svg>
+          ),
+          onClick: async () => {
+            if (!confirm('Are you sure you want to kick this member?')) return;
+            try {
+              await api.post(`/servers/${serverId}/members/${userId}/kick`, {});
+            } catch (err: any) {
+              console.error('Failed to kick member:', err);
+            }
+          },
+        });
+      }
+
+      if (permissions.canBanMembers()) {
+        items.push({
+          label: 'Ban',
+          danger: true,
+          icon: (
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+            </svg>
+          ),
+          onClick: async () => {
+            if (!confirm('Are you sure you want to ban this member?')) return;
+            try {
+              await api.post(`/servers/${serverId}/members/${userId}/ban`, {});
+            } catch (err: any) {
+              console.error('Failed to ban member:', err);
             }
           },
         });
