@@ -58,7 +58,7 @@ export async function createTempVoiceChannel(
 ): Promise<{ channelId: string; channelName: string }> {
   // Get the generator channel info
   const [generator] = await db.sql`
-    SELECT id, server_id, category_id, bitrate, user_limit
+    SELECT id, server_id, category_id, bitrate, user_limit, position
     FROM channels
     WHERE id = ${generatorChannelId} AND type = 'temp_voice_generator'
   `;
@@ -118,6 +118,9 @@ export async function createTempVoiceChannel(
   const baseName = `${user.display_name || user.username}'s Channel`;
   const channelName = channelNumber > 1 ? `${baseName} ${channelNumber}` : baseName;
 
+  // Position right after the generator channel (position is INTEGER, so use generator's position + offset)
+  const tempPosition = (generator.position || 0) + channelNumber;
+
   const [tempChannel] = await db.sql`
     INSERT INTO channels (
       server_id, name, type, position, bitrate, user_limit,
@@ -127,7 +130,7 @@ export async function createTempVoiceChannel(
       ${generator.server_id},
       ${channelName},
       'temp_voice',
-      ${Date.now()},
+      ${tempPosition},
       ${settings.default_bitrate || generator.bitrate},
       ${settings.default_user_limit || generator.user_limit},
       ${generator.category_id},
@@ -160,7 +163,7 @@ export async function createTempVoiceChannel(
         type: 'temp_voice',
         server_id: generator.server_id,
         category_id: generator.category_id,
-        position: Date.now(),
+        position: tempPosition,
         is_temp_channel: true,
         temp_channel_owner_id: userId,
       },
