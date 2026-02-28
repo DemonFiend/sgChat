@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onMount, onCleanup, For, Show, JSX } from 'solid-js';
+import { createSignal, onMount, onCleanup, For, Show, JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { useNavigate } from '@solidjs/router';
 import { clsx } from 'clsx';
@@ -420,7 +420,7 @@ function ProfileTab(props: { user: ReturnType<typeof authStore.state>['user'] })
             <AvatarPicker
               currentAvatarUrl={avatarUrl()}
               username={props.user?.username}
-              displayName={displayName() || props.user?.display_name}
+              displayName={displayName() || props.user?.display_name || undefined}
               onAvatarChange={handleAvatarChange}
             />
           </div>

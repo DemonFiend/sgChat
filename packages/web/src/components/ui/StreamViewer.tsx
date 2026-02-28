@@ -22,7 +22,7 @@ export function StreamViewer(props: StreamViewerProps) {
   const [isMuted, setIsMuted] = createSignal(false);
   const [volume, setVolume] = createSignal(100);
   const [showControls, setShowControls] = createSignal(true);
-  const [hasStreamAudio, setHasStreamAudio] = createSignal(false);
+  const [_hasStreamAudio, setHasStreamAudio] = createSignal(false);
   let fullViewContainerRef: HTMLDivElement | undefined;
   let videoContainerRef: HTMLDivElement | undefined;
   let controlsTimeout: ReturnType<typeof setTimeout>;
@@ -146,7 +146,7 @@ export function StreamViewer(props: StreamViewerProps) {
   createEffect(() => {
     const streamerId = props.streamerId;
     // React to audioAvailableVersion changes from streamViewerStore
-    const _audioVersion = streamViewerStore.audioAvailableVersion();
+    void streamViewerStore.audioAvailableVersion();
     
     const checkAndAttachAudio = () => {
       const hasAudio = voiceService.hasScreenShareAudio(streamerId);

@@ -103,9 +103,8 @@ export function ServerList(props: ServerListProps) {
                 isActive(server.id) ? 'rounded-xl' : 'rounded-2xl'
               )}
               onClick={(e) => handleServerIconClick(server.id, e)}
-              onContextMenu={(e) => {
+              onContextMenu={() => {
                 // Preserve right-click context menu behavior
-                // The handler will ignore right-clicks anyway
               }}
             >
               <Show

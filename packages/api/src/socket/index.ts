@@ -10,6 +10,7 @@ import type { EventEnvelope, GatewayHello, GatewayReady, GatewayResume, GatewayR
 import { isBlocked } from '../routes/friends.js';
 import { createNotification } from '../routes/notifications.js';
 import { cancelPendingCreation } from '../services/tempChannelTimers.js';
+import { markTempChannelEmpty } from '../services/tempChannels.js';
 
 // ── Constants ──────────────────────────────────────────────────
 /** Heartbeat interval sent to client in gateway.hello (ms) */
@@ -701,6 +702,14 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
               user_id: userId,
             },
           });
+
+          // Mark temp channel as empty if no participants remain
+          if (channel.is_temp_channel) {
+            const participants = await redis.getVoiceChannelParticipants(channelId);
+            if (participants.length === 0) {
+              await markTempChannelEmpty(channelId);
+            }
+          }
         }
       } catch (err) {
         fastify.log.error(err);
@@ -994,6 +1003,14 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
               user_id: userId,
             },
           });
+
+          // Mark temp channel as empty if no participants remain
+          if (voiceChannel.is_temp_channel) {
+            const participants = await redis.getVoiceChannelParticipants(voiceChannelId);
+            if (participants.length === 0) {
+              await markTempChannelEmpty(voiceChannelId);
+            }
+          }
         }
       }
 

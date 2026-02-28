@@ -3,6 +3,7 @@ import { Portal } from 'solid-js/web';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { serverPopupStore } from '@/stores';
+import { authStore } from '@/stores/auth';
 
 // Configure marked for safe rendering
 marked.setOptions({
@@ -125,6 +126,18 @@ export function ServerWelcomePopup() {
             firstFocusableElement?.focus();
         }
     });
+
+    // Substitute template variables in text
+    const substituteVariables = (text: string): string => {
+        const user = authStore.state().user;
+        const data = serverData();
+        return text
+            .replace(/\{username\}/gi, user?.display_name || user?.username || 'User')
+            .replace(/\{servername\}/gi, data?.serverName || '')
+            .replace(/\{servericon\}/gi, data?.bannerUrl || '')
+            .replace(/\{servertime\}/gi, currentTime() || '')
+            .replace(/\{if:([^}]*)\}([\s\S]*?)\{\/if\}/gi, (_match, _cond, body) => body);
+    };
 
     // Sanitize and render markdown
     const renderMarkdown = (text: string | null | undefined): string => {
@@ -254,7 +267,7 @@ export function ServerWelcomePopup() {
                                             <div
                                                 class="prose prose-sm max-w-none text-text-primary bg-bg-tertiary/30 rounded p-3 border border-border-subtle overflow-auto"
                                                 style="max-height: 200px;"
-                                                innerHTML={renderMarkdown(serverData()?.motd)}
+                                                innerHTML={renderMarkdown(substituteVariables(serverData()?.motd || ''))}
                                             />
                                             {/* Fade gradient for long content */}
                                             <Show when={(serverData()?.motd?.length || 0) > 1000}>
@@ -293,7 +306,7 @@ export function ServerWelcomePopup() {
                                             <div
                                                 class="prose prose-sm max-w-none text-text-primary bg-bg-tertiary/30 rounded p-3 border border-border-subtle overflow-auto"
                                                 style="max-height: 200px;"
-                                                innerHTML={renderMarkdown(serverData()?.welcomeMessage)}
+                                                innerHTML={renderMarkdown(substituteVariables(serverData()?.welcomeMessage || ''))}
                                             />
                                             {/* Fade gradient for long content */}
                                             <Show when={(serverData()?.welcomeMessage?.length || 0) > 1000}>

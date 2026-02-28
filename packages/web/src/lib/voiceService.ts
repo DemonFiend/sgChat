@@ -329,7 +329,7 @@ class VoiceServiceClass {
           noiseSuppression: settings.audio_noise_suppression,
         },
         publishDefaults: {
-          audioBitrate: channelBitrate,
+          audioPreset: { maxBitrate: channelBitrate },
           dtx: true, // Discontinuous Transmission - saves bandwidth when not speaking
           red: true, // Redundant encoding for packet loss resilience
         },

@@ -34,7 +34,7 @@ export interface ChannelInfo {
   id: string;
   name: string;
   topic?: string;
-  type: 'text' | 'voice' | 'announcement';
+  type: string;
 }
 
 export interface TypingUser {

@@ -293,8 +293,8 @@ export function ServerSettingsModal(props: ServerSettingsModalProps) {
                     <Show when={activeTab() === 'afk'}>
                       <AfkSettingsTab
                         serverId={serverData()?.id || ''}
-                        afkTimeout={serverData()?.afk_timeout || 300}
-                        afkChannelId={serverData()?.afk_channel_id || null}
+                        afkTimeout={serverData()?.settings?.afk_timeout || 300}
+                        afkChannelId={serverData()?.settings?.afk_channel_id || null}
                         voiceChannels={channels().filter(c => c.type === 'voice')}
                         onSave={fetchServerData}
                       />
@@ -336,12 +336,27 @@ function RolesTab() {
   const [error, setError] = createSignal<string | null>(null);
   const [isCreating, setIsCreating] = createSignal(false);
   const [newRoleName, setNewRoleName] = createSignal('');
+  const [createError, setCreateError] = createSignal('');
+  const [roleSearch, setRoleSearch] = createSignal('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = createSignal(false);
+  const [saveSuccess, setSaveSuccess] = createSignal(false);
 
   // Editable role state
   const [editName, setEditName] = createSignal('');
   const [editColor, setEditColor] = createSignal('');
   const [editPermissions, setEditPermissions] = createSignal<Record<string, boolean>>({});
   const [editHoisted, setEditHoisted] = createSignal(false);
+
+  // Preset colors for quick selection
+  const PRESET_COLORS = [
+    '#e74c3c', '#e91e63', '#9b59b6', '#673ab7',
+    '#3498db', '#2196f3', '#1abc9c', '#2ecc71',
+    '#f1c40f', '#ff9800', '#e67e22', '#795548',
+    '#607d8b', '#99aab5', '#ffffff', '#000000',
+  ];
+
+  // Dangerous permission keys that get special styling
+  const DANGEROUS_PERMS = new Set(['administrator', 'ban_members', 'kick_members', 'manage_server']);
 
   const permissionGroups = [
     {
@@ -389,6 +404,31 @@ function RolesTab() {
     },
   ];
 
+  // Track unsaved changes
+  const hasUnsavedChanges = () => {
+    const role = selectedRole();
+    if (!role) return false;
+    if (editName() !== role.name) return true;
+    if (editColor() !== (role.color || '')) return true;
+    if (editHoisted() !== (role.is_hoisted ?? false)) return true;
+    const currentPerms = editPermissions();
+    const savedPerms = role.permissions;
+    for (const key of Object.keys(currentPerms)) {
+      if (currentPerms[key] !== (savedPerms[key] ?? false)) return true;
+    }
+    for (const key of Object.keys(savedPerms)) {
+      if (savedPerms[key] !== (currentPerms[key] ?? false)) return true;
+    }
+    return false;
+  };
+
+  const filteredRoles = () => {
+    const search = roleSearch().toLowerCase();
+    const sorted = roles().sort((a, b) => b.position - a.position);
+    if (!search) return sorted;
+    return sorted.filter(r => r.name.toLowerCase().includes(search));
+  };
+
   const fetchRoles = async () => {
     setIsLoading(true);
     setError(null);
@@ -412,11 +452,17 @@ function RolesTab() {
     setEditColor(role.color || '');
     setEditPermissions({ ...role.permissions });
     setEditHoisted(role.is_hoisted ?? false);
+    setShowDeleteConfirm(false);
+    setSaveSuccess(false);
   };
 
   const handleCreateRole = async () => {
-    if (!newRoleName().trim()) return;
+    if (!newRoleName().trim()) {
+      setCreateError('Role name is required');
+      return;
+    }
 
+    setCreateError('');
     setIsCreating(true);
     try {
       const newRole = await api.post<Role>('/roles', { name: newRoleName() });
@@ -424,7 +470,7 @@ function RolesTab() {
       setNewRoleName('');
       selectRole(newRole);
     } catch (err: any) {
-      alert(err?.message || 'Failed to create role');
+      setCreateError(err?.message || 'Failed to create role');
     } finally {
       setIsCreating(false);
     }
@@ -435,6 +481,7 @@ function RolesTab() {
     if (!role) return;
 
     setIsSaving(true);
+    setSaveSuccess(false);
     try {
       const updated = await api.patch<Role>(`/roles/${role.id}`, {
         name: editName(),
@@ -444,8 +491,10 @@ function RolesTab() {
       });
       setRoles(prev => prev.map(r => r.id === role.id ? updated : r));
       setSelectedRole(updated);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2000);
     } catch (err: any) {
-      alert(err?.message || 'Failed to save role');
+      setError(err?.message || 'Failed to save role');
     } finally {
       setIsSaving(false);
     }
@@ -454,14 +503,14 @@ function RolesTab() {
   const handleDeleteRole = async () => {
     const role = selectedRole();
     if (!role) return;
-    if (!confirm(`Are you sure you want to delete the "${role.name}" role?`)) return;
 
     try {
       await api.delete(`/roles/${role.id}`);
       setRoles(prev => prev.filter(r => r.id !== role.id));
       setSelectedRole(null);
+      setShowDeleteConfirm(false);
     } catch (err: any) {
-      alert(err?.message || 'Failed to delete role');
+      setError(err?.message || 'Failed to delete role');
     }
   };
 
@@ -470,174 +519,288 @@ function RolesTab() {
   };
 
   return (
-    <div class="flex gap-6 h-[calc(100vh-120px)] min-h-[500px] ml-4">
-      {/* Role List */}
-      <div class="w-56 flex-shrink-0">
+    <div class="flex gap-0 h-[calc(100vh-120px)] min-h-[500px]">
+      {/* Role List Sidebar */}
+      <div class="w-60 flex-shrink-0 border-r border-border-subtle pr-4 flex flex-col">
         <div class="flex items-center justify-between mb-3">
-          <h3 class="text-sm font-semibold text-text-muted uppercase">Roles</h3>
+          <div class="flex items-center gap-2">
+            <h3 class="text-sm font-semibold text-text-muted uppercase">Roles</h3>
+            <span class="text-xs bg-bg-tertiary text-text-muted px-1.5 py-0.5 rounded-full font-medium">
+              {roles().length}
+            </span>
+          </div>
+        </div>
+
+        {/* Search roles */}
+        <div class="mb-3">
+          <div class="relative">
+            <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="text"
+              value={roleSearch()}
+              onInput={(e) => setRoleSearch(e.currentTarget.value)}
+              placeholder="Search roles..."
+              class="w-full pl-8 pr-2 py-1.5 bg-bg-tertiary border border-border-subtle rounded-md text-xs text-text-primary focus:outline-none focus:border-brand-primary placeholder-text-muted"
+            />
+          </div>
         </div>
 
         <Show when={isLoading()}>
-          <div class="text-sm text-text-muted">Loading...</div>
+          <div class="flex items-center justify-center py-8">
+            <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-brand-primary" />
+          </div>
         </Show>
 
-        <Show when={error()}>
-          <div class="text-sm text-danger mb-2">{error()}</div>
+        <Show when={error() && !selectedRole()}>
+          <div class="text-sm text-danger mb-2 bg-danger/10 rounded-md p-2">{error()}</div>
         </Show>
 
-        <Show when={!isLoading() && !error()}>
-          <div class="space-y-1 mb-3">
-            <For each={roles().sort((a, b) => b.position - a.position)}>
+        <Show when={!isLoading()}>
+          {/* Role list */}
+          <div class="flex-1 overflow-y-auto space-y-0.5 mb-3">
+            <For each={filteredRoles()}>
               {(role) => (
                 <button
                   onClick={() => selectRole(role)}
-                  class={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-left transition-colors ${selectedRole()?.id === role.id
-                    ? 'bg-bg-modifier-selected text-text-primary'
-                    : 'text-text-muted hover:bg-bg-modifier-hover hover:text-text-secondary'
+                  class={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm text-left transition-all ${selectedRole()?.id === role.id
+                    ? 'bg-bg-modifier-selected text-text-primary ring-1 ring-brand-primary/30'
+                    : 'text-text-secondary hover:bg-bg-modifier-hover'
                     }`}
                 >
                   <div
-                    class="w-3 h-3 rounded-full flex-shrink-0"
+                    class="w-3 h-3 rounded-full flex-shrink-0 ring-1 ring-white/10"
                     style={{ background: role.color || '#99aab5' }}
                   />
-                  <span class="truncate">{role.name}</span>
+                  <span class="truncate font-medium">{role.name}</span>
                 </button>
               )}
             </For>
           </div>
 
-          <div class="flex gap-2">
-            <input
-              type="text"
-              value={newRoleName()}
-              onInput={(e) => setNewRoleName(e.currentTarget.value)}
-              placeholder="New role..."
-              class="flex-1 px-2 py-1 bg-bg-tertiary border border-border-subtle rounded text-sm text-text-primary focus:outline-none focus:border-brand-primary"
-              onKeyDown={(e) => e.key === 'Enter' && handleCreateRole()}
-            />
-            <button
-              onClick={handleCreateRole}
-              disabled={isCreating() || !newRoleName().trim()}
-              class="p-1 bg-brand-primary text-white rounded hover:bg-brand-primary-hover disabled:opacity-50"
-            >
-              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-              </svg>
-            </button>
+          {/* Create role input */}
+          <div class="border-t border-border-subtle pt-3">
+            <div class="flex gap-2">
+              <input
+                type="text"
+                value={newRoleName()}
+                onInput={(e) => {
+                  setNewRoleName(e.currentTarget.value);
+                  if (createError()) setCreateError('');
+                }}
+                placeholder="New role name..."
+                class={`flex-1 px-2.5 py-1.5 bg-bg-tertiary border rounded-md text-sm text-text-primary focus:outline-none focus:border-brand-primary ${createError() ? 'border-danger' : 'border-border-subtle'
+                  }`}
+                onKeyDown={(e) => e.key === 'Enter' && handleCreateRole()}
+              />
+              <button
+                onClick={handleCreateRole}
+                disabled={isCreating()}
+                class="p-1.5 bg-brand-primary text-white rounded-md hover:bg-brand-hover transition-colors disabled:opacity-50"
+                title="Create role"
+              >
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+              </button>
+            </div>
+            <Show when={createError()}>
+              <p class="text-xs text-danger mt-1">{createError()}</p>
+            </Show>
           </div>
         </Show>
       </div>
 
       {/* Role Editor */}
-      <div class="flex-1 overflow-y-auto">
+      <div class="flex-1 overflow-y-auto pl-6 relative pb-16">
         <Show
           when={selectedRole()}
           fallback={
-            <div class="flex items-center justify-center h-full text-text-muted">
-              Select a role to edit
+            <div class="flex flex-col items-center justify-center h-full text-text-muted gap-3">
+              <svg class="w-12 h-12 text-text-muted/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+              <p class="text-sm">Select a role to edit its settings</p>
             </div>
           }
         >
-          <div class="space-y-6">
-            <div class="flex items-center justify-between">
-              <h2 class="text-xl font-bold text-text-primary">Edit Role</h2>
-              <div class="flex gap-2">
+          {/* Header with role color preview */}
+          <div class="flex items-center gap-3 mb-6">
+            <div
+              class="w-5 h-5 rounded-full ring-2 ring-white/10"
+              style={{ background: editColor() || '#99aab5' }}
+            />
+            <h2 class="text-lg font-bold text-text-primary">{editName() || 'Untitled Role'}</h2>
+          </div>
+
+          {/* Basic Info Card */}
+          <div class="bg-bg-secondary rounded-lg p-5 mb-4 border border-border-subtle">
+            <h3 class="text-xs font-semibold uppercase text-text-muted mb-4 tracking-wide">Role Settings</h3>
+            <div class="flex gap-4">
+              <div class="flex-1">
+                <label class="block text-xs font-semibold uppercase text-text-muted mb-1.5">Role Name</label>
+                <input
+                  type="text"
+                  value={editName()}
+                  onInput={(e) => setEditName(e.currentTarget.value)}
+                  class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded-md text-text-primary focus:outline-none focus:border-brand-primary"
+                />
+              </div>
+              <div>
+                <label class="block text-xs font-semibold uppercase text-text-muted mb-1.5">Color</label>
+                <div class="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={editColor() || '#99aab5'}
+                    onInput={(e) => setEditColor(e.currentTarget.value)}
+                    class="w-9 h-9 rounded-md cursor-pointer border border-border-subtle"
+                  />
+                  <input
+                    type="text"
+                    value={editColor()}
+                    onInput={(e) => setEditColor(e.currentTarget.value)}
+                    placeholder="#99aab5"
+                    class="w-24 px-2 py-2 bg-bg-tertiary border border-border-subtle rounded-md text-text-primary text-sm focus:outline-none focus:border-brand-primary font-mono"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Color presets */}
+            <div class="mt-3">
+              <div class="flex flex-wrap gap-1.5">
+                <For each={PRESET_COLORS}>
+                  {(color) => (
+                    <button
+                      onClick={() => setEditColor(color)}
+                      class={`w-6 h-6 rounded-md transition-all hover:scale-110 border ${editColor() === color ? 'ring-2 ring-brand-primary ring-offset-1 ring-offset-bg-secondary' : 'border-white/10'
+                        }`}
+                      style={{ background: color }}
+                      title={color}
+                    />
+                  )}
+                </For>
+              </div>
+            </div>
+
+            {/* Display Settings */}
+            <div class="border-t border-border-subtle mt-4 pt-4">
+              <button
+                onClick={() => setEditHoisted(!editHoisted())}
+                class="flex items-center justify-between w-full cursor-pointer hover:bg-bg-modifier-hover p-2 rounded-md transition-colors"
+              >
+                <div>
+                  <div class="text-sm font-medium text-text-primary text-left">Display separately in member list</div>
+                  <div class="text-xs text-text-muted text-left">Show members with this role grouped separately</div>
+                </div>
+                {/* Toggle switch */}
+                <div class={`relative w-11 h-6 rounded-full transition-colors ${editHoisted() ? 'bg-brand-primary' : 'bg-bg-tertiary'}`}>
+                  <div class={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${editHoisted() ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {/* Permissions */}
+          <div class="mb-4">
+            <h3 class="text-xs font-semibold text-text-muted uppercase mb-3 tracking-wide">Permissions</h3>
+
+            <For each={permissionGroups}>
+              {(group) => (
+                <div class="mb-3">
+                  <h4 class="text-xs font-semibold text-text-muted uppercase mb-1.5 px-1">{group.name}</h4>
+                  <div class="bg-bg-secondary rounded-lg border border-border-subtle divide-y divide-border-subtle overflow-hidden">
+                    <For each={group.permissions}>
+                      {(perm) => (
+                        <button
+                          onClick={() => togglePermission(perm.key)}
+                          class={`flex items-center justify-between p-3 w-full text-left cursor-pointer transition-colors ${DANGEROUS_PERMS.has(perm.key) && editPermissions()[perm.key]
+                            ? 'bg-danger/5 hover:bg-danger/10'
+                            : 'hover:bg-bg-modifier-hover'
+                            }`}
+                        >
+                          <div class="pr-4">
+                            <div class={`text-sm font-medium ${DANGEROUS_PERMS.has(perm.key) ? 'text-danger' : 'text-text-primary'}`}>
+                              {perm.label}
+                            </div>
+                            <div class="text-xs text-text-muted">{perm.description}</div>
+                          </div>
+                          {/* Toggle switch */}
+                          <div class={`relative w-11 h-6 rounded-full flex-shrink-0 transition-colors ${editPermissions()[perm.key]
+                            ? DANGEROUS_PERMS.has(perm.key) ? 'bg-danger' : 'bg-brand-primary'
+                            : 'bg-bg-tertiary'
+                            }`}>
+                            <div class={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${editPermissions()[perm.key] ? 'translate-x-[22px]' : 'translate-x-0.5'
+                              }`} />
+                          </div>
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                </div>
+              )}
+            </For>
+          </div>
+
+          {/* Delete Role Section */}
+          <div class="bg-bg-secondary rounded-lg border border-danger/20 p-4 mb-4">
+            <h3 class="text-xs font-semibold uppercase text-danger mb-2 tracking-wide">Danger Zone</h3>
+            <Show
+              when={showDeleteConfirm()}
+              fallback={
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  class="px-4 py-2 bg-danger/10 text-danger text-sm font-medium rounded-md hover:bg-danger/20 transition-colors border border-danger/20"
+                >
+                  Delete Role
+                </button>
+              }
+            >
+              <div class="flex items-center gap-3">
+                <p class="text-sm text-text-secondary flex-1">
+                  Delete <span class="font-semibold text-text-primary">{selectedRole()?.name}</span>? This cannot be undone.
+                </p>
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  class="px-3 py-1.5 text-sm text-text-secondary bg-bg-tertiary rounded-md hover:bg-bg-modifier-hover transition-colors"
+                >
+                  Cancel
+                </button>
                 <button
                   onClick={handleDeleteRole}
-                  class="px-3 py-1.5 bg-danger/20 text-danger text-sm font-medium rounded hover:bg-danger/30 transition-colors"
+                  class="px-3 py-1.5 text-sm text-white bg-danger rounded-md hover:bg-danger/80 transition-colors"
                 >
-                  Delete
+                  Confirm Delete
+                </button>
+              </div>
+            </Show>
+          </div>
+
+          {/* Sticky save bar */}
+          <Show when={hasUnsavedChanges()}>
+            <div class="fixed bottom-0 left-0 right-0 z-10 bg-bg-secondary border-t border-border-subtle px-6 py-3 flex items-center justify-between shadow-lg">
+              <p class="text-sm text-text-secondary">You have unsaved changes</p>
+              <div class="flex gap-2">
+                <button
+                  onClick={() => {
+                    const role = selectedRole();
+                    if (role) selectRole(role);
+                  }}
+                  class="px-4 py-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors"
+                >
+                  Reset
                 </button>
                 <button
                   onClick={handleSaveRole}
                   disabled={isSaving()}
-                  class="px-4 py-1.5 bg-success text-white text-sm font-medium rounded hover:bg-success/90 transition-colors disabled:opacity-50"
+                  class="px-4 py-1.5 bg-brand-primary text-white text-sm font-medium rounded-md hover:bg-brand-hover transition-colors disabled:opacity-50"
                 >
-                  {isSaving() ? 'Saving...' : 'Save Changes'}
+                  {isSaving() ? 'Saving...' : saveSuccess() ? 'Saved!' : 'Save Changes'}
                 </button>
               </div>
             </div>
-
-            {/* Basic Info */}
-            <div class="bg-bg-secondary rounded-lg p-4 space-y-4">
-              <div class="flex gap-4">
-                <div class="flex-1">
-                  <label class="block text-xs font-semibold uppercase text-text-muted mb-2">Role Name</label>
-                  <input
-                    type="text"
-                    value={editName()}
-                    onInput={(e) => setEditName(e.currentTarget.value)}
-                    class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
-                  />
-                </div>
-                <div>
-                  <label class="block text-xs font-semibold uppercase text-text-muted mb-2">Color</label>
-                  <div class="flex items-center gap-2">
-                    <input
-                      type="color"
-                      value={editColor() || '#99aab5'}
-                      onInput={(e) => setEditColor(e.currentTarget.value)}
-                      class="w-10 h-10 rounded cursor-pointer"
-                    />
-                    <input
-                      type="text"
-                      value={editColor()}
-                      onInput={(e) => setEditColor(e.currentTarget.value)}
-                      placeholder="#000000"
-                      class="w-24 px-2 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary text-sm focus:outline-none focus:border-brand-primary"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Display Settings */}
-              <div class="border-t border-border-subtle pt-4">
-                <label class="flex items-center justify-between cursor-pointer hover:bg-bg-modifier-hover p-2 rounded transition-colors">
-                  <div>
-                    <div class="text-sm font-medium text-text-primary">Display separately in member list</div>
-                    <div class="text-xs text-text-muted">Show members with this role grouped separately</div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={editHoisted()}
-                    onChange={(e) => setEditHoisted(e.currentTarget.checked)}
-                    class="w-5 h-5 rounded border-border-subtle bg-bg-tertiary"
-                  />
-                </label>
-              </div>
-            </div>
-
-            {/* Permissions */}
-            <div>
-              <h3 class="text-sm font-semibold text-text-muted uppercase mb-3">Permissions</h3>
-
-              <For each={permissionGroups}>
-                {(group) => (
-                  <div class="mb-4">
-                    <h4 class="text-xs font-semibold text-text-muted uppercase mb-2">{group.name}</h4>
-                    <div class="bg-bg-secondary rounded-lg divide-y divide-border-subtle">
-                      <For each={group.permissions}>
-                        {(perm) => (
-                          <label class="flex items-center justify-between p-3 cursor-pointer hover:bg-bg-modifier-hover transition-colors">
-                            <div>
-                              <div class="text-sm font-medium text-text-primary">{perm.label}</div>
-                              <div class="text-xs text-text-muted">{perm.description}</div>
-                            </div>
-                            <input
-                              type="checkbox"
-                              checked={editPermissions()[perm.key] ?? false}
-                              onChange={() => togglePermission(perm.key)}
-                              class="w-5 h-5 rounded border-border-subtle bg-bg-tertiary"
-                            />
-                          </label>
-                        )}
-                      </For>
-                    </div>
-                  </div>
-                )}
-              </For>
-            </div>
-          </div>
+          </Show>
         </Show>
       </div>
     </div>
@@ -1036,7 +1199,7 @@ function ChannelsTab(props: { serverData: ServerData | null; onRefresh: () => vo
 
   // Form states
   const [newChannelName, setNewChannelName] = createSignal('');
-  const [newChannelType, setNewChannelType] = createSignal<'text' | 'voice' | 'announcement' | 'music'>('text');
+  const [newChannelType, setNewChannelType] = createSignal<'text' | 'voice' | 'announcement' | 'music' | 'temp_voice_generator'>('text');
   const [newChannelCategory, setNewChannelCategory] = createSignal<string | null>(null);
   const [newCategoryName, setNewCategoryName] = createSignal('');
   const [actionInProgress, setActionInProgress] = createSignal(false);
@@ -1463,7 +1626,7 @@ function ChannelsTab(props: { serverData: ServerData | null; onRefresh: () => vo
 
 // Temp Channel Settings Component
 function TempChannelSettings() {
-  const [settings, setSettings] = createSignal<{
+  const [_settings, setSettings] = createSignal<{
     empty_timeout_seconds: number;
     max_temp_channels_per_user: number;
     inherit_generator_permissions: boolean;

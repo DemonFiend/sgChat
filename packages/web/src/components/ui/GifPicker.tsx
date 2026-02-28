@@ -1,6 +1,5 @@
 import { createSignal, createEffect, For, Show, onCleanup } from 'solid-js';
 import { Portal } from 'solid-js/web';
-import { clsx } from 'clsx';
 import { getEffectiveUrl, networkStore } from '@/stores/network';
 import { authStore } from '@/stores/auth';
 
@@ -129,7 +128,6 @@ export function GifPicker(props: GifPickerProps) {
       // Position above the button, ensuring it doesn't go off-screen to the right
       // The picker is 384px wide (w-96), so we need to ensure it fits
       const pickerWidth = 384;
-      const rightEdge = rect.left + pickerWidth;
       const maxLeft = window.innerWidth - pickerWidth - 16; // 16px margin from right edge
       const left = Math.max(16, Math.min(rect.left - pickerWidth / 2, maxLeft));
       

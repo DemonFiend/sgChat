@@ -16,7 +16,10 @@ export function ResetPasswordPage() {
   const [validating, setValidating] = createSignal(true);
   const [tokenValid, setTokenValid] = createSignal(false);
 
-  const token = () => searchParams.token || '';
+  const token = () => {
+    const t = searchParams.token;
+    return Array.isArray(t) ? t[0] || '' : t || '';
+  };
 
   // Check if form should be disabled (not connected to network)
   const isFormDisabled = () => networkStore.connectionStatus() !== 'connected';

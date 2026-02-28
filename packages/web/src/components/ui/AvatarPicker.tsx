@@ -1,4 +1,4 @@
-import { createSignal, createEffect, Show, onMount } from 'solid-js';
+import { createSignal, Show, onMount } from 'solid-js';
 import { clsx } from 'clsx';
 import { api } from '@/api';
 import { Avatar } from './Avatar';

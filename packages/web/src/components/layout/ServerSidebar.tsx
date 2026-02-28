@@ -50,6 +50,17 @@ export function ServerSidebar(props: ServerSidebarProps) {
     return props.channels.find(c => c.id === id) || null;
   };
 
+  // Substitute template variables in MOTD text
+  const substituteMotdVariables = (text: string): string => {
+    const user = authStore.state().user;
+    return text
+      .replace(/\{username\}/gi, user?.display_name || user?.username || 'User')
+      .replace(/\{servername\}/gi, props.server?.name || '')
+      .replace(/\{servericon\}/gi, props.server?.icon_url || '')
+      .replace(/\{servertime\}/gi, '')
+      .replace(/\{if:([^}]*)\}([\s\S]*?)\{\/if\}/gi, (_match, _cond, body) => body);
+  };
+
   // Load saved width from localStorage on mount
   onMount(() => {
     const savedWidth = localStorage.getItem(STORAGE_KEY);
@@ -321,7 +332,7 @@ export function ServerSidebar(props: ServerSidebarProps) {
       <div class="px-3 py-2 border-b border-bg-tertiary">
         <div class="text-xs font-semibold uppercase text-text-muted mb-1">MOTD</div>
         <p class="text-sm text-text-secondary line-clamp-2">
-          {props.server?.motd || 'Welcome to the server!'}
+          {substituteMotdVariables(props.server?.motd || 'Welcome to the server!')}
         </p>
       </div>
 

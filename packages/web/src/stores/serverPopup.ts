@@ -112,6 +112,12 @@ function createServerPopupStore() {
             shouldShow: should
         });
 
+        // Always track the current server so reopenPopup() can work
+        setState({
+            ...state(),
+            currentServerId: serverId,
+        });
+
         if (!should) {
             console.log(`[ServerPopup] Server ${serverId} popup shown within last 24 hours, not showing`);
             return;
@@ -122,7 +128,6 @@ function createServerPopupStore() {
             ...state(),
             isLoading: true,
             error: null,
-            currentServerId: serverId,
         });
 
         try {

@@ -398,9 +398,9 @@ export function DMSidebar(props: DMSidebarProps): JSX.Element {
                       </div>
                     </Show>
                   </div>
-                  <Show when={friend.unread_count && friend.unread_count > 0}>
+                  <Show when={(friend.unread_count ?? 0) > 0}>
                     <span class="bg-danger text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                      {friend.unread_count > 9 ? '9+' : friend.unread_count}
+                      {(friend.unread_count ?? 0) > 9 ? '9+' : friend.unread_count}
                     </span>
                   </Show>
                 </button>
@@ -419,8 +419,8 @@ export function DMSidebar(props: DMSidebarProps): JSX.Element {
                   <button
                     onClick={() => props.onSelectFriend(friend)}
                     class={`w-full flex items-center gap-2 p-2 rounded-lg transition-colors opacity-60 ${
-                      props.selectedFriendId === friend.id 
-                        ? 'bg-bg-modifier-selected opacity-100' 
+                      props.selectedFriendId === friend.id
+                        ? 'bg-bg-modifier-selected opacity-100'
                         : 'hover:bg-bg-modifier-hover hover:opacity-100'
                     }`}
                   >
@@ -442,9 +442,9 @@ export function DMSidebar(props: DMSidebarProps): JSX.Element {
                         </div>
                       </Show>
                     </div>
-                    <Show when={friend.unread_count && friend.unread_count > 0}>
+                    <Show when={(friend.unread_count ?? 0) > 0}>
                       <span class="bg-danger text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                        {friend.unread_count > 9 ? '9+' : friend.unread_count}
+                        {(friend.unread_count ?? 0) > 9 ? '9+' : friend.unread_count}
                       </span>
                     </Show>
                   </button>

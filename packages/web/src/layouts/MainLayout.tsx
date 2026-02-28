@@ -1316,6 +1316,7 @@ export function MainLayout() {
               canMoveMembers={perms?.canMoveMembers}
               canDisconnectMembers={perms?.canDisconnectMembers}
               isCurrentUser={userId === authStore.state().user?.id}
+              onSendMessage={() => navigate('/channels/@me')}
             />
           );
         }}
@@ -1348,7 +1349,7 @@ export function MainLayout() {
 
       {/* Minimized stream indicator bar - shows when stream is minimized */}
       <Show when={streamViewerStore.activeStream() && streamViewerStore.isMinimized()}>
-        {(stream) => (
+        {(_stream) => (
           <div class="fixed bottom-0 left-0 right-0 z-[60] bg-gray-900 border-t border-gray-700 px-4 py-2 flex items-center justify-between">
             <div class="flex items-center gap-3">
               <div class="flex items-center gap-2 bg-red-600 rounded px-2 py-1">

@@ -219,7 +219,7 @@ function GifRenderer(props: { src: string; isOwnMessage?: boolean; compact?: boo
 
     // Reset state when src changes
     createEffect(() => {
-        const _ = props.src;
+        void props.src;
         setIsPlaying(true);
         setImageLoaded(false);
         setImageError(false);
@@ -320,7 +320,7 @@ function StaticImageRenderer(props: { src: string; isOwnMessage?: boolean; compa
 
     // Reset loading/error state when src changes
     createEffect(() => {
-        const _ = props.src;
+        void props.src;
         setImageLoaded(false);
         setImageError(false);
     });

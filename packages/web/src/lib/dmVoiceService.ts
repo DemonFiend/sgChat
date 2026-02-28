@@ -110,7 +110,7 @@ class DMVoiceServiceClass {
           noiseSuppression: settings.audio_noise_suppression,
         },
         publishDefaults: {
-          audioBitrate: 64000,
+          audioPreset: { maxBitrate: 64000 },
           dtx: true,
           red: true,
         },
