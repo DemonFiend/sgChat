@@ -920,8 +920,9 @@ ALTER TABLE audit_log ADD CONSTRAINT audit_log_action_check CHECK (action IN (
   'category_create', 'category_update', 'category_delete',
   -- Permission actions
   'member_timeout', 'member_timeout_remove',
-  'member_role_add', 'member_role_remove',
+  'member_role_add', 'member_role_remove', 'member_role_update',
   'channel_permission_update', 'category_permission_update',
+  'popup_config_update',
   'message_pin', 'message_unpin', 'message_delete',
   'webhook_create', 'webhook_update', 'webhook_delete',
   'emoji_create', 'emoji_update', 'emoji_delete',
