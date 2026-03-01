@@ -181,7 +181,13 @@ export async function bootstrapServer(): Promise<void> {
     RETURNING id
   `;
 
-  console.log(`✅ Created categories: Server Info, General Chat, Voice Channels`);
+  const [tempCategory] = await db.sql`
+    INSERT INTO categories (server_id, name, position)
+    VALUES (${server.id}, 'Temp Channels', 3)
+    RETURNING id
+  `;
+
+  console.log(`✅ Created categories: Server Info, General Chat, Voice Channels, Temp Channels`);
 
   // ============================================================
   // CREATE DEFAULT CHANNELS
@@ -368,7 +374,21 @@ export async function bootstrapServer(): Promise<void> {
     RETURNING id
   `;
 
-  console.log(`✅ Created Voice Channels: Lounge, Music/Stage, AFK Channel`);
+  // Create Temp VC (temp_voice_generator) in Temp Channels category
+  await db.sql`
+    INSERT INTO channels (server_id, name, type, position, bitrate, user_limit, category_id)
+    VALUES (
+      ${server.id},
+      'Create Temp VC',
+      'temp_voice_generator',
+      0,
+      64000,
+      0,
+      ${tempCategory.id}
+    )
+  `;
+
+  console.log(`✅ Created Voice Channels: Lounge, Music/Stage, AFK Channel, Create Temp VC`);
 
   // Update server with default and AFK channel references
   await db.sql`

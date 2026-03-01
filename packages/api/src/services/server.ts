@@ -132,6 +132,13 @@ export async function createServer(
       RETURNING *
     `;
 
+    // 9b. Create default "Temp Channels" category
+    const [tempCategory] = await tx`
+      INSERT INTO categories (server_id, name, position)
+      VALUES (${server.id}, 'Temp Channels', 3)
+      RETURNING *
+    `;
+
     // --- Server Info channels ---
 
     // 10. Create #announcements channel (announcement type) in Server Info
@@ -319,6 +326,23 @@ export async function createServer(
       RETURNING *
     `;
 
+    // 17b. Create Temp VC generator channel in Temp Channels category
+    const [tempVcGenerator] = await tx`
+      INSERT INTO channels (
+        server_id, name, type, position, bitrate, user_limit, category_id
+      )
+      VALUES (
+        ${server.id},
+        'Create Temp VC',
+        'temp_voice_generator',
+        0,
+        64000,
+        0,
+        ${tempCategory.id}
+      )
+      RETURNING *
+    `;
+
     // 18. Update server with special channel references
     await tx`
       UPDATE servers
@@ -353,8 +377,9 @@ export async function createServer(
         loungeVoice,
         musicChannel,
         afkChannel,
+        tempVcGenerator,
       ],
-      categories: [serverInfoCategory, generalChatCategory, voiceCategory],
+      categories: [serverInfoCategory, generalChatCategory, voiceCategory, tempCategory],
       roles: [everyoneRole, adminRole, moderatorRole, memberRole],
     };
   });
