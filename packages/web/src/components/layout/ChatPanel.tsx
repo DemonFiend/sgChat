@@ -3,6 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { clsx } from 'clsx';
 import { Avatar } from '@/components/ui/Avatar';
 import { MessageContent } from '@/components/ui/MessageContent';
+import { ReactionPicker } from '@/components/ui/ReactionPicker';
 
 export interface MessageAuthor {
   id: string;
@@ -56,20 +57,30 @@ interface ChatPanelProps {
   onSendMessage?: (content: string) => void;
   onReactionAdd?: (messageId: string, emoji: string) => void;
   onReactionRemove?: (messageId: string, emoji: string) => void;
+  onEditMessage?: (messageId: string, newContent: string) => void;
+  onDeleteMessage?: (messageId: string) => void;
+  onAuthorClick?: (author: MessageAuthor, rect: DOMRect) => void;
   onTypingStart?: () => void;
   onTypingStop?: () => void;
   currentUserId?: string;
   typingUsers?: TypingUser[];
+  replyingTo?: Message | null;
+  onCancelReply?: () => void;
   isMemberListOpen?: boolean;
   onToggleMemberList?: () => void;
 }
 
 export function ChatPanel({
   channel, messages, onSendMessage, onReactionAdd, onReactionRemove,
+  onEditMessage, onDeleteMessage, onAuthorClick,
   onTypingStart, onTypingStop, currentUserId, typingUsers,
+  replyingTo, onCancelReply,
   isMemberListOpen, onToggleMemberList,
 }: ChatPanelProps) {
   const [messageInput, setMessageInput] = useState('');
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState('');
+  const [reactionPickerMsg, setReactionPickerMsg] = useState<{ id: string; anchor: HTMLElement } | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTypingRef = useRef(false);
@@ -229,6 +240,7 @@ export function ChatPanel({
             <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}>
               {virtualizer.getVirtualItems().map((virtualRow) => {
                 const message = messages[virtualRow.index];
+                const isEditing = editingMessageId === message.id;
                 return (
                   <div
                     key={message.id}
@@ -249,6 +261,21 @@ export function ChatPanel({
                       onReactionAdd={onReactionAdd ? (emoji: string) => onReactionAdd(message.id, emoji) : undefined}
                       onReactionRemove={onReactionRemove ? (emoji: string) => onReactionRemove(message.id, emoji) : undefined}
                       currentUserId={currentUserId}
+                      isEditing={isEditing}
+                      editContent={isEditing ? editContent : ''}
+                      onEditChange={setEditContent}
+                      onEditSave={() => {
+                        if (editContent.trim() && onEditMessage) {
+                          onEditMessage(message.id, editContent.trim());
+                        }
+                        setEditingMessageId(null);
+                        setEditContent('');
+                      }}
+                      onEditCancel={() => { setEditingMessageId(null); setEditContent(''); }}
+                      onEditStart={() => { setEditingMessageId(message.id); setEditContent(message.content); }}
+                      onDeleteClick={onDeleteMessage ? () => onDeleteMessage(message.id) : undefined}
+                      onReactClick={(anchor: HTMLElement) => setReactionPickerMsg({ id: message.id, anchor })}
+                      onAuthorClick={onAuthorClick}
                     />
                   </div>
                 );
@@ -267,9 +294,34 @@ export function ChatPanel({
         )}
       </div>
 
+      {/* Reaction Picker Portal */}
+      {reactionPickerMsg && (
+        <ReactionPicker
+          isOpen={true}
+          onClose={() => setReactionPickerMsg(null)}
+          onSelect={(emoji) => {
+            onReactionAdd?.(reactionPickerMsg.id, emoji);
+            setReactionPickerMsg(null);
+          }}
+          anchorRef={reactionPickerMsg.anchor}
+        />
+      )}
+
       {/* Message Input */}
       {channel && (
         <div className="px-4 pb-4 flex-shrink-0">
+          {/* Reply Indicator */}
+          {replyingTo && (
+            <div className="flex items-center gap-2 px-3 py-2 mb-1 bg-bg-tertiary rounded-t-lg text-sm text-text-muted">
+              <span>Replying to <strong className="text-text-primary">{replyingTo.author.display_name || replyingTo.author.username}</strong></span>
+              <button onClick={onCancelReply} className="ml-auto text-text-muted hover:text-text-primary">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          )}
+
           {/* Typing Indicator */}
           {typingUsers && typingUsers.length > 0 && (
             <div className="flex items-center gap-2 text-xs text-text-muted px-2 pb-1" aria-live="polite">
@@ -338,6 +390,15 @@ interface MessageItemProps {
   onReactionAdd?: (emoji: string) => void;
   onReactionRemove?: (emoji: string) => void;
   currentUserId?: string;
+  isEditing?: boolean;
+  editContent?: string;
+  onEditChange?: (content: string) => void;
+  onEditSave?: () => void;
+  onEditCancel?: () => void;
+  onEditStart?: () => void;
+  onDeleteClick?: () => void;
+  onReactClick?: (anchor: HTMLElement) => void;
+  onAuthorClick?: (author: MessageAuthor, rect: DOMRect) => void;
 }
 
 const MemoizedMessageItem = memo(MessageItem, (prev, next) => {
@@ -346,19 +407,133 @@ const MemoizedMessageItem = memo(MessageItem, (prev, next) => {
     prev.message.content === next.message.content &&
     prev.message.edited_at === next.message.edited_at &&
     prev.message.reactions === next.message.reactions &&
-    prev.showAuthor === next.showAuthor
+    prev.showAuthor === next.showAuthor &&
+    prev.isEditing === next.isEditing &&
+    prev.editContent === next.editContent
   );
 });
 
-function MessageItem({ message, showAuthor, formatTime, onReactionAdd, onReactionRemove }: MessageItemProps) {
+function MessageActionToolbar({
+  isOwnMessage,
+  onReactClick,
+  onEditStart,
+  onDeleteClick,
+}: {
+  isOwnMessage: boolean;
+  onReactClick?: (anchor: HTMLElement) => void;
+  onEditStart?: () => void;
+  onDeleteClick?: () => void;
+}) {
+  const btnClass = 'p-1 rounded hover:bg-bg-modifier-active text-text-muted hover:text-text-primary transition-colors';
+  return (
+    <div className="absolute -top-3 right-4 opacity-0 group-hover:opacity-100 flex items-center gap-0.5 bg-bg-secondary rounded border border-border shadow-md p-0.5 z-10">
+      <button
+        className={btnClass}
+        title="Add Reaction"
+        onClick={(e) => onReactClick?.(e.currentTarget)}
+      >
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      </button>
+      {isOwnMessage && (
+        <button className={btnClass} title="Edit" onClick={onEditStart}>
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+        </button>
+      )}
+      {(isOwnMessage || onDeleteClick) && (
+        <button className={clsx(btnClass, 'hover:text-danger')} title="Delete" onClick={onDeleteClick}>
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
+      )}
+    </div>
+  );
+}
+
+function MessageItem({
+  message, showAuthor, formatTime, onReactionAdd, onReactionRemove, currentUserId,
+  isEditing, editContent, onEditChange, onEditSave, onEditCancel, onEditStart,
+  onDeleteClick, onReactClick, onAuthorClick,
+}: MessageItemProps) {
   const isSystem = message.type === 'system' || message.system_event != null;
   const author = message.author || { id: 'unknown', username: 'Unknown User', display_name: null, avatar_url: null };
   const displayName = author.display_name || author.username;
+  const isOwnMessage = currentUserId === author.id;
 
   const handleReactionClick = (emoji: string) => {
     const reaction = message.reactions?.find((r) => r.emoji === emoji);
     if (reaction?.me) onReactionRemove?.(emoji);
     else onReactionAdd?.(emoji);
+  };
+
+  const handleAuthorClick = (e: React.MouseEvent) => {
+    if (onAuthorClick) {
+      onAuthorClick(author, (e.currentTarget as HTMLElement).getBoundingClientRect());
+    }
+  };
+
+  const handleEditKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onEditSave?.(); }
+    if (e.key === 'Escape') onEditCancel?.();
+  };
+
+  const renderReactions = () => {
+    if (!message.reactions || message.reactions.length === 0) return null;
+    return (
+      <div className="flex flex-wrap gap-1 mt-1">
+        {message.reactions.map((r) => (
+          <button
+            key={r.emoji}
+            onClick={() => handleReactionClick(r.emoji)}
+            className={clsx(
+              'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-colors',
+              r.me
+                ? 'bg-accent/20 border-accent text-accent'
+                : 'bg-bg-tertiary border-transparent text-text-muted hover:border-border'
+            )}
+          >
+            <span>{r.emoji}</span>
+            <span>{r.count}</span>
+          </button>
+        ))}
+      </div>
+    );
+  };
+
+  const renderContent = () => {
+    if (isEditing) {
+      return (
+        <div className="mt-1">
+          <textarea
+            value={editContent}
+            onChange={(e) => onEditChange?.(e.target.value)}
+            onKeyDown={handleEditKeyDown}
+            className="w-full bg-bg-tertiary rounded p-2 text-text-primary outline-none resize-none text-sm"
+            rows={2}
+            autoFocus
+          />
+          <div className="text-xs text-text-muted mt-1">
+            escape to <button onClick={onEditCancel} className="text-text-link hover:underline">cancel</button>
+            {' \u2022 '}enter to <button onClick={onEditSave} className="text-text-link hover:underline">save</button>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <>
+        <div className="text-text-primary">
+          <MessageContent content={message.content} />
+          {message.edited_at && (
+            <span className="text-[10px] text-text-muted ml-1" title={new Date(message.edited_at).toLocaleString()}>(edited)</span>
+          )}
+        </div>
+        {renderReactions()}
+      </>
+    );
   };
 
   // System message
@@ -395,7 +570,13 @@ function MessageItem({ message, showAuthor, formatTime, onReactionAdd, onReactio
   // Full message with avatar
   if (showAuthor) {
     return (
-      <div className="px-4 py-1 hover:bg-bg-modifier-hover group relative">
+      <div className={clsx('px-4 py-1 hover:bg-bg-modifier-hover group relative', isEditing && 'bg-bg-modifier-hover')}>
+        <MessageActionToolbar
+          isOwnMessage={isOwnMessage}
+          onReactClick={onReactClick}
+          onEditStart={onEditStart}
+          onDeleteClick={isOwnMessage ? onDeleteClick : undefined}
+        />
         <div className="flex gap-4">
           <div className="flex-shrink-0 pt-0.5">
             <Avatar src={author.avatar_url} alt={displayName} size="md" />
@@ -405,34 +586,13 @@ function MessageItem({ message, showAuthor, formatTime, onReactionAdd, onReactio
               <span
                 className="font-medium hover:underline cursor-pointer"
                 style={{ color: author.role_color || 'var(--color-text-primary)' }}
+                onClick={handleAuthorClick}
               >
                 {displayName}
               </span>
               <span className="text-xs text-text-muted">{formatTime(message.created_at)}</span>
             </div>
-            <div className="text-text-primary">
-              <MessageContent content={message.content} />
-            </div>
-            {/* Reactions */}
-            {message.reactions && message.reactions.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-1">
-                {message.reactions.map((r) => (
-                  <button
-                    key={r.emoji}
-                    onClick={() => handleReactionClick(r.emoji)}
-                    className={clsx(
-                      'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-colors',
-                      r.me
-                        ? 'bg-accent/20 border-accent text-accent'
-                        : 'bg-bg-tertiary border-transparent text-text-muted hover:border-border'
-                    )}
-                  >
-                    <span>{r.emoji}</span>
-                    <span>{r.count}</span>
-                  </button>
-                ))}
-              </div>
-            )}
+            {renderContent()}
           </div>
         </div>
       </div>
@@ -441,7 +601,13 @@ function MessageItem({ message, showAuthor, formatTime, onReactionAdd, onReactio
 
   // Compact message (continuation)
   return (
-    <div className="px-4 py-0.5 hover:bg-bg-modifier-hover group relative">
+    <div className={clsx('px-4 py-0.5 hover:bg-bg-modifier-hover group relative', isEditing && 'bg-bg-modifier-hover')}>
+      <MessageActionToolbar
+        isOwnMessage={isOwnMessage}
+        onReactClick={onReactClick}
+        onEditStart={onEditStart}
+        onDeleteClick={isOwnMessage ? onDeleteClick : undefined}
+      />
       <div className="flex gap-4">
         <div className="w-10 flex-shrink-0 flex items-start justify-end pt-0.5">
           <span className="text-[10px] text-text-muted opacity-0 group-hover:opacity-100">
@@ -449,28 +615,7 @@ function MessageItem({ message, showAuthor, formatTime, onReactionAdd, onReactio
           </span>
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-text-primary">
-            <MessageContent content={message.content} />
-          </div>
-          {message.reactions && message.reactions.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-1">
-              {message.reactions.map((r) => (
-                <button
-                  key={r.emoji}
-                  onClick={() => handleReactionClick(r.emoji)}
-                  className={clsx(
-                    'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-colors',
-                    r.me
-                      ? 'bg-accent/20 border-accent text-accent'
-                      : 'bg-bg-tertiary border-transparent text-text-muted hover:border-border'
-                  )}
-                >
-                  <span>{r.emoji}</span>
-                  <span>{r.count}</span>
-                </button>
-              ))}
-            </div>
-          )}
+          {renderContent()}
         </div>
       </div>
     </div>

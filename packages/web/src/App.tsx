@@ -10,6 +10,7 @@ const RegisterPage = lazy(() => import('@/features/auth/RegisterPage').then((m) 
 const ForgotPasswordPage = lazy(() => import('@/features/auth/ForgotPasswordPage').then((m) => ({ default: m.ForgotPasswordPage })));
 const ResetPasswordPage = lazy(() => import('@/features/auth/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage })));
 const MainLayout = lazy(() => import('@/layouts/MainLayout').then((m) => ({ default: m.MainLayout })));
+const DMLayout = lazy(() => import('@/layouts/DMLayout').then((m) => ({ default: m.DMLayout })));
 
 function LoadingScreen() {
   return (
@@ -146,7 +147,7 @@ function AppRoutes() {
         <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
         <Route path="/forgot-password" element={<PublicRoute><ForgotPasswordPage /></PublicRoute>} />
         <Route path="/reset-password" element={<PublicRoute><ResetPasswordPage /></PublicRoute>} />
-        <Route path="/channels/@me" element={<ProtectedRoute><MainLayout /></ProtectedRoute>} />
+        <Route path="/channels/@me" element={<ProtectedRoute><DMLayout /></ProtectedRoute>} />
         <Route path="/channels/:channelId" element={<ProtectedRoute><MainLayout /></ProtectedRoute>} />
         <Route path="/channels" element={<ProtectedRoute><MainLayout /></ProtectedRoute>} />
         <Route path="/" element={<Navigate to="/channels/@me" replace />} />

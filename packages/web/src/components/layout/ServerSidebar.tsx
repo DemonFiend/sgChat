@@ -25,10 +25,11 @@ interface ServerSidebarProps {
   channels: Channel[];
   categories: Category[];
   onServerSettingsClick?: () => void;
+  onChannelSettingsClick?: (channel: Channel) => void;
   onLogout?: () => void;
 }
 
-export function ServerSidebar({ server, channels, categories, onServerSettingsClick }: ServerSidebarProps) {
+export function ServerSidebar({ server, channels, categories, onServerSettingsClick, onChannelSettingsClick }: ServerSidebarProps) {
   const { channelId } = useParams<{ channelId?: string }>();
   const navigate = useNavigate();
   const [width, setWidth] = useState(DEFAULT_WIDTH);
@@ -162,7 +163,7 @@ export function ServerSidebar({ server, channels, categories, onServerSettingsCl
       </div>
 
       {/* Channel List */}
-      <ChannelList channels={channels} categories={categories} serverId={server?.id || ''} />
+      <ChannelList channels={channels} categories={categories} serverId={server?.id || ''} onChannelSettingsClick={onChannelSettingsClick} />
     </div>
   );
 }

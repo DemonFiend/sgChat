@@ -21,6 +21,7 @@ export { StreamViewer, type StreamViewerProps } from './StreamViewer';
 export { ChannelSettingsModal } from './ChannelSettingsModal';
 export { UserSettingsModal } from './UserSettingsModal';
 export { ServerSettingsModal } from './ServerSettingsModal';
+export { CreateServerModal } from './CreateServerModal';
 
 // UI components
 export { MOTDDisplay } from './MOTDDisplay';

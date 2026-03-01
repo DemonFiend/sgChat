@@ -3,13 +3,20 @@ import { useParams } from 'react-router';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuthStore } from '@/stores/auth';
 import { useServerPopupStore } from '@/stores/serverPopup';
-import { socketService } from '@/lib/socket';
+import { useVoiceStore } from '@/stores/voice';
+import { socketService, useSocketStore } from '@/lib/socket';
 import { ServerList } from '@/components/layout/ServerList';
 import { ServerSidebar } from '@/components/layout/ServerSidebar';
-import { ChatPanel, type Message, type ChannelInfo, type TypingUser } from '@/components/layout/ChatPanel';
+import { ChatPanel, type Message, type MessageAuthor, type ChannelInfo, type TypingUser } from '@/components/layout/ChatPanel';
 import { MemberList } from '@/components/layout/MemberList';
 import { UserPanel } from '@/components/layout/UserPanel';
 import { TitleBar } from '@/components/ui/TitleBar';
+import { ServerSettingsModal } from '@/components/ui/ServerSettingsModal';
+import { ChannelSettingsModal } from '@/components/ui/ChannelSettingsModal';
+import { VoiceConnectedBar } from '@/components/ui/VoiceConnectedBar';
+import { UserContextMenu, type ContextMenuItem } from '@/components/ui/UserContextMenu';
+import { UserProfilePopover } from '@/components/ui/UserProfilePopover';
+import { CreateServerModal } from '@/components/ui/CreateServerModal';
 import { useGlobalShortcuts } from '@/hooks/useElectron';
 import { slideInRight, easeTransition } from '@/lib/motion';
 import type { Channel, Category } from '@/components/layout/ChannelList';
@@ -48,14 +55,30 @@ export function MainLayout() {
   const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
   const [isMemberListOpen, setIsMemberListOpen] = useState(true);
 
-  // Fetch server list on mount
+  // Modal & popover state
+  const [showServerSettings, setShowServerSettings] = useState(false);
+  const [settingsChannel, setSettingsChannel] = useState<{ id: string; name: string; type: string; topic?: string; server_id: string } | null>(null);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [profilePopover, setProfilePopover] = useState<{
+    member: MemberData | MessageAuthor;
+    rect: DOMRect;
+  } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    member: MemberData;
+    position: { x: number; y: number };
+  } | null>(null);
+  const [showCreateServer, setShowCreateServer] = useState(false);
+
+  // Fetch server list on mount — waits for socket connection if not yet connected
   useEffect(() => {
+    let cleanupConnect: (() => void) | undefined;
+
     const handleServerList = (data: { servers: ServerData[] }) => {
       setServers(data.servers);
       if (data.servers.length > 0 && !currentServer) {
         const first = data.servers[0];
         setCurrentServer(first);
-        socketService.emit('server.join', { server_id: first.id });
+        socketService.emit('server.join', { server_id: first.id }).catch(() => {});
         showPopup(first.id);
       }
     };
@@ -78,18 +101,38 @@ export function MainLayout() {
           .sort((a, b) => a.position - b.position)[0];
         if (firstText) {
           setCurrentChannel({ id: firstText.id, name: firstText.name, topic: firstText.topic, type: firstText.type });
-          socketService.emit('channel.join', { channel_id: firstText.id });
+          socketService.emit('channel.join', { channel_id: firstText.id }).catch(() => {});
         }
       }
     };
 
     socketService.on('server.list', handleServerList as (data: unknown) => void);
     socketService.on('server.data', handleServerData as (data: unknown) => void);
-    socketService.emit('server.list');
+
+    // Wait for socket to be connected before emitting
+    const emitServerList = () => {
+      socketService.emit('server.list').catch((err: Error) => {
+        console.warn('[MainLayout] Failed to emit server.list:', err.message);
+      });
+    };
+
+    const { connectionState } = useSocketStore.getState();
+    if (connectionState === 'connected') {
+      emitServerList();
+    } else {
+      // Socket not connected yet — wait for connect event
+      const onConnect = () => {
+        emitServerList();
+        socketService.off('connect', onConnect as (data: unknown) => void);
+      };
+      socketService.on('connect', onConnect as (data: unknown) => void);
+      cleanupConnect = () => socketService.off('connect', onConnect as (data: unknown) => void);
+    }
 
     return () => {
       socketService.off('server.list', handleServerList as (data: unknown) => void);
       socketService.off('server.data', handleServerData as (data: unknown) => void);
+      cleanupConnect?.();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -213,6 +256,41 @@ export function MainLayout() {
     socketService.emit('reaction.remove', { message_id: messageId, emoji });
   }, []);
 
+  const handleEditMessage = useCallback((messageId: string, newContent: string) => {
+    socketService.emit('message.update', { message_id: messageId, content: newContent });
+  }, []);
+
+  const handleDeleteMessage = useCallback((messageId: string) => {
+    socketService.emit('message.delete', { message_id: messageId });
+  }, []);
+
+  const handleAuthorClick = useCallback((author: MessageAuthor, rect: DOMRect) => {
+    setProfilePopover({ member: author, rect });
+  }, []);
+
+  const handleMemberClick = useCallback((member: MemberData, rect: DOMRect) => {
+    setProfilePopover({ member, rect });
+  }, []);
+
+  const handleMemberContextMenu = useCallback((member: MemberData, e: React.MouseEvent) => {
+    e.preventDefault();
+    const items: ContextMenuItem[] = [
+      { label: 'Profile', icon: 'user', onClick: () => {
+        setContextMenu(null);
+        setProfilePopover({ member, rect: (e.target as HTMLElement).getBoundingClientRect() });
+      }},
+      { label: 'Message', icon: 'message', onClick: () => setContextMenu(null) },
+    ];
+    if (currentServer?.owner_id === user?.id && member.id !== user?.id) {
+      items.push({ label: '', separator: true, onClick: () => {} });
+      items.push({ label: 'Kick', icon: 'kick', danger: true, onClick: () => {
+        socketService.emit('member.kick', { server_id: currentServer!.id, user_id: member.id });
+        setContextMenu(null);
+      }});
+    }
+    setContextMenu({ member, position: { x: e.clientX, y: e.clientY } });
+  }, [currentServer, user?.id]);
+
   // Group members for MemberList
   const memberGroups = (() => {
     const online = members.filter((m) => m.status !== 'offline');
@@ -224,13 +302,14 @@ export function MainLayout() {
   })();
 
   // Wire up Electron global shortcuts for mute/deafen
-  // TODO: Connect to voice store when voice state management is wired up
   useGlobalShortcuts({
     onMuteToggle: useCallback(() => {
-      console.log('[MainLayout] Global shortcut: toggle mute');
+      const { localState, setMuted } = useVoiceStore.getState();
+      setMuted(!localState.isMuted);
     }, []),
     onDeafenToggle: useCallback(() => {
-      console.log('[MainLayout] Global shortcut: toggle deafen');
+      const { localState, setDeafened } = useVoiceStore.getState();
+      setDeafened(!localState.isDeafened);
     }, []),
   });
 
@@ -242,9 +321,9 @@ export function MainLayout() {
       {/* Main content area — adjusts for title bar height */}
       <div className="flex flex-1 min-h-0" style={{ height: 'calc(100vh - var(--title-bar-height))' }}>
         {/* Server List (leftmost column) */}
-        <ServerList servers={servers} onCreateServer={() => {}} />
+        <ServerList servers={servers} onCreateServer={() => setShowCreateServer(true)} />
 
-        {/* Server Sidebar (channels + user panel) */}
+        {/* Server Sidebar (channels + voice bar + user panel) */}
         <div className="flex flex-col h-full">
           <ServerSidebar
             server={currentServer ? {
@@ -255,7 +334,16 @@ export function MainLayout() {
             } : null}
             channels={channels}
             categories={categories}
+            onServerSettingsClick={() => setShowServerSettings(true)}
+            onChannelSettingsClick={(channel) => setSettingsChannel({
+              id: channel.id,
+              name: channel.name,
+              type: channel.type,
+              topic: channel.topic,
+              server_id: currentServer?.id || '',
+            })}
           />
+          <VoiceConnectedBar />
           <UserPanel />
         </div>
 
@@ -267,10 +355,15 @@ export function MainLayout() {
             onSendMessage={handleSendMessage}
             onReactionAdd={handleReactionAdd}
             onReactionRemove={handleReactionRemove}
+            onEditMessage={handleEditMessage}
+            onDeleteMessage={handleDeleteMessage}
+            onAuthorClick={handleAuthorClick}
             onTypingStart={handleTypingStart}
             onTypingStop={handleTypingStop}
             currentUserId={user?.id}
             typingUsers={typingUsers}
+            replyingTo={replyingTo}
+            onCancelReply={() => setReplyingTo(null)}
             isMemberListOpen={isMemberListOpen}
             onToggleMemberList={() => setIsMemberListOpen(!isMemberListOpen)}
           />
@@ -288,12 +381,84 @@ export function MainLayout() {
                 <MemberList
                   groups={memberGroups}
                   ownerId={currentServer?.owner_id}
+                  onMemberClick={handleMemberClick}
+                  onMemberContextMenu={handleMemberContextMenu}
                 />
               </motion.div>
             )}
           </AnimatePresence>
         </div>
       </div>
+
+      {/* Server Settings Modal */}
+      {currentServer && (
+        <ServerSettingsModal
+          isOpen={showServerSettings}
+          onClose={() => setShowServerSettings(false)}
+          serverName={currentServer.name}
+          serverIcon={currentServer.icon_url}
+          serverOwnerId={currentServer.owner_id}
+        />
+      )}
+
+      {/* Channel Settings Modal */}
+      {settingsChannel && (
+        <ChannelSettingsModal
+          isOpen={true}
+          onClose={() => setSettingsChannel(null)}
+          channel={settingsChannel}
+        />
+      )}
+
+      {/* User Profile Popover */}
+      {profilePopover && (
+        <UserProfilePopover
+          onClose={() => setProfilePopover(null)}
+          anchorRect={profilePopover.rect}
+          userId={profilePopover.member.id}
+          username={profilePopover.member.username}
+          displayName={profilePopover.member.display_name}
+          avatarUrl={profilePopover.member.avatar_url}
+          status={'status' in profilePopover.member ? profilePopover.member.status : undefined}
+          roleColor={'role_color' in profilePopover.member ? profilePopover.member.role_color : undefined}
+          customStatus={'custom_status' in profilePopover.member ? profilePopover.member.custom_status : undefined}
+          isCurrentUser={profilePopover.member.id === user?.id}
+          serverId={currentServer?.id}
+        />
+      )}
+
+      {/* Create Server Modal */}
+      <CreateServerModal
+        isOpen={showCreateServer}
+        onClose={() => setShowCreateServer(false)}
+        onCreated={(server) => {
+          setServers((prev) => [...prev, { ...server, icon_url: null, owner_id: user?.id || '' }]);
+          socketService.emit('server.join', { server_id: server.id }).catch(() => {});
+        }}
+      />
+
+      {/* User Context Menu */}
+      {contextMenu && (
+        <UserContextMenu
+          isOpen={true}
+          onClose={() => setContextMenu(null)}
+          position={contextMenu.position}
+          items={[
+            { label: 'Profile', onClick: () => {
+              setProfilePopover({ member: contextMenu.member, rect: new DOMRect(contextMenu.position.x, contextMenu.position.y, 0, 0) });
+              setContextMenu(null);
+            }},
+            { label: 'Message', onClick: () => setContextMenu(null) },
+            ...(currentServer?.owner_id === user?.id && contextMenu.member.id !== user?.id ? [
+              { label: '', separator: true, onClick: () => {} },
+              { label: 'Kick', danger: true, onClick: () => {
+                socketService.emit('member.kick', { server_id: currentServer!.id, user_id: contextMenu.member.id });
+                setContextMenu(null);
+              }},
+            ] as ContextMenuItem[] : []),
+          ]}
+        />
+      )}
     </div>
   );
 }

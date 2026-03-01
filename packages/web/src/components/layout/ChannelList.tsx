@@ -30,6 +30,7 @@ interface ChannelListProps {
   channels: Channel[];
   categories: Category[];
   serverId: string;
+  onChannelSettingsClick?: (channel: Channel) => void;
 }
 
 const channelIcon = (type: ChannelType) => {
@@ -80,7 +81,7 @@ const channelIcon = (type: ChannelType) => {
   }
 };
 
-export function ChannelList({ channels, categories, serverId }: ChannelListProps) {
+export function ChannelList({ channels, categories, serverId, onChannelSettingsClick }: ChannelListProps) {
   const { channelId } = useParams<{ channelId?: string }>();
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
 
@@ -133,6 +134,7 @@ export function ChannelList({ channels, categories, serverId }: ChannelListProps
                       channel={channel}
                       isActive={channelId === channel.id}
                       serverId={serverId}
+                      onSettingsClick={onChannelSettingsClick}
                     />
                   ))}
                 </div>
@@ -155,7 +157,7 @@ export function ChannelList({ channels, categories, serverId }: ChannelListProps
               Text Channels
             </button>
             {!collapsedSections.has('text') && textChannels.map((channel) => (
-              <ChannelItem key={channel.id} channel={channel} isActive={channelId === channel.id} serverId={serverId} />
+              <ChannelItem key={channel.id} channel={channel} isActive={channelId === channel.id} serverId={serverId} onSettingsClick={onChannelSettingsClick} />
             ))}
           </div>
 
@@ -173,7 +175,7 @@ export function ChannelList({ channels, categories, serverId }: ChannelListProps
               Voice Channels
             </button>
             {!collapsedSections.has('voice') && voiceChannels.map((channel) => (
-              <ChannelItem key={channel.id} channel={channel} isActive={channelId === channel.id} serverId={serverId} />
+              <ChannelItem key={channel.id} channel={channel} isActive={channelId === channel.id} serverId={serverId} onSettingsClick={onChannelSettingsClick} />
             ))}
           </div>
         </>
@@ -186,9 +188,10 @@ interface ChannelItemProps {
   channel: Channel;
   isActive: boolean;
   serverId: string;
+  onSettingsClick?: (channel: Channel) => void;
 }
 
-const ChannelItem = memo(function ChannelItem({ channel, isActive, serverId }: ChannelItemProps) {
+const ChannelItem = memo(function ChannelItem({ channel, isActive, serverId, onSettingsClick }: ChannelItemProps) {
   const hasUnread = (channel.unread_count ?? 0) > 0;
 
   return (
@@ -196,7 +199,7 @@ const ChannelItem = memo(function ChannelItem({ channel, isActive, serverId }: C
       <Link
         to={`/channels/${serverId}/${channel.id}`}
         className={clsx(
-          'relative flex items-center gap-1.5 px-2 py-1.5 mb-0.5 rounded text-sm transition-colors',
+          'group/channel relative flex items-center gap-1.5 px-2 py-1.5 mb-0.5 rounded text-sm transition-colors',
           isActive
             ? 'bg-bg-modifier-selected text-text-primary'
             : hasUnread
@@ -210,6 +213,19 @@ const ChannelItem = memo(function ChannelItem({ channel, isActive, serverId }: C
 
         {channelIcon(channel.type)}
         <span className="truncate flex-1">{channel.name}</span>
+
+        {onSettingsClick && (
+          <button
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSettingsClick(channel); }}
+            className="opacity-0 group-hover/channel:opacity-100 p-0.5 rounded hover:bg-bg-modifier-active text-text-muted hover:text-text-primary transition-all"
+            title="Edit Channel"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
+        )}
 
         {hasUnread && !isActive && (
           <UnreadIndicator count={channel.unread_count} hasMentions={channel.has_mentions} />
