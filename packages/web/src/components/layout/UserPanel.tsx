@@ -12,9 +12,12 @@ interface UserPanelProps {
 
 export function UserPanel({ onSettingsClick }: UserPanelProps) {
   const navigate = useNavigate();
-  const { user, logout } = useAuthStore();
-  const { clearConnection } = useNetworkStore();
-  const { localState, setMuted, setDeafened } = useVoiceStore();
+  const user = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
+  const clearConnection = useNetworkStore((s) => s.clearConnection);
+  const localState = useVoiceStore((s) => s.localState);
+  const setMuted = useVoiceStore((s) => s.setMuted);
+  const setDeafened = useVoiceStore((s) => s.setDeafened);
   const [showMenu, setShowMenu] = useState(false);
 
   const handleLogout = useCallback(async (clearSaved: boolean) => {

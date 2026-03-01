@@ -75,6 +75,7 @@ export function MainLayout() {
   const [members, setMembers] = useState<MemberData[]>([]);
   const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
   const [isMemberListOpen, setIsMemberListOpen] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Modal & popover state
   const [showServerSettings, setShowServerSettings] = useState(false);
@@ -164,6 +165,7 @@ export function MainLayout() {
         }
       } catch (err) {
         console.error('[MainLayout] Failed to fetch server data:', err);
+        setLoadError(err instanceof Error ? err.message : 'Failed to load server data');
       }
     };
     fetchServerData();
@@ -500,6 +502,14 @@ export function MainLayout() {
         isVisible={currentServer?.admin_claimed === false}
         onClaimClick={() => setShowClaimAdmin(true)}
       />
+
+      {/* Error banner */}
+      {loadError && (
+        <div className="bg-danger/10 border-b border-danger/30 px-4 py-2 text-sm text-danger flex items-center justify-between">
+          <span>Failed to load: {loadError}</span>
+          <button onClick={() => window.location.reload()} className="text-xs underline">Reload</button>
+        </div>
+      )}
 
       {/* Main content area — adjusts for title bar height */}
       <div

@@ -632,7 +632,7 @@ function AppearanceTab() {
                 <div
                   className={clsx(
                     'w-full aspect-video rounded mb-2',
-                    t === 'midnight' && 'bg-[#1e1f22]',
+                    t === 'midnight' && 'bg-[#12131a]',
                     t === 'dark' && 'bg-[#313338]',
                     t === 'light' && 'bg-[#f2f3f5]',
                     t === 'oled' && 'bg-black',

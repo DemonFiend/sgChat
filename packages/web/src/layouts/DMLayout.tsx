@@ -19,6 +19,7 @@ export function DMLayout() {
   const navigate = useNavigate();
   const [servers, setServers] = useState<ServerData[]>([]);
   const [showUserSettings, setShowUserSettings] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Fetch server info via REST (not socket events)
   useEffect(() => {
@@ -28,6 +29,7 @@ export function DMLayout() {
         setServers([server]);
       } catch (err) {
         console.error('[DMLayout] Failed to fetch server:', err);
+        setLoadError(err instanceof Error ? err.message : 'Failed to load server');
       }
     };
     fetchServer();
@@ -36,6 +38,12 @@ export function DMLayout() {
   return (
     <div className="flex flex-col h-screen bg-bg-primary text-text-primary overflow-hidden">
       <TitleBar />
+      {loadError && (
+        <div className="bg-danger/10 border-b border-danger/30 px-4 py-2 text-sm text-danger flex items-center justify-between">
+          <span>Failed to load: {loadError}</span>
+          <button onClick={() => window.location.reload()} className="text-xs underline">Reload</button>
+        </div>
+      )}
       <div
         className="flex flex-1 min-h-0"
         style={{ height: 'calc(100vh - var(--title-bar-height))' }}
