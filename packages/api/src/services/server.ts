@@ -2,7 +2,7 @@ import { sql } from '../lib/db.js';
 import { db } from '../lib/db.js';
 import { nanoid } from 'nanoid';
 import { getDefaultPermissions } from './permissions.js';
-import { permissionToString, RoleTemplates, ALL_PERMISSIONS } from '@sgchat/shared';
+import { permissionToString, RoleTemplates, ALL_PERMISSIONS, TextPermissions } from '@sgchat/shared';
 
 /**
  * Create a new server with default channels, categories, and roles
@@ -175,7 +175,7 @@ export async function createServer(
         ${rolesChannel.id},
         ${everyoneRole.id},
         '0',
-        ${1n << 11n}
+        ${permissionToString(TextPermissions.SEND_MESSAGES)}
       )
     `;
 
@@ -206,7 +206,7 @@ export async function createServer(
         ${welcomeChannel.id},
         ${everyoneRole.id},
         '0',
-        ${1n << 11n}
+        ${permissionToString(TextPermissions.SEND_MESSAGES)}
       )
     `;
 
@@ -251,7 +251,7 @@ export async function createServer(
         ${moderatorChannel.id},
         ${everyoneRole.id},
         '0',
-        ${1n << 10n}
+        ${permissionToString(TextPermissions.VIEW_CHANNEL)}
       )
     `;
 
@@ -263,7 +263,7 @@ export async function createServer(
       VALUES (
         ${moderatorChannel.id},
         ${moderatorRole.id},
-        ${1n << 10n},
+        ${permissionToString(TextPermissions.VIEW_CHANNEL)},
         '0'
       )
     `;

@@ -12,6 +12,7 @@ import { db } from './db.js';
 import {
   DEFAULT_EVERYONE_PERMISSIONS,
   RoleTemplates,
+  TextPermissions,
   permissionToString,
 } from '@sgchat/shared';
 
@@ -232,7 +233,7 @@ export async function bootstrapServer(): Promise<void> {
       ${rolesChannel.id},
       ${everyoneRole.id},
       '0',
-      ${String(1n << 11n)}
+      ${permissionToString(TextPermissions.SEND_MESSAGES)}
     )
   `;
 
@@ -262,7 +263,7 @@ export async function bootstrapServer(): Promise<void> {
       ${welcomeChannel.id},
       ${everyoneRole.id},
       '0',
-      ${String(1n << 11n)}
+      ${permissionToString(TextPermissions.SEND_MESSAGES)}
     )
   `;
 
@@ -301,7 +302,7 @@ export async function bootstrapServer(): Promise<void> {
       ${moderatorChannel.id},
       ${everyoneRole.id},
       '0',
-      ${String(1n << 10n)}
+      ${permissionToString(TextPermissions.VIEW_CHANNEL)}
     )
   `;
 
@@ -313,7 +314,7 @@ export async function bootstrapServer(): Promise<void> {
       ) VALUES (
         ${moderatorChannel.id},
         ${moderatorRole.id},
-        ${String(1n << 10n)},
+        ${permissionToString(TextPermissions.VIEW_CHANNEL)},
         '0'
       )
     `;

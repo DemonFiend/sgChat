@@ -325,9 +325,7 @@ export function ChannelSettingsModal(props: ChannelSettingsModalProps) {
                               `/channels/${props.channel.id}/permissions`
                             );
                             setOverrides(permsData.overrides || []);
-                            setExpandedOverrideId(null);
                           }}
-                          onCancel={() => setExpandedOverrideId(null)}
                         />
                       </Show>
                     </div>

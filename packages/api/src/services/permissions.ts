@@ -306,7 +306,8 @@ export async function canAccessChannel(
   try {
     const perms = await calculatePermissions(userId, channel.server_id, channelId);
 
-    if (channel.type === 'text') {
+    const isTextBased = channel.type === 'text' || channel.type === 'announcement';
+    if (isTextBased) {
       return hasPermission(perms.text, TextPermissions.VIEW_CHANNEL);
     } else {
       return hasPermission(perms.voice, VoicePermissions.VIEW_CHANNEL);
