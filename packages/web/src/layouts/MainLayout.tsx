@@ -171,11 +171,18 @@ export function MainLayout() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Fetch messages when channelId changes via REST ─────────────
+  // Use channelsLoaded flag instead of channels array to avoid re-fetch loop
+  // (ackTimer updates channels, which would re-trigger this effect)
+  const channelsLoaded = channels.length > 0;
+
   useEffect(() => {
     if (!channelId) return;
 
+    // Use ref for latest channels data (avoids channels in dependency array)
+    const currentChannels = channelsRef.current;
+
     // Find the channel in our loaded list
-    const channel = channels.find((c) => c.id === channelId);
+    const channel = currentChannels.find((c) => c.id === channelId);
     if (channel) {
       setCurrentChannel({
         id: channel.id,
@@ -183,10 +190,10 @@ export function MainLayout() {
         topic: channel.topic,
         type: channel.type,
       });
-    } else if (channels.length > 0) {
+    } else if (currentChannels.length > 0) {
       // channelId doesn't match any channel (e.g. server ID from ServerList click)
       // → auto-redirect to first text channel
-      const firstText = channels
+      const firstText = currentChannels
         .filter((c) => c.type === 'text')
         .sort((a, b) => a.position - b.position)[0];
       if (firstText) {
@@ -232,7 +239,7 @@ export function MainLayout() {
     setTypingUsers([]);
 
     return () => clearTimeout(ackTimer);
-  }, [channelId, channels, navigate]);
+  }, [channelId, channelsLoaded, navigate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Wire up real-time message events (correct event names) ─────
   useEffect(() => {
@@ -469,15 +476,19 @@ export function MainLayout() {
     [],
   );
 
-  // Group members for MemberList
-  const memberGroups = (() => {
+  const handleToggleMemberList = useCallback(() => {
+    setIsMemberListOpen((prev) => !prev);
+  }, []);
+
+  // Group members for MemberList (memoized to prevent new refs every render)
+  const memberGroups = useMemo(() => {
     const online = members.filter((m) => m.status !== 'offline');
     const offline = members.filter((m) => m.status === 'offline');
     return [
       { name: 'Online', members: online },
       { name: 'Offline', members: offline },
     ];
-  })();
+  }, [members]);
 
   // Wire up Electron global shortcuts for mute/deafen
   useGlobalShortcuts({
@@ -572,7 +583,7 @@ export function MainLayout() {
             onCancelReply={() => setReplyingTo(null)}
             onReplyClick={(message) => setReplyingTo(message)}
             isMemberListOpen={isMemberListOpen}
-            onToggleMemberList={() => setIsMemberListOpen(!isMemberListOpen)}
+            onToggleMemberList={handleToggleMemberList}
           />
 
           <AnimatePresence>
