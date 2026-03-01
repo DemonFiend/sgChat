@@ -465,6 +465,68 @@ export function MainLayout() {
     };
   }, []);
 
+  // ── Wire up server, presence, and channel update events ──────────
+  useEffect(() => {
+    const handleServerUpdate = (data: any) => {
+      if (data.id) {
+        setCurrentServer((prev) => prev ? { ...prev, ...data } : prev);
+      }
+    };
+
+    const handlePresenceUpdate = (data: any) => {
+      const userId = data.user_id || data.id;
+      if (!userId) return;
+      setMembers((prev) =>
+        prev.map((m) =>
+          m.id === userId
+            ? {
+                ...m,
+                status: data.status ?? m.status,
+                avatar_url: data.avatar_url ?? m.avatar_url,
+                display_name: data.display_name ?? m.display_name,
+                custom_status: data.custom_status ?? m.custom_status,
+              }
+            : m,
+        ),
+      );
+      // If it's the current user, update auth store too
+      if (userId === user?.id && data.avatar_url !== undefined) {
+        useAuthStore.getState().updateAvatarUrl(data.avatar_url);
+      }
+    };
+
+    const handleChannelCreate = (data: any) => {
+      setChannels((prev) => {
+        if (prev.some((c) => c.id === data.id)) return prev;
+        return [...prev, data];
+      });
+    };
+
+    const handleChannelUpdate = (data: any) => {
+      setChannels((prev) =>
+        prev.map((c) => (c.id === data.id ? { ...c, ...data } : c)),
+      );
+    };
+
+    const handleChannelDelete = (data: any) => {
+      setChannels((prev) => prev.filter((c) => c.id !== data.id));
+    };
+
+    socketService.on('server.update', handleServerUpdate as (data: unknown) => void);
+    socketService.on('presence.update', handlePresenceUpdate as (data: unknown) => void);
+    socketService.on('channel.create', handleChannelCreate as (data: unknown) => void);
+    socketService.on('channel.update', handleChannelUpdate as (data: unknown) => void);
+    socketService.on('channel.delete', handleChannelDelete as (data: unknown) => void);
+
+    return () => {
+      socketService.off('server.update', handleServerUpdate as (data: unknown) => void);
+      socketService.off('presence.update', handlePresenceUpdate as (data: unknown) => void);
+      socketService.off('channel.create', handleChannelCreate as (data: unknown) => void);
+      socketService.off('channel.update', handleChannelUpdate as (data: unknown) => void);
+      socketService.off('channel.delete', handleChannelDelete as (data: unknown) => void);
+    };
+  }, [user?.id]);
+
   // ── Action handlers (correct socket event names) ───────────────
   const handleSendMessage = useCallback(
     (content: string) => {

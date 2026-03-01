@@ -83,6 +83,7 @@ interface AuthActions {
   clearExpiredCustomStatus: () => boolean;
   refreshUser: () => Promise<User | null>;
   updateAvatarUrl: (avatar_url: string | null) => void;
+  updateUser: (updates: Partial<User>) => void;
   triggerAuthError: (reason: AuthErrorReason) => void;
   clearAuthError: () => void;
 }
@@ -311,6 +312,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => {
       } catch { return null; }
     },
     updateAvatarUrl: (avatar_url) => set((s) => ({ ...s, user: s.user ? { ...s.user, avatar_url } : null })),
+    updateUser: (updates) => set((s) => ({ ...s, user: s.user ? { ...s.user, ...updates } : null })),
   };
 });
 

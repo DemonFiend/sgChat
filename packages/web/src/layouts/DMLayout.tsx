@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router';
 import { api } from '@/api';
 import { ServerList } from '@/components/layout/ServerList';
 import { DMPage } from '@/components/layout/DMPage';
-import { UserPanel } from '@/components/layout/UserPanel';
 import { TitleBar } from '@/components/ui/TitleBar';
 import { UserSettingsModal } from '@/components/ui/UserSettingsModal';
 import { FloatingUserPanel } from '@/components/layout/FloatingUserPanel';
@@ -52,7 +51,6 @@ export function DMLayout() {
           <div className="flex-1 min-h-0">
             <DMPage />
           </div>
-          <UserPanel onSettingsClick={() => setShowUserSettings(true)} />
         </div>
       </div>
 

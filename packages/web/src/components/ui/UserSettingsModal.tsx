@@ -141,7 +141,7 @@ export function UserSettingsModal({ isOpen, onClose }: UserSettingsModalProps) {
         <div className="flex-1 overflow-y-auto py-[60px] px-10">
           <div className="max-w-[740px] mx-auto">
             {activeTab === 'account' && (
-              <AccountTab user={user} onClose={onClose} />
+              <AccountTab user={user} onClose={onClose} onSwitchTab={setActiveTab} />
             )}
             {activeTab === 'profile' && (
               <ProfileTab user={user} />
@@ -164,20 +164,105 @@ export function UserSettingsModal({ isOpen, onClose }: UserSettingsModalProps) {
 }
 
 // Account Tab
-function AccountTab({ user, onClose }: { user: ReturnType<typeof authStore.getState>['user']; onClose: () => void }) {
+function AccountTab({ user, onClose, onSwitchTab }: { user: ReturnType<typeof authStore.getState>['user']; onClose: () => void; onSwitchTab: (tab: SettingsTab) => void }) {
   const navigate = useNavigate();
   const [loggingOut, setLoggingOut] = useState(false);
 
+  // Inline editing state
+  const [editingUsername, setEditingUsername] = useState(false);
+  const [newUsername, setNewUsername] = useState(user?.username || '');
+  const [usernameError, setUsernameError] = useState<string | null>(null);
+  const [savingUsername, setSavingUsername] = useState(false);
+
+  const [editingEmail, setEditingEmail] = useState(false);
+  const [newEmail, setNewEmail] = useState(user?.email || '');
+  const [emailPassword, setEmailPassword] = useState('');
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [savingEmail, setSavingEmail] = useState(false);
+
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
+
+  const [showDisableConfirm, setShowDisableConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
   const handleLogout = async (forgetDevice: boolean) => {
     setLoggingOut(true);
-
     try {
-      onClose(); // Close the settings modal first
+      onClose();
       await authStore.logout(forgetDevice);
       networkStore.clearConnection();
       navigate('/login', { replace: true });
     } finally {
       setLoggingOut(false);
+    }
+  };
+
+  const handleSaveUsername = async () => {
+    if (!newUsername.trim() || newUsername === user?.username) {
+      setEditingUsername(false);
+      return;
+    }
+    setSavingUsername(true);
+    setUsernameError(null);
+    try {
+      await api.patch('/users/me', { username: newUsername.trim() });
+      authStore.getState().updateUser({ username: newUsername.trim() });
+      setEditingUsername(false);
+    } catch (err: any) {
+      setUsernameError(err?.message || 'Failed to update username');
+    } finally {
+      setSavingUsername(false);
+    }
+  };
+
+  const handleSaveEmail = async () => {
+    if (!newEmail.trim() || !emailPassword) {
+      setEmailError('Email and password are required');
+      return;
+    }
+    setSavingEmail(true);
+    setEmailError(null);
+    try {
+      await api.post('/users/me/email', { email: newEmail.trim(), password: emailPassword });
+      authStore.getState().updateUser({ email: newEmail.trim() });
+      setEditingEmail(false);
+      setEmailPassword('');
+    } catch (err: any) {
+      setEmailError(err?.message || 'Failed to update email');
+    } finally {
+      setSavingEmail(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (newPassword !== confirmPassword) {
+      setPasswordError('Passwords do not match');
+      return;
+    }
+    if (newPassword.length < 8) {
+      setPasswordError('Password must be at least 8 characters');
+      return;
+    }
+    setSavingPassword(true);
+    setPasswordError(null);
+    setPasswordSuccess(false);
+    try {
+      await api.post('/users/me/password', { currentPassword, newPassword });
+      setPasswordSuccess(true);
+      setChangingPassword(false);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err: any) {
+      setPasswordError(err?.message || 'Failed to change password');
+    } finally {
+      setSavingPassword(false);
     }
   };
 
@@ -207,31 +292,90 @@ function AccountTab({ user, onClose }: { user: ReturnType<typeof authStore.getSt
               </h3>
               <p className="text-sm text-text-muted">@{user?.username}</p>
             </div>
-            <button className="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors">
+            <button
+              onClick={() => onSwitchTab('profile')}
+              className="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors"
+            >
               Edit User Profile
             </button>
           </div>
 
           {/* Account details card */}
           <div className="mt-4 bg-bg-tertiary rounded-lg p-4 space-y-4">
+            {/* Username */}
             <div className="flex justify-between items-center">
-              <div>
+              <div className="flex-1">
                 <div className="text-xs font-bold uppercase text-text-muted mb-1">Username</div>
-                <div className="text-text-primary">{user?.username}</div>
+                {editingUsername ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={newUsername}
+                      onChange={(e) => setNewUsername(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleSaveUsername(); if (e.key === 'Escape') setEditingUsername(false); }}
+                      className="bg-bg-primary border border-border rounded px-2 py-1 text-sm text-text-primary w-48 focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                      autoFocus
+                    />
+                    <button onClick={handleSaveUsername} disabled={savingUsername} className="px-3 py-1 bg-brand-primary hover:bg-brand-primary-hover text-white text-xs font-medium rounded disabled:opacity-50">
+                      {savingUsername ? 'Saving...' : 'Save'}
+                    </button>
+                    <button onClick={() => { setEditingUsername(false); setNewUsername(user?.username || ''); setUsernameError(null); }} className="px-3 py-1 text-text-muted hover:text-text-primary text-xs">
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-text-primary">{user?.username}</div>
+                )}
+                {usernameError && <p className="text-xs text-danger mt-1">{usernameError}</p>}
               </div>
-              <button className="px-4 py-1.5 bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary text-sm font-medium rounded transition-colors">
-                Edit
-              </button>
+              {!editingUsername && (
+                <button onClick={() => { setEditingUsername(true); setNewUsername(user?.username || ''); }} className="px-4 py-1.5 bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary text-sm font-medium rounded transition-colors">
+                  Edit
+                </button>
+              )}
             </div>
 
+            {/* Email */}
             <div className="flex justify-between items-center">
-              <div>
+              <div className="flex-1">
                 <div className="text-xs font-bold uppercase text-text-muted mb-1">Email</div>
-                <div className="text-text-primary">{user?.email}</div>
+                {editingEmail ? (
+                  <div className="space-y-2">
+                    <input
+                      type="email"
+                      value={newEmail}
+                      onChange={(e) => setNewEmail(e.target.value)}
+                      placeholder="New email"
+                      className="bg-bg-primary border border-border rounded px-2 py-1 text-sm text-text-primary w-full focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                      autoFocus
+                    />
+                    <input
+                      type="password"
+                      value={emailPassword}
+                      onChange={(e) => setEmailPassword(e.target.value)}
+                      placeholder="Confirm with password"
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleSaveEmail(); }}
+                      className="bg-bg-primary border border-border rounded px-2 py-1 text-sm text-text-primary w-full focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                    />
+                    <div className="flex items-center gap-2">
+                      <button onClick={handleSaveEmail} disabled={savingEmail} className="px-3 py-1 bg-brand-primary hover:bg-brand-primary-hover text-white text-xs font-medium rounded disabled:opacity-50">
+                        {savingEmail ? 'Saving...' : 'Save'}
+                      </button>
+                      <button onClick={() => { setEditingEmail(false); setNewEmail(user?.email || ''); setEmailPassword(''); setEmailError(null); }} className="px-3 py-1 text-text-muted hover:text-text-primary text-xs">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-text-primary">{user?.email}</div>
+                )}
+                {emailError && <p className="text-xs text-danger mt-1">{emailError}</p>}
               </div>
-              <button className="px-4 py-1.5 bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary text-sm font-medium rounded transition-colors">
-                Edit
-              </button>
+              {!editingEmail && (
+                <button onClick={() => { setEditingEmail(true); setNewEmail(user?.email || ''); }} className="px-4 py-1.5 bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary text-sm font-medium rounded transition-colors">
+                  Edit
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -240,9 +384,49 @@ function AccountTab({ user, onClose }: { user: ReturnType<typeof authStore.getSt
       {/* Password & Authentication */}
       <div className="mt-10">
         <h3 className="text-xs font-bold uppercase text-text-muted mb-4">Password and Authentication</h3>
-        <button className="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors">
-          Change Password
-        </button>
+        {changingPassword ? (
+          <div className="bg-bg-secondary rounded-lg p-4 space-y-3 max-w-sm">
+            <input
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              placeholder="Current password"
+              className="bg-bg-primary border border-border rounded px-3 py-2 text-sm text-text-primary w-full focus:outline-none focus:ring-1 focus:ring-brand-primary"
+              autoFocus
+            />
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="New password"
+              className="bg-bg-primary border border-border rounded px-3 py-2 text-sm text-text-primary w-full focus:outline-none focus:ring-1 focus:ring-brand-primary"
+            />
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Confirm new password"
+              onKeyDown={(e) => { if (e.key === 'Enter') handleChangePassword(); }}
+              className="bg-bg-primary border border-border rounded px-3 py-2 text-sm text-text-primary w-full focus:outline-none focus:ring-1 focus:ring-brand-primary"
+            />
+            {passwordError && <p className="text-xs text-danger">{passwordError}</p>}
+            <div className="flex items-center gap-2">
+              <button onClick={handleChangePassword} disabled={savingPassword} className="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded disabled:opacity-50">
+                {savingPassword ? 'Changing...' : 'Change Password'}
+              </button>
+              <button onClick={() => { setChangingPassword(false); setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); setPasswordError(null); }} className="px-4 py-2 text-text-muted hover:text-text-primary text-sm">
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <button onClick={() => setChangingPassword(true)} className="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors">
+              Change Password
+            </button>
+            {passwordSuccess && <p className="text-xs text-success mt-2">Password changed successfully!</p>}
+          </div>
+        )}
       </div>
 
       {/* Account Removal */}
@@ -252,13 +436,35 @@ function AccountTab({ user, onClose }: { user: ReturnType<typeof authStore.getSt
           Disabling your account means you can recover it at any time after taking this action.
         </p>
         <div className="flex gap-2">
-          <button className="px-4 py-2 border border-danger text-danger hover:bg-danger/10 text-sm font-medium rounded transition-colors">
+          <button
+            onClick={() => setShowDisableConfirm(true)}
+            className="px-4 py-2 border border-danger text-danger hover:bg-danger/10 text-sm font-medium rounded transition-colors"
+          >
             Disable Account
           </button>
-          <button className="px-4 py-2 border border-danger text-danger hover:bg-danger/10 text-sm font-medium rounded transition-colors">
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            className="px-4 py-2 border border-danger text-danger hover:bg-danger/10 text-sm font-medium rounded transition-colors"
+          >
             Delete Account
           </button>
         </div>
+        {(showDisableConfirm || showDeleteConfirm) && (
+          <div className="mt-3 bg-danger/10 border border-danger/30 rounded-lg p-4">
+            <p className="text-sm text-text-primary font-medium mb-2">
+              {showDeleteConfirm ? 'Delete Account' : 'Disable Account'}
+            </p>
+            <p className="text-sm text-text-muted mb-3">
+              This feature is not yet available. Please contact a server administrator for account changes.
+            </p>
+            <button
+              onClick={() => { setShowDisableConfirm(false); setShowDeleteConfirm(false); }}
+              className="px-3 py-1.5 bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary text-sm rounded"
+            >
+              OK
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Log Out */}
@@ -360,8 +566,11 @@ function ProfileTab({ user }: { user: ReturnType<typeof authStore.getState>['use
         custom_status: customStatus || null,
       });
 
-      // Refresh user data in auth store
-      await authStore.refreshUser();
+      // Update auth store immediately for responsive UI
+      authStore.getState().updateUser({
+        display_name: displayName || null,
+        custom_status: customStatus || null,
+      });
 
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
@@ -374,8 +583,8 @@ function ProfileTab({ user }: { user: ReturnType<typeof authStore.getState>['use
 
   const handleAvatarChange = (newUrl: string | null) => {
     setAvatarUrl(newUrl);
-    // Refresh user data in auth store to sync avatar everywhere
-    authStore.refreshUser();
+    // Update auth store immediately for responsive UI
+    authStore.getState().updateAvatarUrl(newUrl);
   };
 
   // We need a ref-based approach for handleSavePrivacy since toggles

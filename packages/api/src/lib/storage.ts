@@ -42,6 +42,7 @@ export async function initStorage() {
             `arn:aws:s3:::${MINIO_BUCKET}/soundboard/*`,
             `arn:aws:s3:::${MINIO_BUCKET}/uploads/*`,
             `arn:aws:s3:::${MINIO_BUCKET}/attachments/*`,
+            `arn:aws:s3:::${MINIO_BUCKET}/images/*`,
           ],
         },
       ],
