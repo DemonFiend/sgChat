@@ -380,7 +380,7 @@ export function DMChatPanel({
                 setShowEmojiPicker(false);
                 inputRef.current?.focus();
               }}
-              anchorRef={emojiButtonRef}
+              anchorRef={emojiButtonRef.current}
             />
 
             <button className="w-10 h-10 bg-bg-tertiary rounded-full flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-bg-modifier-hover transition-colors">
@@ -407,7 +407,7 @@ export function DMChatPanel({
                 onSendMessage(gifUrl);
                 setShowGifPicker(false);
               }}
-              anchorRef={gifButtonRef}
+              anchorRef={gifButtonRef.current}
             />
           </div>
         </div>

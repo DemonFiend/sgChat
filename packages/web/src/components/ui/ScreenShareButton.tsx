@@ -12,8 +12,8 @@ interface ScreenShareButtonProps {
 export function ScreenShareButton({ size = 'md', className, showQualityMenu }: ScreenShareButtonProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
-  const isScreenSharing = useVoiceStore((s) => s.isScreenSharing);
-  const screenShareQuality = useVoiceStore((s) => s.screenShareQuality);
+  const isScreenSharing = useVoiceStore((s) => s.screenShare.isSharing);
+  const screenShareQuality = useVoiceStore((s) => s.screenShare.quality);
   const permissions = useVoiceStore((s) => s.permissions);
 
   const sizeClasses = size === 'sm' ? 'p-2' : size === 'lg' ? 'p-3' : 'p-2.5';
@@ -185,8 +185,8 @@ interface ScreenShareQualityIndicatorProps {
 }
 
 export function ScreenShareQualityIndicator({ className }: ScreenShareQualityIndicatorProps) {
-  const isScreenSharing = useVoiceStore((s) => s.isScreenSharing);
-  const screenShareQuality = useVoiceStore((s) => s.screenShareQuality);
+  const isScreenSharing = useVoiceStore((s) => s.screenShare.isSharing);
+  const screenShareQuality = useVoiceStore((s) => s.screenShare.quality);
 
   if (!isScreenSharing) return null;
 

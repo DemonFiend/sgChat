@@ -197,7 +197,7 @@ const ChannelItem = memo(function ChannelItem({ channel, isActive, serverId, onS
   return (
     <motion.div whileHover={{ x: 2 }} transition={{ duration: 0.1 }} role="treeitem">
       <Link
-        to={`/channels/${serverId}/${channel.id}`}
+        to={`/channels/${channel.id}`}
         className={clsx(
           'group/channel relative flex items-center gap-1.5 px-2 py-1.5 mb-0.5 rounded text-sm transition-colors',
           isActive

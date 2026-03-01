@@ -287,4 +287,5 @@ export const networkStore = {
   testConnection: (url: string) => useNetworkStore.getState().testConnection(url),
   autoLogin: () => useNetworkStore.getState().autoLogin,
   defaultNetwork: () => useNetworkStore.getState().defaultNetwork(),
+  clearConnection: () => useNetworkStore.getState().clearConnection(),
 };

@@ -5,10 +5,10 @@ import { PingIndicator } from './PingIndicator';
 
 export function VoiceConnectedBar() {
   const connectionState = useVoiceStore((s) => s.connectionState);
-  const isSpeaking = useVoiceStore((s) => s.isSpeaking);
-  const isMuted = useVoiceStore((s) => s.isMuted);
-  const isDeafened = useVoiceStore((s) => s.isDeafened);
-  const isScreenSharing = useVoiceStore((s) => s.isScreenSharing);
+  const isSpeaking = useVoiceStore((s) => s.localState.isSpeaking);
+  const isMuted = useVoiceStore((s) => s.localState.isMuted);
+  const isDeafened = useVoiceStore((s) => s.localState.isDeafened);
+  const isScreenSharing = useVoiceStore((s) => s.screenShare.isSharing);
   const currentChannelName = useVoiceStore((s) => s.currentChannelName);
   const error = useVoiceStore((s) => s.error);
 

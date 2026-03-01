@@ -24,19 +24,19 @@ const arrowClasses: Record<string, string> = {
 
 export function Tooltip({ content, children, position = 'top', delay = 300 }: TooltipProps) {
   const [isVisible, setIsVisible] = useState(false);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleMouseEnter = useCallback(() => {
     timeoutRef.current = setTimeout(() => setIsVisible(true), delay);
   }, [delay]);
 
   const handleMouseLeave = useCallback(() => {
-    clearTimeout(timeoutRef.current);
+    if (timeoutRef.current !== null) clearTimeout(timeoutRef.current);
     setIsVisible(false);
   }, []);
 
   useEffect(() => {
-    return () => clearTimeout(timeoutRef.current);
+    return () => { if (timeoutRef.current !== null) clearTimeout(timeoutRef.current); };
   }, []);
 
   return (

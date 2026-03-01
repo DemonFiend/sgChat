@@ -21,8 +21,8 @@ export function CreateServerModal({ isOpen, onClose, onCreated }: CreateServerMo
     setCreating(true);
     setError('');
     try {
-      const res = await api.post('/servers', { name });
-      onCreated?.(res.data);
+      const res = await api.post<{ id: string; name: string }>('/servers', { name });
+      onCreated?.(res);
       setServerName('');
       onClose();
     } catch (err: any) {

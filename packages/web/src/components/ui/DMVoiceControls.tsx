@@ -85,10 +85,10 @@ interface DMCallStatusBarProps {
 export function DMCallStatusBar({ dmChannelId, friendName, className }: DMCallStatusBarProps) {
   const connectionState = useVoiceStore((s) => s.connectionState);
   const currentChannelId = useVoiceStore((s) => s.currentChannelId);
-  const isSpeaking = useVoiceStore((s) => s.isSpeaking);
-  const isMuted = useVoiceStore((s) => s.isMuted);
-  const isDeafened = useVoiceStore((s) => s.isDeafened);
-  const isScreenSharing = useVoiceStore((s) => s.isScreenSharing);
+  const isSpeaking = useVoiceStore((s) => s.localState.isSpeaking);
+  const isMuted = useVoiceStore((s) => s.localState.isMuted);
+  const isDeafened = useVoiceStore((s) => s.localState.isDeafened);
+  const isScreenSharing = useVoiceStore((s) => s.screenShare.isSharing);
   const error = useVoiceStore((s) => s.error);
 
   const isInDMCall = connectionState === 'connected' && currentChannelId === dmChannelId;

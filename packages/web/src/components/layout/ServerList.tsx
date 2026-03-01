@@ -23,7 +23,9 @@ export function ServerList({ servers, onCreateServer }: ServerListProps) {
   const { reopenPopup } = useServerPopupStore();
   const { isAuthenticated } = useAuthStore();
 
-  const isActive = (serverId: string) => location.pathname.startsWith(`/channels/${serverId}`);
+  // Single-server mode: server is "active" when not on DMs
+  const isActive = (_serverId: string) =>
+    location.pathname.startsWith('/channels') && !location.pathname.startsWith('/channels/@me');
 
   const getInitials = (name: string) =>
     name.split(' ').map((w) => w[0]).join('').slice(0, 3).toUpperCase();
@@ -40,12 +42,12 @@ export function ServerList({ servers, onCreateServer }: ServerListProps) {
     }
     setLastClickTime(now);
 
-    if (location.pathname.startsWith(`/channels/${serverId}`)) {
+    if (isActive(serverId)) {
       e.preventDefault();
       e.stopPropagation();
       reopenPopup();
     }
-  }, [lastClickTime, isAuthenticated, reopenPopup, location.pathname]);
+  }, [lastClickTime, isAuthenticated, reopenPopup, isActive]);
 
   return (
     <nav

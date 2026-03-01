@@ -1,13 +1,20 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useParams } from 'react-router';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useParams, useNavigate } from 'react-router';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuthStore } from '@/stores/auth';
 import { useServerPopupStore } from '@/stores/serverPopup';
 import { useVoiceStore } from '@/stores/voice';
-import { socketService, useSocketStore } from '@/lib/socket';
+import { socketService } from '@/lib/socket';
+import { api } from '@/api';
 import { ServerList } from '@/components/layout/ServerList';
 import { ServerSidebar } from '@/components/layout/ServerSidebar';
-import { ChatPanel, type Message, type MessageAuthor, type ChannelInfo, type TypingUser } from '@/components/layout/ChatPanel';
+import {
+  ChatPanel,
+  type Message,
+  type MessageAuthor,
+  type ChannelInfo,
+  type TypingUser,
+} from '@/components/layout/ChatPanel';
 import { MemberList } from '@/components/layout/MemberList';
 import { UserPanel } from '@/components/layout/UserPanel';
 import { TitleBar } from '@/components/ui/TitleBar';
@@ -41,6 +48,7 @@ interface MemberData {
 
 export function MainLayout() {
   const { channelId } = useParams<{ channelId?: string }>();
+  const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const showPopup = useServerPopupStore((s) => s.showPopup);
 
@@ -57,7 +65,13 @@ export function MainLayout() {
 
   // Modal & popover state
   const [showServerSettings, setShowServerSettings] = useState(false);
-  const [settingsChannel, setSettingsChannel] = useState<{ id: string; name: string; type: string; topic?: string; server_id: string } | null>(null);
+  const [settingsChannel, setSettingsChannel] = useState<{
+    id: string;
+    name: string;
+    type: string;
+    topic?: string;
+    server_id: string;
+  } | null>(null);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [profilePopover, setProfilePopover] = useState<{
     member: MemberData | MessageAuthor;
@@ -69,98 +83,150 @@ export function MainLayout() {
   } | null>(null);
   const [showCreateServer, setShowCreateServer] = useState(false);
 
-  // Fetch server list on mount — waits for socket connection if not yet connected
+  // Ref to track loaded channels for auto-redirect logic
+  const channelsRef = useRef<Channel[]>([]);
+  channelsRef.current = channels;
+
+  // ── Fetch server, channels, members on mount via REST ──────────
   useEffect(() => {
-    let cleanupConnect: (() => void) | undefined;
+    const fetchServerData = async () => {
+      try {
+        const server = await api.get<ServerData>('/server');
+        setCurrentServer(server);
+        setServers([server]);
+        showPopup(server.id);
 
-    const handleServerList = (data: { servers: ServerData[] }) => {
-      setServers(data.servers);
-      if (data.servers.length > 0 && !currentServer) {
-        const first = data.servers[0];
-        setCurrentServer(first);
-        socketService.emit('server.join', { server_id: first.id }).catch(() => {});
-        showPopup(first.id);
-      }
-    };
-
-    const handleServerData = (data: {
-      server: ServerData;
-      channels: Channel[];
-      categories?: Category[];
-      members: MemberData[];
-    }) => {
-      setCurrentServer(data.server);
-      setChannels(data.channels);
-      setCategories(data.categories || []);
-      setMembers(data.members);
-
-      // Auto-select first text channel if no channel selected
-      if (!channelId) {
-        const firstText = data.channels
-          .filter((c) => c.type === 'text')
-          .sort((a, b) => a.position - b.position)[0];
-        if (firstText) {
-          setCurrentChannel({ id: firstText.id, name: firstText.name, topic: firstText.topic, type: firstText.type });
-          socketService.emit('channel.join', { channel_id: firstText.id }).catch(() => {});
+        // Fetch channels
+        const channelsResponse = await api.get<
+          Channel[] | { channels: Channel[]; categories?: Category[] }
+        >('/channels');
+        let fetchedChannels: Channel[] = [];
+        let fetchedCategories: Category[] = [];
+        if (Array.isArray(channelsResponse)) {
+          fetchedChannels = channelsResponse;
+        } else if (channelsResponse && typeof channelsResponse === 'object') {
+          fetchedChannels =
+            (channelsResponse as { channels: Channel[] }).channels || [];
+          fetchedCategories =
+            (channelsResponse as { categories?: Category[] }).categories || [];
         }
+        setChannels(fetchedChannels);
+        setCategories(fetchedCategories);
+
+        // Fetch members
+        const membersResponse = await api.get<
+          MemberData[] | { members: MemberData[] }
+        >('/members');
+        if (Array.isArray(membersResponse)) {
+          setMembers(membersResponse);
+        } else if (
+          membersResponse &&
+          'members' in (membersResponse as { members: MemberData[] })
+        ) {
+          setMembers(
+            (membersResponse as { members: MemberData[] }).members || [],
+          );
+        }
+
+        // Auto-navigate to first text channel if no valid channelId
+        if (!channelId) {
+          const firstText = fetchedChannels
+            .filter((c) => c.type === 'text')
+            .sort((a, b) => a.position - b.position)[0];
+          if (firstText) {
+            navigate(`/channels/${firstText.id}`, { replace: true });
+          }
+        }
+      } catch (err) {
+        console.error('[MainLayout] Failed to fetch server data:', err);
       }
     };
-
-    socketService.on('server.list', handleServerList as (data: unknown) => void);
-    socketService.on('server.data', handleServerData as (data: unknown) => void);
-
-    // Wait for socket to be connected before emitting
-    const emitServerList = () => {
-      socketService.emit('server.list').catch((err: Error) => {
-        console.warn('[MainLayout] Failed to emit server.list:', err.message);
-      });
-    };
-
-    const { connectionState } = useSocketStore.getState();
-    if (connectionState === 'connected') {
-      emitServerList();
-    } else {
-      // Socket not connected yet — wait for connect event
-      const onConnect = () => {
-        emitServerList();
-        socketService.off('connect', onConnect as (data: unknown) => void);
-      };
-      socketService.on('connect', onConnect as (data: unknown) => void);
-      cleanupConnect = () => socketService.off('connect', onConnect as (data: unknown) => void);
-    }
-
-    return () => {
-      socketService.off('server.list', handleServerList as (data: unknown) => void);
-      socketService.off('server.data', handleServerData as (data: unknown) => void);
-      cleanupConnect?.();
-    };
+    fetchServerData();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Handle channel selection changes
+  // ── Fetch messages when channelId changes via REST ─────────────
   useEffect(() => {
     if (!channelId) return;
 
+    // Find the channel in our loaded list
     const channel = channels.find((c) => c.id === channelId);
     if (channel) {
-      setCurrentChannel({ id: channel.id, name: channel.name, topic: channel.topic, type: channel.type });
-      socketService.emit('channel.join', { channel_id: channel.id });
+      setCurrentChannel({
+        id: channel.id,
+        name: channel.name,
+        topic: channel.topic,
+        type: channel.type,
+      });
+    } else if (channels.length > 0) {
+      // channelId doesn't match any channel (e.g. server ID from ServerList click)
+      // → auto-redirect to first text channel
+      const firstText = channels
+        .filter((c) => c.type === 'text')
+        .sort((a, b) => a.position - b.position)[0];
+      if (firstText) {
+        navigate(`/channels/${firstText.id}`, { replace: true });
+      }
+      return;
     }
-  }, [channelId, channels]);
 
-  // Wire up message events
+    // Fetch messages via REST
+    const fetchMessages = async () => {
+      try {
+        const response = await api.get<{ messages: Message[] } | Message[]>(
+          `/channels/${channelId}/messages`,
+        );
+        if (Array.isArray(response)) {
+          setMessages(response);
+        } else if (response && 'messages' in response) {
+          setMessages(response.messages || []);
+        }
+      } catch (err) {
+        console.error('[MainLayout] Failed to fetch messages:', err);
+        setMessages([]);
+      }
+    };
+    fetchMessages();
+
+    // Mark channel as read after a brief delay
+    const ackTimer = setTimeout(() => {
+      api.post(`/channels/${channelId}/ack`).catch(() => {});
+      setChannels((prev) =>
+        prev.map((c) =>
+          c.id === channelId
+            ? { ...c, unread_count: 0, has_mentions: false }
+            : c,
+        ),
+      );
+    }, 2000);
+
+    // Clear typing users on channel switch
+    setTypingUsers([]);
+
+    return () => clearTimeout(ackTimer);
+  }, [channelId, channels, navigate]);
+
+  // ── Wire up real-time message events (correct event names) ─────
   useEffect(() => {
-    const handleMessages = (data: { messages: Message[] }) => {
-      setMessages(data.messages);
-    };
-
-    const handleNewMessage = (message: Message) => {
+    const handleNewMessage = (message: Message & { channel_id?: string }) => {
+      // Only show messages for the current channel
+      if (message.channel_id && message.channel_id !== channelId) return;
       setMessages((prev) => [...prev, message]);
-      setTypingUsers((prev) => prev.filter((u) => u.id !== message.author.id));
+      setTypingUsers((prev) =>
+        prev.filter((u) => u.id !== message.author.id),
+      );
     };
 
-    const handleMessageUpdate = (data: { id: string; content: string; edited_at: string }) => {
+    const handleMessageUpdate = (data: {
+      id: string;
+      content: string;
+      edited_at: string;
+    }) => {
       setMessages((prev) =>
-        prev.map((m) => (m.id === data.id ? { ...m, content: data.content, edited_at: data.edited_at } : m))
+        prev.map((m) =>
+          m.id === data.id
+            ? { ...m, content: data.content, edited_at: data.edited_at }
+            : m,
+        ),
       );
     };
 
@@ -168,29 +234,51 @@ export function MainLayout() {
       setMessages((prev) => prev.filter((m) => m.id !== data.id));
     };
 
-    socketService.on('channel.messages', handleMessages as (data: unknown) => void);
-    socketService.on('message.create', handleNewMessage as (data: unknown) => void);
-    socketService.on('message.update', handleMessageUpdate as (data: unknown) => void);
-    socketService.on('message.delete', handleMessageDelete as (data: unknown) => void);
+    // Listen for correct backend event names (dot separator for received events)
+    socketService.on(
+      'message.new',
+      handleNewMessage as (data: unknown) => void,
+    );
+    socketService.on(
+      'message.update',
+      handleMessageUpdate as (data: unknown) => void,
+    );
+    socketService.on(
+      'message.delete',
+      handleMessageDelete as (data: unknown) => void,
+    );
 
     return () => {
-      socketService.off('channel.messages', handleMessages as (data: unknown) => void);
-      socketService.off('message.create', handleNewMessage as (data: unknown) => void);
-      socketService.off('message.update', handleMessageUpdate as (data: unknown) => void);
-      socketService.off('message.delete', handleMessageDelete as (data: unknown) => void);
+      socketService.off(
+        'message.new',
+        handleNewMessage as (data: unknown) => void,
+      );
+      socketService.off(
+        'message.update',
+        handleMessageUpdate as (data: unknown) => void,
+      );
+      socketService.off(
+        'message.delete',
+        handleMessageDelete as (data: unknown) => void,
+      );
     };
-  }, []);
+  }, [channelId]);
 
-  // Wire up typing events
+  // ── Wire up typing events ──────────────────────────────────────
   useEffect(() => {
-    const handleTypingStart = (data: { user_id: string; username: string }) => {
+    const handleTypingStart = (data: {
+      user_id: string;
+      username: string;
+    }) => {
       if (data.user_id === user?.id) return;
       setTypingUsers((prev) => {
         if (prev.some((u) => u.id === data.user_id)) return prev;
         return [...prev, { id: data.user_id, username: data.username }];
       });
       setTimeout(() => {
-        setTypingUsers((prev) => prev.filter((u) => u.id !== data.user_id));
+        setTypingUsers((prev) =>
+          prev.filter((u) => u.id !== data.user_id),
+        );
       }, 5000);
     };
 
@@ -198,19 +286,33 @@ export function MainLayout() {
       setTypingUsers((prev) => prev.filter((u) => u.id !== data.user_id));
     };
 
-    socketService.on('typing.start', handleTypingStart as (data: unknown) => void);
-    socketService.on('typing.stop', handleTypingStop as (data: unknown) => void);
+    socketService.on(
+      'typing.start',
+      handleTypingStart as (data: unknown) => void,
+    );
+    socketService.on(
+      'typing.stop',
+      handleTypingStop as (data: unknown) => void,
+    );
 
     return () => {
-      socketService.off('typing.start', handleTypingStart as (data: unknown) => void);
-      socketService.off('typing.stop', handleTypingStop as (data: unknown) => void);
+      socketService.off(
+        'typing.start',
+        handleTypingStart as (data: unknown) => void,
+      );
+      socketService.off(
+        'typing.stop',
+        handleTypingStop as (data: unknown) => void,
+      );
     };
   }, [user?.id]);
 
-  // Wire up member events
+  // ── Wire up member events ──────────────────────────────────────
   useEffect(() => {
     const handleMemberUpdate = (data: MemberData) => {
-      setMembers((prev) => prev.map((m) => (m.id === data.id ? { ...m, ...data } : m)));
+      setMembers((prev) =>
+        prev.map((m) => (m.id === data.id ? { ...m, ...data } : m)),
+      );
     };
 
     const handleMemberJoin = (data: MemberData) => {
@@ -221,22 +323,47 @@ export function MainLayout() {
       setMembers((prev) => prev.filter((m) => m.id !== data.user_id));
     };
 
-    socketService.on('member.update', handleMemberUpdate as (data: unknown) => void);
-    socketService.on('member.join', handleMemberJoin as (data: unknown) => void);
-    socketService.on('member.leave', handleMemberLeave as (data: unknown) => void);
+    socketService.on(
+      'member.update',
+      handleMemberUpdate as (data: unknown) => void,
+    );
+    socketService.on(
+      'member.join',
+      handleMemberJoin as (data: unknown) => void,
+    );
+    socketService.on(
+      'member.leave',
+      handleMemberLeave as (data: unknown) => void,
+    );
 
     return () => {
-      socketService.off('member.update', handleMemberUpdate as (data: unknown) => void);
-      socketService.off('member.join', handleMemberJoin as (data: unknown) => void);
-      socketService.off('member.leave', handleMemberLeave as (data: unknown) => void);
+      socketService.off(
+        'member.update',
+        handleMemberUpdate as (data: unknown) => void,
+      );
+      socketService.off(
+        'member.join',
+        handleMemberJoin as (data: unknown) => void,
+      );
+      socketService.off(
+        'member.leave',
+        handleMemberLeave as (data: unknown) => void,
+      );
     };
   }, []);
 
-  // Action handlers
-  const handleSendMessage = useCallback((content: string) => {
-    if (!currentChannel) return;
-    socketService.emit('message.create', { channel_id: currentChannel.id, content });
-  }, [currentChannel]);
+  // ── Action handlers (correct socket event names) ───────────────
+  const handleSendMessage = useCallback(
+    (content: string) => {
+      if (!currentChannel) return;
+      // Backend expects 'message:send' (colon separator)
+      socketService.emit('message:send', {
+        channel_id: currentChannel.id,
+        content,
+      });
+    },
+    [currentChannel],
+  );
 
   const handleTypingStart = useCallback(() => {
     if (!currentChannel) return;
@@ -248,48 +375,68 @@ export function MainLayout() {
     socketService.emit('typing.stop', { channel_id: currentChannel.id });
   }, [currentChannel]);
 
-  const handleReactionAdd = useCallback((messageId: string, emoji: string) => {
-    socketService.emit('reaction.add', { message_id: messageId, emoji });
-  }, []);
+  // Reactions use REST API, not socket events
+  const handleReactionAdd = useCallback(
+    (messageId: string, emoji: string) => {
+      api
+        .put(`/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`)
+        .catch((err) =>
+          console.error('[MainLayout] Failed to add reaction:', err),
+        );
+    },
+    [],
+  );
 
-  const handleReactionRemove = useCallback((messageId: string, emoji: string) => {
-    socketService.emit('reaction.remove', { message_id: messageId, emoji });
-  }, []);
+  const handleReactionRemove = useCallback(
+    (messageId: string, emoji: string) => {
+      api
+        .delete(
+          `/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`,
+        )
+        .catch((err) =>
+          console.error('[MainLayout] Failed to remove reaction:', err),
+        );
+    },
+    [],
+  );
 
-  const handleEditMessage = useCallback((messageId: string, newContent: string) => {
-    socketService.emit('message.update', { message_id: messageId, content: newContent });
-  }, []);
+  const handleEditMessage = useCallback(
+    (messageId: string, newContent: string) => {
+      // Backend expects 'message:edit' (colon separator)
+      socketService.emit('message:edit', {
+        message_id: messageId,
+        content: newContent,
+      });
+    },
+    [],
+  );
 
   const handleDeleteMessage = useCallback((messageId: string) => {
-    socketService.emit('message.delete', { message_id: messageId });
+    // Backend expects 'message:delete' (colon separator)
+    socketService.emit('message:delete', { message_id: messageId });
   }, []);
 
-  const handleAuthorClick = useCallback((author: MessageAuthor, rect: DOMRect) => {
-    setProfilePopover({ member: author, rect });
-  }, []);
+  const handleAuthorClick = useCallback(
+    (author: MessageAuthor, rect: DOMRect) => {
+      setProfilePopover({ member: author, rect });
+    },
+    [],
+  );
 
-  const handleMemberClick = useCallback((member: MemberData, rect: DOMRect) => {
-    setProfilePopover({ member, rect });
-  }, []);
+  const handleMemberClick = useCallback(
+    (member: MemberData, rect: DOMRect) => {
+      setProfilePopover({ member, rect });
+    },
+    [],
+  );
 
-  const handleMemberContextMenu = useCallback((member: MemberData, e: React.MouseEvent) => {
-    e.preventDefault();
-    const items: ContextMenuItem[] = [
-      { label: 'Profile', icon: 'user', onClick: () => {
-        setContextMenu(null);
-        setProfilePopover({ member, rect: (e.target as HTMLElement).getBoundingClientRect() });
-      }},
-      { label: 'Message', icon: 'message', onClick: () => setContextMenu(null) },
-    ];
-    if (currentServer?.owner_id === user?.id && member.id !== user?.id) {
-      items.push({ label: '', separator: true, onClick: () => {} });
-      items.push({ label: 'Kick', icon: 'kick', danger: true, onClick: () => {
-        socketService.emit('member.kick', { server_id: currentServer!.id, user_id: member.id });
-        setContextMenu(null);
-      }});
-    }
-    setContextMenu({ member, position: { x: e.clientX, y: e.clientY } });
-  }, [currentServer, user?.id]);
+  const handleMemberContextMenu = useCallback(
+    (member: MemberData, e: React.MouseEvent) => {
+      e.preventDefault();
+      setContextMenu({ member, position: { x: e.clientX, y: e.clientY } });
+    },
+    [],
+  );
 
   // Group members for MemberList
   const memberGroups = (() => {
@@ -319,29 +466,41 @@ export function MainLayout() {
       <TitleBar />
 
       {/* Main content area — adjusts for title bar height */}
-      <div className="flex flex-1 min-h-0" style={{ height: 'calc(100vh - var(--title-bar-height))' }}>
+      <div
+        className="flex flex-1 min-h-0"
+        style={{ height: 'calc(100vh - var(--title-bar-height))' }}
+      >
         {/* Server List (leftmost column) */}
-        <ServerList servers={servers} onCreateServer={() => setShowCreateServer(true)} />
+        <ServerList
+          servers={servers}
+          onCreateServer={() => setShowCreateServer(true)}
+        />
 
         {/* Server Sidebar (channels + voice bar + user panel) */}
         <div className="flex flex-col h-full">
           <ServerSidebar
-            server={currentServer ? {
-              id: currentServer.id,
-              name: currentServer.name,
-              icon_url: currentServer.icon_url,
-              motd: currentServer.motd,
-            } : null}
+            server={
+              currentServer
+                ? {
+                    id: currentServer.id,
+                    name: currentServer.name,
+                    icon_url: currentServer.icon_url,
+                    motd: currentServer.motd,
+                  }
+                : null
+            }
             channels={channels}
             categories={categories}
             onServerSettingsClick={() => setShowServerSettings(true)}
-            onChannelSettingsClick={(channel) => setSettingsChannel({
-              id: channel.id,
-              name: channel.name,
-              type: channel.type,
-              topic: channel.topic,
-              server_id: currentServer?.id || '',
-            })}
+            onChannelSettingsClick={(channel) =>
+              setSettingsChannel({
+                id: channel.id,
+                name: channel.name,
+                type: channel.type,
+                topic: channel.topic,
+                server_id: currentServer?.id || '',
+              })
+            }
           />
           <VoiceConnectedBar />
           <UserPanel />
@@ -419,9 +578,21 @@ export function MainLayout() {
           username={profilePopover.member.username}
           displayName={profilePopover.member.display_name}
           avatarUrl={profilePopover.member.avatar_url}
-          status={'status' in profilePopover.member ? profilePopover.member.status : undefined}
-          roleColor={'role_color' in profilePopover.member ? profilePopover.member.role_color : undefined}
-          customStatus={'custom_status' in profilePopover.member ? profilePopover.member.custom_status : undefined}
+          status={
+            'status' in profilePopover.member
+              ? profilePopover.member.status
+              : undefined
+          }
+          roleColor={
+            'role_color' in profilePopover.member
+              ? profilePopover.member.role_color
+              : undefined
+          }
+          customStatus={
+            'custom_status' in profilePopover.member
+              ? profilePopover.member.custom_status
+              : undefined
+          }
           isCurrentUser={profilePopover.member.id === user?.id}
           serverId={currentServer?.id}
         />
@@ -432,8 +603,10 @@ export function MainLayout() {
         isOpen={showCreateServer}
         onClose={() => setShowCreateServer(false)}
         onCreated={(server) => {
-          setServers((prev) => [...prev, { ...server, icon_url: null, owner_id: user?.id || '' }]);
-          socketService.emit('server.join', { server_id: server.id }).catch(() => {});
+          setServers((prev) => [
+            ...prev,
+            { ...server, icon_url: null, owner_id: user?.id || '' },
+          ]);
         }}
       />
 
@@ -444,18 +617,40 @@ export function MainLayout() {
           onClose={() => setContextMenu(null)}
           position={contextMenu.position}
           items={[
-            { label: 'Profile', onClick: () => {
-              setProfilePopover({ member: contextMenu.member, rect: new DOMRect(contextMenu.position.x, contextMenu.position.y, 0, 0) });
-              setContextMenu(null);
-            }},
-            { label: 'Message', onClick: () => setContextMenu(null) },
-            ...(currentServer?.owner_id === user?.id && contextMenu.member.id !== user?.id ? [
-              { label: '', separator: true, onClick: () => {} },
-              { label: 'Kick', danger: true, onClick: () => {
-                socketService.emit('member.kick', { server_id: currentServer!.id, user_id: contextMenu.member.id });
+            {
+              label: 'Profile',
+              onClick: () => {
+                setProfilePopover({
+                  member: contextMenu.member,
+                  rect: new DOMRect(
+                    contextMenu.position.x,
+                    contextMenu.position.y,
+                    0,
+                    0,
+                  ),
+                });
                 setContextMenu(null);
-              }},
-            ] as ContextMenuItem[] : []),
+              },
+            },
+            { label: 'Message', onClick: () => setContextMenu(null) },
+            ...(currentServer?.owner_id === user?.id &&
+            contextMenu.member.id !== user?.id
+              ? ([
+                  { label: '', separator: true, onClick: () => {} },
+                  {
+                    label: 'Kick',
+                    danger: true,
+                    onClick: () => {
+                      api
+                        .post(
+                          `/members/${contextMenu.member.id}/kick`,
+                        )
+                        .catch(() => {});
+                      setContextMenu(null);
+                    },
+                  },
+                ] as ContextMenuItem[])
+              : []),
           ]}
         />
       )}

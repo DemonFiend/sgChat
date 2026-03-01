@@ -32,7 +32,7 @@ export function StreamViewer({
   const [showControls, setShowControls] = useState(true);
   const fullViewContainerRef = useRef<HTMLDivElement>(null);
   const videoContainerRef = useRef<HTMLDivElement>(null);
-  const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const streamAudioElementRef = useRef<HTMLAudioElement | null>(null);
 
   const isMinimized = useStreamViewerStore((s) => s.isMinimized);

@@ -319,4 +319,8 @@ export const authStore = {
   checkAuth: () => useAuthStore.getState().checkAuth(),
   attemptAutoLogin: () => useAuthStore.getState().attemptAutoLogin(),
   triggerAuthError: (reason: AuthErrorReason) => useAuthStore.getState().triggerAuthError(reason),
+  updateStatus: (status: User['status']) => useAuthStore.getState().updateStatus(status),
+  updateCustomStatus: (custom_status: string | null, expires_at?: string | null) =>
+    useAuthStore.getState().updateCustomStatus(custom_status, expires_at),
+  refreshUser: () => useAuthStore.getState().refreshUser(),
 };

@@ -56,7 +56,7 @@ export function DMPage() {
   const currentUserId = authStore.getState().user?.id || '';
 
   const handleBack = () => {
-    navigate('/channels/');
+    navigate('/channels');
   };
 
   const fetchFriends = useCallback(async () => {

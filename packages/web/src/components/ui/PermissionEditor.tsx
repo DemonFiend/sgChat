@@ -30,8 +30,8 @@ export function PermissionEditor({ channelType, textAllow: textAllowProp, textDe
   const [voiceDeny, setVoiceDeny] = useState(BigInt(voiceDenyProp || '0'));
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
 
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  const savedTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return () => {

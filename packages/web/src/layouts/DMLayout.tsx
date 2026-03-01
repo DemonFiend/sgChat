@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { socketService, useSocketStore } from '@/lib/socket';
+import { api } from '@/api';
 import { ServerList } from '@/components/layout/ServerList';
 import { DMPage } from '@/components/layout/DMPage';
 import { UserPanel } from '@/components/layout/UserPanel';
@@ -15,41 +15,26 @@ interface ServerData {
 export function DMLayout() {
   const [servers, setServers] = useState<ServerData[]>([]);
 
+  // Fetch server info via REST (not socket events)
   useEffect(() => {
-    let cleanupConnect: (() => void) | undefined;
-
-    const handleServerList = (data: { servers: ServerData[] }) => {
-      setServers(data.servers);
+    const fetchServer = async () => {
+      try {
+        const server = await api.get<ServerData>('/server');
+        setServers([server]);
+      } catch (err) {
+        console.error('[DMLayout] Failed to fetch server:', err);
+      }
     };
-
-    socketService.on('server.list', handleServerList as (data: unknown) => void);
-
-    const emitServerList = () => {
-      socketService.emit('server.list').catch(() => {});
-    };
-
-    const { connectionState } = useSocketStore.getState();
-    if (connectionState === 'connected') {
-      emitServerList();
-    } else {
-      const onConnect = () => {
-        emitServerList();
-        socketService.off('connect', onConnect as (data: unknown) => void);
-      };
-      socketService.on('connect', onConnect as (data: unknown) => void);
-      cleanupConnect = () => socketService.off('connect', onConnect as (data: unknown) => void);
-    }
-
-    return () => {
-      socketService.off('server.list', handleServerList as (data: unknown) => void);
-      cleanupConnect?.();
-    };
+    fetchServer();
   }, []);
 
   return (
     <div className="flex flex-col h-screen bg-bg-primary text-text-primary overflow-hidden">
       <TitleBar />
-      <div className="flex flex-1 min-h-0" style={{ height: 'calc(100vh - var(--title-bar-height))' }}>
+      <div
+        className="flex flex-1 min-h-0"
+        style={{ height: 'calc(100vh - var(--title-bar-height))' }}
+      >
         <ServerList servers={servers} onCreateServer={() => {}} />
         <div className="flex flex-col h-full">
           <div className="flex-1 min-h-0">
