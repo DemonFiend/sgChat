@@ -1,5 +1,9 @@
 import { create } from 'zustand';
 
+// Stable empty array to prevent Zustand selectors from returning new [] on every call
+// (new [] fails Object.is comparison → triggers re-render → infinite loop)
+const EMPTY_PARTICIPANTS: VoiceParticipant[] = [];
+
 export interface VoiceParticipant {
   userId: string;
   username: string;
@@ -93,10 +97,10 @@ export const useVoiceStore = create<VoiceState & VoiceActions>((set, get) => ({
 
   isConnected: () => get().connectionState === 'connected',
   isConnecting: () => get().connectionState === 'connecting',
-  getParticipants: (channelId) => get().participants[channelId] || [],
+  getParticipants: (channelId) => get().participants[channelId] || EMPTY_PARTICIPANTS,
   currentParticipants: () => {
     const { currentChannelId, participants } = get();
-    return currentChannelId ? participants[currentChannelId] || [] : [];
+    return currentChannelId ? participants[currentChannelId] || EMPTY_PARTICIPANTS : EMPTY_PARTICIPANTS;
   },
 
   setConnecting: (channelId, channelName) => set({ connectionState: 'connecting', currentChannelId: channelId, currentChannelName: channelName, error: null }),
