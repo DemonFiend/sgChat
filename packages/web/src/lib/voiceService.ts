@@ -264,8 +264,8 @@ class VoiceServiceClass {
    * Join a voice channel
    */
   async join(channelId: string, channelName: string): Promise<void> {
-    // If already connected to a channel, leave first
-    if (voiceStore.isConnected()) {
+    // If already connected or connecting to a channel, leave first
+    if (voiceStore.isConnected() || voiceStore.isConnecting()) {
       await this.leave();
     }
 

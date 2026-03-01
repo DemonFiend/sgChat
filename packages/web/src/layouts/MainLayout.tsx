@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useServerPopupStore } from '@/stores/serverPopup';
 import { useVoiceStore } from '@/stores/voice';
 import { socketService } from '@/lib/socket';
+import { voiceService } from '@/lib/voiceService';
 import { api } from '@/api';
 import { ServerList } from '@/components/layout/ServerList';
 import { ServerSidebar } from '@/components/layout/ServerSidebar';
@@ -30,6 +31,7 @@ import { ClaimAdminModal } from '@/components/ui/ClaimAdminModal';
 import { StreamViewer } from '@/components/ui/StreamViewer';
 import { useStreamViewerStore } from '@/stores/streamViewer';
 import { SoundboardPanel } from '@/components/ui/SoundboardPanel';
+import { VoiceConnectedBar } from '@/components/ui/VoiceConnectedBar';
 import { useGlobalShortcuts } from '@/hooks/useElectron';
 import { canManageChannels } from '@/stores/permissions';
 import { slideInRight, easeTransition } from '@/lib/motion';
@@ -302,24 +304,24 @@ export function MainLayout() {
 
   // ── Wire up typing events ──────────────────────────────────────
   useEffect(() => {
-    const handleTypingStart = (data: {
-      user_id: string;
-      username: string;
-    }) => {
-      if (data.user_id === user?.id) return;
+    const handleTypingStart = (data: any) => {
+      // Backend sends { user: { id, username } } but handle both shapes defensively
+      const userId = data.user?.id || data.user_id;
+      const username = data.user?.username || data.username;
+      if (!userId || userId === user?.id) return;
       setTypingUsers((prev) => {
-        if (prev.some((u) => u.id === data.user_id)) return prev;
-        return [...prev, { id: data.user_id, username: data.username }];
+        if (prev.some((u) => u.id === userId)) return prev;
+        return [...prev, { id: userId, username: username || 'Someone' }];
       });
       setTimeout(() => {
-        setTypingUsers((prev) =>
-          prev.filter((u) => u.id !== data.user_id),
-        );
+        setTypingUsers((prev) => prev.filter((u) => u.id !== userId));
       }, 5000);
     };
 
-    const handleTypingStop = (data: { user_id: string }) => {
-      setTypingUsers((prev) => prev.filter((u) => u.id !== data.user_id));
+    const handleTypingStop = (data: any) => {
+      const userId = data.user?.id || data.user_id;
+      if (!userId) return;
+      setTypingUsers((prev) => prev.filter((u) => u.id !== userId));
     };
 
     socketService.on(
@@ -384,6 +386,29 @@ export function MainLayout() {
       socketService.off(
         'member.leave',
         handleMemberLeave as (data: unknown) => void,
+      );
+    };
+  }, []);
+
+  // ── Wire up voice force-move events (for temp channels) ──────────
+  useEffect(() => {
+    const handleForceMove = (data: any) => {
+      const toChannelId = data.to_channel_id;
+      const toChannelName = data.to_channel_name || 'Voice Channel';
+      if (toChannelId) {
+        voiceService.handleForceMove(toChannelId, toChannelName);
+      }
+    };
+
+    socketService.on(
+      'voice.force_move',
+      handleForceMove as (data: unknown) => void,
+    );
+
+    return () => {
+      socketService.off(
+        'voice.force_move',
+        handleForceMove as (data: unknown) => void,
       );
     };
   }, []);
@@ -561,6 +586,7 @@ export function MainLayout() {
           {voiceConnected && currentServer && (
             <SoundboardPanel serverId={currentServer.id} />
           )}
+          <VoiceConnectedBar />
           <UserPanel onSettingsClick={() => setShowUserSettings(true)} />
         </div>
 
@@ -586,7 +612,7 @@ export function MainLayout() {
             onToggleMemberList={handleToggleMemberList}
           />
 
-          <AnimatePresence>
+          <AnimatePresence mode="wait">
             {isMemberListOpen && (
               <motion.div
                 variants={slideInRight}
@@ -594,7 +620,7 @@ export function MainLayout() {
                 animate="animate"
                 exit="exit"
                 transition={easeTransition}
-                className="h-full"
+                className="h-full overflow-hidden"
               >
                 <MemberList
                   groups={memberGroups}

@@ -26,9 +26,9 @@ export const scaleIn: Variants = {
 };
 
 export const slideInRight: Variants = {
-  initial: { opacity: 0, x: 80 },
-  animate: { opacity: 1, x: 0 },
-  exit: { opacity: 0, x: 80 },
+  initial: { opacity: 0, x: 40, width: 0 },
+  animate: { opacity: 1, x: 0, width: 'auto' },
+  exit: { opacity: 0, x: 40, width: 0 },
 };
 
 export const slideInUp: Variants = {

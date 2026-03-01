@@ -809,11 +809,14 @@ function MembersTab() {
     setIsLoading(true);
     setError(null);
     try {
-      const [membersData, rolesData] = await Promise.all([
-        api.get<ServerMember[]>('/members'),
+      const [membersResponse, rolesData] = await Promise.all([
+        api.get<{ members: ServerMember[] } | ServerMember[]>('/members'),
         api.get<{ id: string; name: string; color: string | null }[]>('/roles')
       ]);
-      setMembers(membersData || []);
+      const membersData = Array.isArray(membersResponse)
+        ? membersResponse
+        : membersResponse?.members || [];
+      setMembers(membersData);
       setRoles(rolesData || []);
     } catch (err: any) {
       setError(err?.message || 'Failed to load members');
