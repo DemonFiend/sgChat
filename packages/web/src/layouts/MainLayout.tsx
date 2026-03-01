@@ -496,20 +496,24 @@ export function MainLayout() {
     };
 
     const handleChannelCreate = (data: any) => {
+      // Backend wraps channel in { channel: { ... } } for all create events
+      const channel = data.channel || data;
       setChannels((prev) => {
-        if (prev.some((c) => c.id === data.id)) return prev;
-        return [...prev, data];
+        if (prev.some((c) => c.id === channel.id)) return prev;
+        return [...prev, channel];
       });
     };
 
     const handleChannelUpdate = (data: any) => {
+      const channel = data.channel || data;
       setChannels((prev) =>
-        prev.map((c) => (c.id === data.id ? { ...c, ...data } : c)),
+        prev.map((c) => (c.id === channel.id ? { ...c, ...channel } : c)),
       );
     };
 
     const handleChannelDelete = (data: any) => {
-      setChannels((prev) => prev.filter((c) => c.id !== data.id));
+      const deletedId = data.channel?.id || data.id;
+      setChannels((prev) => prev.filter((c) => c.id !== deletedId));
     };
 
     socketService.on('server.update', handleServerUpdate as (data: unknown) => void);

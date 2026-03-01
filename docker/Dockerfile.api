@@ -2,6 +2,9 @@ FROM node:20-alpine AS base
 
 # Cache bust arg - increment to force rebuild
 ARG CACHE_BUST=3
+# Git commit hash for version tracking (pass --build-arg GIT_COMMIT=$(git rev-parse --short HEAD))
+ARG GIT_COMMIT=unknown
+ENV GIT_COMMIT=$GIT_COMMIT
 
 WORKDIR /app
 

@@ -85,6 +85,8 @@ function getWebClientPath(): string | null {
   return null;
 }
 
+const serverStartTime = new Date().toISOString();
+
 async function start() {
   // Initialize database, redis, event bus, and storage
   await initDatabase();
@@ -194,7 +196,19 @@ async function start() {
         status: 'ok',
         name: process.env.SERVER_NAME || 'sgChat Server',
         version: '1.0.0',
+        commit: process.env.GIT_COMMIT || 'dev',
         timestamp: new Date().toISOString(),
+      };
+    });
+
+    // Version endpoint for deployment verification
+    api.get('/version', async () => {
+      return {
+        version: '1.0.0',
+        commit: process.env.GIT_COMMIT || 'dev',
+        startedAt: serverStartTime,
+        uptime: Math.floor(process.uptime()),
+        node: process.version,
       };
     });
   }, { prefix: '/api' });
@@ -205,6 +219,7 @@ async function start() {
       status: 'ok',
       name: process.env.SERVER_NAME || 'sgChat Server',
       version: '1.0.0',
+      commit: process.env.GIT_COMMIT || 'dev',
       timestamp: new Date().toISOString(),
     };
   });
