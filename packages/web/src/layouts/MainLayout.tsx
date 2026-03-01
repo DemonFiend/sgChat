@@ -57,7 +57,7 @@ export function MainLayout() {
   const { channelId } = useParams<{ channelId?: string }>();
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
-  const showPopup = useServerPopupStore((s) => s.showPopup);
+
 
   // Core state
   const [servers, setServers] = useState<ServerData[]>([]);
@@ -108,7 +108,9 @@ export function MainLayout() {
         const server = await api.get<ServerData>('/server');
         setCurrentServer(server);
         setServers([server]);
-        showPopup(server.id);
+        // Store the server ID so reopenPopup works (double-click server icon)
+        // Don't auto-show popup — it blocks the entire app with a dark overlay
+        useServerPopupStore.setState({ currentServerId: server.id });
 
         // Fetch channels
         const channelsResponse = await api.get<
