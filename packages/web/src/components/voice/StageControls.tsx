@@ -1,5 +1,3 @@
-import { Show } from 'solid-js';
-
 interface StageControlsProps {
   channelId: string;
   canSpeak: boolean;
@@ -7,49 +5,32 @@ interface StageControlsProps {
   onRequestToSpeak?: () => void;
 }
 
-/**
- * StageControls - UI for music/stage channels showing speaker/listener roles
- * 
- * Phase 1: Basic structure placeholder
- * Future enhancements:
- * - Display list of speakers vs listeners
- * - "Request to Speak" button for listeners
- * - Speaker promotion/demotion controls for moderators
- * - Application audio capture integration
- */
-export function StageControls(props: StageControlsProps) {
+export function StageControls({ isSpeaker, onRequestToSpeak }: StageControlsProps) {
   return (
-    <div class="p-4 bg-zinc-800 rounded-lg">
-      <div class="text-sm text-zinc-400 mb-2">
+    <div className="p-4 bg-bg-secondary rounded-lg">
+      <div className="text-sm text-text-muted mb-2">
         Stage Channel
       </div>
-      
-      <Show
-        when={props.isSpeaker}
-        fallback={
-          <div class="space-y-2">
-            <div class="text-xs text-zinc-500">
-              You are listening
-            </div>
-            <Show when={props.onRequestToSpeak}>
-              <button
-                class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 rounded transition-colors"
-                onClick={props.onRequestToSpeak}
-              >
-                Request to Speak
-              </button>
-            </Show>
-          </div>
-        }
-      >
-        <div class="text-xs text-green-500">
+
+      {isSpeaker ? (
+        <div className="text-xs text-status-online">
           ✓ You are a speaker
         </div>
-      </Show>
-
-      {/* TODO: Add participants list with speaker/listener sections */}
-      {/* TODO: Add moderator controls for promoting/demoting speakers */}
-      {/* TODO: Add application audio source selection */}
+      ) : (
+        <div className="space-y-2">
+          <div className="text-xs text-text-muted">
+            You are listening
+          </div>
+          {onRequestToSpeak && (
+            <button
+              className="px-3 py-1.5 text-sm bg-brand-primary hover:bg-brand-primary-hover text-white rounded transition-colors"
+              onClick={onRequestToSpeak}
+            >
+              Request to Speak
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

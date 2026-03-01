@@ -1,16 +1,15 @@
-import { For, Show, onCleanup, onMount, type JSX } from 'solid-js';
-import { Portal } from 'solid-js/web';
+import { useEffect, useRef, useMemo, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 export interface ContextMenuItem {
   label: string;
-  icon?: JSX.Element;
+  icon?: ReactNode;
   onClick: () => void;
   danger?: boolean;
   warning?: boolean;
   disabled?: boolean;
   separator?: boolean;
-  /** Custom render replaces the default button for this item (e.g. volume slider) */
-  customRender?: () => JSX.Element;
+  customRender?: () => ReactNode;
 }
 
 interface UserContextMenuProps {
@@ -20,93 +19,88 @@ interface UserContextMenuProps {
   items: ContextMenuItem[];
 }
 
-export function UserContextMenu(props: UserContextMenuProps) {
-  let menuRef: HTMLDivElement | undefined;
+export function UserContextMenu({ isOpen, onClose, position, items }: UserContextMenuProps) {
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  const handleKeyDown = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') props.onClose();
-  };
+  useEffect(() => {
+    if (!isOpen) return;
 
-  const handleClickOutside = (e: MouseEvent) => {
-    if (menuRef && !menuRef.contains(e.target as Node)) {
-      props.onClose();
-    }
-  };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
 
-  onMount(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+
     document.addEventListener('keydown', handleKeyDown);
-    // Delay to avoid the context menu click triggering close immediately
-    requestAnimationFrame(() => {
+    const raf = requestAnimationFrame(() => {
       document.addEventListener('mousedown', handleClickOutside);
     });
-  });
 
-  onCleanup(() => {
-    document.removeEventListener('keydown', handleKeyDown);
-    document.removeEventListener('mousedown', handleClickOutside);
-  });
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('mousedown', handleClickOutside);
+      cancelAnimationFrame(raf);
+    };
+  }, [isOpen, onClose]);
 
-  // Adjust position to keep menu in viewport
-  const adjustedPosition = () => {
+  const adjustedPosition = useMemo(() => {
     const menuWidth = 220;
-    const menuHeight = props.items.length * 36;
-    const x = Math.min(props.position.x, window.innerWidth - menuWidth - 8);
-    const y = Math.min(props.position.y, window.innerHeight - menuHeight - 8);
+    const menuHeight = items.length * 36;
+    const x = Math.min(position.x, window.innerWidth - menuWidth - 8);
+    const y = Math.min(position.y, window.innerHeight - menuHeight - 8);
     return { x: Math.max(8, x), y: Math.max(8, y) };
-  };
+  }, [position, items.length]);
 
-  return (
-    <Show when={props.isOpen}>
-      <Portal>
-        <div
-          ref={menuRef}
-          class="fixed z-[100] min-w-[200px] py-1.5 bg-bg-tertiary rounded-md shadow-lg border border-divider"
-          style={{
-            left: `${adjustedPosition().x}px`,
-            top: `${adjustedPosition().y}px`,
-          }}
-        >
-          <For each={props.items}>
-            {(item) => (
-              <>
-                <Show when={item.separator}>
-                  <div class="my-1 mx-2 border-t border-divider" />
-                </Show>
-                <Show
-                  when={!item.customRender}
-                  fallback={
-                    <div class="px-3 py-1.5">{item.customRender!()}</div>
-                  }
-                >
-                  <button
-                    class={`flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left transition-colors ${
-                      item.disabled
-                        ? 'text-text-muted cursor-not-allowed opacity-50'
-                        : item.danger
-                          ? 'text-danger hover:bg-danger/10'
-                          : item.warning
-                            ? 'text-yellow-500 hover:bg-yellow-500/10'
-                            : 'text-text-secondary hover:bg-bg-modifier-hover hover:text-text-primary'
-                    }`}
-                    onClick={() => {
-                      if (!item.disabled) {
-                        item.onClick();
-                        props.onClose();
-                      }
-                    }}
-                    disabled={item.disabled}
-                  >
-                    <Show when={item.icon}>
-                      <span class="w-4 h-4 flex-shrink-0">{item.icon}</span>
-                    </Show>
-                    {item.label}
-                  </button>
-                </Show>
-              </>
-            )}
-          </For>
+  if (!isOpen) return null;
+
+  return createPortal(
+    <div
+      ref={menuRef}
+      className="fixed z-[100] min-w-[200px] py-1.5 bg-bg-tertiary rounded-md shadow-lg border border-divider"
+      style={{
+        left: `${adjustedPosition.x}px`,
+        top: `${adjustedPosition.y}px`,
+      }}
+    >
+      {items.map((item, index) => (
+        <div key={index}>
+          {item.separator && (
+            <div className="my-1 mx-2 border-t border-divider" />
+          )}
+          {item.customRender ? (
+            <div className="px-3 py-1.5">{item.customRender()}</div>
+          ) : (
+            <button
+              className={`flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left transition-colors ${
+                item.disabled
+                  ? 'text-text-muted cursor-not-allowed opacity-50'
+                  : item.danger
+                    ? 'text-danger hover:bg-danger/10'
+                    : item.warning
+                      ? 'text-yellow-500 hover:bg-yellow-500/10'
+                      : 'text-text-secondary hover:bg-bg-modifier-hover hover:text-text-primary'
+              }`}
+              onClick={() => {
+                if (!item.disabled) {
+                  item.onClick();
+                  onClose();
+                }
+              }}
+              disabled={item.disabled}
+            >
+              {item.icon && (
+                <span className="w-4 h-4 flex-shrink-0">{item.icon}</span>
+              )}
+              {item.label}
+            </button>
+          )}
         </div>
-      </Portal>
-    </Show>
+      ))}
+    </div>,
+    document.body
   );
 }

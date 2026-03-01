@@ -1,28 +1,31 @@
-import { createSignal, Show } from 'solid-js';
-import { A } from '@solidjs/router';
+import { useState } from 'react';
+import { Link } from 'react-router';
 import { Button, Input, NetworkSelector } from '@/components/ui';
 import { api } from '@/api';
-import { networkStore } from '@/stores/network';
+import { useNetworkStore } from '@/stores/network';
 
 export function ForgotPasswordPage() {
-  const [email, setEmail] = createSignal('');
-  const [error, setError] = createSignal('');
-  const [success, setSuccess] = createSignal(false);
-  const [loading, setLoading] = createSignal(false);
+  const [email, setEmail] = useState('');
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  // Check if form should be disabled (not connected to network)
-  const isFormDisabled = () => networkStore.connectionStatus() !== 'connected';
+  const [showNetworkSelector, setShowNetworkSelector] = useState(false);
 
-  const handleSubmit = async (e: Event) => {
+  const { connectionStatus, serverInfo } = useNetworkStore();
+  const isConnected = connectionStatus === 'connected';
+  const isFormDisabled = !isConnected;
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
     try {
-      await api.post('/auth/forgot-password', { email: email() });
+      await api.post('/auth/forgot-password', { email });
       setSuccess(true);
-    } catch (err: any) {
-      // Even on error, we show success to prevent email enumeration
+    } catch {
+      // Even on error, show success to prevent email enumeration
       setSuccess(true);
     } finally {
       setLoading(false);
@@ -30,62 +33,79 @@ export function ForgotPasswordPage() {
   };
 
   return (
-    <div class="min-h-screen flex items-center justify-center bg-bg-tertiary p-4">
-      <div class="w-full max-w-md">
-        <div class="bg-bg-primary rounded-md shadow-high p-8">
-          <div class="text-center mb-6">
-            <h1 class="text-2xl font-bold text-text-primary mb-2">Forgot Password</h1>
-            <p class="text-text-muted">Enter your email to receive a password reset link</p>
+    <div className="min-h-screen flex items-center justify-center bg-bg-tertiary p-4">
+      <div className="w-full max-w-md">
+        <div className="bg-bg-primary rounded-md shadow-high p-8">
+          <div className="text-center mb-6">
+            <h1 className="text-2xl font-bold text-text-primary mb-2">Forgot Password</h1>
+            <p className="text-text-muted">Enter your email to receive a password reset link</p>
           </div>
 
-          {/* Network Selector */}
-          <div class="mb-6">
-            <NetworkSelector />
-          </div>
-
-          <Show when={error()}>
-            <div class="mb-4 p-3 rounded bg-danger/10 border border-danger/50 text-danger text-sm">
-              {error()}
+          {/* Network connection */}
+          {!isConnected || showNetworkSelector ? (
+            <div className="mb-6">
+              <NetworkSelector />
             </div>
-          </Show>
+          ) : (
+            <div className="mb-4 flex items-center justify-between text-sm">
+              <span className="flex items-center gap-2 text-success">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                </svg>
+                Connected to &quot;{serverInfo?.name}&quot;
+              </span>
+              <button
+                onClick={() => setShowNetworkSelector(true)}
+                className="text-text-link text-xs hover:underline"
+              >
+                Change
+              </button>
+            </div>
+          )}
 
-          <Show when={success()}>
-            <div class="mb-4 p-3 rounded bg-success/10 border border-success/50 text-success text-sm">
-              <p class="font-medium">Check your email</p>
-              <p class="mt-1 text-sm">
-                If an account exists with that email, you'll receive a password reset link shortly.
+          {error && (
+            <div className="mb-4 p-3 rounded bg-danger/10 border border-danger/50 text-danger text-sm">
+              {error}
+            </div>
+          )}
+
+          {success && (
+            <div className="mb-4 p-3 rounded bg-success/10 border border-success/50 text-success text-sm">
+              <p className="font-medium">Check your email</p>
+              <p className="mt-1 text-sm">
+                If an account exists with that email, you&apos;ll receive a password reset link shortly.
               </p>
             </div>
-          </Show>
+          )}
 
-          <Show when={!success()}>
-            <form onSubmit={handleSubmit} class="space-y-4">
+          {!success && (
+            <form onSubmit={handleSubmit} className="space-y-4">
               <Input
                 type="email"
                 label="Email"
-                value={email()}
-                onInput={(e) => setEmail(e.currentTarget.value)}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 required
-                autocomplete="email"
-                disabled={isFormDisabled()}
+                autoComplete="email"
+                disabled={isFormDisabled}
                 placeholder="Enter your email address"
               />
 
               <Button
                 type="submit"
                 fullWidth
-                loading={loading()}
-                disabled={isFormDisabled() || !email()}
+                loading={loading}
+                disabled={isFormDisabled || !email}
               >
-                {isFormDisabled() ? 'Connect to a server first' : 'Send Reset Link'}
+                {isFormDisabled ? 'Connect to a server first' : 'Send Reset Link'}
               </Button>
             </form>
-          </Show>
+          )}
 
-          <p class="mt-4 text-sm text-text-muted text-center">
-            <A href="/login" class="text-text-link hover:underline">
+          <p className="mt-4 text-sm text-text-muted text-center">
+            <Link to="/login" className="text-text-link hover:underline">
               Back to Login
-            </A>
+            </Link>
           </p>
         </div>
       </div>

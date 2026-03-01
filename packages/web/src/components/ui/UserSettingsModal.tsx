@@ -1,10 +1,10 @@
-import { createSignal, onMount, onCleanup, For, Show, JSX } from 'solid-js';
-import { Portal } from 'solid-js/web';
-import { useNavigate } from '@solidjs/router';
+import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router';
 import { clsx } from 'clsx';
 import { authStore } from '@/stores/auth';
 import { networkStore, getEffectiveUrl } from '@/stores/network';
-import { theme, setTheme, themeNames, type Theme } from '@/stores/theme';
+import { useThemeStore, themeNames, type Theme } from '@/stores/theme';
 import { Avatar } from './Avatar';
 import { AvatarPicker } from './AvatarPicker';
 import { api } from '@/api';
@@ -17,13 +17,13 @@ interface UserSettingsModalProps {
   onClose: () => void;
 }
 
-const tabs: { id: SettingsTab; label: string; icon: JSX.Element }[] = [
+const tabs: { id: SettingsTab; label: string; icon: ReactNode }[] = [
   {
     id: 'account',
     label: 'My Account',
     icon: (
-      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
       </svg>
     ),
   },
@@ -31,8 +31,8 @@ const tabs: { id: SettingsTab; label: string; icon: JSX.Element }[] = [
     id: 'profile',
     label: 'Profile',
     icon: (
-      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
       </svg>
     ),
   },
@@ -40,8 +40,8 @@ const tabs: { id: SettingsTab; label: string; icon: JSX.Element }[] = [
     id: 'appearance',
     label: 'Appearance',
     icon: (
-      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
       </svg>
     ),
   },
@@ -49,8 +49,8 @@ const tabs: { id: SettingsTab; label: string; icon: JSX.Element }[] = [
     id: 'notifications',
     label: 'Notifications',
     icon: (
-      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
       </svg>
     ),
   },
@@ -58,123 +58,121 @@ const tabs: { id: SettingsTab; label: string; icon: JSX.Element }[] = [
     id: 'voice',
     label: 'Voice & Video',
     icon: (
-      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
       </svg>
     ),
   },
 ];
 
-export function UserSettingsModal(props: UserSettingsModalProps) {
-  const [activeTab, setActiveTab] = createSignal<SettingsTab>('account');
-  const user = () => authStore.state().user;
+export function UserSettingsModal({ isOpen, onClose }: UserSettingsModalProps) {
+  const [activeTab, setActiveTab] = useState<SettingsTab>('account');
+  const user = authStore.getState().user;
 
-  const handleKeyDown = (e: KeyboardEvent) => {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
-      props.onClose();
+      onClose();
     }
-  };
+  }, [onClose]);
 
-  return (
-    <Show when={props.isOpen}>
-      <Portal>
-        <div
-          class="fixed inset-0 z-50 flex bg-bg-primary animate-in fade-in duration-200"
-          onKeyDown={handleKeyDown}
-          role="dialog"
-          aria-modal="true"
-          aria-label="User Settings"
-        >
-          {/* Sidebar */}
-          <div class="w-[218px] bg-bg-secondary flex flex-col">
-            <div class="flex-1 overflow-y-auto py-[60px] px-[6px]">
-              <div class="pr-2">
-                <div class="px-2 pb-1.5">
-                  <span class="text-xs font-bold uppercase text-text-muted tracking-wide">
-                    User Settings
-                  </span>
-                </div>
-                <For each={tabs}>
-                  {(tab) => (
-                    <button
-                      onClick={() => setActiveTab(tab.id)}
-                      class={clsx(
-                        'w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-sm transition-colors',
-                        activeTab() === tab.id
-                          ? 'bg-bg-modifier-selected text-text-primary'
-                          : 'text-text-muted hover:bg-bg-modifier-hover hover:text-text-primary'
-                      )}
-                    >
-                      {tab.icon}
-                      {tab.label}
-                    </button>
-                  )}
-                </For>
+  if (!isOpen) return null;
 
-                <div class="h-px bg-border-subtle my-2 mx-2" />
-
-                <div class="px-2 pb-1.5 pt-2">
-                  <span class="text-xs font-bold uppercase text-text-muted tracking-wide">
-                    App Settings
-                  </span>
-                </div>
-              </div>
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex bg-bg-primary animate-in fade-in duration-200"
+      onKeyDown={handleKeyDown}
+      role="dialog"
+      aria-modal="true"
+      aria-label="User Settings"
+    >
+      {/* Sidebar */}
+      <div className="w-[218px] bg-bg-secondary flex flex-col">
+        <div className="flex-1 overflow-y-auto py-[60px] px-[6px]">
+          <div className="pr-2">
+            <div className="px-2 pb-1.5">
+              <span className="text-xs font-bold uppercase text-text-muted tracking-wide">
+                User Settings
+              </span>
             </div>
-          </div>
-
-          {/* Content */}
-          <div class="flex-1 flex flex-col bg-bg-primary">
-            {/* Header bar with close button */}
-            <div class="absolute top-4 right-4 z-10">
+            {tabs.map((tab) => (
               <button
-                onClick={props.onClose}
-                class="p-2 rounded-full border-2 border-text-muted text-text-muted hover:border-text-primary hover:text-text-primary transition-colors"
-                aria-label="Close"
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={clsx(
+                  'w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-sm transition-colors',
+                  activeTab === tab.id
+                    ? 'bg-bg-modifier-selected text-text-primary'
+                    : 'text-text-muted hover:bg-bg-modifier-hover hover:text-text-primary'
+                )}
               >
-                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                {tab.icon}
+                {tab.label}
               </button>
-              <div class="text-xs text-text-muted text-center mt-1">ESC</div>
-            </div>
+            ))}
 
-            {/* Tab content */}
-            <div class="flex-1 overflow-y-auto py-[60px] px-10">
-              <div class="max-w-[740px] mx-auto">
-                <Show when={activeTab() === 'account'}>
-                  <AccountTab user={user()} onClose={props.onClose} />
-                </Show>
-                <Show when={activeTab() === 'profile'}>
-                  <ProfileTab user={user()} />
-                </Show>
-                <Show when={activeTab() === 'appearance'}>
-                  <AppearanceTab />
-                </Show>
-                <Show when={activeTab() === 'notifications'}>
-                  <NotificationsTab />
-                </Show>
-                <Show when={activeTab() === 'voice'}>
-                  <VoiceTab />
-                </Show>
-              </div>
+            <div className="h-px bg-border-subtle my-2 mx-2" />
+
+            <div className="px-2 pb-1.5 pt-2">
+              <span className="text-xs font-bold uppercase text-text-muted tracking-wide">
+                App Settings
+              </span>
             </div>
           </div>
         </div>
-      </Portal>
-    </Show>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 flex flex-col bg-bg-primary">
+        {/* Header bar with close button */}
+        <div className="absolute top-4 right-4 z-10">
+          <button
+            onClick={onClose}
+            className="p-2 rounded-full border-2 border-text-muted text-text-muted hover:border-text-primary hover:text-text-primary transition-colors"
+            aria-label="Close"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          <div className="text-xs text-text-muted text-center mt-1">ESC</div>
+        </div>
+
+        {/* Tab content */}
+        <div className="flex-1 overflow-y-auto py-[60px] px-10">
+          <div className="max-w-[740px] mx-auto">
+            {activeTab === 'account' && (
+              <AccountTab user={user} onClose={onClose} />
+            )}
+            {activeTab === 'profile' && (
+              <ProfileTab user={user} />
+            )}
+            {activeTab === 'appearance' && (
+              <AppearanceTab />
+            )}
+            {activeTab === 'notifications' && (
+              <NotificationsTab />
+            )}
+            {activeTab === 'voice' && (
+              <VoiceTab />
+            )}
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 
 // Account Tab
-function AccountTab(props: { user: ReturnType<typeof authStore.state>['user']; onClose: () => void }) {
+function AccountTab({ user, onClose }: { user: ReturnType<typeof authStore.getState>['user']; onClose: () => void }) {
   const navigate = useNavigate();
-  const [loggingOut, setLoggingOut] = createSignal(false);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   const handleLogout = async (forgetDevice: boolean) => {
     setLoggingOut(true);
 
     try {
-      props.onClose(); // Close the settings modal first
+      onClose(); // Close the settings modal first
       await authStore.logout(forgetDevice);
       networkStore.clearConnection();
       navigate('/login', { replace: true });
@@ -185,53 +183,53 @@ function AccountTab(props: { user: ReturnType<typeof authStore.state>['user']; o
 
   return (
     <div>
-      <h2 class="text-xl font-bold text-text-primary mb-5">My Account</h2>
+      <h2 className="text-xl font-bold text-text-primary mb-5">My Account</h2>
 
-      <div class="bg-bg-secondary rounded-lg overflow-hidden">
+      <div className="bg-bg-secondary rounded-lg overflow-hidden">
         {/* Banner area */}
-        <div class="h-[100px] bg-brand-primary" />
+        <div className="h-[100px] bg-brand-primary" />
 
         {/* User info */}
-        <div class="px-4 pb-4">
-          <div class="flex items-end gap-4 -mt-[38px]">
-            <div class="relative">
+        <div className="px-4 pb-4">
+          <div className="flex items-end gap-4 -mt-[38px]">
+            <div className="relative">
               <Avatar
-                src={props.user?.avatar_url}
-                alt={props.user?.display_name || props.user?.username || 'User'}
+                src={user?.avatar_url}
+                alt={user?.display_name || user?.username || 'User'}
                 size="xl"
-                class="ring-[6px] ring-bg-secondary"
+                className="ring-[6px] ring-bg-secondary"
               />
-              <div class="absolute bottom-1 right-1 w-6 h-6 bg-success rounded-full border-[3px] border-bg-secondary" />
+              <div className="absolute bottom-1 right-1 w-6 h-6 bg-success rounded-full border-[3px] border-bg-secondary" />
             </div>
-            <div class="flex-1 pb-1">
-              <h3 class="text-xl font-bold text-text-primary">
-                {props.user?.display_name || props.user?.username}
+            <div className="flex-1 pb-1">
+              <h3 className="text-xl font-bold text-text-primary">
+                {user?.display_name || user?.username}
               </h3>
-              <p class="text-sm text-text-muted">@{props.user?.username}</p>
+              <p className="text-sm text-text-muted">@{user?.username}</p>
             </div>
-            <button class="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors">
+            <button className="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors">
               Edit User Profile
             </button>
           </div>
 
           {/* Account details card */}
-          <div class="mt-4 bg-bg-tertiary rounded-lg p-4 space-y-4">
-            <div class="flex justify-between items-center">
+          <div className="mt-4 bg-bg-tertiary rounded-lg p-4 space-y-4">
+            <div className="flex justify-between items-center">
               <div>
-                <div class="text-xs font-bold uppercase text-text-muted mb-1">Username</div>
-                <div class="text-text-primary">{props.user?.username}</div>
+                <div className="text-xs font-bold uppercase text-text-muted mb-1">Username</div>
+                <div className="text-text-primary">{user?.username}</div>
               </div>
-              <button class="px-4 py-1.5 bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary text-sm font-medium rounded transition-colors">
+              <button className="px-4 py-1.5 bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary text-sm font-medium rounded transition-colors">
                 Edit
               </button>
             </div>
 
-            <div class="flex justify-between items-center">
+            <div className="flex justify-between items-center">
               <div>
-                <div class="text-xs font-bold uppercase text-text-muted mb-1">Email</div>
-                <div class="text-text-primary">{props.user?.email}</div>
+                <div className="text-xs font-bold uppercase text-text-muted mb-1">Email</div>
+                <div className="text-text-primary">{user?.email}</div>
               </div>
-              <button class="px-4 py-1.5 bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary text-sm font-medium rounded transition-colors">
+              <button className="px-4 py-1.5 bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary text-sm font-medium rounded transition-colors">
                 Edit
               </button>
             </div>
@@ -240,53 +238,53 @@ function AccountTab(props: { user: ReturnType<typeof authStore.state>['user']; o
       </div>
 
       {/* Password & Authentication */}
-      <div class="mt-10">
-        <h3 class="text-xs font-bold uppercase text-text-muted mb-4">Password and Authentication</h3>
-        <button class="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors">
+      <div className="mt-10">
+        <h3 className="text-xs font-bold uppercase text-text-muted mb-4">Password and Authentication</h3>
+        <button className="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors">
           Change Password
         </button>
       </div>
 
       {/* Account Removal */}
-      <div class="mt-10">
-        <h3 class="text-xs font-bold uppercase text-text-muted mb-4">Account Removal</h3>
-        <p class="text-sm text-text-muted mb-4">
+      <div className="mt-10">
+        <h3 className="text-xs font-bold uppercase text-text-muted mb-4">Account Removal</h3>
+        <p className="text-sm text-text-muted mb-4">
           Disabling your account means you can recover it at any time after taking this action.
         </p>
-        <div class="flex gap-2">
-          <button class="px-4 py-2 border border-danger text-danger hover:bg-danger/10 text-sm font-medium rounded transition-colors">
+        <div className="flex gap-2">
+          <button className="px-4 py-2 border border-danger text-danger hover:bg-danger/10 text-sm font-medium rounded transition-colors">
             Disable Account
           </button>
-          <button class="px-4 py-2 border border-danger text-danger hover:bg-danger/10 text-sm font-medium rounded transition-colors">
+          <button className="px-4 py-2 border border-danger text-danger hover:bg-danger/10 text-sm font-medium rounded transition-colors">
             Delete Account
           </button>
         </div>
       </div>
 
       {/* Log Out */}
-      <div class="mt-10">
-        <h3 class="text-xs font-bold uppercase text-text-muted mb-4">Log Out</h3>
-        <p class="text-sm text-text-muted mb-4">
+      <div className="mt-10">
+        <h3 className="text-xs font-bold uppercase text-text-muted mb-4">Log Out</h3>
+        <p className="text-sm text-text-muted mb-4">
           Log out of your account on this device.
         </p>
-        <div class="flex gap-2">
+        <div className="flex gap-2">
           <button
             onClick={() => handleLogout(false)}
-            disabled={loggingOut()}
-            class="px-4 py-2 bg-danger hover:bg-danger/90 text-white text-sm font-medium rounded transition-colors disabled:opacity-50 flex items-center gap-2"
+            disabled={loggingOut}
+            className="px-4 py-2 bg-danger hover:bg-danger/90 text-white text-sm font-medium rounded transition-colors disabled:opacity-50 flex items-center gap-2"
           >
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
             </svg>
-            {loggingOut() ? 'Logging out...' : 'Log Out'}
+            {loggingOut ? 'Logging out...' : 'Log Out'}
           </button>
           <button
             onClick={() => handleLogout(true)}
-            disabled={loggingOut()}
-            class="px-4 py-2 border border-danger text-danger hover:bg-danger/10 text-sm font-medium rounded transition-colors disabled:opacity-50 flex items-center gap-2"
+            disabled={loggingOut}
+            className="px-4 py-2 border border-danger text-danger hover:bg-danger/10 text-sm font-medium rounded transition-colors disabled:opacity-50 flex items-center gap-2"
           >
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
             </svg>
             Log Out & Forget Device
           </button>
@@ -299,48 +297,48 @@ function AccountTab(props: { user: ReturnType<typeof authStore.state>['user']; o
 // Profile Tab
 
 
-function ProfileTab(props: { user: ReturnType<typeof authStore.state>['user'] }) {
-  const [displayName, setDisplayName] = createSignal(props.user?.display_name || '');
-  const [customStatus, setCustomStatus] = createSignal(props.user?.custom_status || '');
-  const [avatarUrl, setAvatarUrl] = createSignal(props.user?.avatar_url || null);
-  const [saving, setSaving] = createSignal(false);
-  const [saveSuccess, setSaveSuccess] = createSignal(false);
-  const [saveError, setSaveError] = createSignal<string | null>(null);
+function ProfileTab({ user }: { user: ReturnType<typeof authStore.getState>['user'] }) {
+  const [displayName, setDisplayName] = useState(user?.display_name || '');
+  const [customStatus, setCustomStatus] = useState(user?.custom_status || '');
+  const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url || null);
+  const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Privacy settings (from user_settings)
-  const [timezone, setTimezone] = createSignal('');
-  const [timezonePublic, setTimezonePublic] = createSignal(false);
-  const [timezoneDstEnabled, setTimezoneDstEnabled] = createSignal(true);
-  const [privacyLoaded, setPrivacyLoaded] = createSignal(false);
-  const [savingPrivacy, setSavingPrivacy] = createSignal(false);
+  const [timezone, setTimezone] = useState('');
+  const [timezonePublic, setTimezonePublic] = useState(false);
+  const [timezoneDstEnabled, setTimezoneDstEnabled] = useState(true);
+  const [privacyLoaded, setPrivacyLoaded] = useState(false);
+  const [savingPrivacy, setSavingPrivacy] = useState(false);
 
   // Load privacy settings on mount
-  onMount(async () => {
-    try {
-      const settings = await api.get<any>('/users/me/settings');
-      setTimezone(settings.timezone || '');
-      setTimezonePublic(settings.timezone_public || false);
-      setTimezoneDstEnabled(settings.timezone_dst_enabled !== false); // Default true
-      setPrivacyLoaded(true);
-    } catch (err) {
-      console.error('Failed to load privacy settings:', err);
-      setPrivacyLoaded(true);
-    }
-  });
+  useEffect(() => {
+    (async () => {
+      try {
+        const settings = await api.get<any>('/users/me/settings');
+        setTimezone(settings.timezone || '');
+        setTimezonePublic(settings.timezone_public || false);
+        setTimezoneDstEnabled(settings.timezone_dst_enabled !== false); // Default true
+        setPrivacyLoaded(true);
+      } catch (err) {
+        console.error('Failed to load privacy settings:', err);
+        setPrivacyLoaded(true);
+      }
+    })();
+  }, []);
 
   // Track if profile fields have changed (not avatar - that saves immediately)
-  const hasChanges = () => {
-    return displayName() !== (props.user?.display_name || '') ||
-      customStatus() !== (props.user?.custom_status || '');
-  };
+  const hasChanges = displayName !== (user?.display_name || '') ||
+    customStatus !== (user?.custom_status || '');
 
   const handleSavePrivacy = async () => {
     setSavingPrivacy(true);
     try {
       await api.patch('/users/me/settings', {
-        timezone: timezone() || null,
-        timezone_public: timezonePublic(),
-        timezone_dst_enabled: timezoneDstEnabled(),
+        timezone: timezone || null,
+        timezone_public: timezonePublic,
+        timezone_dst_enabled: timezoneDstEnabled,
       });
     } catch (err) {
       console.error('Failed to save privacy settings:', err);
@@ -350,7 +348,7 @@ function ProfileTab(props: { user: ReturnType<typeof authStore.state>['user'] })
   };
 
   const handleSaveProfile = async () => {
-    if (!hasChanges() || saving()) return;
+    if (!hasChanges || saving) return;
 
     setSaving(true);
     setSaveError(null);
@@ -358,8 +356,8 @@ function ProfileTab(props: { user: ReturnType<typeof authStore.state>['user'] })
 
     try {
       await api.patch('/users/me', {
-        display_name: displayName() || null,
-        custom_status: customStatus() || null,
+        display_name: displayName || null,
+        custom_status: customStatus || null,
       });
 
       // Refresh user data in auth store
@@ -380,195 +378,223 @@ function ProfileTab(props: { user: ReturnType<typeof authStore.state>['user'] })
     authStore.refreshUser();
   };
 
+  // We need a ref-based approach for handleSavePrivacy since toggles
+  // call it immediately after setState, but React batches state updates.
+  // Use a useEffect to trigger save when privacy settings change after initial load.
+  const privacyInitialized = useRef(false);
+  const prevTimezone = useRef(timezone);
+  const prevTimezonePublic = useRef(timezonePublic);
+  const prevTimezoneDstEnabled = useRef(timezoneDstEnabled);
+
+  useEffect(() => {
+    if (!privacyLoaded) return;
+    if (!privacyInitialized.current) {
+      // First time after load - just mark as initialized
+      privacyInitialized.current = true;
+      prevTimezone.current = timezone;
+      prevTimezonePublic.current = timezonePublic;
+      prevTimezoneDstEnabled.current = timezoneDstEnabled;
+      return;
+    }
+    // Only save if something actually changed
+    if (
+      timezone !== prevTimezone.current ||
+      timezonePublic !== prevTimezonePublic.current ||
+      timezoneDstEnabled !== prevTimezoneDstEnabled.current
+    ) {
+      prevTimezone.current = timezone;
+      prevTimezonePublic.current = timezonePublic;
+      prevTimezoneDstEnabled.current = timezoneDstEnabled;
+      handleSavePrivacy();
+    }
+  }, [timezone, timezonePublic, timezoneDstEnabled, privacyLoaded]);
+
   return (
     <div>
-      <h2 class="text-xl font-bold text-text-primary mb-5">Profile</h2>
+      <h2 className="text-xl font-bold text-text-primary mb-5">Profile</h2>
 
-      <div class="flex gap-10">
+      <div className="flex gap-10">
         {/* Form */}
-        <div class="flex-1 space-y-6">
+        <div className="flex-1 space-y-6">
           <div>
-            <label class="block text-xs font-bold uppercase text-text-muted mb-2">
+            <label className="block text-xs font-bold uppercase text-text-muted mb-2">
               Display Name
             </label>
             <input
               type="text"
-              value={displayName()}
-              onInput={(e) => setDisplayName(e.currentTarget.value)}
-              placeholder={props.user?.username}
-              class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:border-brand-primary"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder={user?.username}
+              className="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:border-brand-primary"
             />
           </div>
 
           <div>
-            <label class="block text-xs font-bold uppercase text-text-muted mb-2">
+            <label className="block text-xs font-bold uppercase text-text-muted mb-2">
               Status
             </label>
             <input
               type="text"
-              value={customStatus()}
-              onInput={(e) => setCustomStatus(e.currentTarget.value)}
+              value={customStatus}
+              onChange={(e) => setCustomStatus(e.target.value)}
               placeholder="What's on your mind?"
-              class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:border-brand-primary"
+              className="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:border-brand-primary"
             />
           </div>
 
           <div>
-            <label class="block text-xs font-bold uppercase text-text-muted mb-2">
+            <label className="block text-xs font-bold uppercase text-text-muted mb-2">
               Avatar
             </label>
             <AvatarPicker
-              currentAvatarUrl={avatarUrl()}
-              username={props.user?.username}
-              displayName={displayName() || props.user?.display_name || undefined}
+              currentAvatarUrl={avatarUrl}
+              username={user?.username}
+              displayName={displayName || user?.display_name || undefined}
               onAvatarChange={handleAvatarChange}
             />
           </div>
 
           {/* Save button with status */}
-          <div class="flex items-center gap-3">
+          <div className="flex items-center gap-3">
             <button
               onClick={handleSaveProfile}
-              disabled={!hasChanges() || saving()}
-              class={clsx(
+              disabled={!hasChanges || saving}
+              className={clsx(
                 "px-4 py-2 text-white text-sm font-medium rounded transition-colors",
-                hasChanges()
+                hasChanges
                   ? "bg-success hover:bg-success/90"
                   : "bg-bg-tertiary text-text-muted cursor-not-allowed"
               )}
             >
-              {saving() ? 'Saving...' : 'Save Changes'}
+              {saving ? 'Saving...' : 'Save Changes'}
             </button>
 
-            <Show when={saveSuccess()}>
-              <span class="text-sm text-success flex items-center gap-1">
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            {saveSuccess && (
+              <span className="text-sm text-success flex items-center gap-1">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
                 </svg>
                 Saved!
               </span>
-            </Show>
+            )}
 
-            <Show when={saveError()}>
-              <span class="text-sm text-danger">{saveError()}</span>
-            </Show>
+            {saveError && (
+              <span className="text-sm text-danger">{saveError}</span>
+            )}
           </div>
 
           {/* Privacy Settings */}
-          <div class="mt-8 pt-6 border-t border-border-subtle">
-            <h3 class="text-sm font-bold uppercase text-text-muted mb-4">Privacy</h3>
+          <div className="mt-8 pt-6 border-t border-border-subtle">
+            <h3 className="text-sm font-bold uppercase text-text-muted mb-4">Privacy</h3>
 
-            <Show when={privacyLoaded()} fallback={<div class="text-text-muted text-sm">Loading...</div>}>
-              <div class="space-y-4">
+            {privacyLoaded ? (
+              <div className="space-y-4">
                 <div>
-                  <label class="block text-xs font-bold uppercase text-text-muted mb-2">
+                  <label className="block text-xs font-bold uppercase text-text-muted mb-2">
                     Your Timezone
                   </label>
                   <select
-                    value={timezone()}
+                    value={timezone}
                     onChange={(e) => {
-                      setTimezone(e.currentTarget.value);
-                      handleSavePrivacy();
+                      setTimezone(e.target.value);
                     }}
-                    class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
+                    className="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
                   >
-                    <For each={USER_TIMEZONES}>
-                      {(tz) => (
-                        <option value={tz.value}>{tz.label}</option>
-                      )}
-                    </For>
+                    {USER_TIMEZONES.map((tz) => (
+                      <option key={tz.value} value={tz.value}>{tz.label}</option>
+                    ))}
                   </select>
-                  <p class="text-xs text-text-muted mt-1">
+                  <p className="text-xs text-text-muted mt-1">
                     Select "Hidden" to show "Hidden" to friends instead of your time
                   </p>
                 </div>
 
-                <div class="flex items-center justify-between">
+                <div className="flex items-center justify-between">
                   <div>
-                    <label class="text-sm font-medium text-text-primary">
+                    <label className="text-sm font-medium text-text-primary">
                       Show timezone publicly
                     </label>
-                    <p class="text-xs text-text-muted">
+                    <p className="text-xs text-text-muted">
                       Allow friends to see your local time
                     </p>
                   </div>
                   <button
                     onClick={() => {
-                      setTimezonePublic(!timezonePublic());
-                      handleSavePrivacy();
+                      setTimezonePublic(!timezonePublic);
                     }}
-                    disabled={savingPrivacy()}
-                    class={clsx(
+                    disabled={savingPrivacy}
+                    className={clsx(
                       "relative w-11 h-6 rounded-full transition-colors",
-                      timezonePublic() ? "bg-brand-primary" : "bg-bg-tertiary"
+                      timezonePublic ? "bg-brand-primary" : "bg-bg-tertiary"
                     )}
                   >
                     <span
-                      class={clsx(
+                      className={clsx(
                         "absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm",
-                        timezonePublic() && "translate-x-5"
+                        timezonePublic && "translate-x-5"
                       )}
                     />
                   </button>
                 </div>
 
-                <Show when={timezone()}>
-                  <div class="flex items-center justify-between">
+                {timezone && (
+                  <div className="flex items-center justify-between">
                     <div>
-                      <label class="text-sm font-medium text-text-primary">
+                      <label className="text-sm font-medium text-text-primary">
                         Adjust for daylight saving time
                       </label>
-                      <p class="text-xs text-text-muted">
+                      <p className="text-xs text-text-muted">
                         Automatically adjust displayed time for DST
                       </p>
                     </div>
                     <button
                       onClick={() => {
-                        setTimezoneDstEnabled(!timezoneDstEnabled());
-                        handleSavePrivacy();
+                        setTimezoneDstEnabled(!timezoneDstEnabled);
                       }}
-                      disabled={savingPrivacy()}
-                      class={clsx(
+                      disabled={savingPrivacy}
+                      className={clsx(
                         "relative w-11 h-6 rounded-full transition-colors",
-                        timezoneDstEnabled() ? "bg-brand-primary" : "bg-bg-tertiary"
+                        timezoneDstEnabled ? "bg-brand-primary" : "bg-bg-tertiary"
                       )}
                     >
                       <span
-                        class={clsx(
+                        className={clsx(
                           "absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm",
-                          timezoneDstEnabled() && "translate-x-5"
+                          timezoneDstEnabled && "translate-x-5"
                         )}
                       />
                     </button>
                   </div>
-                </Show>
+                )}
               </div>
-            </Show>
+            ) : (
+              <div className="text-text-muted text-sm">Loading...</div>
+            )}
           </div>
         </div>
 
         {/* Preview */}
-        <div class="w-[300px]">
-          <h3 class="text-xs font-bold uppercase text-text-muted mb-4">Preview</h3>
-          <div class="bg-bg-secondary rounded-lg overflow-hidden">
-            <div class="h-[60px] bg-brand-primary" />
-            <div class="px-4 pb-4">
-              <div class="flex items-end gap-3 -mt-[30px]">
+        <div className="w-[300px]">
+          <h3 className="text-xs font-bold uppercase text-text-muted mb-4">Preview</h3>
+          <div className="bg-bg-secondary rounded-lg overflow-hidden">
+            <div className="h-[60px] bg-brand-primary" />
+            <div className="px-4 pb-4">
+              <div className="flex items-end gap-3 -mt-[30px]">
                 <Avatar
-                  src={avatarUrl()}
-                  alt={displayName() || props.user?.username || 'User'}
+                  src={avatarUrl}
+                  alt={displayName || user?.username || 'User'}
                   size="lg"
-                  class="ring-4 ring-bg-secondary"
+                  className="ring-4 ring-bg-secondary"
                 />
               </div>
-              <div class="mt-3">
-                <h4 class="font-bold text-text-primary">
-                  {displayName() || props.user?.display_name || props.user?.username}
+              <div className="mt-3">
+                <h4 className="font-bold text-text-primary">
+                  {displayName || user?.display_name || user?.username}
                 </h4>
-                <p class="text-sm text-text-muted">@{props.user?.username}</p>
-                <Show when={customStatus()}>
-                  <p class="text-sm text-text-muted mt-2">{customStatus()}</p>
-                </Show>
+                <p className="text-sm text-text-muted">@{user?.username}</p>
+                {customStatus && (
+                  <p className="text-sm text-text-muted mt-2">{customStatus}</p>
+                )}
               </div>
             </div>
           </div>
@@ -580,53 +606,55 @@ function ProfileTab(props: { user: ReturnType<typeof authStore.state>['user'] })
 
 // Appearance Tab
 function AppearanceTab() {
-  const themes: Theme[] = ['dark', 'light', 'oled', 'nord'];
+  const theme = useThemeStore(s => s.theme);
+  const setTheme = useThemeStore(s => s.setTheme);
+  const themes: Theme[] = ['midnight', 'dark', 'light', 'oled', 'nord'];
 
   return (
     <div>
-      <h2 class="text-xl font-bold text-text-primary mb-5">Appearance</h2>
+      <h2 className="text-xl font-bold text-text-primary mb-5">Appearance</h2>
 
-      <div class="space-y-6">
+      <div className="space-y-6">
         <div>
-          <h3 class="text-xs font-bold uppercase text-text-muted mb-4">Theme</h3>
-          <div class="grid grid-cols-4 gap-3">
-            <For each={themes}>
-              {(t) => (
-                <button
-                  onClick={() => setTheme(t)}
-                  class={clsx(
-                    'p-4 rounded-lg border-2 transition-colors',
-                    theme() === t
-                      ? 'border-brand-primary bg-brand-primary/10'
-                      : 'border-border-subtle hover:border-border-strong'
+          <h3 className="text-xs font-bold uppercase text-text-muted mb-4">Theme</h3>
+          <div className="grid grid-cols-5 gap-2">
+            {themes.map((t) => (
+              <button
+                key={t}
+                onClick={() => setTheme(t)}
+                className={clsx(
+                  'p-4 rounded-lg border-2 transition-colors',
+                  theme === t
+                    ? 'border-brand-primary bg-brand-primary/10'
+                    : 'border-border-subtle hover:border-border-strong'
+                )}
+              >
+                <div
+                  className={clsx(
+                    'w-full aspect-video rounded mb-2',
+                    t === 'midnight' && 'bg-[#1e1f22]',
+                    t === 'dark' && 'bg-[#313338]',
+                    t === 'light' && 'bg-[#f2f3f5]',
+                    t === 'oled' && 'bg-black',
+                    t === 'nord' && 'bg-[#2e3440]'
                   )}
-                >
-                  <div
-                    class={clsx(
-                      'w-full aspect-video rounded mb-2',
-                      t === 'dark' && 'bg-[#313338]',
-                      t === 'light' && 'bg-[#f2f3f5]',
-                      t === 'oled' && 'bg-black',
-                      t === 'nord' && 'bg-[#2e3440]'
-                    )}
-                  />
-                  <span class="text-sm text-text-primary font-medium">{themeNames[t]}</span>
-                </button>
-              )}
-            </For>
+                />
+                <span className="text-sm text-text-primary font-medium">{themeNames[t]}</span>
+              </button>
+            ))}
           </div>
         </div>
 
         <div>
-          <h3 class="text-xs font-bold uppercase text-text-muted mb-4">Message Display</h3>
-          <div class="flex gap-3">
-            <button class="flex-1 p-4 rounded-lg border-2 border-brand-primary bg-brand-primary/10">
-              <div class="text-sm text-text-primary font-medium mb-1">Cozy</div>
-              <div class="text-xs text-text-muted">Display avatars and full timestamps</div>
+          <h3 className="text-xs font-bold uppercase text-text-muted mb-4">Message Display</h3>
+          <div className="flex gap-3">
+            <button className="flex-1 p-4 rounded-lg border-2 border-brand-primary bg-brand-primary/10">
+              <div className="text-sm text-text-primary font-medium mb-1">Cozy</div>
+              <div className="text-xs text-text-muted">Display avatars and full timestamps</div>
             </button>
-            <button class="flex-1 p-4 rounded-lg border-2 border-border-subtle hover:border-border-strong">
-              <div class="text-sm text-text-primary font-medium mb-1">Compact</div>
-              <div class="text-xs text-text-muted">Smaller text and tighter spacing</div>
+            <button className="flex-1 p-4 rounded-lg border-2 border-border-subtle hover:border-border-strong">
+              <div className="text-sm text-text-primary font-medium mb-1">Compact</div>
+              <div className="text-xs text-text-muted">Smaller text and tighter spacing</div>
             </button>
           </div>
         </div>
@@ -637,51 +665,51 @@ function AppearanceTab() {
 
 // Notifications Tab
 function NotificationsTab() {
-  const [desktopNotifications, setDesktopNotifications] = createSignal(true);
-  const [sounds, setSounds] = createSignal(true);
+  const [desktopNotifications, setDesktopNotifications] = useState(true);
+  const [sounds, setSounds] = useState(true);
 
   return (
     <div>
-      <h2 class="text-xl font-bold text-text-primary mb-5">Notifications</h2>
+      <h2 className="text-xl font-bold text-text-primary mb-5">Notifications</h2>
 
-      <div class="space-y-6">
-        <div class="flex items-center justify-between p-4 bg-bg-secondary rounded-lg">
+      <div className="space-y-6">
+        <div className="flex items-center justify-between p-4 bg-bg-secondary rounded-lg">
           <div>
-            <div class="text-text-primary font-medium">Enable Desktop Notifications</div>
-            <div class="text-sm text-text-muted">Receive notifications even when sgChat is not focused</div>
+            <div className="text-text-primary font-medium">Enable Desktop Notifications</div>
+            <div className="text-sm text-text-muted">Receive notifications even when sgChat is not focused</div>
           </div>
           <button
-            onClick={() => setDesktopNotifications(!desktopNotifications())}
-            class={clsx(
+            onClick={() => setDesktopNotifications(!desktopNotifications)}
+            className={clsx(
               'relative w-11 h-6 rounded-full transition-colors',
-              desktopNotifications() ? 'bg-success' : 'bg-bg-tertiary'
+              desktopNotifications ? 'bg-success' : 'bg-bg-tertiary'
             )}
           >
             <div
-              class={clsx(
+              className={clsx(
                 'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
-                desktopNotifications() ? 'left-6' : 'left-1'
+                desktopNotifications ? 'left-6' : 'left-1'
               )}
             />
           </button>
         </div>
 
-        <div class="flex items-center justify-between p-4 bg-bg-secondary rounded-lg">
+        <div className="flex items-center justify-between p-4 bg-bg-secondary rounded-lg">
           <div>
-            <div class="text-text-primary font-medium">Enable Sounds</div>
-            <div class="text-sm text-text-muted">Play sounds for messages and notifications</div>
+            <div className="text-text-primary font-medium">Enable Sounds</div>
+            <div className="text-sm text-text-muted">Play sounds for messages and notifications</div>
           </div>
           <button
-            onClick={() => setSounds(!sounds())}
-            class={clsx(
+            onClick={() => setSounds(!sounds)}
+            className={clsx(
               'relative w-11 h-6 rounded-full transition-colors',
-              sounds() ? 'bg-success' : 'bg-bg-tertiary'
+              sounds ? 'bg-success' : 'bg-bg-tertiary'
             )}
           >
             <div
-              class={clsx(
+              className={clsx(
                 'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
-                sounds() ? 'left-6' : 'left-1'
+                sounds ? 'left-6' : 'left-1'
               )}
             />
           </button>
@@ -693,55 +721,34 @@ function NotificationsTab() {
 
 // Voice & Video Tab
 function VoiceTab() {
-  const [inputDevices, setInputDevices] = createSignal<MediaDeviceInfo[]>([]);
-  const [outputDevices, setOutputDevices] = createSignal<MediaDeviceInfo[]>([]);
-  const [selectedInputDevice, setSelectedInputDevice] = createSignal<string>('');
-  const [selectedOutputDevice, setSelectedOutputDevice] = createSignal<string>('');
-  const [inputVolume, setInputVolume] = createSignal(100);
-  const [outputVolume, setOutputVolume] = createSignal(100);
-  const [inputSensitivity, setInputSensitivity] = createSignal(50);
-  const [autoGainControl, setAutoGainControl] = createSignal(true);
-  const [echoCancellation, setEchoCancellation] = createSignal(true);
-  const [noiseSuppression, setNoiseSuppression] = createSignal(true);
-  const [voiceActivityDetection, setVoiceActivityDetection] = createSignal(true);
-  const [enableVoiceJoinSounds, setEnableVoiceJoinSounds] = createSignal(true);
-  const [isTesting, setIsTesting] = createSignal(false);
-  const [micLevel, setMicLevel] = createSignal(0);
-  const [saving, setSaving] = createSignal(false);
+  const [inputDevices, setInputDevices] = useState<MediaDeviceInfo[]>([]);
+  const [outputDevices, setOutputDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedInputDevice, setSelectedInputDevice] = useState<string>('');
+  const [selectedOutputDevice, setSelectedOutputDevice] = useState<string>('');
+  const [inputVolume, setInputVolume] = useState(100);
+  const [outputVolume, setOutputVolume] = useState(100);
+  const [inputSensitivity, setInputSensitivity] = useState(50);
+  const [autoGainControl, setAutoGainControl] = useState(true);
+  const [echoCancellation, setEchoCancellation] = useState(true);
+  const [noiseSuppression, setNoiseSuppression] = useState(true);
+  const [voiceActivityDetection, setVoiceActivityDetection] = useState(true);
+  const [enableVoiceJoinSounds, setEnableVoiceJoinSounds] = useState(true);
+  const [isTesting, setIsTesting] = useState(false);
+  const [micLevel, setMicLevel] = useState(0);
+  const [saving, setSaving] = useState(false);
 
-  let testStream: MediaStream | null = null;
-  let audioContext: AudioContext | null = null;
-  let analyser: AnalyserNode | null = null;
-  let animationFrame: number | null = null;
+  const testStreamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const inputVolumeRef = useRef(inputVolume);
 
-  // Load saved settings
-  onMount(async () => {
-    try {
-      const settings = await api.get<any>('/users/me/settings');
-      if (settings) {
-        setSelectedInputDevice(settings.audio_input_device_id || '');
-        setSelectedOutputDevice(settings.audio_output_device_id || '');
-        setInputVolume(settings.audio_input_volume ?? 100);
-        setOutputVolume(settings.audio_output_volume ?? 100);
-        setInputSensitivity(settings.audio_input_sensitivity ?? 50);
-        setAutoGainControl(settings.audio_auto_gain_control ?? true);
-        setEchoCancellation(settings.audio_echo_cancellation ?? true);
-        setNoiseSuppression(settings.audio_noise_suppression ?? true);
-        setVoiceActivityDetection(settings.voice_activity_detection ?? true);
-        setEnableVoiceJoinSounds(settings.enable_voice_join_sounds ?? true);
-      }
-    } catch (err) {
-      console.error('Failed to load voice settings:', err);
-    }
+  // Keep inputVolumeRef in sync so the animation frame callback reads the latest value
+  useEffect(() => {
+    inputVolumeRef.current = inputVolume;
+  }, [inputVolume]);
 
-    await enumerateDevices();
-  });
-
-  onCleanup(() => {
-    stopMicTest();
-  });
-
-  const enumerateDevices = async () => {
+  const enumerateDevices = useCallback(async () => {
     try {
       // Request permission first to get device labels
       await navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
@@ -756,9 +763,56 @@ function VoiceTab() {
     } catch (err) {
       console.error('Failed to enumerate devices:', err);
     }
-  };
+  }, []);
 
-  const saveSettings = async (updates: Record<string, any>) => {
+  const stopMicTest = useCallback(() => {
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    if (testStreamRef.current) {
+      testStreamRef.current.getTracks().forEach(track => track.stop());
+      testStreamRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+    analyserRef.current = null;
+    setIsTesting(false);
+    setMicLevel(0);
+  }, []);
+
+  // Load saved settings
+  useEffect(() => {
+    (async () => {
+      try {
+        const settings = await api.get<any>('/users/me/settings');
+        if (settings) {
+          setSelectedInputDevice(settings.audio_input_device_id || '');
+          setSelectedOutputDevice(settings.audio_output_device_id || '');
+          setInputVolume(settings.audio_input_volume ?? 100);
+          setOutputVolume(settings.audio_output_volume ?? 100);
+          setInputSensitivity(settings.audio_input_sensitivity ?? 50);
+          setAutoGainControl(settings.audio_auto_gain_control ?? true);
+          setEchoCancellation(settings.audio_echo_cancellation ?? true);
+          setNoiseSuppression(settings.audio_noise_suppression ?? true);
+          setVoiceActivityDetection(settings.voice_activity_detection ?? true);
+          setEnableVoiceJoinSounds(settings.enable_voice_join_sounds ?? true);
+        }
+      } catch (err) {
+        console.error('Failed to load voice settings:', err);
+      }
+
+      await enumerateDevices();
+    })();
+
+    return () => {
+      stopMicTest();
+    };
+  }, [enumerateDevices, stopMicTest]);
+
+  const saveSettings = useCallback(async (updates: Record<string, any>) => {
     setSaving(true);
     try {
       await api.patch('/users/me/settings', updates);
@@ -767,101 +821,83 @@ function VoiceTab() {
     } finally {
       setSaving(false);
     }
-  };
+  }, []);
 
-  const handleInputDeviceChange = (deviceId: string) => {
+  const handleInputDeviceChange = useCallback((deviceId: string) => {
     setSelectedInputDevice(deviceId);
     saveSettings({ audio_input_device_id: deviceId || null });
-  };
+  }, [saveSettings]);
 
-  const handleOutputDeviceChange = (deviceId: string) => {
+  const handleOutputDeviceChange = useCallback((deviceId: string) => {
     setSelectedOutputDevice(deviceId);
     saveSettings({ audio_output_device_id: deviceId || null });
-  };
+  }, [saveSettings]);
 
-  const handleInputVolumeChange = (value: number) => {
+  const handleInputVolumeChange = useCallback((value: number) => {
     setInputVolume(value);
     saveSettings({ audio_input_volume: value });
-  };
+  }, [saveSettings]);
 
-  const handleOutputVolumeChange = (value: number) => {
+  const handleOutputVolumeChange = useCallback((value: number) => {
     setOutputVolume(value);
     saveSettings({ audio_output_volume: value });
-  };
+  }, [saveSettings]);
 
-  const handleSensitivityChange = (value: number) => {
+  const handleSensitivityChange = useCallback((value: number) => {
     setInputSensitivity(value);
     saveSettings({ audio_input_sensitivity: value });
-  };
+  }, [saveSettings]);
 
-  const toggleSetting = (
-    getter: () => boolean,
+  const toggleSetting = useCallback((
+    currentValue: boolean,
     setter: (v: boolean) => void,
     settingKey: string
   ) => {
-    const newValue = !getter();
+    const newValue = !currentValue;
     setter(newValue);
     saveSettings({ [settingKey]: newValue });
-  };
+  }, [saveSettings]);
 
-  const startMicTest = async () => {
+  const updateMicLevel = useCallback(() => {
+    if (!analyserRef.current) return;
+
+    const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+    analyserRef.current.getByteFrequencyData(dataArray);
+
+    // Calculate average level
+    const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+    const normalizedLevel = Math.min(100, (average / 128) * 100 * (inputVolumeRef.current / 100));
+    setMicLevel(normalizedLevel);
+
+    animationFrameRef.current = requestAnimationFrame(updateMicLevel);
+  }, []);
+
+  const startMicTest = useCallback(async () => {
     try {
       const constraints: MediaStreamConstraints = {
         audio: {
-          deviceId: selectedInputDevice() ? { exact: selectedInputDevice() } : undefined,
-          autoGainControl: autoGainControl(),
-          echoCancellation: echoCancellation(),
-          noiseSuppression: noiseSuppression(),
+          deviceId: selectedInputDevice ? { exact: selectedInputDevice } : undefined,
+          autoGainControl: autoGainControl,
+          echoCancellation: echoCancellation,
+          noiseSuppression: noiseSuppression,
         }
       };
 
-      testStream = await navigator.mediaDevices.getUserMedia(constraints);
-      audioContext = new AudioContext();
-      const source = audioContext.createMediaStreamSource(testStream);
-      analyser = audioContext.createAnalyser();
-      analyser.fftSize = 256;
-      source.connect(analyser);
+      testStreamRef.current = await navigator.mediaDevices.getUserMedia(constraints);
+      audioContextRef.current = new AudioContext();
+      const source = audioContextRef.current.createMediaStreamSource(testStreamRef.current);
+      analyserRef.current = audioContextRef.current.createAnalyser();
+      analyserRef.current.fftSize = 256;
+      source.connect(analyserRef.current);
 
       setIsTesting(true);
       updateMicLevel();
     } catch (err) {
       console.error('Failed to start mic test:', err);
     }
-  };
+  }, [selectedInputDevice, autoGainControl, echoCancellation, noiseSuppression, updateMicLevel]);
 
-  const stopMicTest = () => {
-    if (animationFrame) {
-      cancelAnimationFrame(animationFrame);
-      animationFrame = null;
-    }
-    if (testStream) {
-      testStream.getTracks().forEach(track => track.stop());
-      testStream = null;
-    }
-    if (audioContext) {
-      audioContext.close();
-      audioContext = null;
-    }
-    analyser = null;
-    setIsTesting(false);
-    setMicLevel(0);
-  };
-
-  const updateMicLevel = () => {
-    if (!analyser) return;
-
-    const dataArray = new Uint8Array(analyser.frequencyBinCount);
-    analyser.getByteFrequencyData(dataArray);
-
-    // Calculate average level
-    const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
-    const normalizedLevel = Math.min(100, (average / 128) * 100 * (inputVolume() / 100));
-    setMicLevel(normalizedLevel);
-
-    animationFrame = requestAnimationFrame(updateMicLevel);
-  };
-
-  const testSpeakers = async () => {
+  const testSpeakers = useCallback(async () => {
     try {
       // Create a test tone
       const ctx = new AudioContext();
@@ -870,7 +906,7 @@ function VoiceTab() {
 
       oscillator.type = 'sine';
       oscillator.frequency.value = 440; // A4 note
-      gainNode.gain.value = (outputVolume() / 100) * 0.3;
+      gainNode.gain.value = (outputVolume / 100) * 0.3;
 
       oscillator.connect(gainNode);
       gainNode.connect(ctx.destination);
@@ -885,214 +921,210 @@ function VoiceTab() {
     } catch (err) {
       console.error('Failed to test speakers:', err);
     }
-  };
+  }, [outputVolume]);
 
   return (
     <div>
-      <h2 class="text-xl font-bold text-text-primary mb-5">Voice & Video</h2>
+      <h2 className="text-xl font-bold text-text-primary mb-5">Voice & Video</h2>
 
-      <div class="space-y-6">
+      <div className="space-y-6">
         {/* Input Device Selection */}
         <div>
-          <label class="block text-xs font-bold uppercase text-text-muted mb-2">
+          <label className="block text-xs font-bold uppercase text-text-muted mb-2">
             Input Device
           </label>
           <select
-            class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
-            value={selectedInputDevice()}
-            onChange={(e) => handleInputDeviceChange(e.currentTarget.value)}
+            className="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
+            value={selectedInputDevice}
+            onChange={(e) => handleInputDeviceChange(e.target.value)}
           >
             <option value="">Default</option>
-            <For each={inputDevices()}>
-              {(device) => (
-                <option value={device.deviceId}>
-                  {device.label || `Microphone ${device.deviceId.slice(0, 8)}`}
-                </option>
-              )}
-            </For>
+            {inputDevices.map((device) => (
+              <option key={device.deviceId} value={device.deviceId}>
+                {device.label || `Microphone ${device.deviceId.slice(0, 8)}`}
+              </option>
+            ))}
           </select>
         </div>
 
         {/* Output Device Selection */}
         <div>
-          <label class="block text-xs font-bold uppercase text-text-muted mb-2">
+          <label className="block text-xs font-bold uppercase text-text-muted mb-2">
             Output Device
           </label>
           <select
-            class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
-            value={selectedOutputDevice()}
-            onChange={(e) => handleOutputDeviceChange(e.currentTarget.value)}
+            className="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
+            value={selectedOutputDevice}
+            onChange={(e) => handleOutputDeviceChange(e.target.value)}
           >
             <option value="">Default</option>
-            <For each={outputDevices()}>
-              {(device) => (
-                <option value={device.deviceId}>
-                  {device.label || `Speaker ${device.deviceId.slice(0, 8)}`}
-                </option>
-              )}
-            </For>
+            {outputDevices.map((device) => (
+              <option key={device.deviceId} value={device.deviceId}>
+                {device.label || `Speaker ${device.deviceId.slice(0, 8)}`}
+              </option>
+            ))}
           </select>
         </div>
 
         {/* Input Volume */}
         <div>
-          <label class="block text-xs font-bold uppercase text-text-muted mb-2">
-            Input Volume - {inputVolume()}%
+          <label className="block text-xs font-bold uppercase text-text-muted mb-2">
+            Input Volume - {inputVolume}%
           </label>
           <input
             type="range"
             min="0"
             max="200"
-            value={inputVolume()}
-            onInput={(e) => handleInputVolumeChange(parseInt(e.currentTarget.value))}
-            class="w-full accent-brand-primary"
+            value={inputVolume}
+            onChange={(e) => handleInputVolumeChange(parseInt(e.target.value))}
+            className="w-full accent-brand-primary"
           />
           {/* Mic level indicator */}
-          <Show when={isTesting()}>
-            <div class="mt-2 h-2 bg-bg-tertiary rounded-full overflow-hidden">
+          {isTesting && (
+            <div className="mt-2 h-2 bg-bg-tertiary rounded-full overflow-hidden">
               <div
-                class="h-full bg-success transition-all duration-75"
-                style={{ width: `${micLevel()}%` }}
+                className="h-full bg-success transition-all duration-75"
+                style={{ width: `${micLevel}%` }}
               />
             </div>
-          </Show>
+          )}
         </div>
 
         {/* Output Volume */}
         <div>
-          <label class="block text-xs font-bold uppercase text-text-muted mb-2">
-            Output Volume - {outputVolume()}%
+          <label className="block text-xs font-bold uppercase text-text-muted mb-2">
+            Output Volume - {outputVolume}%
           </label>
           <input
             type="range"
             min="0"
             max="200"
-            value={outputVolume()}
-            onInput={(e) => handleOutputVolumeChange(parseInt(e.currentTarget.value))}
-            class="w-full accent-brand-primary"
+            value={outputVolume}
+            onChange={(e) => handleOutputVolumeChange(parseInt(e.target.value))}
+            className="w-full accent-brand-primary"
           />
         </div>
 
         {/* Input Sensitivity */}
         <div>
-          <label class="block text-xs font-bold uppercase text-text-muted mb-2">
-            Input Sensitivity - {inputSensitivity()}%
+          <label className="block text-xs font-bold uppercase text-text-muted mb-2">
+            Input Sensitivity - {inputSensitivity}%
           </label>
           <input
             type="range"
             min="0"
             max="100"
-            value={inputSensitivity()}
-            onInput={(e) => handleSensitivityChange(parseInt(e.currentTarget.value))}
-            class="w-full accent-brand-primary"
+            value={inputSensitivity}
+            onChange={(e) => handleSensitivityChange(parseInt(e.target.value))}
+            className="w-full accent-brand-primary"
           />
-          <p class="text-xs text-text-muted mt-1">
+          <p className="text-xs text-text-muted mt-1">
             Adjusts the threshold for voice activity detection
           </p>
         </div>
 
         {/* Test Buttons */}
-        <div class="flex gap-3">
+        <div className="flex gap-3">
           <button
-            onClick={() => isTesting() ? stopMicTest() : startMicTest()}
-            class={clsx(
+            onClick={() => isTesting ? stopMicTest() : startMicTest()}
+            className={clsx(
               "px-4 py-2 text-sm font-medium rounded transition-colors",
-              isTesting()
+              isTesting
                 ? "bg-danger hover:bg-danger/90 text-white"
                 : "bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary"
             )}
           >
-            {isTesting() ? 'Stop Testing' : 'Test Microphone'}
+            {isTesting ? 'Stop Testing' : 'Test Microphone'}
           </button>
           <button
             onClick={testSpeakers}
-            class="px-4 py-2 bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary text-sm font-medium rounded transition-colors"
+            className="px-4 py-2 bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary text-sm font-medium rounded transition-colors"
           >
             Test Speakers
           </button>
         </div>
 
         {/* Audio Processing Toggles */}
-        <div class="border-t border-border-subtle pt-6">
-          <h3 class="text-sm font-bold text-text-primary mb-4">Audio Processing</h3>
+        <div className="border-t border-border-subtle pt-6">
+          <h3 className="text-sm font-bold text-text-primary mb-4">Audio Processing</h3>
 
-          <div class="space-y-4">
+          <div className="space-y-4">
             {/* Echo Cancellation */}
-            <div class="flex items-center justify-between">
+            <div className="flex items-center justify-between">
               <div>
-                <div class="text-text-primary font-medium">Echo Cancellation</div>
-                <div class="text-sm text-text-muted">Reduces echo from speakers</div>
+                <div className="text-text-primary font-medium">Echo Cancellation</div>
+                <div className="text-sm text-text-muted">Reduces echo from speakers</div>
               </div>
               <button
                 onClick={() => toggleSetting(echoCancellation, setEchoCancellation, 'audio_echo_cancellation')}
-                class={clsx(
+                className={clsx(
                   "relative w-12 h-6 rounded-full transition-colors",
-                  echoCancellation() ? 'bg-success' : 'bg-bg-tertiary'
+                  echoCancellation ? 'bg-success' : 'bg-bg-tertiary'
                 )}
               >
-                <div class={clsx(
+                <div className={clsx(
                   "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
-                  echoCancellation() ? 'left-7' : 'left-1'
+                  echoCancellation ? 'left-7' : 'left-1'
                 )} />
               </button>
             </div>
 
             {/* Noise Suppression */}
-            <div class="flex items-center justify-between">
+            <div className="flex items-center justify-between">
               <div>
-                <div class="text-text-primary font-medium">Noise Suppression</div>
-                <div class="text-sm text-text-muted">Reduces background noise</div>
+                <div className="text-text-primary font-medium">Noise Suppression</div>
+                <div className="text-sm text-text-muted">Reduces background noise</div>
               </div>
               <button
                 onClick={() => toggleSetting(noiseSuppression, setNoiseSuppression, 'audio_noise_suppression')}
-                class={clsx(
+                className={clsx(
                   "relative w-12 h-6 rounded-full transition-colors",
-                  noiseSuppression() ? 'bg-success' : 'bg-bg-tertiary'
+                  noiseSuppression ? 'bg-success' : 'bg-bg-tertiary'
                 )}
               >
-                <div class={clsx(
+                <div className={clsx(
                   "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
-                  noiseSuppression() ? 'left-7' : 'left-1'
+                  noiseSuppression ? 'left-7' : 'left-1'
                 )} />
               </button>
             </div>
 
             {/* Auto Gain Control */}
-            <div class="flex items-center justify-between">
+            <div className="flex items-center justify-between">
               <div>
-                <div class="text-text-primary font-medium">Automatic Gain Control</div>
-                <div class="text-sm text-text-muted">Automatically adjusts microphone volume</div>
+                <div className="text-text-primary font-medium">Automatic Gain Control</div>
+                <div className="text-sm text-text-muted">Automatically adjusts microphone volume</div>
               </div>
               <button
                 onClick={() => toggleSetting(autoGainControl, setAutoGainControl, 'audio_auto_gain_control')}
-                class={clsx(
+                className={clsx(
                   "relative w-12 h-6 rounded-full transition-colors",
-                  autoGainControl() ? 'bg-success' : 'bg-bg-tertiary'
+                  autoGainControl ? 'bg-success' : 'bg-bg-tertiary'
                 )}
               >
-                <div class={clsx(
+                <div className={clsx(
                   "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
-                  autoGainControl() ? 'left-7' : 'left-1'
+                  autoGainControl ? 'left-7' : 'left-1'
                 )} />
               </button>
             </div>
 
             {/* Voice Activity Detection */}
-            <div class="flex items-center justify-between">
+            <div className="flex items-center justify-between">
               <div>
-                <div class="text-text-primary font-medium">Voice Activity Detection</div>
-                <div class="text-sm text-text-muted">Automatically detect when you're speaking</div>
+                <div className="text-text-primary font-medium">Voice Activity Detection</div>
+                <div className="text-sm text-text-muted">Automatically detect when you're speaking</div>
               </div>
               <button
                 onClick={() => toggleSetting(voiceActivityDetection, setVoiceActivityDetection, 'voice_activity_detection')}
-                class={clsx(
+                className={clsx(
                   "relative w-12 h-6 rounded-full transition-colors",
-                  voiceActivityDetection() ? 'bg-success' : 'bg-bg-tertiary'
+                  voiceActivityDetection ? 'bg-success' : 'bg-bg-tertiary'
                 )}
               >
-                <div class={clsx(
+                <div className={clsx(
                   "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
-                  voiceActivityDetection() ? 'left-7' : 'left-1'
+                  voiceActivityDetection ? 'left-7' : 'left-1'
                 )} />
               </button>
             </div>
@@ -1100,70 +1132,72 @@ function VoiceTab() {
         </div>
 
         {/* Sound Settings */}
-        <div class="border-t border-border-subtle pt-6">
-          <h3 class="text-sm font-bold text-text-primary mb-4">Sounds</h3>
+        <div className="border-t border-border-subtle pt-6">
+          <h3 className="text-sm font-bold text-text-primary mb-4">Sounds</h3>
 
-          <div class="flex items-center justify-between">
+          <div className="flex items-center justify-between">
             <div>
-              <div class="text-text-primary font-medium">Voice Channel Sounds</div>
-              <div class="text-sm text-text-muted">Play sounds when joining/leaving voice channels</div>
+              <div className="text-text-primary font-medium">Voice Channel Sounds</div>
+              <div className="text-sm text-text-muted">Play sounds when joining/leaving voice channels</div>
             </div>
             <button
               onClick={() => toggleSetting(enableVoiceJoinSounds, setEnableVoiceJoinSounds, 'enable_voice_join_sounds')}
-              class={clsx(
+              className={clsx(
                 "relative w-12 h-6 rounded-full transition-colors",
-                enableVoiceJoinSounds() ? 'bg-success' : 'bg-bg-tertiary'
+                enableVoiceJoinSounds ? 'bg-success' : 'bg-bg-tertiary'
               )}
             >
-              <div class={clsx(
+              <div className={clsx(
                 "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
-                enableVoiceJoinSounds() ? 'left-7' : 'left-1'
+                enableVoiceJoinSounds ? 'left-7' : 'left-1'
               )} />
             </button>
           </div>
         </div>
 
         {/* Custom Join/Leave Sounds */}
-        <div class="border-t border-border-subtle pt-6">
-          <h3 class="text-sm font-bold text-text-primary mb-4">Custom Join/Leave Sounds</h3>
-          <p class="text-sm text-text-muted mb-4">Upload custom sounds that play when you join or leave a voice channel.</p>
+        <div className="border-t border-border-subtle pt-6">
+          <h3 className="text-sm font-bold text-text-primary mb-4">Custom Join/Leave Sounds</h3>
+          <p className="text-sm text-text-muted mb-4">Upload custom sounds that play when you join or leave a voice channel.</p>
           <CustomVoiceSoundsSection />
         </div>
 
         {/* Saving indicator */}
-        <Show when={saving()}>
-          <p class="text-xs text-text-muted">Saving...</p>
-        </Show>
+        {saving && (
+          <p className="text-xs text-text-muted">Saving...</p>
+        )}
       </div>
     </div>
   );
 }
 
 function CustomVoiceSoundsSection() {
-  const [joinSound, setJoinSound] = createSignal<any>(null);
-  const [leaveSound, setLeaveSound] = createSignal<any>(null);
-  const [uploading, setUploading] = createSignal<string | null>(null);
-  const [error, setError] = createSignal<string | null>(null);
-  const [serverId, setServerId] = createSignal<string | null>(null);
+  const [joinSound, setJoinSound] = useState<any>(null);
+  const [leaveSound, setLeaveSound] = useState<any>(null);
+  const [uploading, setUploading] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [serverId, setServerId] = useState<string | null>(null);
 
-  onMount(async () => {
-    try {
-      // Fetch the server ID (single-tenant)
-      const serverData = await api.get<any>('/server');
-      const sid = serverData?.id;
-      if (!sid) return;
-      setServerId(sid);
+  useEffect(() => {
+    (async () => {
+      try {
+        // Fetch the server ID (single-tenant)
+        const serverData = await api.get<any>('/server');
+        const sid = serverData?.id;
+        if (!sid) return;
+        setServerId(sid);
 
-      const response = await api.get<{ join: any; leave: any }>(`/users/me/servers/${sid}/sounds`);
-      setJoinSound(response.join);
-      setLeaveSound(response.leave);
-    } catch (err) {
-      console.error('[CustomSounds] Failed to fetch sounds:', err);
-    }
-  });
+        const response = await api.get<{ join: any; leave: any }>(`/users/me/servers/${sid}/sounds`);
+        setJoinSound(response.join);
+        setLeaveSound(response.leave);
+      } catch (err) {
+        console.error('[CustomSounds] Failed to fetch sounds:', err);
+      }
+    })();
+  }, []);
 
-  const handleUpload = (type: 'join' | 'leave') => {
-    const sid = serverId();
+  const handleUpload = useCallback((type: 'join' | 'leave') => {
+    const sid = serverId;
     if (!sid) return;
 
     const input = document.createElement('input');
@@ -1231,10 +1265,10 @@ function CustomVoiceSoundsSection() {
       }
     };
     input.click();
-  };
+  }, [serverId]);
 
-  const handleDelete = async (type: 'join' | 'leave') => {
-    const sid = serverId();
+  const handleDelete = useCallback(async (type: 'join' | 'leave') => {
+    const sid = serverId;
     if (!sid) return;
     try {
       await api.delete(`/users/me/servers/${sid}/sounds/${type}`);
@@ -1243,99 +1277,101 @@ function CustomVoiceSoundsSection() {
     } catch (err) {
       console.error('[CustomSounds] Failed to delete sound:', err);
     }
-  };
+  }, [serverId]);
 
-  const handlePreview = (url: string) => {
+  const handlePreview = useCallback((url: string) => {
     const audio = new Audio(url);
     audio.volume = 0.5;
     audio.play().catch(() => {});
-  };
+  }, []);
+
+  if (!serverId) {
+    return <p className="text-sm text-text-muted">Connect to a server to manage custom sounds.</p>;
+  }
 
   return (
-    <Show when={serverId()} fallback={<p class="text-sm text-text-muted">Connect to a server to manage custom sounds.</p>}>
-      <div class="space-y-3">
-        <Show when={error()}>
-          <div class="text-xs text-red-400">{error()}</div>
-        </Show>
+    <div className="space-y-3">
+      {error && (
+        <div className="text-xs text-red-400">{error}</div>
+      )}
 
-        {/* Join Sound */}
-        <div class="flex items-center justify-between p-3 bg-bg-secondary rounded-lg">
-          <div>
-            <div class="text-sm font-medium text-text-primary">Join Sound</div>
-            <Show when={joinSound()} fallback={
-              <div class="text-xs text-text-muted">No custom sound set (default will play)</div>
-            }>
-              <div class="text-xs text-text-secondary">
-                {joinSound()?.duration_seconds?.toFixed(1)}s
-                <button
-                  class="ml-2 text-accent-primary hover:underline"
-                  onClick={() => handlePreview(joinSound().sound_url)}
-                >
-                  Preview
-                </button>
-              </div>
-            </Show>
-          </div>
-          <div class="flex items-center gap-2">
-            <Show when={joinSound()}>
+      {/* Join Sound */}
+      <div className="flex items-center justify-between p-3 bg-bg-secondary rounded-lg">
+        <div>
+          <div className="text-sm font-medium text-text-primary">Join Sound</div>
+          {joinSound ? (
+            <div className="text-xs text-text-secondary">
+              {joinSound?.duration_seconds?.toFixed(1)}s
               <button
-                class="text-xs px-2 py-1 text-red-400 hover:text-red-300 transition-colors"
-                onClick={() => handleDelete('join')}
+                className="ml-2 text-accent-primary hover:underline"
+                onClick={() => handlePreview(joinSound.sound_url)}
               >
-                Remove
+                Preview
               </button>
-            </Show>
-            <button
-              class="text-xs px-3 py-1 bg-accent-primary hover:bg-accent-primary/80 text-white rounded transition-colors disabled:opacity-50"
-              onClick={() => handleUpload('join')}
-              disabled={uploading() === 'join'}
-            >
-              {uploading() === 'join' ? 'Uploading...' : joinSound() ? 'Replace' : 'Upload'}
-            </button>
-          </div>
+            </div>
+          ) : (
+            <div className="text-xs text-text-muted">No custom sound set (default will play)</div>
+          )}
         </div>
-
-        {/* Leave Sound */}
-        <div class="flex items-center justify-between p-3 bg-bg-secondary rounded-lg">
-          <div>
-            <div class="text-sm font-medium text-text-primary">Leave Sound</div>
-            <Show when={leaveSound()} fallback={
-              <div class="text-xs text-text-muted">No custom sound set (default will play)</div>
-            }>
-              <div class="text-xs text-text-secondary">
-                {leaveSound()?.duration_seconds?.toFixed(1)}s
-                <button
-                  class="ml-2 text-accent-primary hover:underline"
-                  onClick={() => handlePreview(leaveSound().sound_url)}
-                >
-                  Preview
-                </button>
-              </div>
-            </Show>
-          </div>
-          <div class="flex items-center gap-2">
-            <Show when={leaveSound()}>
-              <button
-                class="text-xs px-2 py-1 text-red-400 hover:text-red-300 transition-colors"
-                onClick={() => handleDelete('leave')}
-              >
-                Remove
-              </button>
-            </Show>
+        <div className="flex items-center gap-2">
+          {joinSound && (
             <button
-              class="text-xs px-3 py-1 bg-accent-primary hover:bg-accent-primary/80 text-white rounded transition-colors disabled:opacity-50"
-              onClick={() => handleUpload('leave')}
-              disabled={uploading() === 'leave'}
+              className="text-xs px-2 py-1 text-red-400 hover:text-red-300 transition-colors"
+              onClick={() => handleDelete('join')}
             >
-              {uploading() === 'leave' ? 'Uploading...' : leaveSound() ? 'Replace' : 'Upload'}
+              Remove
             </button>
-          </div>
+          )}
+          <button
+            className="text-xs px-3 py-1 bg-accent-primary hover:bg-accent-primary/80 text-white rounded transition-colors disabled:opacity-50"
+            onClick={() => handleUpload('join')}
+            disabled={uploading === 'join'}
+          >
+            {uploading === 'join' ? 'Uploading...' : joinSound ? 'Replace' : 'Upload'}
+          </button>
         </div>
-
-        <p class="text-[11px] text-text-muted">
-          Accepted formats: MP3, WAV, OGG. Max 1MB, max 5 seconds.
-        </p>
       </div>
-    </Show>
+
+      {/* Leave Sound */}
+      <div className="flex items-center justify-between p-3 bg-bg-secondary rounded-lg">
+        <div>
+          <div className="text-sm font-medium text-text-primary">Leave Sound</div>
+          {leaveSound ? (
+            <div className="text-xs text-text-secondary">
+              {leaveSound?.duration_seconds?.toFixed(1)}s
+              <button
+                className="ml-2 text-accent-primary hover:underline"
+                onClick={() => handlePreview(leaveSound.sound_url)}
+              >
+                Preview
+              </button>
+            </div>
+          ) : (
+            <div className="text-xs text-text-muted">No custom sound set (default will play)</div>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {leaveSound && (
+            <button
+              className="text-xs px-2 py-1 text-red-400 hover:text-red-300 transition-colors"
+              onClick={() => handleDelete('leave')}
+            >
+              Remove
+            </button>
+          )}
+          <button
+            className="text-xs px-3 py-1 bg-accent-primary hover:bg-accent-primary/80 text-white rounded transition-colors disabled:opacity-50"
+            onClick={() => handleUpload('leave')}
+            disabled={uploading === 'leave'}
+          >
+            {uploading === 'leave' ? 'Uploading...' : leaveSound ? 'Replace' : 'Upload'}
+          </button>
+        </div>
+      </div>
+
+      <p className="text-[11px] text-text-muted">
+        Accepted formats: MP3, WAV, OGG. Max 1MB, max 5 seconds.
+      </p>
+    </div>
   );
 }

@@ -1,4 +1,4 @@
-import { createSignal, Show, For, onMount } from 'solid-js';
+import { useState, useEffect } from 'react';
 import { api } from '@/api';
 import { PermissionEditor } from './PermissionEditor';
 
@@ -36,54 +36,56 @@ interface Role {
   position: number;
 }
 
-export function ChannelSettingsModal(props: ChannelSettingsModalProps) {
-  const [activeTab, setActiveTab] = createSignal<'general' | 'permissions'>('general');
-  const [channelName, setChannelName] = createSignal('');
-  const [channelTopic, setChannelTopic] = createSignal('');
-  const [bitrate, setBitrate] = createSignal(64000);
-  const [userLimit, setUserLimit] = createSignal(0);
-  const [saving, setSaving] = createSignal(false);
-  const [overrides, setOverrides] = createSignal<PermissionOverride[]>([]);
-  const [roles, setRoles] = createSignal<Role[]>([]);
-  const [error, setError] = createSignal('');
-  const [expandedOverrideId, setExpandedOverrideId] = createSignal<string | null>(null);
+export function ChannelSettingsModal({ isOpen, onClose, channel }: ChannelSettingsModalProps) {
+  const [activeTab, setActiveTab] = useState<'general' | 'permissions'>('general');
+  const [channelName, setChannelName] = useState('');
+  const [channelTopic, setChannelTopic] = useState('');
+  const [bitrate, setBitrate] = useState(64000);
+  const [userLimit, setUserLimit] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [overrides, setOverrides] = useState<PermissionOverride[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [error, setError] = useState('');
+  const [expandedOverrideId, setExpandedOverrideId] = useState<string | null>(null);
 
-  const isVoice = () => props.channel.type === 'voice' || props.channel.type === 'temp_voice' || props.channel.type === 'music';
+  const isVoice = channel.type === 'voice' || channel.type === 'temp_voice' || channel.type === 'music';
 
-  onMount(async () => {
-    setChannelName(props.channel.name);
-    setChannelTopic(props.channel.topic || '');
-    setBitrate(props.channel.bitrate || 64000);
-    setUserLimit(props.channel.user_limit || 0);
+  useEffect(() => {
+    setChannelName(channel.name);
+    setChannelTopic(channel.topic || '');
+    setBitrate(channel.bitrate || 64000);
+    setUserLimit(channel.user_limit || 0);
 
-    try {
-      const [permsData, rolesData] = await Promise.all([
-        api.get<{ overrides: PermissionOverride[] }>(`/channels/${props.channel.id}/permissions`),
-        api.get<Role[]>(`/servers/${props.channel.server_id}/roles`),
-      ]);
-      setOverrides(permsData.overrides || []);
-      setRoles(rolesData || []);
-    } catch {
-      // Non-critical, permissions tab just won't show data
-    }
-  });
+    (async () => {
+      try {
+        const [permsData, rolesData] = await Promise.all([
+          api.get<{ overrides: PermissionOverride[] }>(`/channels/${channel.id}/permissions`),
+          api.get<Role[]>(`/servers/${channel.server_id}/roles`),
+        ]);
+        setOverrides(permsData.overrides || []);
+        setRoles(rolesData || []);
+      } catch {
+        // Non-critical, permissions tab just won't show data
+      }
+    })();
+  }, []);
 
   const handleSave = async () => {
     setSaving(true);
     setError('');
     try {
       const updates: Record<string, any> = {};
-      if (channelName() !== props.channel.name) updates.name = channelName();
-      if (channelTopic() !== (props.channel.topic || '')) updates.topic = channelTopic();
-      if (isVoice()) {
-        if (bitrate() !== (props.channel.bitrate || 64000)) updates.bitrate = bitrate();
-        if (userLimit() !== (props.channel.user_limit || 0)) updates.user_limit = userLimit();
+      if (channelName !== channel.name) updates.name = channelName;
+      if (channelTopic !== (channel.topic || '')) updates.topic = channelTopic;
+      if (isVoice) {
+        if (bitrate !== (channel.bitrate || 64000)) updates.bitrate = bitrate;
+        if (userLimit !== (channel.user_limit || 0)) updates.user_limit = userLimit;
       }
 
       if (Object.keys(updates).length > 0) {
-        await api.patch(`/channels/${props.channel.id}`, updates);
+        await api.patch(`/channels/${channel.id}`, updates);
       }
-      props.onClose();
+      onClose();
     } catch (err: any) {
       setError(err.message || 'Failed to save settings');
     } finally {
@@ -91,21 +93,20 @@ export function ChannelSettingsModal(props: ChannelSettingsModalProps) {
     }
   };
 
-  const bitrateLabel = () => {
-    const b = bitrate();
-    if (b >= 1000) return `${Math.round(b / 1000)}kbps`;
-    return `${b}bps`;
-  };
+  const bitrateLabel = (() => {
+    if (bitrate >= 1000) return `${Math.round(bitrate / 1000)}kbps`;
+    return `${bitrate}bps`;
+  })();
 
   const handleAddRoleOverride = async (roleId: string) => {
     try {
-      await api.put(`/channels/${props.channel.id}/permissions/roles/${roleId}`, {
+      await api.put(`/channels/${channel.id}/permissions/roles/${roleId}`, {
         voice_allow: '0',
         voice_deny: '0',
         text_allow: '0',
         text_deny: '0',
       });
-      const permsData = await api.get<{ overrides: PermissionOverride[] }>(`/channels/${props.channel.id}/permissions`);
+      const permsData = await api.get<{ overrides: PermissionOverride[] }>(`/channels/${channel.id}/permissions`);
       setOverrides(permsData.overrides || []);
     } catch (err: any) {
       setError(err.message || 'Failed to add role override');
@@ -114,40 +115,40 @@ export function ChannelSettingsModal(props: ChannelSettingsModalProps) {
 
   const handleRemoveOverride = async (overrideId: string, type: 'role' | 'user', targetId: string) => {
     try {
-      await api.delete(`/channels/${props.channel.id}/permissions/${type === 'role' ? 'roles' : 'users'}/${targetId}`);
+      await api.delete(`/channels/${channel.id}/permissions/${type === 'role' ? 'roles' : 'users'}/${targetId}`);
       setOverrides(prev => prev.filter(o => o.id !== overrideId));
     } catch (err: any) {
       setError(err.message || 'Failed to remove override');
     }
   };
 
-  if (!props.isOpen) return null;
+  if (!isOpen) return null;
 
   return (
-    <div class="fixed inset-0 z-50 flex items-center justify-center">
-      <div class="absolute inset-0 bg-black/60" onClick={props.onClose} />
-      <div class="relative bg-bg-primary rounded-xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col border border-border">
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="relative bg-bg-primary rounded-xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col border border-border">
         {/* Header */}
-        <div class="flex items-center justify-between p-4 border-b border-border">
-          <h2 class="text-lg font-semibold text-text-primary">
-            Channel Settings — #{props.channel.name}
+        <div className="flex items-center justify-between p-4 border-b border-border">
+          <h2 className="text-lg font-semibold text-text-primary">
+            Channel Settings — #{channel.name}
           </h2>
           <button
-            onClick={props.onClose}
-            class="p-1 text-text-muted hover:text-text-primary transition-colors"
+            onClick={onClose}
+            className="p-1 text-text-muted hover:text-text-primary transition-colors"
           >
-            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
 
         {/* Tabs */}
-        <div class="flex border-b border-border px-4">
+        <div className="flex border-b border-border px-4">
           <button
             onClick={() => setActiveTab('general')}
-            class={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-              activeTab() === 'general'
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'general'
                 ? 'border-brand-primary text-brand-primary'
                 : 'border-transparent text-text-muted hover:text-text-primary'
             }`}
@@ -156,8 +157,8 @@ export function ChannelSettingsModal(props: ChannelSettingsModalProps) {
           </button>
           <button
             onClick={() => setActiveTab('permissions')}
-            class={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-              activeTab() === 'permissions'
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'permissions'
                 ? 'border-brand-primary text-brand-primary'
                 : 'border-transparent text-text-muted hover:text-text-primary'
             }`}
@@ -167,216 +168,219 @@ export function ChannelSettingsModal(props: ChannelSettingsModalProps) {
         </div>
 
         {/* Content */}
-        <div class="flex-1 overflow-y-auto p-4 space-y-4">
-          <Show when={error()}>
-            <div class="p-3 bg-danger/10 border border-danger/30 rounded-lg text-sm text-danger">
-              {error()}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {error && (
+            <div className="p-3 bg-danger/10 border border-danger/30 rounded-lg text-sm text-danger">
+              {error}
             </div>
-          </Show>
+          )}
 
-          <Show when={activeTab() === 'general'}>
-            {/* Channel Name */}
-            <div>
-              <label class="block text-sm font-medium text-text-secondary mb-1">Channel Name</label>
-              <input
-                type="text"
-                value={channelName()}
-                onInput={(e) => setChannelName(e.currentTarget.value)}
-                class="w-full px-3 py-2 bg-bg-secondary border border-border rounded-lg text-text-primary text-sm focus:outline-none focus:border-brand-primary"
-              />
-            </div>
-
-            {/* Channel Topic */}
-            <div>
-              <label class="block text-sm font-medium text-text-secondary mb-1">Topic</label>
-              <input
-                type="text"
-                value={channelTopic()}
-                onInput={(e) => setChannelTopic(e.currentTarget.value)}
-                placeholder="Set a topic for this channel"
-                class="w-full px-3 py-2 bg-bg-secondary border border-border rounded-lg text-text-primary text-sm focus:outline-none focus:border-brand-primary placeholder:text-text-muted"
-              />
-            </div>
-
-            {/* Voice-specific settings */}
-            <Show when={isVoice()}>
-              {/* Bitrate */}
+          {activeTab === 'general' && (
+            <>
+              {/* Channel Name */}
               <div>
-                <label class="block text-sm font-medium text-text-secondary mb-1">
-                  Bitrate — {bitrateLabel()}
-                </label>
+                <label className="block text-sm font-medium text-text-secondary mb-1">Channel Name</label>
                 <input
-                  type="range"
-                  min="8000"
-                  max="384000"
-                  step="8000"
-                  value={bitrate()}
-                  onInput={(e) => setBitrate(parseInt(e.currentTarget.value))}
-                  class="w-full accent-brand-primary"
+                  type="text"
+                  value={channelName}
+                  onChange={(e) => setChannelName(e.target.value)}
+                  className="w-full px-3 py-2 bg-bg-secondary border border-border rounded-lg text-text-primary text-sm focus:outline-none focus:border-brand-primary"
                 />
-                <div class="flex justify-between text-xs text-text-muted mt-1">
-                  <span>8kbps</span>
-                  <span>384kbps</span>
-                </div>
               </div>
 
-              {/* User Limit */}
+              {/* Channel Topic */}
               <div>
-                <label class="block text-sm font-medium text-text-secondary mb-1">
-                  User Limit — {userLimit() === 0 ? 'Unlimited' : userLimit()}
-                </label>
+                <label className="block text-sm font-medium text-text-secondary mb-1">Topic</label>
                 <input
-                  type="range"
-                  min="0"
-                  max="99"
-                  step="1"
-                  value={userLimit()}
-                  onInput={(e) => setUserLimit(parseInt(e.currentTarget.value))}
-                  class="w-full accent-brand-primary"
+                  type="text"
+                  value={channelTopic}
+                  onChange={(e) => setChannelTopic(e.target.value)}
+                  placeholder="Set a topic for this channel"
+                  className="w-full px-3 py-2 bg-bg-secondary border border-border rounded-lg text-text-primary text-sm focus:outline-none focus:border-brand-primary placeholder:text-text-muted"
                 />
-                <div class="flex justify-between text-xs text-text-muted mt-1">
-                  <span>No limit</span>
-                  <span>99</span>
-                </div>
               </div>
 
-              {/* Region (placeholder for future feature) */}
-              <div>
-                <label class="block text-sm font-medium text-text-secondary mb-1">Region</label>
-                <select
-                  disabled
-                  class="w-full px-3 py-2 bg-bg-secondary border border-border rounded-lg text-text-muted text-sm cursor-not-allowed"
-                >
-                  <option>Automatic (Coming Soon)</option>
-                </select>
-                <p class="text-xs text-text-muted mt-1">Region selection will be available in a future update.</p>
-              </div>
-            </Show>
-          </Show>
+              {/* Voice-specific settings */}
+              {isVoice && (
+                <>
+                  {/* Bitrate */}
+                  <div>
+                    <label className="block text-sm font-medium text-text-secondary mb-1">
+                      Bitrate — {bitrateLabel}
+                    </label>
+                    <input
+                      type="range"
+                      min="8000"
+                      max="384000"
+                      step="8000"
+                      value={bitrate}
+                      onChange={(e) => setBitrate(parseInt(e.target.value))}
+                      className="w-full accent-brand-primary"
+                    />
+                    <div className="flex justify-between text-xs text-text-muted mt-1">
+                      <span>8kbps</span>
+                      <span>384kbps</span>
+                    </div>
+                  </div>
 
-          <Show when={activeTab() === 'permissions'}>
-            {/* Current overrides */}
-            <Show when={overrides().length > 0} fallback={
-              <p class="text-sm text-text-muted text-center py-4">No permission overrides configured for this channel.</p>
-            }>
-              <div class="space-y-2">
-                <For each={overrides()}>
-                  {(override) => (
-                    <div>
+                  {/* User Limit */}
+                  <div>
+                    <label className="block text-sm font-medium text-text-secondary mb-1">
+                      User Limit — {userLimit === 0 ? 'Unlimited' : userLimit}
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="99"
+                      step="1"
+                      value={userLimit}
+                      onChange={(e) => setUserLimit(parseInt(e.target.value))}
+                      className="w-full accent-brand-primary"
+                    />
+                    <div className="flex justify-between text-xs text-text-muted mt-1">
+                      <span>No limit</span>
+                      <span>99</span>
+                    </div>
+                  </div>
+
+                  {/* Region (placeholder for future feature) */}
+                  <div>
+                    <label className="block text-sm font-medium text-text-secondary mb-1">Region</label>
+                    <select
+                      disabled
+                      className="w-full px-3 py-2 bg-bg-secondary border border-border rounded-lg text-text-muted text-sm cursor-not-allowed"
+                    >
+                      <option>Automatic (Coming Soon)</option>
+                    </select>
+                    <p className="text-xs text-text-muted mt-1">Region selection will be available in a future update.</p>
+                  </div>
+                </>
+              )}
+            </>
+          )}
+
+          {activeTab === 'permissions' && (
+            <>
+              {/* Current overrides */}
+              {overrides.length > 0 ? (
+                <div className="space-y-2">
+                  {overrides.map((override) => (
+                    <div key={override.id}>
                       {/* Override header row */}
                       <div
-                        class={`flex items-center justify-between p-3 bg-bg-secondary cursor-pointer hover:bg-bg-modifier-hover transition-colors ${
-                          expandedOverrideId() === override.id ? 'rounded-t-lg' : 'rounded-lg'
+                        className={`flex items-center justify-between p-3 bg-bg-secondary cursor-pointer hover:bg-bg-modifier-hover transition-colors ${
+                          expandedOverrideId === override.id ? 'rounded-t-lg' : 'rounded-lg'
                         }`}
                         onClick={() => setExpandedOverrideId(
-                          expandedOverrideId() === override.id ? null : override.id
+                          expandedOverrideId === override.id ? null : override.id
                         )}
                       >
-                        <div class="flex items-center gap-2">
+                        <div className="flex items-center gap-2">
                           <div
-                            class="w-3 h-3 rounded-full"
-                            style={{ "background-color": override.target_color || 'var(--color-text-muted)' }}
+                            className="w-3 h-3 rounded-full"
+                            style={{ backgroundColor: override.target_color || 'var(--color-text-muted)' }}
                           />
-                          <span class="text-sm text-text-primary">{override.target_name}</span>
-                          <span class="text-xs text-text-muted px-1.5 py-0.5 bg-bg-tertiary rounded">
+                          <span className="text-sm text-text-primary">{override.target_name}</span>
+                          <span className="text-xs text-text-muted px-1.5 py-0.5 bg-bg-tertiary rounded">
                             {override.type}
                           </span>
                         </div>
-                        <div class="flex items-center gap-1">
+                        <div className="flex items-center gap-1">
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               handleRemoveOverride(override.id, override.type, override.target_id);
                             }}
-                            class="p-1 text-text-muted hover:text-danger transition-colors"
+                            className="p-1 text-text-muted hover:text-danger transition-colors"
                             title="Remove override"
                           >
-                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                             </svg>
                           </button>
                           <svg
-                            class={`w-4 h-4 text-text-muted transition-transform ${
-                              expandedOverrideId() === override.id ? 'rotate-180' : ''
+                            className={`w-4 h-4 text-text-muted transition-transform ${
+                              expandedOverrideId === override.id ? 'rotate-180' : ''
                             }`}
                             fill="none"
                             viewBox="0 0 24 24"
                             stroke="currentColor"
                           >
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
                           </svg>
                         </div>
                       </div>
 
                       {/* Permission editor (expanded) */}
-                      <Show when={expandedOverrideId() === override.id}>
+                      {expandedOverrideId === override.id && (
                         <PermissionEditor
-                          channelType={props.channel.type}
+                          channelType={channel.type}
                           textAllow={override.text_allow}
                           textDeny={override.text_deny}
                           voiceAllow={override.voice_allow}
                           voiceDeny={override.voice_deny}
                           onSave={async (values) => {
                             await api.put(
-                              `/channels/${props.channel.id}/permissions/${override.type === 'role' ? 'roles' : 'users'}/${override.target_id}`,
+                              `/channels/${channel.id}/permissions/${override.type === 'role' ? 'roles' : 'users'}/${override.target_id}`,
                               values
                             );
                             const permsData = await api.get<{ overrides: PermissionOverride[] }>(
-                              `/channels/${props.channel.id}/permissions`
+                              `/channels/${channel.id}/permissions`
                             );
                             setOverrides(permsData.overrides || []);
                           }}
                         />
-                      </Show>
+                      )}
                     </div>
-                  )}
-                </For>
-              </div>
-            </Show>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-text-muted text-center py-4">No permission overrides configured for this channel.</p>
+              )}
 
-            {/* Add role override */}
-            <div class="pt-2">
-              <label class="block text-sm font-medium text-text-secondary mb-2">Add Role Override</label>
-              <div class="space-y-1">
-                <For each={roles().filter(r => !overrides().some(o => o.type === 'role' && o.target_id === r.id))}>
-                  {(role) => (
+              {/* Add role override */}
+              <div className="pt-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">Add Role Override</label>
+                <div className="space-y-1">
+                  {roles.filter(r => !overrides.some(o => o.type === 'role' && o.target_id === r.id)).map((role) => (
                     <button
+                      key={role.id}
                       onClick={() => handleAddRoleOverride(role.id)}
-                      class="flex items-center gap-2 w-full px-3 py-2 text-sm text-text-secondary hover:bg-bg-modifier-hover rounded-lg transition-colors"
+                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-text-secondary hover:bg-bg-modifier-hover rounded-lg transition-colors"
                     >
                       <div
-                        class="w-3 h-3 rounded-full"
-                        style={{ "background-color": role.color || 'var(--color-text-muted)' }}
+                        className="w-3 h-3 rounded-full"
+                        style={{ backgroundColor: role.color || 'var(--color-text-muted)' }}
                       />
                       <span>{role.name}</span>
-                      <svg class="w-4 h-4 ml-auto text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                      <svg className="w-4 h-4 ml-auto text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
                       </svg>
                     </button>
-                  )}
-                </For>
+                  ))}
+                </div>
               </div>
-            </div>
-          </Show>
+            </>
+          )}
         </div>
 
         {/* Footer */}
-        <div class="flex items-center justify-end gap-3 p-4 border-t border-border">
+        <div className="flex items-center justify-end gap-3 p-4 border-t border-border">
           <button
-            onClick={props.onClose}
-            class="px-4 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
           >
             Cancel
           </button>
-          <Show when={activeTab() === 'general'}>
+          {activeTab === 'general' && (
             <button
               onClick={handleSave}
-              disabled={saving()}
-              class="px-4 py-2 text-sm font-medium bg-brand-primary text-white rounded-lg hover:bg-brand-primary-hover transition-colors disabled:opacity-50"
+              disabled={saving}
+              className="px-4 py-2 text-sm font-medium bg-brand-primary text-white rounded-lg hover:bg-brand-primary-hover transition-colors disabled:opacity-50"
             >
-              {saving() ? 'Saving...' : 'Save Changes'}
+              {saving ? 'Saving...' : 'Save Changes'}
             </button>
-          </Show>
+          )}
         </div>
       </div>
     </div>

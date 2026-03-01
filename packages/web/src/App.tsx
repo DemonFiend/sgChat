@@ -1,11 +1,10 @@
-import { Router, Route, Navigate, useNavigate } from '@solidjs/router';
-import { Show, lazy, Suspense, onMount, createEffect, createSignal, JSX } from 'solid-js';
-import { authStore } from '@/stores/auth';
-import { networkStore } from '@/stores/network';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router';
+import { Suspense, lazy, useEffect, useState, type ReactNode } from 'react';
+import { useAuthStore } from '@/stores/auth';
+import { useNetworkStore } from '@/stores/network';
 import { socketService } from '@/lib/socket';
 import { SessionExpiredOverlay } from '@/components/ui/SessionExpiredOverlay';
 
-// Lazy load pages for code splitting
 const LoginPage = lazy(() => import('@/features/auth/LoginPage').then((m) => ({ default: m.LoginPage })));
 const RegisterPage = lazy(() => import('@/features/auth/RegisterPage').then((m) => ({ default: m.RegisterPage })));
 const ForgotPasswordPage = lazy(() => import('@/features/auth/ForgotPasswordPage').then((m) => ({ default: m.ForgotPasswordPage })));
@@ -14,175 +13,153 @@ const MainLayout = lazy(() => import('@/layouts/MainLayout').then((m) => ({ defa
 
 function LoadingScreen() {
   return (
-    <div class="min-h-screen flex items-center justify-center bg-bg-tertiary">
-      <div class="flex flex-col items-center gap-4">
-        <div class="w-12 h-12 border-4 border-accent border-t-transparent rounded-full animate-spin" />
-        <p class="text-text-muted">Loading...</p>
+    <div className="h-screen flex bg-bg-tertiary overflow-hidden">
+      {/* Server list skeleton */}
+      <div className="w-[72px] flex flex-col items-center gap-2 py-3 bg-bg-tertiary">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="w-12 h-12 rounded-2xl bg-bg-modifier-hover animate-pulse" />
+        ))}
+      </div>
+
+      {/* Channel sidebar skeleton */}
+      <div className="w-60 flex flex-col bg-bg-secondary">
+        <div className="h-12 px-4 flex items-center border-b border-bg-tertiary">
+          <div className="w-32 h-4 rounded bg-bg-modifier-hover animate-pulse" />
+        </div>
+        <div className="flex-1 p-3 space-y-3">
+          <div className="w-24 h-3 rounded bg-bg-modifier-hover animate-pulse" />
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-2 px-2">
+              <div className="w-4 h-4 rounded bg-bg-modifier-hover animate-pulse" />
+              <div className="h-3 rounded bg-bg-modifier-hover animate-pulse" style={{ width: `${60 + i * 15}px` }} />
+            </div>
+          ))}
+        </div>
+        {/* User panel skeleton */}
+        <div className="h-[52px] px-2 flex items-center gap-2 bg-bg-tertiary">
+          <div className="w-8 h-8 rounded-full bg-bg-modifier-hover animate-pulse" />
+          <div className="w-20 h-3 rounded bg-bg-modifier-hover animate-pulse" />
+        </div>
+      </div>
+
+      {/* Main content skeleton */}
+      <div className="flex-1 flex flex-col bg-bg-primary">
+        <div className="h-12 px-4 flex items-center gap-3 border-b border-bg-tertiary">
+          <div className="w-4 h-4 rounded bg-bg-modifier-hover animate-pulse" />
+          <div className="w-28 h-4 rounded bg-bg-modifier-hover animate-pulse" />
+        </div>
+        <div className="flex-1 p-4 space-y-4">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="flex gap-4">
+              <div className="w-10 h-10 rounded-full bg-bg-modifier-hover animate-pulse shrink-0" />
+              <div className="flex-1 space-y-2 pt-1">
+                <div className="flex gap-2">
+                  <div className="w-24 h-3.5 rounded bg-bg-modifier-hover animate-pulse" />
+                  <div className="w-10 h-2.5 rounded bg-bg-modifier-hover animate-pulse" />
+                </div>
+                <div className="h-3 rounded bg-bg-modifier-hover animate-pulse" style={{ width: `${40 + i * 10}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
 }
 
-function ProtectedRoute(props: { children: JSX.Element }) {
-  const state = authStore.state;
-  return (
-    <Show when={!state().isLoading} fallback={<LoadingScreen />}>
-      <Show when={state().isAuthenticated} fallback={<Navigate href="/login" />}>
-        {props.children}
-      </Show>
-    </Show>
-  );
+function ProtectedRoute({ children }: { children: ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuthStore();
+  if (isLoading) return <LoadingScreen />;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  return <>{children}</>;
 }
 
-function PublicRoute(props: { children: JSX.Element }) {
-  const state = authStore.state;
-  
-  // Debug: log auth state on public routes
-  createEffect(() => {
-    console.log('[PublicRoute] Auth state:', { 
-      isLoading: state().isLoading, 
-      isAuthenticated: state().isAuthenticated,
-      path: window.location.pathname 
-    });
-  });
-  
-  return (
-    <Show when={!state().isLoading} fallback={<LoadingScreen />}>
-      <Show when={!state().isAuthenticated} fallback={<Navigate href="/channels/@me" />}>
-        {props.children}
-      </Show>
-    </Show>
-  );
+function PublicRoute({ children }: { children: ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuthStore();
+  if (isLoading) return <LoadingScreen />;
+  if (isAuthenticated) return <Navigate to="/channels/@me" replace />;
+  return <>{children}</>;
 }
 
-// Root layout handles auth initialization and provides router context
-function RootLayout(props: { children?: JSX.Element }) {
+function RootLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
-  const [initialized, setInitialized] = createSignal(false);
+  const [initialized, setInitialized] = useState(false);
+  const { isAuthenticated, authError, checkAuth, attemptAutoLogin } = useAuthStore();
+  const { currentUrl, testConnection, addOrUpdateNetwork, autoLogin, defaultNetwork, serverInfo } = useNetworkStore();
 
-  onMount(async () => {
-    console.log('[RootLayout] onMount starting, path:', window.location.pathname);
-    // For web client served from same origin, auto-connect to same-origin API
-    // This skips the network selection step since web is always same-origin
-    const isSameOrigin = !networkStore.currentUrl() || 
-      networkStore.currentUrl() === window.location.origin ||
-      networkStore.currentUrl() === '/api';
-    
-    if (isSameOrigin) {
+  useEffect(() => {
+    const init = async () => {
       // Auto-connect to same-origin server
-      const connected = await networkStore.testConnection(window.location.origin);
-      if (connected) {
-        // Add/update the same-origin network as default
-        networkStore.addOrUpdateNetwork(window.location.origin, {
-          name: networkStore.serverInfo()?.name || 'sgChat Server',
-          isDefault: true,
-          lastConnected: new Date().toISOString(),
-        });
-      }
-    }
-    
-    // Try normal auth check (refresh token via httpOnly cookie)
-    const isAuthenticated = await authStore.checkAuth();
-    
-    if (isAuthenticated) {
-      setInitialized(true);
-      return;
-    }
-
-    // If not authenticated and auto-login is enabled with a default network, try auto-login
-    if (networkStore.autoLogin() && networkStore.defaultNetwork()) {
-      const defaultNet = networkStore.defaultNetwork()!;
-      
-      // Connect to the default network
-      const connected = await networkStore.testConnection(defaultNet.url);
-      
-      if (connected) {
-        // Attempt auto-login with stored credentials
-        const success = await authStore.attemptAutoLogin();
-        
-        if (success) {
-          navigate('/channels/@me', { replace: true });
+      const isSameOrigin = !currentUrl || currentUrl === window.location.origin || currentUrl === '/api';
+      if (isSameOrigin) {
+        const connected = await testConnection(window.location.origin);
+        if (connected) {
+          addOrUpdateNetwork(window.location.origin, {
+            name: serverInfo?.name || 'sgChat Server',
+            isDefault: true,
+            lastConnected: new Date().toISOString(),
+          });
         }
       }
-    }
-    
-    console.log('[RootLayout] Initialization complete, path:', window.location.pathname);
-    setInitialized(true);
-  });
 
-  // Connect socket when authenticated
-  createEffect(() => {
-    if (authStore.state().isAuthenticated) {
-      socketService.connect();
-    } else {
-      socketService.disconnect();
-    }
-  });
+      const isAuth = await checkAuth();
+      if (isAuth) { setInitialized(true); return; }
+
+      if (autoLogin) {
+        const defaultNet = defaultNetwork();
+        if (defaultNet) {
+          const connected = await testConnection(defaultNet.url);
+          if (connected) {
+            const success = await attemptAutoLogin();
+            if (success) navigate('/channels/@me', { replace: true });
+          }
+        }
+      }
+      setInitialized(true);
+    };
+    init();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Connect/disconnect socket based on auth state
+  useEffect(() => {
+    if (isAuthenticated) socketService.connect();
+    else socketService.disconnect();
+  }, [isAuthenticated]);
+
+  if (!initialized) return <LoadingScreen />;
 
   return (
-    <Show when={initialized()} fallback={<LoadingScreen />}>
-      {/* Session expired / auth error overlay -- renders on top of everything */}
-      <Show when={authStore.authError()}>
-        <SessionExpiredOverlay />
-      </Show>
+    <>
+      {authError && <SessionExpiredOverlay />}
       <Suspense fallback={<LoadingScreen />}>
-        {props.children}
+        {children}
       </Suspense>
-    </Show>
+    </>
+  );
+}
+
+function AppRoutes() {
+  return (
+    <RootLayout>
+      <Routes>
+        <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
+        <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
+        <Route path="/forgot-password" element={<PublicRoute><ForgotPasswordPage /></PublicRoute>} />
+        <Route path="/reset-password" element={<PublicRoute><ResetPasswordPage /></PublicRoute>} />
+        <Route path="/channels/@me" element={<ProtectedRoute><MainLayout /></ProtectedRoute>} />
+        <Route path="/channels/:channelId" element={<ProtectedRoute><MainLayout /></ProtectedRoute>} />
+        <Route path="/channels" element={<ProtectedRoute><MainLayout /></ProtectedRoute>} />
+        <Route path="/" element={<Navigate to="/channels/@me" replace />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    </RootLayout>
   );
 }
 
 export function App() {
   return (
-    <Router root={RootLayout}>
-      <Route path="/login" component={() => (
-        <PublicRoute>
-          <LoginPage />
-        </PublicRoute>
-      )} />
-      
-      <Route path="/register" component={() => (
-        <PublicRoute>
-          <RegisterPage />
-        </PublicRoute>
-      )} />
-
-      <Route path="/forgot-password" component={() => (
-        <PublicRoute>
-          <ForgotPasswordPage />
-        </PublicRoute>
-      )} />
-
-      <Route path="/reset-password" component={() => (
-        <PublicRoute>
-          <ResetPasswordPage />
-        </PublicRoute>
-      )} />
-
-      {/* DM route - must come before :channelId to avoid @me being captured as channelId */}
-      <Route path="/channels/@me" component={() => (
-        <ProtectedRoute>
-          <MainLayout />
-        </ProtectedRoute>
-      )} />
-
-      {/* Channel route with named parameter */}
-      <Route path="/channels/:channelId" component={() => (
-        <ProtectedRoute>
-          <MainLayout />
-        </ProtectedRoute>
-      )} />
-
-      {/* Base channels route - will auto-navigate to first channel */}
-      <Route path="/channels" component={() => (
-        <ProtectedRoute>
-          <MainLayout />
-        </ProtectedRoute>
-      )} />
-
-      {/* Catch-all routes - must be last */}
-      <Route path="/" component={() => <Navigate href="/channels/@me" />} />
-      <Route path="/*" component={() => <Navigate href="/login" />} />
-    </Router>
+    <BrowserRouter>
+      <AppRoutes />
+    </BrowserRouter>
   );
 }

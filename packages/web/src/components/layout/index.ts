@@ -2,7 +2,7 @@ export { ServerList } from './ServerList';
 export { ChannelList, type Channel, type Category, type ChannelType } from './ChannelList';
 export { MemberList } from './MemberList';
 export { UserPanel } from './UserPanel';
-export { ServerSidebar } from './ServerSidebar';
+export { ServerSidebar, type ServerInfo } from './ServerSidebar';
 export { ChatPanel, type Message, type MessageAuthor, type ChannelInfo, type TypingUser } from './ChatPanel';
 export { FloatingUserPanel } from './FloatingUserPanel';
 export { DMModal } from './DMModal';

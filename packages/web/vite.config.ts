@@ -1,12 +1,12 @@
 import { defineConfig } from 'vite';
-import solid from 'vite-plugin-solid';
+import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { resolve } from 'path';
 
 export default defineConfig({
   plugins: [
-    solid(),
+    react(),
     tailwindcss(),
     VitePWA({
       registerType: 'prompt',
@@ -41,7 +41,7 @@ export default defineConfig({
               cacheName: 'api-cache',
               expiration: {
                 maxEntries: 100,
-                maxAgeSeconds: 60 * 60, // 1 hour
+                maxAgeSeconds: 60 * 60,
               },
             },
           },
@@ -52,7 +52,7 @@ export default defineConfig({
               cacheName: 'image-cache',
               expiration: {
                 maxEntries: 500,
-                maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
+                maxAgeSeconds: 60 * 60 * 24 * 30,
               },
             },
           },
@@ -63,7 +63,7 @@ export default defineConfig({
               cacheName: 'gif-cache',
               expiration: {
                 maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 * 3, // 3 days for GIFs
+                maxAgeSeconds: 60 * 60 * 24 * 3,
               },
               networkTimeoutSeconds: 10,
             },
@@ -75,7 +75,7 @@ export default defineConfig({
               cacheName: 'gif-cache',
               expiration: {
                 maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 * 3, // 3 days for GIF providers
+                maxAgeSeconds: 60 * 60 * 24 * 3,
               },
               networkTimeoutSeconds: 10,
             },
@@ -93,7 +93,6 @@ export default defineConfig({
     port: 5174,
     host: true,
     proxy: {
-      // In development, proxy API and socket requests to the local API server
       '/api': {
         target: 'http://localhost:3000',
         changeOrigin: true,
@@ -110,15 +109,14 @@ export default defineConfig({
   build: {
     target: 'esnext',
     minify: 'esbuild',
-    // Output to dist/ which the API server will serve as static files
     outDir: 'dist',
     rollupOptions: {
       output: {
         manualChunks: {
-          'solid-vendor': ['solid-js', '@solidjs/router'],
+          'react-vendor': ['react', 'react-dom', 'react-router'],
           livekit: ['livekit-client'],
           socket: ['socket.io-client'],
-          query: ['@tanstack/solid-query'],
+          motion: ['framer-motion'],
         },
       },
     },

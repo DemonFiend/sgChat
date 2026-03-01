@@ -1,39 +1,30 @@
-import { Show, createSignal } from 'solid-js';
+import { useState, useMemo } from 'react';
 import { clsx } from 'clsx';
-import { voiceStore, type ConnectionQualityLevel } from '@/stores/voice';
+import { useVoiceStore, type ConnectionQualityLevel } from '@/stores/voice';
 
 interface PingIndicatorProps {
   size?: 'sm' | 'md' | 'lg';
   showLabel?: boolean;
   showTooltip?: boolean;
-  class?: string;
+  className?: string;
 }
 
-export function PingIndicator(props: PingIndicatorProps) {
-  const [showTooltip, setShowTooltip] = createSignal(false);
+export function PingIndicator({ size = 'md', showLabel, showTooltip: enableTooltip, className }: PingIndicatorProps) {
+  const [showTooltip, setShowTooltip] = useState(false);
+  const quality = useVoiceStore((s) => s.connectionQuality);
 
-  const sizeClasses = () => {
-    switch (props.size) {
-      case 'sm': return 'w-4 h-4';
-      case 'lg': return 'w-8 h-8';
-      default: return 'w-5 h-5';
-    }
-  };
-
-  const barHeight = () => {
-    switch (props.size) {
+  const sizeClasses = size === 'sm' ? 'w-4 h-4' : size === 'lg' ? 'w-8 h-8' : 'w-5 h-5';
+  const heights = useMemo(() => {
+    switch (size) {
       case 'sm': return { h1: 3, h2: 5, h3: 7, h4: 9 };
       case 'lg': return { h1: 6, h2: 10, h3: 14, h4: 18 };
       default: return { h1: 4, h2: 7, h3: 10, h4: 13 };
     }
-  };
-
-  const quality = () => voiceStore.connectionQuality();
+  }, [size]);
 
   const getQualityColor = (level: ConnectionQualityLevel) => {
     switch (level) {
-      case 'excellent': return 'text-status-online';
-      case 'good': return 'text-status-online';
+      case 'excellent': case 'good': return 'text-status-online';
       case 'poor': return 'text-status-idle';
       case 'lost': return 'text-danger';
       default: return 'text-text-muted';
@@ -60,129 +51,93 @@ export function PingIndicator(props: PingIndicatorProps) {
     }
   };
 
-  const getPingLabel = () => {
-    const ping = quality().ping;
-    if (ping === null) return '';
-    return `${ping}ms`;
-  };
-
-  const heights = barHeight();
-  const activeBars = () => getActiveBars(quality().level);
-  const color = () => getQualityColor(quality().level);
+  const activeBars = getActiveBars(quality.level);
+  const color = getQualityColor(quality.level);
+  const pingLabel = quality.ping !== null ? `${quality.ping}ms` : '';
 
   return (
     <div
-      class={clsx('relative flex items-center gap-1.5', props.class)}
-      onMouseEnter={() => props.showTooltip !== false && setShowTooltip(true)}
+      className={clsx('relative flex items-center gap-1.5', className)}
+      onMouseEnter={() => enableTooltip !== false && setShowTooltip(true)}
       onMouseLeave={() => setShowTooltip(false)}
     >
       {/* Signal Bars */}
-      <div class={clsx('flex items-end gap-0.5', sizeClasses())}>
-        <div
-          class={clsx(
-            'w-1 rounded-sm transition-colors',
-            activeBars() >= 1 ? color() : 'bg-bg-tertiary'
-          )}
-          style={{ height: `${heights.h1}px`, background: activeBars() >= 1 ? undefined : undefined }}
-          classList={{ 'bg-current': activeBars() >= 1 }}
-        />
-        <div
-          class={clsx(
-            'w-1 rounded-sm transition-colors',
-            activeBars() >= 2 ? color() : 'bg-bg-tertiary'
-          )}
-          style={{ height: `${heights.h2}px` }}
-          classList={{ 'bg-current': activeBars() >= 2 }}
-        />
-        <div
-          class={clsx(
-            'w-1 rounded-sm transition-colors',
-            activeBars() >= 3 ? color() : 'bg-bg-tertiary'
-          )}
-          style={{ height: `${heights.h3}px` }}
-          classList={{ 'bg-current': activeBars() >= 3 }}
-        />
-        <div
-          class={clsx(
-            'w-1 rounded-sm transition-colors',
-            activeBars() >= 4 ? color() : 'bg-bg-tertiary'
-          )}
-          style={{ height: `${heights.h4}px` }}
-          classList={{ 'bg-current': activeBars() >= 4 }}
-        />
+      <div className={clsx('flex items-end gap-0.5', sizeClasses)}>
+        {[heights.h1, heights.h2, heights.h3, heights.h4].map((h, i) => (
+          <div
+            key={i}
+            className={clsx(
+              'w-1 rounded-sm transition-colors',
+              activeBars >= i + 1 ? `${color} bg-current` : 'bg-bg-tertiary'
+            )}
+            style={{ height: `${h}px` }}
+          />
+        ))}
       </div>
 
       {/* Optional Label */}
-      <Show when={props.showLabel && quality().ping !== null}>
-        <span class={clsx('text-xs font-medium', color())}>
-          {getPingLabel()}
+      {showLabel && quality.ping !== null && (
+        <span className={clsx('text-xs font-medium', color)}>
+          {pingLabel}
         </span>
-      </Show>
+      )}
 
       {/* Tooltip */}
-      <Show when={showTooltip()}>
-        <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-bg-floating border border-bg-tertiary rounded-lg shadow-lg z-50 whitespace-nowrap">
-          <div class="flex items-center gap-2 mb-1">
-            <span class={clsx('font-medium', color())}>
-              {getQualityLabel(quality().level)}
+      {showTooltip && (
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-bg-floating border border-bg-tertiary rounded-lg shadow-lg z-50 whitespace-nowrap">
+          <div className="flex items-center gap-2 mb-1">
+            <span className={clsx('font-medium', color)}>
+              {getQualityLabel(quality.level)}
             </span>
           </div>
-          <Show when={quality().ping !== null}>
-            <div class="flex items-center justify-between gap-4 text-xs">
-              <span class="text-text-muted">Latency</span>
-              <span class="text-text-primary">{getPingLabel()}</span>
+          {quality.ping !== null && (
+            <div className="flex items-center justify-between gap-4 text-xs">
+              <span className="text-text-muted">Latency</span>
+              <span className="text-text-primary">{pingLabel}</span>
             </div>
-          </Show>
-          <Show when={quality().jitter !== null}>
-            <div class="flex items-center justify-between gap-4 text-xs">
-              <span class="text-text-muted">Jitter</span>
-              <span class="text-text-primary">{quality().jitter}ms</span>
+          )}
+          {quality.jitter !== null && (
+            <div className="flex items-center justify-between gap-4 text-xs">
+              <span className="text-text-muted">Jitter</span>
+              <span className="text-text-primary">{quality.jitter}ms</span>
             </div>
-          </Show>
-          <Show when={quality().packetLoss !== null}>
-            <div class="flex items-center justify-between gap-4 text-xs">
-              <span class="text-text-muted">Packet Loss</span>
-              <span class="text-text-primary">{quality().packetLoss}%</span>
+          )}
+          {quality.packetLoss !== null && (
+            <div className="flex items-center justify-between gap-4 text-xs">
+              <span className="text-text-muted">Packet Loss</span>
+              <span className="text-text-primary">{quality.packetLoss}%</span>
             </div>
-          </Show>
-          <div class="absolute left-1/2 -translate-x-1/2 -bottom-1 w-2 h-2 bg-bg-floating border-r border-b border-bg-tertiary transform rotate-45" />
+          )}
+          <div className="absolute left-1/2 -translate-x-1/2 -bottom-1 w-2 h-2 bg-bg-floating border-r border-b border-bg-tertiary transform rotate-45" />
         </div>
-      </Show>
+      )}
     </div>
   );
 }
 
 interface ConnectionStatusDotProps {
-  class?: string;
+  className?: string;
 }
 
-export function ConnectionStatusDot(props: ConnectionStatusDotProps) {
-  const quality = () => voiceStore.connectionQuality();
+export function ConnectionStatusDot({ className }: ConnectionStatusDotProps) {
+  const isConnected = useVoiceStore((s) => s.connectionState === 'connected');
+  const quality = useVoiceStore((s) => s.connectionQuality);
 
   const getDotColor = (level: ConnectionQualityLevel) => {
     switch (level) {
-      case 'excellent':
-      case 'good':
-        return 'bg-status-online';
-      case 'poor':
-        return 'bg-status-idle';
-      case 'lost':
-        return 'bg-danger animate-pulse';
-      default:
-        return 'bg-text-muted';
+      case 'excellent': case 'good': return 'bg-status-online';
+      case 'poor': return 'bg-status-idle';
+      case 'lost': return 'bg-danger animate-pulse';
+      default: return 'bg-text-muted';
     }
   };
 
+  if (!isConnected) return null;
+
   return (
-    <Show when={voiceStore.isConnected()}>
-      <div
-        class={clsx(
-          'w-2 h-2 rounded-full',
-          getDotColor(quality().level),
-          props.class
-        )}
-        title={`Connection: ${quality().level}${quality().ping ? ` (${quality().ping}ms)` : ''}`}
-      />
-    </Show>
+    <div
+      className={clsx('w-2 h-2 rounded-full', getDotColor(quality.level), className)}
+      title={`Connection: ${quality.level}${quality.ping ? ` (${quality.ping}ms)` : ''}`}
+    />
   );
 }

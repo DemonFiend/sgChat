@@ -1,8 +1,10 @@
-export { authStore, type User, type UserPermissions } from './auth';
-export { theme, setTheme, toggleTheme, themeNames, type Theme } from './theme';
-export { networkStore, type Network, type NetworkAccount, type ServerInfo, type ConnectionStatus } from './network';
-export { voiceStore, type VoiceState, type VoiceParticipant, type VoicePermissions, type VoiceConnectionState } from './voice';
-export { serverPopupStore } from './serverPopup';
-export { useServerConfigStore } from './serverConfig';
+export { useAuthStore, authStore, type User, type UserPermissions } from './auth';
+export { useNetworkStore, networkStore, type Network, type NetworkAccount, type ServerInfo, type ConnectionStatus } from './network';
+export { useVoiceStore, voiceStore, type VoiceState, type VoiceParticipant, type VoicePermissions, type VoiceConnectionState } from './voice';
+export { useServerPopupStore, serverPopupStore } from './serverPopup';
+export { useServerConfigStore, serverConfigStore } from './serverConfig';
+export { useStreamViewerStore, streamViewerStore, type StreamInfo } from './streamViewer';
+export { useToastStore, toastStore, type ToastNotification } from './toastNotifications';
+export { useThemeStore, type Theme, themeNames } from './theme';
 export { messageCache } from './messageCache';
 export * as permissions from './permissions';

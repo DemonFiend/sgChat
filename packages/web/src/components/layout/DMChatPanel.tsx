@@ -1,7 +1,10 @@
-import { createSignal, For, Show, createEffect, onCleanup, JSX } from 'solid-js';
-import { Avatar, MessageContent, DMVoiceControls, DMCallStatusBar, ReactionPicker } from '@/components/ui';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Avatar } from '@/components/ui/Avatar';
+import { MessageContent } from '@/components/ui/MessageContent';
 import { BendyLine } from '@/components/ui/BendyLine';
 import { GifPicker } from '@/components/ui/GifPicker';
+import { ReactionPicker } from '@/components/ui/ReactionPicker';
+import { DMVoiceControls } from '@/components/ui/DMVoiceControls';
 import type { Friend } from './DMSidebar';
 
 export interface DMMessage {
@@ -24,30 +27,36 @@ interface DMChatPanelProps {
   isTyping?: boolean;
 }
 
-export function DMChatPanel(props: DMChatPanelProps): JSX.Element {
-  const [messageInput, setMessageInput] = createSignal('');
-  const [friendLocalTime, setFriendLocalTime] = createSignal<string | null>(null);
-  const [showTimeTooltip, setShowTimeTooltip] = createSignal(false);
-  const [showGifPicker, setShowGifPicker] = createSignal(false);
-  const [showEmojiPicker, setShowEmojiPicker] = createSignal(false);
-  let messagesEndRef: HTMLDivElement | undefined;
-  let inputRef: HTMLTextAreaElement | undefined;
-  let gifButtonRef: HTMLButtonElement | undefined;
-  let emojiButtonRef: HTMLButtonElement | undefined;
-  let typingTimeout: ReturnType<typeof setTimeout> | null = null;
-  let isTyping = false;
-  let timeUpdateInterval: ReturnType<typeof setInterval> | null = null;
+export function DMChatPanel({
+  friend,
+  messages,
+  currentUserId,
+  currentUserAvatar,
+  currentUserDisplayName,
+  onSendMessage,
+  onTypingStart,
+  onTypingStop,
+  isTyping: friendIsTyping,
+}: DMChatPanelProps) {
+  const [messageInput, setMessageInput] = useState('');
+  const [friendLocalTime, setFriendLocalTime] = useState<string | null>(null);
+  const [showTimeTooltip, setShowTimeTooltip] = useState(false);
+  const [showGifPicker, setShowGifPicker] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const gifButtonRef = useRef<HTMLButtonElement>(null);
+  const emojiButtonRef = useRef<HTMLButtonElement>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isTypingRef = useRef(false);
+  const timeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Calculate friend's local time from their timezone
-  // If DST is disabled, we calculate using standard time (January date to avoid DST)
-  const updateFriendTime = () => {
-    const friend = props.friend;
+  const updateFriendTime = useCallback(() => {
     if (friend?.timezone_public && friend?.timezone) {
       try {
         const now = new Date();
-
         if (friend.timezone_dst_enabled !== false) {
-          // DST enabled (default) - use current time with automatic DST adjustment
           const time = now.toLocaleTimeString('en-US', {
             timeZone: friend.timezone,
             hour: '2-digit',
@@ -56,17 +65,12 @@ export function DMChatPanel(props: DMChatPanelProps): JSX.Element {
           });
           setFriendLocalTime(time);
         } else {
-          // DST disabled - calculate standard time offset
-          // Get the standard time offset (using January 1st which is always standard time in northern hemisphere)
           const jan = new Date(now.getFullYear(), 0, 1);
           const janInTz = new Date(jan.toLocaleString('en-US', { timeZone: friend.timezone }));
           const janLocal = new Date(jan.toLocaleString('en-US', { timeZone: 'UTC' }));
           const standardOffset = janInTz.getTime() - janLocal.getTime();
-
-          // Apply standard offset to current UTC time
           const utcNow = now.getTime() + (now.getTimezoneOffset() * 60000);
           const standardTime = new Date(utcNow + standardOffset);
-
           const time = standardTime.toLocaleTimeString('en-US', {
             hour: '2-digit',
             minute: '2-digit',
@@ -80,81 +84,71 @@ export function DMChatPanel(props: DMChatPanelProps): JSX.Element {
     } else {
       setFriendLocalTime(null);
     }
-  };
+  }, [friend?.timezone_public, friend?.timezone, friend?.timezone_dst_enabled]);
 
   // Update friend's local time when friend changes and every minute
-  createEffect(() => {
-    // Clear previous interval
-    if (timeUpdateInterval) {
-      clearInterval(timeUpdateInterval);
-      timeUpdateInterval = null;
+  useEffect(() => {
+    if (timeIntervalRef.current) {
+      clearInterval(timeIntervalRef.current);
+      timeIntervalRef.current = null;
     }
-
-    // Update immediately
     updateFriendTime();
-
-    // Update every minute
-    if (props.friend?.timezone_public && props.friend?.timezone) {
-      timeUpdateInterval = setInterval(updateFriendTime, 60000);
+    if (friend?.timezone_public && friend?.timezone) {
+      timeIntervalRef.current = setInterval(updateFriendTime, 60000);
     }
-  });
+    return () => {
+      if (timeIntervalRef.current) clearInterval(timeIntervalRef.current);
+    };
+  }, [updateFriendTime, friend?.timezone_public, friend?.timezone]);
 
   // Auto-scroll to bottom when new messages arrive
-  createEffect(() => {
-    if (props.messages.length > 0 && messagesEndRef) {
-      messagesEndRef.scrollIntoView({ behavior: 'smooth' });
+  useEffect(() => {
+    if (messages.length > 0 && messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  });
+  }, [messages.length]);
 
-  // Cleanup typing timeout and time interval on unmount
-  onCleanup(() => {
-    if (typingTimeout) {
-      clearTimeout(typingTimeout);
-    }
-    if (isTyping) {
-      props.onTypingStop?.();
-    }
-    if (timeUpdateInterval) {
-      clearInterval(timeUpdateInterval);
-    }
-  });
+  // Cleanup typing timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      if (isTypingRef.current) onTypingStop?.();
+      if (timeIntervalRef.current) clearInterval(timeIntervalRef.current);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleTyping = () => {
-    if (!isTyping) {
-      isTyping = true;
-      props.onTypingStart?.();
+    if (!isTypingRef.current) {
+      isTypingRef.current = true;
+      onTypingStart?.();
     }
-
-    if (typingTimeout) {
-      clearTimeout(typingTimeout);
-    }
-
-    typingTimeout = setTimeout(() => {
-      if (isTyping) {
-        isTyping = false;
-        props.onTypingStop?.();
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      if (isTypingRef.current) {
+        isTypingRef.current = false;
+        onTypingStop?.();
       }
     }, 3000);
   };
 
   const handleSend = () => {
-    const content = messageInput().trim();
+    const content = messageInput.trim();
     if (content) {
-      if (isTyping) {
-        isTyping = false;
-        props.onTypingStop?.();
-        if (typingTimeout) {
-          clearTimeout(typingTimeout);
-          typingTimeout = null;
+      if (isTypingRef.current) {
+        isTypingRef.current = false;
+        onTypingStop?.();
+        if (typingTimeoutRef.current) {
+          clearTimeout(typingTimeoutRef.current);
+          typingTimeoutRef.current = null;
         }
       }
-      props.onSendMessage(content);
+      onSendMessage(content);
       setMessageInput('');
-      inputRef?.focus();
+      inputRef.current?.focus();
     }
   };
 
-  const handleKeyDown = (e: KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -175,263 +169,249 @@ export function DMChatPanel(props: DMChatPanelProps): JSX.Element {
     }
   };
 
-  // Use Show for reactive conditional rendering - this is critical in SolidJS
-  // Early returns with if() break reactivity since the component function only runs once
+  if (!friend) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-bg-primary">
+        <div className="text-center">
+          <div className="w-24 h-24 mx-auto mb-4 bg-bg-tertiary rounded-full flex items-center justify-center">
+            <svg className="w-12 h-12 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+          </div>
+          <h3 className="text-xl font-semibold text-text-primary mb-2">Select a Friend</h3>
+          <p className="text-text-muted text-sm">
+            Choose a friend from the list to start chatting
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <Show
-      when={props.friend}
-      fallback={
-        <div class="flex-1 flex items-center justify-center bg-bg-primary">
-          <div class="text-center">
-            <div class="w-24 h-24 mx-auto mb-4 bg-bg-tertiary rounded-full flex items-center justify-center">
-              <svg class="w-12 h-12 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-              </svg>
-            </div>
-            <h3 class="text-xl font-semibold text-text-primary mb-2">Select a Friend</h3>
-            <p class="text-text-muted text-sm">
-              Choose a friend from the list to start chatting
+    <div className="flex-1 flex flex-col bg-bg-primary relative">
+      {/* Header with Bendy Line */}
+      <div className="relative">
+        <header className="h-16 px-4 flex items-center gap-4 bg-bg-primary border-b border-bg-tertiary">
+          {/* Friend Info */}
+          <div className="flex-1">
+            <h2 className="text-lg font-semibold text-text-primary">
+              {friend.display_name || friend.username}
+            </h2>
+            <p className="text-xs text-text-muted">
+              {friend.custom_status || `@${friend.username}`}
             </p>
           </div>
-        </div>
-      }
-    >
-      {(friend) => (
-        <div class="flex-1 flex flex-col bg-bg-primary relative">
-          {/* Header with Bendy Line */}
-          <div class="relative">
-            <header class="h-16 px-4 flex items-center gap-4 bg-bg-primary border-b border-bg-tertiary">
-              {/* Friend Info */}
-              <div class="flex-1">
-                <h2 class="text-lg font-semibold text-text-primary">
-                  {friend().display_name || friend().username}
-                </h2>
-                <p class="text-xs text-text-muted">
-                  {friend().custom_status || `@${friend().username}`}
-                </p>
-              </div>
 
-              {/* Voice Call Controls */}
-              <DMVoiceControls
-                dmChannelId={friend().dm_channel_id || ''}
-                friendId={friend().id}
-                friendName={friend().display_name || friend().username}
-              />
-
-              {/* Friend's Local Time */}
-              <div class="relative">
-                <div
-                  class="flex items-center gap-1 px-2 py-1 bg-bg-tertiary rounded-md cursor-default"
-                  onMouseEnter={() => setShowTimeTooltip(true)}
-                  onMouseLeave={() => setShowTimeTooltip(false)}
-                >
-                  <svg class="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span class="text-sm text-text-muted">
-                    {friendLocalTime() || 'Hidden'}
-                  </span>
-                  <svg class="w-3 h-3 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <Show when={showTimeTooltip()}>
-                  <div class="absolute top-full mt-1 left-1/2 -translate-x-1/2 bg-bg-floating text-text-primary text-xs px-2 py-1 rounded shadow-lg whitespace-nowrap border border-bg-tertiary z-10">
-                    {friendLocalTime() ? "User's Local Time" : "User's timezone is hidden"}
-                  </div>
-                </Show>
-              </div>
-
-              {/* Large Avatar on right */}
-              <div class="relative">
-                <Avatar
-                  src={friend().avatar_url}
-                  alt={friend().display_name || friend().username}
-                  size="lg"
-                />
-                <div class={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-bg-primary ${getStatusColor(friend().status)}`} />
-              </div>
-
-              {/* Group indicator placeholder */}
-              <div class="w-10 h-10 bg-bg-tertiary rounded-full flex items-center justify-center">
-                <span class="text-sm font-bold text-text-muted">2</span>
-              </div>
-            </header>
-            <BendyLine variant="horizontal" direction="down" class="absolute bottom-0 left-0 right-0 translate-y-1/2" />
-          </div>
-
-          {/* Messages Area */}
-          <div class="flex-1 overflow-y-auto scrollbar-thin p-4 mt-2">
-            {/* Empty state */}
-            <Show when={props.messages.length === 0}>
-              <div class="flex flex-col items-center justify-center h-full text-center">
-                <Avatar
-                  src={friend().avatar_url}
-                  alt={friend().display_name || friend().username}
-                  size="xl"
-                />
-                <h3 class="text-lg font-semibold text-text-primary mt-4 mb-1">
-                  {friend().display_name || friend().username}
-                </h3>
-                <p class="text-text-muted text-sm mb-4">
-                  @{friend().username}
-                </p>
-                <p class="text-text-muted text-sm">
-                  This is the beginning of your direct message history with{' '}
-                  <span class="font-medium">{friend().display_name || friend().username}</span>.
-                </p>
-                <p class="text-xs text-status-online flex items-center gap-1 mt-2">
-                  <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                  </svg>
-                  Messages are end-to-end encrypted
-                </p>
-              </div>
-            </Show>
-
-            {/* Messages */}
-            <For each={props.messages}>
-              {(message) => {
-                const isMe = message.sender_id === props.currentUserId;
-                const senderName = isMe
-                  ? (props.currentUserDisplayName || 'You')
-                  : (friend().display_name || friend().username);
-                const senderAvatar = isMe ? props.currentUserAvatar : friend().avatar_url;
-                return (
-                  <div class="flex mb-3 justify-start">
-                    <div class="flex-shrink-0 mr-2">
-                      <Avatar
-                        src={senderAvatar}
-                        alt={senderName}
-                        size="sm"
-                      />
-                    </div>
-
-                    <div class="max-w-[85%]">
-                      <div class="flex items-baseline gap-2 mb-0.5">
-                        <span class={`text-sm font-medium ${isMe ? 'text-brand-primary' : 'text-text-primary'}`}>
-                          {senderName}
-                        </span>
-                        <span class="text-[10px] text-text-muted">
-                          {formatTime(message.created_at)}
-                        </span>
-                      </div>
-                      <div class="text-text-primary">
-                        <MessageContent content={message.content} isOwnMessage={isMe} />
-                      </div>
-                    </div>
-                  </div>
-                );
-              }}
-            </For>
-            <div ref={messagesEndRef} />
-          </div>
-
-          {/* DM Voice Call Status Bar */}
-          <DMCallStatusBar
-            dmChannelId={friend().dm_channel_id || ''}
-            friendName={friend().display_name || friend().username}
+          {/* Voice Call Controls */}
+          <DMVoiceControls
+            dmChannelId={friend.dm_channel_id || ''}
+            friendId={friend.id}
+            friendName={friend.display_name || friend.username}
           />
 
-          {/* Bottom Section with Bendy Line and Actions */}
-          <div class="relative">
-            <BendyLine variant="horizontal" direction="up" class="absolute top-0 left-0 right-0 -translate-y-1/2" />
+          {/* Friend's Local Time */}
+          <div className="relative">
+            <div
+              className="flex items-center gap-1 px-2 py-1 bg-bg-tertiary rounded-md cursor-default"
+              onMouseEnter={() => setShowTimeTooltip(true)}
+              onMouseLeave={() => setShowTimeTooltip(false)}
+            >
+              <svg className="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="text-sm text-text-muted">
+                {friendLocalTime || 'Hidden'}
+              </span>
+              <svg className="w-3 h-3 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            {showTimeTooltip && (
+              <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 bg-bg-floating text-text-primary text-xs px-2 py-1 rounded shadow-lg whitespace-nowrap border border-bg-tertiary z-10">
+                {friendLocalTime ? "User's Local Time" : "User's timezone is hidden"}
+              </div>
+            )}
+          </div>
 
-            {/* Typing Indicator */}
-            <Show when={props.isTyping}>
-              <div class="flex items-center gap-2 text-xs text-text-muted px-4 pt-2">
-                <div class="flex gap-0.5">
-                  <span class="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style={{ "animation-delay": "0ms" }} />
-                  <span class="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style={{ "animation-delay": "150ms" }} />
-                  <span class="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style={{ "animation-delay": "300ms" }} />
+          {/* Large Avatar on right */}
+          <div className="relative">
+            <Avatar
+              src={friend.avatar_url}
+              alt={friend.display_name || friend.username}
+              size="lg"
+            />
+            <div className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-bg-primary ${getStatusColor(friend.status)}`} />
+          </div>
+
+          {/* Group indicator placeholder */}
+          <div className="w-10 h-10 bg-bg-tertiary rounded-full flex items-center justify-center">
+            <span className="text-sm font-bold text-text-muted">2</span>
+          </div>
+        </header>
+        <BendyLine variant="horizontal" direction="down" className="absolute bottom-0 left-0 right-0 translate-y-1/2" />
+      </div>
+
+      {/* Messages Area */}
+      <div className="flex-1 overflow-y-auto scrollbar-thin p-4 mt-2">
+        {/* Empty state */}
+        {messages.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-full text-center">
+            <Avatar
+              src={friend.avatar_url}
+              alt={friend.display_name || friend.username}
+              size="xl"
+            />
+            <h3 className="text-lg font-semibold text-text-primary mt-4 mb-1">
+              {friend.display_name || friend.username}
+            </h3>
+            <p className="text-text-muted text-sm mb-4">
+              @{friend.username}
+            </p>
+            <p className="text-text-muted text-sm">
+              This is the beginning of your direct message history with{' '}
+              <span className="font-medium">{friend.display_name || friend.username}</span>.
+            </p>
+            <p className="text-xs text-status-online flex items-center gap-1 mt-2">
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+              Messages are end-to-end encrypted
+            </p>
+          </div>
+        )}
+
+        {/* Messages */}
+        {messages.map((message) => {
+          const isMe = message.sender_id === currentUserId;
+          const senderName = isMe
+            ? (currentUserDisplayName || 'You')
+            : (friend.display_name || friend.username);
+          const senderAvatar = isMe ? currentUserAvatar : friend.avatar_url;
+          return (
+            <div key={message.id} className="flex mb-3 justify-start">
+              <div className="flex-shrink-0 mr-2">
+                <Avatar
+                  src={senderAvatar}
+                  alt={senderName}
+                  size="sm"
+                />
+              </div>
+              <div className="max-w-[85%]">
+                <div className="flex items-baseline gap-2 mb-0.5">
+                  <span className={`text-sm font-medium ${isMe ? 'text-brand-primary' : 'text-text-primary'}`}>
+                    {senderName}
+                  </span>
+                  <span className="text-[10px] text-text-muted">
+                    {formatTime(message.created_at)}
+                  </span>
                 </div>
-                <span>{friend().display_name || friend().username} is typing...</span>
-              </div>
-            </Show>
-
-            {/* Message Input */}
-            <div class="p-4 flex items-end gap-3">
-              <div class="flex-1 flex items-end bg-bg-tertiary rounded-lg">
-                <textarea
-                  ref={inputRef}
-                  value={messageInput()}
-                  onInput={(e) => {
-                    setMessageInput(e.currentTarget.value);
-                    handleTyping();
-                  }}
-                  onKeyDown={handleKeyDown}
-                  placeholder={`Message @${friend().username}`}
-                  rows={1}
-                  class="flex-1 bg-transparent py-3 px-4 text-text-primary placeholder:text-text-muted outline-none resize-none max-h-32 scrollbar-thin"
-                  style={{ "min-height": "24px" }}
-                />
-                <button
-                  onClick={handleSend}
-                  disabled={!messageInput().trim()}
-                  class="p-3 text-text-muted hover:text-brand-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                  </svg>
-                </button>
-              </div>
-
-              {/* Bottom Right Action Buttons */}
-              <div class="flex items-center gap-2 relative">
-                <button
-                  ref={emojiButtonRef}
-                  onClick={() => setShowEmojiPicker(!showEmojiPicker())}
-                  class={`w-10 h-10 bg-bg-tertiary rounded-full flex items-center justify-center transition-colors ${showEmojiPicker() ? 'text-brand-primary bg-bg-modifier-hover' : 'text-text-muted hover:text-text-primary hover:bg-bg-modifier-hover'}`}
-                  title="Emoji"
-                >
-                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </button>
-
-                {/* Emoji Picker */}
-                <ReactionPicker
-                  isOpen={showEmojiPicker()}
-                  onClose={() => setShowEmojiPicker(false)}
-                  onSelect={(emoji) => {
-                    setMessageInput(prev => prev + emoji);
-                    setShowEmojiPicker(false);
-                    inputRef?.focus();
-                  }}
-                  anchorRef={emojiButtonRef}
-                />
-
-                <button class="w-10 h-10 bg-bg-tertiary rounded-full flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-bg-modifier-hover transition-colors">
-                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                  </svg>
-                </button>
-                <button
-                  ref={gifButtonRef}
-                  onClick={() => setShowGifPicker(!showGifPicker())}
-                  class="w-10 h-10 bg-bg-tertiary rounded-full flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-bg-modifier-hover transition-colors"
-                  title="Send a GIF"
-                >
-                  <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M11.5 9H13v6h-1.5V9zM9 9H6c-.5 0-1 .5-1 1v4c0 .5.5 1 1 1h3c.5 0 1-.5 1-1v-4c0-.5-.5-1-1-1zm-.5 4.5h-2v-3h2v3zM19 10.5V9h-4.5v6H16v-2h2v-1.5h-2v-1h3z" />
-                  </svg>
-                </button>
-
-                {/* GIF Picker */}
-                <GifPicker
-                  isOpen={showGifPicker()}
-                  onClose={() => setShowGifPicker(false)}
-                  onSelect={(gifUrl) => {
-                    props.onSendMessage(gifUrl);
-                    setShowGifPicker(false);
-                  }}
-                  anchorRef={gifButtonRef}
-                />
+                <div className="text-text-primary">
+                  <MessageContent content={message.content} isOwnMessage={isMe} />
+                </div>
               </div>
             </div>
+          );
+        })}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Bottom Section with Bendy Line and Actions */}
+      <div className="relative">
+        <BendyLine variant="horizontal" direction="up" className="absolute top-0 left-0 right-0 -translate-y-1/2" />
+
+        {/* Typing Indicator */}
+        {friendIsTyping && (
+          <div className="flex items-center gap-2 text-xs text-text-muted px-4 pt-2">
+            <div className="flex gap-0.5">
+              <span className="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+              <span className="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+              <span className="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+            </div>
+            <span>{friend.display_name || friend.username} is typing...</span>
+          </div>
+        )}
+
+        {/* Message Input */}
+        <div className="p-4 flex items-end gap-3">
+          <div className="flex-1 flex items-end bg-bg-tertiary rounded-lg">
+            <textarea
+              ref={inputRef}
+              value={messageInput}
+              onChange={(e) => {
+                setMessageInput(e.target.value);
+                handleTyping();
+              }}
+              onKeyDown={handleKeyDown}
+              placeholder={`Message @${friend.username}`}
+              rows={1}
+              className="flex-1 bg-transparent py-3 px-4 text-text-primary placeholder:text-text-muted outline-none resize-none max-h-32 scrollbar-thin"
+              style={{ minHeight: '24px' }}
+            />
+            <button
+              onClick={handleSend}
+              disabled={!messageInput.trim()}
+              className="p-3 text-text-muted hover:text-brand-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Bottom Right Action Buttons */}
+          <div className="flex items-center gap-2 relative">
+            <button
+              ref={emojiButtonRef}
+              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+              className={`w-10 h-10 bg-bg-tertiary rounded-full flex items-center justify-center transition-colors ${showEmojiPicker ? 'text-brand-primary bg-bg-modifier-hover' : 'text-text-muted hover:text-text-primary hover:bg-bg-modifier-hover'}`}
+              title="Emoji"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </button>
+
+            {/* Emoji Picker */}
+            <ReactionPicker
+              isOpen={showEmojiPicker}
+              onClose={() => setShowEmojiPicker(false)}
+              onSelect={(emoji) => {
+                setMessageInput(prev => prev + emoji);
+                setShowEmojiPicker(false);
+                inputRef.current?.focus();
+              }}
+              anchorRef={emojiButtonRef}
+            />
+
+            <button className="w-10 h-10 bg-bg-tertiary rounded-full flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-bg-modifier-hover transition-colors">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+              </svg>
+            </button>
+            <button
+              ref={gifButtonRef}
+              onClick={() => setShowGifPicker(!showGifPicker)}
+              className="w-10 h-10 bg-bg-tertiary rounded-full flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-bg-modifier-hover transition-colors"
+              title="Send a GIF"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M11.5 9H13v6h-1.5V9zM9 9H6c-.5 0-1 .5-1 1v4c0 .5.5 1 1 1h3c.5 0 1-.5 1-1v-4c0-.5-.5-1-1-1zm-.5 4.5h-2v-3h2v3zM19 10.5V9h-4.5v6H16v-2h2v-1.5h-2v-1h3z" />
+              </svg>
+            </button>
+
+            {/* GIF Picker */}
+            <GifPicker
+              isOpen={showGifPicker}
+              onClose={() => setShowGifPicker(false)}
+              onSelect={(gifUrl) => {
+                onSendMessage(gifUrl);
+                setShowGifPicker(false);
+              }}
+              anchorRef={gifButtonRef}
+            />
           </div>
         </div>
-      )}
-    </Show>
+      </div>
+    </div>
   );
 }

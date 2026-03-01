@@ -1,368 +1,358 @@
-import { createSignal, Show, For, createEffect, onCleanup } from 'solid-js';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { clsx } from 'clsx';
-import { networkStore, type Network, type ConnectionStatus } from '@/stores/network';
+import { useNetworkStore, type Network, type ConnectionStatus } from '@/stores/network';
 
 interface NetworkSelectorProps {
   onNetworkReady?: (url: string) => void;
   showAutoLoginToggle?: boolean;
   showSetDefaultCheckbox?: boolean;
-  class?: string;
+  className?: string;
 }
 
-export function NetworkSelector(props: NetworkSelectorProps) {
-  const [inputValue, setInputValue] = createSignal('');
-  const [isDropdownOpen, setIsDropdownOpen] = createSignal(false);
-  const [setAsDefault, setSetAsDefault] = createSignal(false);
-  let inputRef: HTMLInputElement | undefined;
-  let dropdownRef: HTMLDivElement | undefined;
+export function NetworkSelector({ onNetworkReady, showAutoLoginToggle, showSetDefaultCheckbox, className }: NetworkSelectorProps) {
+  const [inputValue, setInputValue] = useState('');
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [setAsDefault, setSetAsDefault] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const {
+    currentUrl, connectionStatus, connectionError, serverInfo,
+    testConnection, addOrUpdateNetwork, toggleFavorite, setAsDefault: storeSetAsDefault,
+    autoLogin, setAutoLogin,
+    currentNetwork, defaultNetwork, favoriteNetworks, recentNetworks,
+  } = useNetworkStore();
+
+  const currentNet = currentNetwork();
+  const defaultNet = defaultNetwork();
+  const favorites = favoriteNetworks();
+  const recents = recentNetworks();
+  const hasNetworks = favorites.length > 0 || recents.length > 0;
 
   // Initialize input with last network or default
-  createEffect(() => {
-    const defaultNet = networkStore.defaultNetwork();
-    const currentUrl = networkStore.currentUrl();
-    
+  useEffect(() => {
     if (currentUrl) {
       setInputValue(currentUrl);
     } else if (defaultNet) {
       setInputValue(defaultNet.url);
-      // Auto-test default network on mount
-      networkStore.testConnection(defaultNet.url);
+      testConnection(defaultNet.url);
     }
-  });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Notify parent when connected
-  createEffect(() => {
-    if (networkStore.connectionStatus() === 'connected' && networkStore.currentUrl()) {
-      props.onNetworkReady?.(networkStore.currentUrl()!);
+  useEffect(() => {
+    if (connectionStatus === 'connected' && currentUrl) {
+      onNetworkReady?.(currentUrl);
     }
-  });
+  }, [connectionStatus, currentUrl, onNetworkReady]);
 
   // Close dropdown on outside click
-  const handleClickOutside = (e: MouseEvent) => {
-    if (dropdownRef && !dropdownRef.contains(e.target as Node)) {
-      setIsDropdownOpen(false);
-    }
-  };
+  useEffect(() => {
+    if (!isDropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isDropdownOpen]);
 
-  createEffect(() => {
-    if (isDropdownOpen()) {
-      document.addEventListener('mousedown', handleClickOutside);
-    } else {
-      document.removeEventListener('mousedown', handleClickOutside);
-    }
-  });
-
-  onCleanup(() => {
-    document.removeEventListener('mousedown', handleClickOutside);
-  });
-
-  const handleConnect = async () => {
-    const url = inputValue().trim();
+  const handleConnect = useCallback(async () => {
+    const url = inputValue.trim();
     if (!url) return;
-
-    const info = await networkStore.testConnection(url);
+    const info = await testConnection(url);
     if (info) {
-      // Update network with server name
-      networkStore.addOrUpdateNetwork(url, {
+      addOrUpdateNetwork(url, {
         name: info.name,
         lastConnected: new Date().toISOString(),
-        isDefault: setAsDefault(),
+        isDefault: setAsDefault,
       });
     }
-  };
+  }, [inputValue, setAsDefault, testConnection, addOrUpdateNetwork]);
 
-  const handleSelectNetwork = (network: Network) => {
+  const handleSelectNetwork = useCallback((network: Network) => {
     setInputValue(network.url);
     setIsDropdownOpen(false);
-    networkStore.testConnection(network.url);
-  };
+    testConnection(network.url);
+  }, [testConnection]);
 
-  const handleKeyDown = (e: KeyboardEvent) => {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       handleConnect();
     } else if (e.key === 'Escape') {
       setIsDropdownOpen(false);
     }
-  };
+  }, [handleConnect]);
 
-  const handleToggleFavorite = (e: MouseEvent, url: string) => {
+  const handleToggleFavorite = useCallback((e: React.MouseEvent, url: string) => {
     e.stopPropagation();
-    networkStore.toggleFavorite(url);
-  };
-
-  const statusIcon = (status: ConnectionStatus) => {
-    switch (status) {
-      case 'testing':
-        return (
-          <svg class="w-4 h-4 animate-spin text-text-muted" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-          </svg>
-        );
-      case 'connected':
-        return (
-          <svg class="w-4 h-4 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-          </svg>
-        );
-      case 'failed':
-        return (
-          <svg class="w-4 h-4 text-danger" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        );
-      default:
-        return null;
-    }
-  };
-
-  const favorites = () => networkStore.favoriteNetworks();
-  const recents = () => networkStore.recentNetworks();
-  const hasNetworks = () => favorites().length > 0 || recents().length > 0;
+    toggleFavorite(url);
+  }, [toggleFavorite]);
 
   return (
-    <div class={clsx('flex flex-col gap-2', props.class)} ref={dropdownRef}>
+    <div className={clsx('flex flex-col gap-2', className)} ref={dropdownRef}>
       {/* Label */}
-      <label class="text-xs font-semibold uppercase tracking-wide text-text-secondary">
+      <label className="text-xs font-semibold uppercase tracking-wide text-text-secondary">
         Network
-        <Show when={networkStore.connectionError()}>
-          <span class="text-danger font-normal normal-case"> - {networkStore.connectionError()}</span>
-        </Show>
+        {connectionError && (
+          <span className="text-danger font-normal normal-case"> - {connectionError}</span>
+        )}
       </label>
 
       {/* Input with dropdown */}
-      <div class="relative">
-        <div class="flex gap-2">
-          <div class="relative flex-1">
+      <div className="relative">
+        <div className="flex gap-2">
+          <div className="relative flex-1">
             <input
-              ref={inputRef}
               type="url"
-              value={inputValue()}
-              onInput={(e) => setInputValue(e.currentTarget.value)}
-              onFocus={() => hasNetworks() && setIsDropdownOpen(true)}
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onFocus={() => hasNetworks && setIsDropdownOpen(true)}
               onKeyDown={handleKeyDown}
               placeholder="https://chat.example.com"
-              class={clsx(
+              className={clsx(
                 'w-full h-10 pl-3 pr-10 rounded-md bg-bg-tertiary text-text-primary',
                 'border outline-none transition-colors',
                 'placeholder:text-text-muted',
-                networkStore.connectionStatus() === 'connected'
+                connectionStatus === 'connected'
                   ? 'border-success'
-                  : networkStore.connectionStatus() === 'failed'
+                  : connectionStatus === 'failed'
                   ? 'border-danger'
                   : 'border-transparent focus:border-accent'
               )}
             />
-            
             {/* Status indicator inside input */}
-            <div class="absolute right-3 top-1/2 -translate-y-1/2">
-              {statusIcon(networkStore.connectionStatus())}
+            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+              <StatusIcon status={connectionStatus} />
             </div>
           </div>
 
           {/* Connect button */}
           <button
             onClick={handleConnect}
-            disabled={!inputValue().trim() || networkStore.connectionStatus() === 'testing'}
-            class={clsx(
+            disabled={!inputValue.trim() || connectionStatus === 'testing'}
+            className={clsx(
               'px-4 h-10 rounded-md font-medium transition-colors',
               'bg-accent hover:bg-accent-hover text-white',
               'disabled:opacity-50 disabled:cursor-not-allowed'
             )}
           >
-            {networkStore.connectionStatus() === 'testing' ? 'Testing...' : 'Connect'}
+            {connectionStatus === 'testing' ? 'Testing...' : 'Connect'}
           </button>
 
           {/* Favorite button */}
-          <Show when={networkStore.connectionStatus() === 'connected'}>
+          {connectionStatus === 'connected' && (
             <button
-              onClick={() => networkStore.toggleFavorite(inputValue())}
-              class={clsx(
+              onClick={() => toggleFavorite(inputValue)}
+              className={clsx(
                 'w-10 h-10 rounded-md flex items-center justify-center transition-colors',
                 'hover:bg-bg-modifier-hover',
-                networkStore.currentNetwork()?.isFavorite ? 'text-warning' : 'text-text-muted'
+                currentNet?.isFavorite ? 'text-warning' : 'text-text-muted'
               )}
-              title={networkStore.currentNetwork()?.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+              title={currentNet?.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
             >
-              <svg class="w-5 h-5" fill={networkStore.currentNetwork()?.isFavorite ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+              <svg className="w-5 h-5" fill={currentNet?.isFavorite ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
               </svg>
             </button>
-          </Show>
+          )}
         </div>
 
         {/* Dropdown */}
-        <Show when={isDropdownOpen() && hasNetworks()}>
-          <div class="absolute z-50 top-full left-0 right-0 mt-1 py-1 bg-bg-tertiary rounded-md shadow-high border border-border max-h-64 overflow-y-auto">
+        {isDropdownOpen && hasNetworks && (
+          <div className="absolute z-50 top-full left-0 right-0 mt-1 py-1 bg-bg-tertiary rounded-md shadow-high border border-border max-h-64 overflow-y-auto">
             {/* Default network */}
-            <Show when={networkStore.defaultNetwork()}>
-              <div class="px-2 py-1">
-                <div class="text-xs font-semibold uppercase text-text-muted px-2 py-1">Default</div>
+            {defaultNet && (
+              <div className="px-2 py-1">
+                <div className="text-xs font-semibold uppercase text-text-muted px-2 py-1">Default</div>
                 <NetworkItem
-                  network={networkStore.defaultNetwork()!}
-                  isSelected={inputValue() === networkStore.defaultNetwork()!.url}
+                  network={defaultNet}
+                  isSelected={inputValue === defaultNet.url}
                   onSelect={handleSelectNetwork}
                   onToggleFavorite={handleToggleFavorite}
                   showDefault
                 />
               </div>
-            </Show>
+            )}
 
             {/* Favorites */}
-            <Show when={favorites().length > 0}>
-              <div class="px-2 py-1">
-                <div class="text-xs font-semibold uppercase text-text-muted px-2 py-1 flex items-center gap-1">
-                  <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+            {favorites.length > 0 && (
+              <div className="px-2 py-1">
+                <div className="text-xs font-semibold uppercase text-text-muted px-2 py-1 flex items-center gap-1">
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
                   </svg>
                   Favorites
                 </div>
-                <For each={favorites().filter(n => !n.isDefault)}>
-                  {(network) => (
-                    <NetworkItem
-                      network={network}
-                      isSelected={inputValue() === network.url}
-                      onSelect={handleSelectNetwork}
-                      onToggleFavorite={handleToggleFavorite}
-                    />
-                  )}
-                </For>
+                {favorites.filter((n) => !n.isDefault).map((network) => (
+                  <NetworkItem
+                    key={network.url}
+                    network={network}
+                    isSelected={inputValue === network.url}
+                    onSelect={handleSelectNetwork}
+                    onToggleFavorite={handleToggleFavorite}
+                  />
+                ))}
               </div>
-            </Show>
+            )}
 
             {/* Recents */}
-            <Show when={recents().length > 0}>
-              <div class="px-2 py-1">
-                <div class="text-xs font-semibold uppercase text-text-muted px-2 py-1 flex items-center gap-1">
-                  <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            {recents.length > 0 && (
+              <div className="px-2 py-1">
+                <div className="text-xs font-semibold uppercase text-text-muted px-2 py-1 flex items-center gap-1">
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   Recent
                 </div>
-                <For each={recents()}>
-                  {(network) => (
-                    <NetworkItem
-                      network={network}
-                      isSelected={inputValue() === network.url}
-                      onSelect={handleSelectNetwork}
-                      onToggleFavorite={handleToggleFavorite}
-                    />
-                  )}
-                </For>
+                {recents.map((network) => (
+                  <NetworkItem
+                    key={network.url}
+                    network={network}
+                    isSelected={inputValue === network.url}
+                    onSelect={handleSelectNetwork}
+                    onToggleFavorite={handleToggleFavorite}
+                  />
+                ))}
               </div>
-            </Show>
+            )}
           </div>
-        </Show>
+        )}
       </div>
 
       {/* Connection info */}
-      <Show when={networkStore.connectionStatus() === 'connected' && networkStore.serverInfo()}>
-        <div class="flex items-center gap-2 text-sm text-success">
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+      {connectionStatus === 'connected' && serverInfo && (
+        <div className="flex items-center gap-2 text-sm text-success">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
           </svg>
           <span>
-            Connected to "{networkStore.serverInfo()!.name}" v{networkStore.serverInfo()!.version}
+            Connected to &quot;{serverInfo.name}&quot; v{serverInfo.version}
           </span>
         </div>
-      </Show>
+      )}
 
       {/* Options row */}
-      <Show when={networkStore.connectionStatus() === 'connected'}>
-        <div class="flex items-center gap-4 text-sm">
-          <Show when={props.showSetDefaultCheckbox}>
-            <label class="flex items-center gap-2 cursor-pointer text-text-secondary hover:text-text-primary">
+      {connectionStatus === 'connected' && (
+        <div className="flex items-center gap-4 text-sm">
+          {showSetDefaultCheckbox && (
+            <label className="flex items-center gap-2 cursor-pointer text-text-secondary hover:text-text-primary">
               <input
                 type="checkbox"
-                checked={setAsDefault() || networkStore.currentNetwork()?.isDefault}
+                checked={setAsDefault || !!currentNet?.isDefault}
                 onChange={(e) => {
-                  setSetAsDefault(e.currentTarget.checked);
-                  if (e.currentTarget.checked) {
-                    networkStore.setAsDefault(inputValue());
+                  setSetAsDefault(e.target.checked);
+                  if (e.target.checked) {
+                    storeSetAsDefault(inputValue);
                   } else {
-                    networkStore.setAsDefault(null);
+                    storeSetAsDefault(null);
                   }
                 }}
-                class="w-4 h-4 rounded border-border bg-bg-tertiary accent-accent"
+                className="w-4 h-4 rounded border-border bg-bg-tertiary accent-accent"
               />
               Set as default
             </label>
-          </Show>
+          )}
 
-          <Show when={props.showAutoLoginToggle}>
-            <label class="flex items-center gap-2 cursor-pointer text-text-secondary hover:text-text-primary">
+          {showAutoLoginToggle && (
+            <label className="flex items-center gap-2 cursor-pointer text-text-secondary hover:text-text-primary">
               <input
                 type="checkbox"
-                checked={networkStore.autoLogin()}
-                onChange={(e) => networkStore.setAutoLogin(e.currentTarget.checked)}
-                class="w-4 h-4 rounded border-border bg-bg-tertiary accent-accent"
+                checked={autoLogin}
+                onChange={(e) => setAutoLogin(e.target.checked)}
+                className="w-4 h-4 rounded border-border bg-bg-tertiary accent-accent"
               />
               Auto-login on startup
             </label>
-          </Show>
+          )}
         </div>
-      </Show>
+      )}
     </div>
   );
+}
+
+function StatusIcon({ status }: { status: ConnectionStatus }) {
+  switch (status) {
+    case 'testing':
+      return (
+        <svg className="w-4 h-4 animate-spin text-text-muted" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+        </svg>
+      );
+    case 'connected':
+      return (
+        <svg className="w-4 h-4 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+        </svg>
+      );
+    case 'failed':
+      return (
+        <svg className="w-4 h-4 text-danger" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      );
+    default:
+      return null;
+  }
 }
 
 interface NetworkItemProps {
   network: Network;
   isSelected: boolean;
   onSelect: (network: Network) => void;
-  onToggleFavorite: (e: MouseEvent, url: string) => void;
+  onToggleFavorite: (e: React.MouseEvent, url: string) => void;
   showDefault?: boolean;
 }
 
-function NetworkItem(props: NetworkItemProps) {
+function NetworkItem({ network, isSelected, onSelect, onToggleFavorite }: NetworkItemProps) {
   const displayUrl = () => {
     try {
-      const url = new URL(props.network.url);
-      return url.host;
+      return new URL(network.url).host;
     } catch {
-      return props.network.url;
+      return network.url;
     }
   };
 
   return (
     <button
-      onClick={() => props.onSelect(props.network)}
-      class={clsx(
+      onClick={() => onSelect(network)}
+      className={clsx(
         'flex items-center gap-2 w-full px-2 py-2 rounded text-left transition-colors',
-        props.isSelected ? 'bg-bg-modifier-selected' : 'hover:bg-bg-modifier-hover'
+        isSelected ? 'bg-bg-modifier-selected' : 'hover:bg-bg-modifier-hover'
       )}
     >
       {/* Favorite star */}
       <button
-        onClick={(e) => props.onToggleFavorite(e, props.network.url)}
-        class={clsx(
+        onClick={(e) => onToggleFavorite(e, network.url)}
+        className={clsx(
           'p-1 rounded hover:bg-bg-modifier-active',
-          props.network.isFavorite ? 'text-warning' : 'text-text-muted'
+          network.isFavorite ? 'text-warning' : 'text-text-muted'
         )}
       >
-        <svg class="w-4 h-4" fill={props.network.isFavorite ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+        <svg className="w-4 h-4" fill={network.isFavorite ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
         </svg>
       </button>
 
       {/* Network info */}
-      <div class="flex-1 min-w-0">
-        <div class="flex items-center gap-2">
-          <span class="font-medium text-text-primary truncate">{props.network.name}</span>
-          <Show when={props.network.isDefault}>
-            <span class="text-xs bg-accent/20 text-accent px-1.5 py-0.5 rounded">Default</span>
-          </Show>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-text-primary truncate">{network.name}</span>
+          {network.isDefault && (
+            <span className="text-xs bg-accent/20 text-accent px-1.5 py-0.5 rounded">Default</span>
+          )}
         </div>
-        <div class="text-xs text-text-muted truncate">{displayUrl()}</div>
+        <div className="text-xs text-text-muted truncate">{displayUrl()}</div>
       </div>
 
       {/* Account count */}
-      <Show when={props.network.accounts.length > 0}>
-        <span class="text-xs text-text-muted">
-          {props.network.accounts.length} account{props.network.accounts.length !== 1 ? 's' : ''}
+      {network.accounts.length > 0 && (
+        <span className="text-xs text-text-muted">
+          {network.accounts.length} account{network.accounts.length !== 1 ? 's' : ''}
         </span>
-      </Show>
+      )}
     </button>
   );
 }

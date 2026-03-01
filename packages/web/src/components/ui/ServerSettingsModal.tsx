@@ -1,5 +1,5 @@
-import { createSignal, For, Show, JSX, createEffect } from 'solid-js';
-import { Portal } from 'solid-js/web';
+import { useState, useEffect, useMemo, ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { clsx } from 'clsx';
 import { api } from '@/api';
 import { permissions } from '@/stores';
@@ -48,13 +48,13 @@ interface ServerSettingsModalProps {
   onTransferOwnership?: () => void;
 }
 
-const tabs: { id: ServerSettingsTab; label: string; icon: JSX.Element; permission?: string }[] = [
+const tabs: { id: ServerSettingsTab; label: string; icon: ReactNode; permission?: string }[] = [
   {
     id: 'general',
     label: 'General',
     icon: (
-      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
       </svg>
     ),
     permission: 'manage_server',
@@ -63,8 +63,8 @@ const tabs: { id: ServerSettingsTab; label: string; icon: JSX.Element; permissio
     id: 'roles',
     label: 'Roles',
     icon: (
-      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
       </svg>
     ),
     permission: 'manage_roles',
@@ -73,8 +73,8 @@ const tabs: { id: ServerSettingsTab; label: string; icon: JSX.Element; permissio
     id: 'members',
     label: 'Members',
     icon: (
-      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
       </svg>
     ),
     permission: 'manage_members',
@@ -83,8 +83,8 @@ const tabs: { id: ServerSettingsTab; label: string; icon: JSX.Element; permissio
     id: 'channels',
     label: 'Channels',
     icon: (
-      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
       </svg>
     ),
     permission: 'manage_channels',
@@ -93,8 +93,8 @@ const tabs: { id: ServerSettingsTab; label: string; icon: JSX.Element; permissio
     id: 'soundboard',
     label: 'Soundboard',
     icon: (
-      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
       </svg>
     ),
     permission: 'manage_server',
@@ -103,8 +103,8 @@ const tabs: { id: ServerSettingsTab; label: string; icon: JSX.Element; permissio
     id: 'afk',
     label: 'AFK',
     icon: (
-      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
       </svg>
     ),
     permission: 'manage_server',
@@ -113,8 +113,8 @@ const tabs: { id: ServerSettingsTab; label: string; icon: JSX.Element; permissio
     id: 'invites',
     label: 'Invites',
     icon: (
-      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
       </svg>
     ),
     permission: 'manage_invites',
@@ -123,8 +123,8 @@ const tabs: { id: ServerSettingsTab; label: string; icon: JSX.Element; permissio
     id: 'bans',
     label: 'Bans',
     icon: (
-      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
       </svg>
     ),
     permission: 'ban_members',
@@ -133,39 +133,39 @@ const tabs: { id: ServerSettingsTab; label: string; icon: JSX.Element; permissio
     id: 'audit-log',
     label: 'Audit Log',
     icon: (
-      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
       </svg>
     ),
     permission: 'view_audit_log',
   },
 ];
 
-export function ServerSettingsModal(props: ServerSettingsModalProps) {
-  const [activeTab, setActiveTab] = createSignal<ServerSettingsTab>('general');
-  const [serverData, setServerData] = createSignal<ServerData | null>(null);
-  const [channels, setChannels] = createSignal<Channel[]>([]);
-  const [isLoading, setIsLoading] = createSignal(false);
+export function ServerSettingsModal({ isOpen, onClose, serverName, serverIcon, serverOwnerId, onTransferOwnership }: ServerSettingsModalProps) {
+  const [activeTab, setActiveTab] = useState<ServerSettingsTab>('general');
+  const [serverData, setServerData] = useState<ServerData | null>(null);
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
   // Check permissions using the new named boolean system
   const hasPermission = (permission?: string) => {
     if (!permission) return true;
     // Owner always has access
-    if (permissions.isOwner(props.serverOwnerId)) return true;
+    if (permissions.isOwner(serverOwnerId)) return true;
     // Admin always has access
     if (permissions.isAdmin()) return true;
     // Check specific permission
     return permissions.hasPermission(permission as any);
   };
 
-  const visibleTabs = () => tabs.filter((tab) => hasPermission(tab.permission));
+  const visibleTabs = tabs.filter((tab) => hasPermission(tab.permission));
 
   // Fetch server data when modal opens
-  createEffect(() => {
-    if (props.isOpen) {
+  useEffect(() => {
+    if (isOpen) {
       fetchServerData();
     }
-  });
+  }, [isOpen]);
 
   const fetchServerData = async () => {
     setIsLoading(true);
@@ -183,137 +183,125 @@ export function ServerSettingsModal(props: ServerSettingsModalProps) {
     }
   };
 
-  const handleKeyDown = (e: KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
-      props.onClose();
+      onClose();
     }
   };
 
-  return (
-    <Show when={props.isOpen}>
-      <Portal>
-        <div
-          class="fixed inset-0 z-50 flex bg-bg-primary animate-in fade-in duration-200"
-          onKeyDown={handleKeyDown}
-          role="dialog"
-          aria-modal="true"
-          aria-label="Server Settings"
-        >
-          {/* Sidebar */}
-          <div class="w-[218px] bg-bg-secondary flex flex-col">
-            <div class="flex-1 overflow-y-auto py-[60px] px-[6px]">
-              <div class="pr-2">
-                <div class="px-2 pb-1.5">
-                  <span class="text-xs font-bold uppercase text-text-muted tracking-wide truncate" title={props.serverName}>
-                    {props.serverName}
-                  </span>
-                </div>
-                <For each={visibleTabs()}>
-                  {(tab) => (
-                    <button
-                      onClick={() => setActiveTab(tab.id)}
-                      class={clsx(
-                        'w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-sm transition-colors',
-                        activeTab() === tab.id
-                          ? 'bg-bg-modifier-selected text-text-primary'
-                          : 'text-text-muted hover:bg-bg-modifier-hover hover:text-text-primary'
-                      )}
-                    >
-                      {tab.icon}
-                      {tab.label}
-                    </button>
-                  )}
-                </For>
+  if (!isOpen) return null;
 
-                <div class="h-px bg-border-subtle my-2 mx-2" />
-
-                {/* Danger Zone */}
-                <div class="px-2 pb-1.5 pt-2">
-                  <span class="text-xs font-bold uppercase text-danger tracking-wide">
-                    Danger Zone
-                  </span>
-                </div>
-                <button class="w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-sm text-danger hover:bg-danger/10 transition-colors">
-                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                  </svg>
-                  Leave Server
-                </button>
-              </div>
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex bg-bg-primary animate-in fade-in duration-200"
+      onKeyDown={handleKeyDown}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Server Settings"
+    >
+      {/* Sidebar */}
+      <div className="w-[218px] bg-bg-secondary flex flex-col">
+        <div className="flex-1 overflow-y-auto py-[60px] px-[6px]">
+          <div className="pr-2">
+            <div className="px-2 pb-1.5">
+              <span className="text-xs font-bold uppercase text-text-muted tracking-wide truncate" title={serverName}>
+                {serverName}
+              </span>
             </div>
-          </div>
-
-          {/* Content */}
-          <div class="flex-1 flex flex-col bg-bg-primary">
-            {/* Close button */}
-            <div class="absolute top-4 right-4 z-10">
+            {visibleTabs.map((tab) => (
               <button
-                onClick={props.onClose}
-                class="p-2 rounded-full border-2 border-text-muted text-text-muted hover:border-text-primary hover:text-text-primary transition-colors"
-                aria-label="Close"
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={clsx(
+                  'w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-sm transition-colors',
+                  activeTab === tab.id
+                    ? 'bg-bg-modifier-selected text-text-primary'
+                    : 'text-text-muted hover:bg-bg-modifier-hover hover:text-text-primary'
+                )}
               >
-                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                {tab.icon}
+                {tab.label}
               </button>
-              <div class="text-xs text-text-muted text-center mt-1">ESC</div>
-            </div>
+            ))}
 
-            {/* Tab content */}
-            <div class="flex-1 overflow-y-auto py-[60px] px-10">
-              <div class="max-w-[740px] mx-auto">
-                <Show when={isLoading()} fallback={
-                  <>
-                    <Show when={activeTab() === 'general'}>
-                      <ServerPopupConfigForm
-                        serverId={serverData()?.id || ''}
-                        isOwner={permissions.isOwner(props.serverOwnerId)}
-                        onTransferOwnership={props.onTransferOwnership}
-                        onSaveSuccess={fetchServerData}
-                      />
-                    </Show>
-                    <Show when={activeTab() === 'roles'}>
-                      <RolesTab />
-                    </Show>
-                    <Show when={activeTab() === 'members'}>
-                      <MembersTab />
-                    </Show>
-                    <Show when={activeTab() === 'channels'}>
-                      <ChannelsTab serverData={serverData()} onRefresh={fetchServerData} />
-                    </Show>
-                    <Show when={activeTab() === 'invites'}>
-                      <InvitesTab />
-                    </Show>
-                    <Show when={activeTab() === 'bans'}>
-                      <BansTab />
-                    </Show>
-                    <Show when={activeTab() === 'soundboard'}>
-                      <SoundboardSettingsTab serverId={serverData()?.id || ''} />
-                    </Show>
-                    <Show when={activeTab() === 'afk'}>
-                      <AfkSettingsTab
-                        serverId={serverData()?.id || ''}
-                        afkTimeout={serverData()?.settings?.afk_timeout || 300}
-                        afkChannelId={serverData()?.settings?.afk_channel_id || null}
-                        voiceChannels={channels().filter(c => c.type === 'voice')}
-                        onSave={fetchServerData}
-                      />
-                    </Show>
-                    <Show when={activeTab() === 'audit-log'}>
-                      <AuditLogTab />
-                    </Show>
-                  </>
-                }>
-                  <div class="flex items-center justify-center h-64">
-                    <div class="text-text-muted">Loading...</div>
-                  </div>
-                </Show>
-              </div>
+            <div className="h-px bg-border-subtle my-2 mx-2" />
+
+            {/* Danger Zone */}
+            <div className="px-2 pb-1.5 pt-2">
+              <span className="text-xs font-bold uppercase text-danger tracking-wide">
+                Danger Zone
+              </span>
             </div>
+            <button className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-sm text-danger hover:bg-danger/10 transition-colors">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              Leave Server
+            </button>
           </div>
         </div>
-      </Portal>
-    </Show >
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 flex flex-col bg-bg-primary">
+        {/* Close button */}
+        <div className="absolute top-4 right-4 z-10">
+          <button
+            onClick={onClose}
+            className="p-2 rounded-full border-2 border-text-muted text-text-muted hover:border-text-primary hover:text-text-primary transition-colors"
+            aria-label="Close"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          <div className="text-xs text-text-muted text-center mt-1">ESC</div>
+        </div>
+
+        {/* Tab content */}
+        <div className="flex-1 overflow-y-auto py-[60px] px-10">
+          <div className="max-w-[740px] mx-auto">
+            {isLoading ? (
+              <div className="flex items-center justify-center h-64">
+                <div className="text-text-muted">Loading...</div>
+              </div>
+            ) : (
+              <>
+                {activeTab === 'general' && (
+                  <ServerPopupConfigForm
+                    serverId={serverData?.id || ''}
+                    isOwner={permissions.isOwner(serverOwnerId)}
+                    onTransferOwnership={onTransferOwnership}
+                    onSaveSuccess={fetchServerData}
+                  />
+                )}
+                {activeTab === 'roles' && <RolesTab />}
+                {activeTab === 'members' && <MembersTab />}
+                {activeTab === 'channels' && (
+                  <ChannelsTab serverData={serverData} onRefresh={fetchServerData} />
+                )}
+                {activeTab === 'invites' && <InvitesTab />}
+                {activeTab === 'bans' && <BansTab />}
+                {activeTab === 'soundboard' && (
+                  <SoundboardSettingsTab serverId={serverData?.id || ''} />
+                )}
+                {activeTab === 'afk' && (
+                  <AfkSettingsTab
+                    serverId={serverData?.id || ''}
+                    afkTimeout={serverData?.settings?.afk_timeout || 300}
+                    afkChannelId={serverData?.settings?.afk_channel_id || null}
+                    voiceChannels={channels.filter(c => c.type === 'voice')}
+                    onSave={fetchServerData}
+                  />
+                )}
+                {activeTab === 'audit-log' && <AuditLogTab />}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 
@@ -329,23 +317,23 @@ interface Role {
 }
 
 function RolesTab() {
-  const [roles, setRoles] = createSignal<Role[]>([]);
-  const [selectedRole, setSelectedRole] = createSignal<Role | null>(null);
-  const [isLoading, setIsLoading] = createSignal(true);
-  const [isSaving, setIsSaving] = createSignal(false);
-  const [error, setError] = createSignal<string | null>(null);
-  const [isCreating, setIsCreating] = createSignal(false);
-  const [newRoleName, setNewRoleName] = createSignal('');
-  const [createError, setCreateError] = createSignal('');
-  const [roleSearch, setRoleSearch] = createSignal('');
-  const [showDeleteConfirm, setShowDeleteConfirm] = createSignal(false);
-  const [saveSuccess, setSaveSuccess] = createSignal(false);
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [selectedRole, setSelectedRole] = useState<Role | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [newRoleName, setNewRoleName] = useState('');
+  const [createError, setCreateError] = useState('');
+  const [roleSearch, setRoleSearch] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Editable role state
-  const [editName, setEditName] = createSignal('');
-  const [editColor, setEditColor] = createSignal('');
-  const [editPermissions, setEditPermissions] = createSignal<Record<string, boolean>>({});
-  const [editHoisted, setEditHoisted] = createSignal(false);
+  const [editName, setEditName] = useState('');
+  const [editColor, setEditColor] = useState('');
+  const [editPermissions, setEditPermissions] = useState<Record<string, boolean>>({});
+  const [editHoisted, setEditHoisted] = useState(false);
 
   // Preset colors for quick selection
   const PRESET_COLORS = [
@@ -405,29 +393,27 @@ function RolesTab() {
   ];
 
   // Track unsaved changes
-  const hasUnsavedChanges = () => {
-    const role = selectedRole();
-    if (!role) return false;
-    if (editName() !== role.name) return true;
-    if (editColor() !== (role.color || '')) return true;
-    if (editHoisted() !== (role.is_hoisted ?? false)) return true;
-    const currentPerms = editPermissions();
-    const savedPerms = role.permissions;
-    for (const key of Object.keys(currentPerms)) {
-      if (currentPerms[key] !== (savedPerms[key] ?? false)) return true;
+  const hasUnsavedChanges = useMemo(() => {
+    if (!selectedRole) return false;
+    if (editName !== selectedRole.name) return true;
+    if (editColor !== (selectedRole.color || '')) return true;
+    if (editHoisted !== (selectedRole.is_hoisted ?? false)) return true;
+    const savedPerms = selectedRole.permissions;
+    for (const key of Object.keys(editPermissions)) {
+      if (editPermissions[key] !== (savedPerms[key] ?? false)) return true;
     }
     for (const key of Object.keys(savedPerms)) {
-      if (savedPerms[key] !== (currentPerms[key] ?? false)) return true;
+      if (savedPerms[key] !== (editPermissions[key] ?? false)) return true;
     }
     return false;
-  };
+  }, [selectedRole, editName, editColor, editHoisted, editPermissions]);
 
-  const filteredRoles = () => {
-    const search = roleSearch().toLowerCase();
-    const sorted = roles().sort((a, b) => b.position - a.position);
+  const filteredRoles = useMemo(() => {
+    const search = roleSearch.toLowerCase();
+    const sorted = [...roles].sort((a, b) => b.position - a.position);
     if (!search) return sorted;
     return sorted.filter(r => r.name.toLowerCase().includes(search));
-  };
+  }, [roles, roleSearch]);
 
   const fetchRoles = async () => {
     setIsLoading(true);
@@ -442,9 +428,9 @@ function RolesTab() {
     }
   };
 
-  createEffect(() => {
+  useEffect(() => {
     fetchRoles();
-  });
+  }, []);
 
   const selectRole = (role: Role) => {
     setSelectedRole(role);
@@ -457,7 +443,7 @@ function RolesTab() {
   };
 
   const handleCreateRole = async () => {
-    if (!newRoleName().trim()) {
+    if (!newRoleName.trim()) {
       setCreateError('Role name is required');
       return;
     }
@@ -465,7 +451,7 @@ function RolesTab() {
     setCreateError('');
     setIsCreating(true);
     try {
-      const newRole = await api.post<Role>('/roles', { name: newRoleName() });
+      const newRole = await api.post<Role>('/roles', { name: newRoleName });
       setRoles(prev => [...prev, newRole]);
       setNewRoleName('');
       selectRole(newRole);
@@ -477,19 +463,18 @@ function RolesTab() {
   };
 
   const handleSaveRole = async () => {
-    const role = selectedRole();
-    if (!role) return;
+    if (!selectedRole) return;
 
     setIsSaving(true);
     setSaveSuccess(false);
     try {
-      const updated = await api.patch<Role>(`/roles/${role.id}`, {
-        name: editName(),
-        color: editColor() || null,
-        permissions: editPermissions(),
-        is_hoisted: editHoisted(),
+      const updated = await api.patch<Role>(`/roles/${selectedRole.id}`, {
+        name: editName,
+        color: editColor || null,
+        permissions: editPermissions,
+        is_hoisted: editHoisted,
       });
-      setRoles(prev => prev.map(r => r.id === role.id ? updated : r));
+      setRoles(prev => prev.map(r => r.id === selectedRole.id ? updated : r));
       setSelectedRole(updated);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2000);
@@ -501,12 +486,11 @@ function RolesTab() {
   };
 
   const handleDeleteRole = async () => {
-    const role = selectedRole();
-    if (!role) return;
+    if (!selectedRole) return;
 
     try {
-      await api.delete(`/roles/${role.id}`);
-      setRoles(prev => prev.filter(r => r.id !== role.id));
+      await api.delete(`/roles/${selectedRole.id}`);
+      setRoles(prev => prev.filter(r => r.id !== selectedRole.id));
       setSelectedRole(null);
       setShowDeleteConfirm(false);
     } catch (err: any) {
@@ -519,289 +503,281 @@ function RolesTab() {
   };
 
   return (
-    <div class="flex gap-0 h-[calc(100vh-120px)] min-h-[500px]">
+    <div className="flex gap-0 h-[calc(100vh-120px)] min-h-[500px]">
       {/* Role List Sidebar */}
-      <div class="w-60 flex-shrink-0 border-r border-border-subtle pr-4 flex flex-col">
-        <div class="flex items-center justify-between mb-3">
-          <div class="flex items-center gap-2">
-            <h3 class="text-sm font-semibold text-text-muted uppercase">Roles</h3>
-            <span class="text-xs bg-bg-tertiary text-text-muted px-1.5 py-0.5 rounded-full font-medium">
-              {roles().length}
+      <div className="w-60 flex-shrink-0 border-r border-border-subtle pr-4 flex flex-col">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-text-muted uppercase">Roles</h3>
+            <span className="text-xs bg-bg-tertiary text-text-muted px-1.5 py-0.5 rounded-full font-medium">
+              {roles.length}
             </span>
           </div>
         </div>
 
         {/* Search roles */}
-        <div class="mb-3">
-          <div class="relative">
-            <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        <div className="mb-3">
+          <div className="relative">
+            <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
             <input
               type="text"
-              value={roleSearch()}
-              onInput={(e) => setRoleSearch(e.currentTarget.value)}
+              value={roleSearch}
+              onChange={(e) => setRoleSearch(e.target.value)}
               placeholder="Search roles..."
-              class="w-full pl-8 pr-2 py-1.5 bg-bg-tertiary border border-border-subtle rounded-md text-xs text-text-primary focus:outline-none focus:border-brand-primary placeholder-text-muted"
+              className="w-full pl-8 pr-2 py-1.5 bg-bg-tertiary border border-border-subtle rounded-md text-xs text-text-primary focus:outline-none focus:border-brand-primary placeholder-text-muted"
             />
           </div>
         </div>
 
-        <Show when={isLoading()}>
-          <div class="flex items-center justify-center py-8">
-            <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-brand-primary" />
+        {isLoading && (
+          <div className="flex items-center justify-center py-8">
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-brand-primary" />
           </div>
-        </Show>
+        )}
 
-        <Show when={error() && !selectedRole()}>
-          <div class="text-sm text-danger mb-2 bg-danger/10 rounded-md p-2">{error()}</div>
-        </Show>
+        {error && !selectedRole && (
+          <div className="text-sm text-danger mb-2 bg-danger/10 rounded-md p-2">{error}</div>
+        )}
 
-        <Show when={!isLoading()}>
-          {/* Role list */}
-          <div class="flex-1 overflow-y-auto space-y-0.5 mb-3">
-            <For each={filteredRoles()}>
-              {(role) => (
+        {!isLoading && (
+          <>
+            {/* Role list */}
+            <div className="flex-1 overflow-y-auto space-y-0.5 mb-3">
+              {filteredRoles.map((role) => (
                 <button
+                  key={role.id}
                   onClick={() => selectRole(role)}
-                  class={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm text-left transition-all ${selectedRole()?.id === role.id
+                  className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm text-left transition-all ${selectedRole?.id === role.id
                     ? 'bg-bg-modifier-selected text-text-primary ring-1 ring-brand-primary/30'
                     : 'text-text-secondary hover:bg-bg-modifier-hover'
                     }`}
                 >
                   <div
-                    class="w-3 h-3 rounded-full flex-shrink-0 ring-1 ring-white/10"
+                    className="w-3 h-3 rounded-full flex-shrink-0 ring-1 ring-white/10"
                     style={{ background: role.color || '#99aab5' }}
                   />
-                  <span class="truncate font-medium">{role.name}</span>
+                  <span className="truncate font-medium">{role.name}</span>
                 </button>
-              )}
-            </For>
-          </div>
-
-          {/* Create role input */}
-          <div class="border-t border-border-subtle pt-3">
-            <div class="flex gap-2">
-              <input
-                type="text"
-                value={newRoleName()}
-                onInput={(e) => {
-                  setNewRoleName(e.currentTarget.value);
-                  if (createError()) setCreateError('');
-                }}
-                placeholder="New role name..."
-                class={`flex-1 px-2.5 py-1.5 bg-bg-tertiary border rounded-md text-sm text-text-primary focus:outline-none focus:border-brand-primary ${createError() ? 'border-danger' : 'border-border-subtle'
-                  }`}
-                onKeyDown={(e) => e.key === 'Enter' && handleCreateRole()}
-              />
-              <button
-                onClick={handleCreateRole}
-                disabled={isCreating()}
-                class="p-1.5 bg-brand-primary text-white rounded-md hover:bg-brand-hover transition-colors disabled:opacity-50"
-                title="Create role"
-              >
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                </svg>
-              </button>
+              ))}
             </div>
-            <Show when={createError()}>
-              <p class="text-xs text-danger mt-1">{createError()}</p>
-            </Show>
-          </div>
-        </Show>
+
+            {/* Create role input */}
+            <div className="border-t border-border-subtle pt-3">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newRoleName}
+                  onChange={(e) => {
+                    setNewRoleName(e.target.value);
+                    if (createError) setCreateError('');
+                  }}
+                  placeholder="New role name..."
+                  className={`flex-1 px-2.5 py-1.5 bg-bg-tertiary border rounded-md text-sm text-text-primary focus:outline-none focus:border-brand-primary ${createError ? 'border-danger' : 'border-border-subtle'
+                    }`}
+                  onKeyDown={(e) => e.key === 'Enter' && handleCreateRole()}
+                />
+                <button
+                  onClick={handleCreateRole}
+                  disabled={isCreating}
+                  className="p-1.5 bg-brand-primary text-white rounded-md hover:bg-brand-hover transition-colors disabled:opacity-50"
+                  title="Create role"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                </button>
+              </div>
+              {createError && (
+                <p className="text-xs text-danger mt-1">{createError}</p>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Role Editor */}
-      <div class="flex-1 overflow-y-auto pl-6 relative pb-16">
-        <Show
-          when={selectedRole()}
-          fallback={
-            <div class="flex flex-col items-center justify-center h-full text-text-muted gap-3">
-              <svg class="w-12 h-12 text-text-muted/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-              </svg>
-              <p class="text-sm">Select a role to edit its settings</p>
+      <div className="flex-1 overflow-y-auto pl-6 relative pb-16">
+        {selectedRole ? (
+          <>
+            {/* Header with role color preview */}
+            <div className="flex items-center gap-3 mb-6">
+              <div
+                className="w-5 h-5 rounded-full ring-2 ring-white/10"
+                style={{ background: editColor || '#99aab5' }}
+              />
+              <h2 className="text-lg font-bold text-text-primary">{editName || 'Untitled Role'}</h2>
             </div>
-          }
-        >
-          {/* Header with role color preview */}
-          <div class="flex items-center gap-3 mb-6">
-            <div
-              class="w-5 h-5 rounded-full ring-2 ring-white/10"
-              style={{ background: editColor() || '#99aab5' }}
-            />
-            <h2 class="text-lg font-bold text-text-primary">{editName() || 'Untitled Role'}</h2>
-          </div>
 
-          {/* Basic Info Card */}
-          <div class="bg-bg-secondary rounded-lg p-5 mb-4 border border-border-subtle">
-            <h3 class="text-xs font-semibold uppercase text-text-muted mb-4 tracking-wide">Role Settings</h3>
-            <div class="flex gap-4">
-              <div class="flex-1">
-                <label class="block text-xs font-semibold uppercase text-text-muted mb-1.5">Role Name</label>
-                <input
-                  type="text"
-                  value={editName()}
-                  onInput={(e) => setEditName(e.currentTarget.value)}
-                  class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded-md text-text-primary focus:outline-none focus:border-brand-primary"
-                />
-              </div>
-              <div>
-                <label class="block text-xs font-semibold uppercase text-text-muted mb-1.5">Color</label>
-                <div class="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={editColor() || '#99aab5'}
-                    onInput={(e) => setEditColor(e.currentTarget.value)}
-                    class="w-9 h-9 rounded-md cursor-pointer border border-border-subtle"
-                  />
+            {/* Basic Info Card */}
+            <div className="bg-bg-secondary rounded-lg p-5 mb-4 border border-border-subtle">
+              <h3 className="text-xs font-semibold uppercase text-text-muted mb-4 tracking-wide">Role Settings</h3>
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="block text-xs font-semibold uppercase text-text-muted mb-1.5">Role Name</label>
                   <input
                     type="text"
-                    value={editColor()}
-                    onInput={(e) => setEditColor(e.currentTarget.value)}
-                    placeholder="#99aab5"
-                    class="w-24 px-2 py-2 bg-bg-tertiary border border-border-subtle rounded-md text-text-primary text-sm focus:outline-none focus:border-brand-primary font-mono"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded-md text-text-primary focus:outline-none focus:border-brand-primary"
                   />
                 </div>
+                <div>
+                  <label className="block text-xs font-semibold uppercase text-text-muted mb-1.5">Color</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={editColor || '#99aab5'}
+                      onChange={(e) => setEditColor(e.target.value)}
+                      className="w-9 h-9 rounded-md cursor-pointer border border-border-subtle"
+                    />
+                    <input
+                      type="text"
+                      value={editColor}
+                      onChange={(e) => setEditColor(e.target.value)}
+                      placeholder="#99aab5"
+                      className="w-24 px-2 py-2 bg-bg-tertiary border border-border-subtle rounded-md text-text-primary text-sm focus:outline-none focus:border-brand-primary font-mono"
+                    />
+                  </div>
+                </div>
               </div>
-            </div>
 
-            {/* Color presets */}
-            <div class="mt-3">
-              <div class="flex flex-wrap gap-1.5">
-                <For each={PRESET_COLORS}>
-                  {(color) => (
+              {/* Color presets */}
+              <div className="mt-3">
+                <div className="flex flex-wrap gap-1.5">
+                  {PRESET_COLORS.map((color) => (
                     <button
+                      key={color}
                       onClick={() => setEditColor(color)}
-                      class={`w-6 h-6 rounded-md transition-all hover:scale-110 border ${editColor() === color ? 'ring-2 ring-brand-primary ring-offset-1 ring-offset-bg-secondary' : 'border-white/10'
+                      className={`w-6 h-6 rounded-md transition-all hover:scale-110 border ${editColor === color ? 'ring-2 ring-brand-primary ring-offset-1 ring-offset-bg-secondary' : 'border-white/10'
                         }`}
                       style={{ background: color }}
                       title={color}
                     />
-                  )}
-                </For>
+                  ))}
+                </div>
+              </div>
+
+              {/* Display Settings */}
+              <div className="border-t border-border-subtle mt-4 pt-4">
+                <button
+                  onClick={() => setEditHoisted(!editHoisted)}
+                  className="flex items-center justify-between w-full cursor-pointer hover:bg-bg-modifier-hover p-2 rounded-md transition-colors"
+                >
+                  <div>
+                    <div className="text-sm font-medium text-text-primary text-left">Display separately in member list</div>
+                    <div className="text-xs text-text-muted text-left">Show members with this role grouped separately</div>
+                  </div>
+                  {/* Toggle switch */}
+                  <div className={`relative w-11 h-6 rounded-full transition-colors ${editHoisted ? 'bg-brand-primary' : 'bg-bg-tertiary'}`}>
+                    <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${editHoisted ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+                  </div>
+                </button>
               </div>
             </div>
 
-            {/* Display Settings */}
-            <div class="border-t border-border-subtle mt-4 pt-4">
-              <button
-                onClick={() => setEditHoisted(!editHoisted())}
-                class="flex items-center justify-between w-full cursor-pointer hover:bg-bg-modifier-hover p-2 rounded-md transition-colors"
-              >
-                <div>
-                  <div class="text-sm font-medium text-text-primary text-left">Display separately in member list</div>
-                  <div class="text-xs text-text-muted text-left">Show members with this role grouped separately</div>
-                </div>
-                {/* Toggle switch */}
-                <div class={`relative w-11 h-6 rounded-full transition-colors ${editHoisted() ? 'bg-brand-primary' : 'bg-bg-tertiary'}`}>
-                  <div class={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${editHoisted() ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
-                </div>
-              </button>
-            </div>
-          </div>
+            {/* Permissions */}
+            <div className="mb-4">
+              <h3 className="text-xs font-semibold text-text-muted uppercase mb-3 tracking-wide">Permissions</h3>
 
-          {/* Permissions */}
-          <div class="mb-4">
-            <h3 class="text-xs font-semibold text-text-muted uppercase mb-3 tracking-wide">Permissions</h3>
-
-            <For each={permissionGroups}>
-              {(group) => (
-                <div class="mb-3">
-                  <h4 class="text-xs font-semibold text-text-muted uppercase mb-1.5 px-1">{group.name}</h4>
-                  <div class="bg-bg-secondary rounded-lg border border-border-subtle divide-y divide-border-subtle overflow-hidden">
-                    <For each={group.permissions}>
-                      {(perm) => (
-                        <button
-                          onClick={() => togglePermission(perm.key)}
-                          class={`flex items-center justify-between p-3 w-full text-left cursor-pointer transition-colors ${DANGEROUS_PERMS.has(perm.key) && editPermissions()[perm.key]
-                            ? 'bg-danger/5 hover:bg-danger/10'
-                            : 'hover:bg-bg-modifier-hover'
-                            }`}
-                        >
-                          <div class="pr-4">
-                            <div class={`text-sm font-medium ${DANGEROUS_PERMS.has(perm.key) ? 'text-danger' : 'text-text-primary'}`}>
-                              {perm.label}
-                            </div>
-                            <div class="text-xs text-text-muted">{perm.description}</div>
+              {permissionGroups.map((group) => (
+                <div key={group.name} className="mb-3">
+                  <h4 className="text-xs font-semibold text-text-muted uppercase mb-1.5 px-1">{group.name}</h4>
+                  <div className="bg-bg-secondary rounded-lg border border-border-subtle divide-y divide-border-subtle overflow-hidden">
+                    {group.permissions.map((perm) => (
+                      <button
+                        key={perm.key}
+                        onClick={() => togglePermission(perm.key)}
+                        className={`flex items-center justify-between p-3 w-full text-left cursor-pointer transition-colors ${DANGEROUS_PERMS.has(perm.key) && editPermissions[perm.key]
+                          ? 'bg-danger/5 hover:bg-danger/10'
+                          : 'hover:bg-bg-modifier-hover'
+                          }`}
+                      >
+                        <div className="pr-4">
+                          <div className={`text-sm font-medium ${DANGEROUS_PERMS.has(perm.key) ? 'text-danger' : 'text-text-primary'}`}>
+                            {perm.label}
                           </div>
-                          {/* Toggle switch */}
-                          <div class={`relative w-11 h-6 rounded-full flex-shrink-0 transition-colors ${editPermissions()[perm.key]
-                            ? DANGEROUS_PERMS.has(perm.key) ? 'bg-danger' : 'bg-brand-primary'
-                            : 'bg-bg-tertiary'
-                            }`}>
-                            <div class={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${editPermissions()[perm.key] ? 'translate-x-[22px]' : 'translate-x-0.5'
-                              }`} />
-                          </div>
-                        </button>
-                      )}
-                    </For>
+                          <div className="text-xs text-text-muted">{perm.description}</div>
+                        </div>
+                        {/* Toggle switch */}
+                        <div className={`relative w-11 h-6 rounded-full flex-shrink-0 transition-colors ${editPermissions[perm.key]
+                          ? DANGEROUS_PERMS.has(perm.key) ? 'bg-danger' : 'bg-brand-primary'
+                          : 'bg-bg-tertiary'
+                          }`}>
+                          <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${editPermissions[perm.key] ? 'translate-x-[22px]' : 'translate-x-0.5'
+                            }`} />
+                        </div>
+                      </button>
+                    ))}
                   </div>
                 </div>
-              )}
-            </For>
-          </div>
+              ))}
+            </div>
 
-          {/* Delete Role Section */}
-          <div class="bg-bg-secondary rounded-lg border border-danger/20 p-4 mb-4">
-            <h3 class="text-xs font-semibold uppercase text-danger mb-2 tracking-wide">Danger Zone</h3>
-            <Show
-              when={showDeleteConfirm()}
-              fallback={
+            {/* Delete Role Section */}
+            <div className="bg-bg-secondary rounded-lg border border-danger/20 p-4 mb-4">
+              <h3 className="text-xs font-semibold uppercase text-danger mb-2 tracking-wide">Danger Zone</h3>
+              {showDeleteConfirm ? (
+                <div className="flex items-center gap-3">
+                  <p className="text-sm text-text-secondary flex-1">
+                    Delete <span className="font-semibold text-text-primary">{selectedRole?.name}</span>? This cannot be undone.
+                  </p>
+                  <button
+                    onClick={() => setShowDeleteConfirm(false)}
+                    className="px-3 py-1.5 text-sm text-text-secondary bg-bg-tertiary rounded-md hover:bg-bg-modifier-hover transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleDeleteRole}
+                    className="px-3 py-1.5 text-sm text-white bg-danger rounded-md hover:bg-danger/80 transition-colors"
+                  >
+                    Confirm Delete
+                  </button>
+                </div>
+              ) : (
                 <button
                   onClick={() => setShowDeleteConfirm(true)}
-                  class="px-4 py-2 bg-danger/10 text-danger text-sm font-medium rounded-md hover:bg-danger/20 transition-colors border border-danger/20"
+                  className="px-4 py-2 bg-danger/10 text-danger text-sm font-medium rounded-md hover:bg-danger/20 transition-colors border border-danger/20"
                 >
                   Delete Role
                 </button>
-              }
-            >
-              <div class="flex items-center gap-3">
-                <p class="text-sm text-text-secondary flex-1">
-                  Delete <span class="font-semibold text-text-primary">{selectedRole()?.name}</span>? This cannot be undone.
-                </p>
-                <button
-                  onClick={() => setShowDeleteConfirm(false)}
-                  class="px-3 py-1.5 text-sm text-text-secondary bg-bg-tertiary rounded-md hover:bg-bg-modifier-hover transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleDeleteRole}
-                  class="px-3 py-1.5 text-sm text-white bg-danger rounded-md hover:bg-danger/80 transition-colors"
-                >
-                  Confirm Delete
-                </button>
-              </div>
-            </Show>
-          </div>
-
-          {/* Sticky save bar */}
-          <Show when={hasUnsavedChanges()}>
-            <div class="fixed bottom-0 left-0 right-0 z-10 bg-bg-secondary border-t border-border-subtle px-6 py-3 flex items-center justify-between shadow-lg">
-              <p class="text-sm text-text-secondary">You have unsaved changes</p>
-              <div class="flex gap-2">
-                <button
-                  onClick={() => {
-                    const role = selectedRole();
-                    if (role) selectRole(role);
-                  }}
-                  class="px-4 py-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors"
-                >
-                  Reset
-                </button>
-                <button
-                  onClick={handleSaveRole}
-                  disabled={isSaving()}
-                  class="px-4 py-1.5 bg-brand-primary text-white text-sm font-medium rounded-md hover:bg-brand-hover transition-colors disabled:opacity-50"
-                >
-                  {isSaving() ? 'Saving...' : saveSuccess() ? 'Saved!' : 'Save Changes'}
-                </button>
-              </div>
+              )}
             </div>
-          </Show>
-        </Show>
+
+            {/* Sticky save bar */}
+            {hasUnsavedChanges && (
+              <div className="fixed bottom-0 left-0 right-0 z-10 bg-bg-secondary border-t border-border-subtle px-6 py-3 flex items-center justify-between shadow-lg">
+                <p className="text-sm text-text-secondary">You have unsaved changes</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      if (selectedRole) selectRole(selectedRole);
+                    }}
+                    className="px-4 py-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors"
+                  >
+                    Reset
+                  </button>
+                  <button
+                    onClick={handleSaveRole}
+                    disabled={isSaving}
+                    className="px-4 py-1.5 bg-brand-primary text-white text-sm font-medium rounded-md hover:bg-brand-hover transition-colors disabled:opacity-50"
+                  >
+                    {isSaving ? 'Saving...' : saveSuccess ? 'Saved!' : 'Save Changes'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="flex flex-col items-center justify-center h-full text-text-muted gap-3">
+            <svg className="w-12 h-12 text-text-muted/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
+            <p className="text-sm">Select a role to edit its settings</p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -818,16 +794,16 @@ interface ServerMember {
 }
 
 function MembersTab() {
-  const [searchQuery, setSearchQuery] = createSignal('');
-  const [members, setMembers] = createSignal<ServerMember[]>([]);
-  const [roles, setRoles] = createSignal<{ id: string; name: string; color: string | null; position?: number }[]>([]);
-  const [isLoading, setIsLoading] = createSignal(true);
-  const [error, setError] = createSignal<string | null>(null);
-  const [selectedMember, setSelectedMember] = createSignal<ServerMember | null>(null);
-  const [actionInProgress, setActionInProgress] = createSignal<string | null>(null);
-  const [editingRoles, setEditingRoles] = createSignal<string[]>([]);
-  const [isEditingRoles, setIsEditingRoles] = createSignal(false);
-  const [savingRoles, setSavingRoles] = createSignal(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [members, setMembers] = useState<ServerMember[]>([]);
+  const [roles, setRoles] = useState<{ id: string; name: string; color: string | null; position?: number }[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedMember, setSelectedMember] = useState<ServerMember | null>(null);
+  const [actionInProgress, setActionInProgress] = useState<string | null>(null);
+  const [editingRoles, setEditingRoles] = useState<string[]>([]);
+  const [isEditingRoles, setIsEditingRoles] = useState(false);
+  const [savingRoles, setSavingRoles] = useState(false);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -846,18 +822,18 @@ function MembersTab() {
     }
   };
 
-  createEffect(() => {
+  useEffect(() => {
     fetchData();
-  });
+  }, []);
 
-  const filteredMembers = () => {
-    const query = searchQuery().toLowerCase();
-    if (!query) return members();
-    return members().filter(m =>
+  const filteredMembers = useMemo(() => {
+    const query = searchQuery.toLowerCase();
+    if (!query) return members;
+    return members.filter(m =>
       m.username.toLowerCase().includes(query) ||
       m.display_name?.toLowerCase().includes(query)
     );
-  };
+  }, [searchQuery, members]);
 
   const handleKick = async (member: ServerMember) => {
     const reason = prompt(`Kick ${member.username}? Enter a reason (optional):`);
@@ -895,7 +871,7 @@ function MembersTab() {
     return new Date(dateStr).toLocaleDateString();
   };
 
-  const getRoleById = (roleId: string) => roles().find(r => r.id === roleId);
+  const getRoleById = (roleId: string) => roles.find(r => r.id === roleId);
 
   const startEditingRoles = (member: ServerMember) => {
     setEditingRoles([...member.roles]);
@@ -916,17 +892,16 @@ function MembersTab() {
   };
 
   const handleSaveRoles = async () => {
-    const member = selectedMember();
-    if (!member) return;
+    if (!selectedMember) return;
 
     setSavingRoles(true);
     try {
-      await api.patch(`/members/${member.id}`, { roles: editingRoles() });
+      await api.patch(`/members/${selectedMember.id}`, { roles: editingRoles });
       // Update the member in local state
       setMembers(prev => prev.map(m =>
-        m.id === member.id ? { ...m, roles: editingRoles() } : m
+        m.id === selectedMember.id ? { ...m, roles: editingRoles } : m
       ));
-      setSelectedMember({ ...member, roles: editingRoles() });
+      setSelectedMember({ ...selectedMember, roles: editingRoles });
       setIsEditingRoles(false);
     } catch (err: any) {
       alert(err?.message || 'Failed to update roles');
@@ -936,162 +911,160 @@ function MembersTab() {
   };
 
   // Get assignable roles (exclude @everyone which has position 0)
-  const assignableRoles = () => roles().filter(r => (r.position ?? 0) > 0).sort((a, b) => (b.position ?? 0) - (a.position ?? 0));
+  const assignableRoles = useMemo(() =>
+    roles.filter(r => (r.position ?? 0) > 0).sort((a, b) => (b.position ?? 0) - (a.position ?? 0)),
+    [roles]
+  );
 
   return (
     <div>
-      <div class="flex items-center justify-between mb-5">
-        <h2 class="text-xl font-bold text-text-primary">Server Members</h2>
-        <span class="text-sm text-text-muted">{members().length} members</span>
+      <div className="flex items-center justify-between mb-5">
+        <h2 className="text-xl font-bold text-text-primary">Server Members</h2>
+        <span className="text-sm text-text-muted">{members.length} members</span>
       </div>
 
-      <div class="mb-4">
+      <div className="mb-4">
         <input
           type="text"
-          value={searchQuery()}
-          onInput={(e) => setSearchQuery(e.currentTarget.value)}
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search members..."
-          class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:border-brand-primary"
+          className="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:border-brand-primary"
         />
       </div>
 
-      <Show when={isLoading()}>
-        <div class="text-center py-8">
-          <div class="text-text-muted">Loading members...</div>
+      {isLoading && (
+        <div className="text-center py-8">
+          <div className="text-text-muted">Loading members...</div>
         </div>
-      </Show>
+      )}
 
-      <Show when={error()}>
-        <div class="bg-danger/10 border border-danger/30 rounded-lg p-4 mb-4">
-          <p class="text-sm text-danger">{error()}</p>
+      {error && (
+        <div className="bg-danger/10 border border-danger/30 rounded-lg p-4 mb-4">
+          <p className="text-sm text-danger">{error}</p>
         </div>
-      </Show>
+      )}
 
-      <Show when={!isLoading() && !error()}>
-        <div class="space-y-1">
-          <For each={filteredMembers()}>
-            {(member) => (
+      {!isLoading && !error && (
+        <>
+          <div className="space-y-1">
+            {filteredMembers.map((member) => (
               <div
-                class={`flex items-center justify-between p-3 rounded-lg transition-colors cursor-pointer ${selectedMember()?.id === member.id ? 'bg-bg-modifier-selected' : 'hover:bg-bg-modifier-hover'
+                key={member.id}
+                className={`flex items-center justify-between p-3 rounded-lg transition-colors cursor-pointer ${selectedMember?.id === member.id ? 'bg-bg-modifier-selected' : 'hover:bg-bg-modifier-hover'
                   }`}
-                onClick={() => setSelectedMember(selectedMember()?.id === member.id ? null : member)}
+                onClick={() => setSelectedMember(selectedMember?.id === member.id ? null : member)}
               >
-                <div class="flex items-center gap-3">
-                  <div class="w-10 h-10 rounded-full bg-bg-tertiary flex items-center justify-center overflow-hidden">
-                    <Show
-                      when={member.avatar_url}
-                      fallback={
-                        <span class="text-text-muted font-medium">
-                          {member.username.charAt(0).toUpperCase()}
-                        </span>
-                      }
-                    >
-                      <img src={member.avatar_url!} alt={member.username} class="w-full h-full object-cover" />
-                    </Show>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-bg-tertiary flex items-center justify-center overflow-hidden">
+                    {member.avatar_url ? (
+                      <img src={member.avatar_url} alt={member.username} className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-text-muted font-medium">
+                        {member.username.charAt(0).toUpperCase()}
+                      </span>
+                    )}
                   </div>
                   <div>
-                    <div class="font-medium text-text-primary">
+                    <div className="font-medium text-text-primary">
                       {member.display_name || member.username}
-                      <Show when={member.display_name}>
-                        <span class="text-text-muted text-sm ml-2">@{member.username}</span>
-                      </Show>
+                      {member.display_name && (
+                        <span className="text-text-muted text-sm ml-2">@{member.username}</span>
+                      )}
                     </div>
-                    <div class="flex items-center gap-1.5 flex-wrap">
-                      <For each={member.roles}>
-                        {(roleId) => {
-                          const role = getRoleById(roleId);
-                          return role ? (
-                            <span
-                              class="text-xs px-1.5 py-0.5 rounded"
-                              style={{
-                                background: role.color ? `${role.color}20` : 'var(--color-bg-tertiary)',
-                                color: role.color || 'var(--color-text-muted)'
-                              }}
-                            >
-                              {role.name}
-                            </span>
-                          ) : null;
-                        }}
-                      </For>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {member.roles.map((roleId) => {
+                        const role = getRoleById(roleId);
+                        return role ? (
+                          <span
+                            key={roleId}
+                            className="text-xs px-1.5 py-0.5 rounded"
+                            style={{
+                              background: role.color ? `${role.color}20` : 'var(--color-bg-tertiary)',
+                              color: role.color || 'var(--color-text-muted)'
+                            }}
+                          >
+                            {role.name}
+                          </span>
+                        ) : null;
+                      })}
                     </div>
                   </div>
                 </div>
-                <div class="text-xs text-text-muted">
+                <div className="text-xs text-text-muted">
                   Joined {formatDate(member.joined_at)}
                 </div>
               </div>
-            )}
-          </For>
-        </div>
+            ))}
+          </div>
 
-        {/* Member Actions */}
-        <Show when={selectedMember()}>
-          <div class="mt-4 p-4 bg-bg-secondary rounded-lg space-y-4">
-            {/* Role Management */}
-            <div>
-              <div class="flex items-center justify-between mb-3">
-                <h4 class="text-sm font-semibold text-text-muted uppercase">Roles</h4>
-                <Show when={!isEditingRoles()}>
-                  <button
-                    onClick={() => startEditingRoles(selectedMember()!)}
-                    class="text-xs text-brand-primary hover:text-brand-primary-hover transition-colors"
-                  >
-                    Edit Roles
-                  </button>
-                </Show>
-              </div>
+          {/* Member Actions */}
+          {selectedMember && (
+            <div className="mt-4 p-4 bg-bg-secondary rounded-lg space-y-4">
+              {/* Role Management */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-semibold text-text-muted uppercase">Roles</h4>
+                  {!isEditingRoles && (
+                    <button
+                      onClick={() => startEditingRoles(selectedMember)}
+                      className="text-xs text-brand-primary hover:text-brand-primary-hover transition-colors"
+                    >
+                      Edit Roles
+                    </button>
+                  )}
+                </div>
 
-              <Show when={isEditingRoles()}>
-                <div class="space-y-2 mb-3">
-                  <For each={assignableRoles()}>
-                    {(role) => (
-                      <label
-                        class="flex items-center gap-3 p-2 rounded hover:bg-bg-modifier-hover cursor-pointer transition-colors"
+                {isEditingRoles ? (
+                  <>
+                    <div className="space-y-2 mb-3">
+                      {assignableRoles.map((role) => (
+                        <label
+                          key={role.id}
+                          className="flex items-center gap-3 p-2 rounded hover:bg-bg-modifier-hover cursor-pointer transition-colors"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={editingRoles.includes(role.id)}
+                            onChange={() => toggleRole(role.id)}
+                            className="w-4 h-4 rounded border-border-subtle bg-bg-tertiary"
+                          />
+                          <div
+                            className="w-3 h-3 rounded-full flex-shrink-0"
+                            style={{ background: role.color || '#99aab5' }}
+                          />
+                          <span className="text-sm text-text-primary">{role.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleSaveRoles}
+                        disabled={savingRoles}
+                        className="px-3 py-1.5 bg-success text-white text-sm font-medium rounded hover:bg-success/90 transition-colors disabled:opacity-50"
                       >
-                        <input
-                          type="checkbox"
-                          checked={editingRoles().includes(role.id)}
-                          onChange={() => toggleRole(role.id)}
-                          class="w-4 h-4 rounded border-border-subtle bg-bg-tertiary"
-                        />
-                        <div
-                          class="w-3 h-3 rounded-full flex-shrink-0"
-                          style={{ background: role.color || '#99aab5' }}
-                        />
-                        <span class="text-sm text-text-primary">{role.name}</span>
-                      </label>
+                        {savingRoles ? 'Saving...' : 'Save Roles'}
+                      </button>
+                      <button
+                        onClick={cancelEditingRoles}
+                        disabled={savingRoles}
+                        className="px-3 py-1.5 bg-bg-tertiary text-text-muted text-sm font-medium rounded hover:bg-bg-modifier-hover transition-colors disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {selectedMember.roles.length === 0 && (
+                      <span className="text-sm text-text-muted">No roles assigned</span>
                     )}
-                  </For>
-                </div>
-                <div class="flex gap-2">
-                  <button
-                    onClick={handleSaveRoles}
-                    disabled={savingRoles()}
-                    class="px-3 py-1.5 bg-success text-white text-sm font-medium rounded hover:bg-success/90 transition-colors disabled:opacity-50"
-                  >
-                    {savingRoles() ? 'Saving...' : 'Save Roles'}
-                  </button>
-                  <button
-                    onClick={cancelEditingRoles}
-                    disabled={savingRoles()}
-                    class="px-3 py-1.5 bg-bg-tertiary text-text-muted text-sm font-medium rounded hover:bg-bg-modifier-hover transition-colors disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </Show>
-
-              <Show when={!isEditingRoles()}>
-                <div class="flex items-center gap-1.5 flex-wrap">
-                  <Show when={selectedMember()!.roles.length === 0}>
-                    <span class="text-sm text-text-muted">No roles assigned</span>
-                  </Show>
-                  <For each={selectedMember()!.roles}>
-                    {(roleId) => {
+                    {selectedMember.roles.map((roleId) => {
                       const role = getRoleById(roleId);
                       return role ? (
                         <span
-                          class="text-xs px-2 py-1 rounded"
+                          key={roleId}
+                          className="text-xs px-2 py-1 rounded"
                           style={{
                             background: role.color ? `${role.color}20` : 'var(--color-bg-tertiary)',
                             color: role.color || 'var(--color-text-muted)'
@@ -1100,42 +1073,41 @@ function MembersTab() {
                           {role.name}
                         </span>
                       ) : null;
-                    }}
-                  </For>
-                </div>
-              </Show>
-            </div>
+                    })}
+                  </div>
+                )}
+              </div>
 
-            {/* Moderation Actions */}
-            <div class="border-t border-border-subtle pt-4">
-              <h4 class="text-sm font-semibold text-text-muted uppercase mb-3">
-                Moderation
-              </h4>
-              <div class="flex gap-2">
-                <button
-                  onClick={() => handleKick(selectedMember()!)}
-                  disabled={actionInProgress() === selectedMember()!.id}
-                  class="px-3 py-1.5 bg-warning/20 text-warning text-sm font-medium rounded hover:bg-warning/30 transition-colors disabled:opacity-50"
-                >
-                  {actionInProgress() === selectedMember()!.id ? 'Processing...' : 'Kick'}
-                </button>
-                <button
-                  onClick={() => handleBan(selectedMember()!)}
-                  disabled={actionInProgress() === selectedMember()!.id}
-                  class="px-3 py-1.5 bg-danger/20 text-danger text-sm font-medium rounded hover:bg-danger/30 transition-colors disabled:opacity-50"
-                >
-                  {actionInProgress() === selectedMember()!.id ? 'Processing...' : 'Ban'}
-                </button>
+              {/* Moderation Actions */}
+              <div className="border-t border-border-subtle pt-4">
+                <h4 className="text-sm font-semibold text-text-muted uppercase mb-3">
+                  Moderation
+                </h4>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleKick(selectedMember)}
+                    disabled={actionInProgress === selectedMember.id}
+                    className="px-3 py-1.5 bg-warning/20 text-warning text-sm font-medium rounded hover:bg-warning/30 transition-colors disabled:opacity-50"
+                  >
+                    {actionInProgress === selectedMember.id ? 'Processing...' : 'Kick'}
+                  </button>
+                  <button
+                    onClick={() => handleBan(selectedMember)}
+                    disabled={actionInProgress === selectedMember.id}
+                    className="px-3 py-1.5 bg-danger/20 text-danger text-sm font-medium rounded hover:bg-danger/30 transition-colors disabled:opacity-50"
+                  >
+                    {actionInProgress === selectedMember.id ? 'Processing...' : 'Ban'}
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        </Show>
-      </Show>
+          )}
+        </>
+      )}
     </div>
   );
 }
 
-// Channels Tab
 // Channels Tab
 interface ChannelCategory {
   id: string;
@@ -1154,41 +1126,40 @@ interface ChannelData {
   is_temp_channel?: boolean;
 }
 
-function ChannelsTab(props: { serverData: ServerData | null; onRefresh: () => void }) {
-  const [channels, setChannels] = createSignal<ChannelData[]>([]);
-  const [categories, setCategories] = createSignal<ChannelCategory[]>([]);
-  const [isLoading, setIsLoading] = createSignal(true);
-  const [error, setError] = createSignal<string | null>(null);
-  const [showCreateChannel, setShowCreateChannel] = createSignal(false);
-  const [showCreateCategory, setShowCreateCategory] = createSignal(false);
+function ChannelsTab({ serverData, onRefresh }: { serverData: ServerData | null; onRefresh: () => void }) {
+  const [channels, setChannels] = useState<ChannelData[]>([]);
+  const [categories, setCategories] = useState<ChannelCategory[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showCreateChannel, setShowCreateChannel] = useState(false);
+  const [showCreateCategory, setShowCreateCategory] = useState(false);
 
   // Announcement settings
-  const [announceJoins, setAnnounceJoins] = createSignal(true);
-  const [announceLeaves, setAnnounceLeaves] = createSignal(true);
-  const [announceOnline, setAnnounceOnline] = createSignal(false);
-  const [announceSaving, setAnnounceSaving] = createSignal(false);
-  const [announceSuccess, setAnnounceSuccess] = createSignal(false);
+  const [announceJoins, setAnnounceJoins] = useState(true);
+  const [announceLeaves, setAnnounceLeaves] = useState(true);
+  const [announceOnline, setAnnounceOnline] = useState(false);
+  const [announceSaving, setAnnounceSaving] = useState(false);
+  const [announceSuccess, setAnnounceSuccess] = useState(false);
 
   // Populate announcement settings from server data
-  createEffect(() => {
-    const data = props.serverData;
-    if (data?.settings) {
-      setAnnounceJoins(data.settings.announce_joins ?? true);
-      setAnnounceLeaves(data.settings.announce_leaves ?? true);
-      setAnnounceOnline(data.settings.announce_online ?? false);
+  useEffect(() => {
+    if (serverData?.settings) {
+      setAnnounceJoins(serverData.settings.announce_joins ?? true);
+      setAnnounceLeaves(serverData.settings.announce_leaves ?? true);
+      setAnnounceOnline(serverData.settings.announce_online ?? false);
     }
-  });
+  }, [serverData]);
 
   const handleSaveAnnouncements = async () => {
     setAnnounceSaving(true);
     try {
       await api.patch('/server', {
-        announce_joins: announceJoins(),
-        announce_leaves: announceLeaves(),
-        announce_online: announceOnline(),
+        announce_joins: announceJoins,
+        announce_leaves: announceLeaves,
+        announce_online: announceOnline,
       });
       setAnnounceSuccess(true);
-      props.onRefresh();
+      onRefresh();
       setTimeout(() => setAnnounceSuccess(false), 3000);
     } catch (err: any) {
       alert(err?.message || 'Failed to save announcement settings');
@@ -1198,11 +1169,11 @@ function ChannelsTab(props: { serverData: ServerData | null; onRefresh: () => vo
   };
 
   // Form states
-  const [newChannelName, setNewChannelName] = createSignal('');
-  const [newChannelType, setNewChannelType] = createSignal<'text' | 'voice' | 'announcement' | 'music' | 'temp_voice_generator'>('text');
-  const [newChannelCategory, setNewChannelCategory] = createSignal<string | null>(null);
-  const [newCategoryName, setNewCategoryName] = createSignal('');
-  const [actionInProgress, setActionInProgress] = createSignal(false);
+  const [newChannelName, setNewChannelName] = useState('');
+  const [newChannelType, setNewChannelType] = useState<'text' | 'voice' | 'announcement' | 'music' | 'temp_voice_generator'>('text');
+  const [newChannelCategory, setNewChannelCategory] = useState<string | null>(null);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [actionInProgress, setActionInProgress] = useState(false);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -1226,25 +1197,25 @@ function ChannelsTab(props: { serverData: ServerData | null; onRefresh: () => vo
     }
   };
 
-  createEffect(() => {
+  useEffect(() => {
     fetchData();
-  });
+  }, []);
 
   const getChannelsByCategory = (categoryId: string | null) => {
-    return channels()
+    return channels
       .filter(c => c.category_id === categoryId)
       .sort((a, b) => a.position - b.position);
   };
 
   const handleCreateChannel = async () => {
-    if (!newChannelName().trim()) return;
+    if (!newChannelName.trim()) return;
 
     setActionInProgress(true);
     try {
       const newChannel = await api.post<ChannelData>('/channels', {
-        name: newChannelName().trim(),
-        type: newChannelType(),
-        category_id: newChannelCategory()
+        name: newChannelName.trim(),
+        type: newChannelType,
+        category_id: newChannelCategory
       });
       setChannels(prev => [...prev, newChannel]);
       setShowCreateChannel(false);
@@ -1259,12 +1230,12 @@ function ChannelsTab(props: { serverData: ServerData | null; onRefresh: () => vo
   };
 
   const handleCreateCategory = async () => {
-    if (!newCategoryName().trim()) return;
+    if (!newCategoryName.trim()) return;
 
     setActionInProgress(true);
     try {
       const newCategory = await api.post<ChannelCategory>('/categories', {
-        name: newCategoryName().trim()
+        name: newCategoryName.trim()
       });
       setCategories(prev => [...prev, newCategory]);
       setShowCreateCategory(false);
@@ -1307,39 +1278,39 @@ function ChannelsTab(props: { serverData: ServerData | null; onRefresh: () => vo
     switch (type) {
       case 'voice':
         return (
-          <svg class="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M9 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          <svg className="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M9 12a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
         );
       case 'music':
         return (
-          <svg class="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+          <svg className="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
           </svg>
         );
       case 'announcement':
         return (
-          <svg class="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
+          <svg className="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
           </svg>
         );
       case 'temp_voice_generator':
         return (
-          <svg class="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+          <svg className="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
           </svg>
         );
       case 'temp_voice':
         return (
-          <svg class="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M9 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          <svg className="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M9 12a3 3 0 11-6 0 3 3 0 016 0z" />
             <circle cx="18" cy="6" r="2" fill="currentColor" />
           </svg>
         );
       default:
         return (
-          <svg class="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+          <svg className="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
           </svg>
         );
     }
@@ -1347,144 +1318,140 @@ function ChannelsTab(props: { serverData: ServerData | null; onRefresh: () => vo
 
   return (
     <div>
-      <div class="flex items-center justify-between mb-5">
-        <h2 class="text-xl font-bold text-text-primary">Channels</h2>
-        <div class="flex gap-2">
+      <div className="flex items-center justify-between mb-5">
+        <h2 className="text-xl font-bold text-text-primary">Channels</h2>
+        <div className="flex gap-2">
           <button
             onClick={() => setShowCreateCategory(true)}
-            class="px-4 py-2 bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary text-sm font-medium rounded transition-colors"
+            className="px-4 py-2 bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary text-sm font-medium rounded transition-colors"
           >
             Create Category
           </button>
           <button
             onClick={() => setShowCreateChannel(true)}
-            class="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors"
+            className="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors"
           >
             Create Channel
           </button>
         </div>
       </div>
 
-      <Show when={isLoading()}>
-        <div class="text-center py-8">
-          <div class="text-text-muted">Loading channels...</div>
+      {isLoading && (
+        <div className="text-center py-8">
+          <div className="text-text-muted">Loading channels...</div>
         </div>
-      </Show>
+      )}
 
-      <Show when={error()}>
-        <div class="bg-danger/10 border border-danger/30 rounded-lg p-4 mb-4">
-          <p class="text-sm text-danger">{error()}</p>
+      {error && (
+        <div className="bg-danger/10 border border-danger/30 rounded-lg p-4 mb-4">
+          <p className="text-sm text-danger">{error}</p>
         </div>
-      </Show>
+      )}
 
-      <Show when={!isLoading() && !error()}>
-        {/* Uncategorized channels */}
-        <Show when={getChannelsByCategory(null).length > 0}>
-          <div class="mb-4">
-            <h3 class="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">
-              Uncategorized
-            </h3>
-            <div class="space-y-1">
-              <For each={getChannelsByCategory(null)}>
-                {(channel) => (
-                  <div class="flex items-center justify-between p-2 rounded hover:bg-bg-modifier-hover group">
-                    <div class="flex items-center gap-2">
+      {!isLoading && !error && (
+        <>
+          {/* Uncategorized channels */}
+          {getChannelsByCategory(null).length > 0 && (
+            <div className="mb-4">
+              <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">
+                Uncategorized
+              </h3>
+              <div className="space-y-1">
+                {getChannelsByCategory(null).map((channel) => (
+                  <div key={channel.id} className="flex items-center justify-between p-2 rounded hover:bg-bg-modifier-hover group">
+                    <div className="flex items-center gap-2">
                       {getChannelIcon(channel.type)}
-                      <span class="text-text-primary">{channel.name}</span>
-                      <span class="text-xs text-text-muted capitalize">({channel.type})</span>
+                      <span className="text-text-primary">{channel.name}</span>
+                      <span className="text-xs text-text-muted capitalize">({channel.type})</span>
                     </div>
                     <button
                       onClick={() => handleDeleteChannel(channel)}
-                      class="opacity-0 group-hover:opacity-100 p-1 text-danger hover:bg-danger/20 rounded transition-all"
+                      className="opacity-0 group-hover:opacity-100 p-1 text-danger hover:bg-danger/20 rounded transition-all"
                     >
-                      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                       </svg>
                     </button>
                   </div>
-                )}
-              </For>
+                ))}
+              </div>
             </div>
-          </div>
-        </Show>
+          )}
 
-        {/* Categories with channels */}
-        <For each={categories().sort((a, b) => a.position - b.position)}>
-          {(category) => (
-            <div class="mb-4">
-              <div class="flex items-center justify-between group">
-                <h3 class="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">
+          {/* Categories with channels */}
+          {[...categories].sort((a, b) => a.position - b.position).map((category) => (
+            <div key={category.id} className="mb-4">
+              <div className="flex items-center justify-between group">
+                <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">
                   {category.name}
                 </h3>
                 <button
                   onClick={() => handleDeleteCategory(category)}
-                  class="opacity-0 group-hover:opacity-100 p-1 text-danger hover:bg-danger/20 rounded transition-all"
+                  className="opacity-0 group-hover:opacity-100 p-1 text-danger hover:bg-danger/20 rounded transition-all"
                   title="Delete category"
                 >
-                  <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>
-              <div class="space-y-1">
-                <For each={getChannelsByCategory(category.id)}>
-                  {(channel) => (
-                    <div class="flex items-center justify-between p-2 rounded hover:bg-bg-modifier-hover group">
-                      <div class="flex items-center gap-2">
-                        {getChannelIcon(channel.type)}
-                        <span class="text-text-primary">{channel.name}</span>
-                        <span class="text-xs text-text-muted capitalize">({channel.type})</span>
-                      </div>
-                      <button
-                        onClick={() => handleDeleteChannel(channel)}
-                        class="opacity-0 group-hover:opacity-100 p-1 text-danger hover:bg-danger/20 rounded transition-all"
-                      >
-                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
+              <div className="space-y-1">
+                {getChannelsByCategory(category.id).map((channel) => (
+                  <div key={channel.id} className="flex items-center justify-between p-2 rounded hover:bg-bg-modifier-hover group">
+                    <div className="flex items-center gap-2">
+                      {getChannelIcon(channel.type)}
+                      <span className="text-text-primary">{channel.name}</span>
+                      <span className="text-xs text-text-muted capitalize">({channel.type})</span>
                     </div>
-                  )}
-                </For>
-                <Show when={getChannelsByCategory(category.id).length === 0}>
-                  <p class="text-sm text-text-muted italic px-2">No channels in this category</p>
-                </Show>
+                    <button
+                      onClick={() => handleDeleteChannel(channel)}
+                      className="opacity-0 group-hover:opacity-100 p-1 text-danger hover:bg-danger/20 rounded transition-all"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+                {getChannelsByCategory(category.id).length === 0 && (
+                  <p className="text-sm text-text-muted italic px-2">No channels in this category</p>
+                )}
               </div>
             </div>
-          )}
-        </For>
+          ))}
 
-        <Show when={channels().length === 0 && categories().length === 0}>
-          <div class="text-center py-8">
-            <p class="text-text-muted">No channels yet. Create your first channel!</p>
-          </div>
-        </Show>
-      </Show>
+          {channels.length === 0 && categories.length === 0 && (
+            <div className="text-center py-8">
+              <p className="text-text-muted">No channels yet. Create your first channel!</p>
+            </div>
+          )}
+        </>
+      )}
 
       {/* Create Channel Modal */}
-      <Show when={showCreateChannel()}>
-        <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div class="bg-bg-primary rounded-lg p-6 w-full max-w-md">
-            <h3 class="text-lg font-bold text-text-primary mb-4">Create Channel</h3>
+      {showCreateChannel && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-bg-primary rounded-lg p-6 w-full max-w-md">
+            <h3 className="text-lg font-bold text-text-primary mb-4">Create Channel</h3>
 
-            <div class="space-y-4">
+            <div className="space-y-4">
               <div>
-                <label class="block text-sm font-medium text-text-secondary mb-1">Channel Name</label>
+                <label className="block text-sm font-medium text-text-secondary mb-1">Channel Name</label>
                 <input
                   type="text"
-                  value={newChannelName()}
-                  onInput={(e) => setNewChannelName(e.currentTarget.value)}
+                  value={newChannelName}
+                  onChange={(e) => setNewChannelName(e.target.value)}
                   placeholder="general"
-                  class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:border-brand-primary"
+                  className="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:border-brand-primary"
                 />
               </div>
 
               <div>
-                <label class="block text-sm font-medium text-text-secondary mb-1">Channel Type</label>
+                <label className="block text-sm font-medium text-text-secondary mb-1">Channel Type</label>
                 <select
-                  value={newChannelType()}
-                  onChange={(e) => setNewChannelType(e.currentTarget.value as any)}
-                  class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
+                  value={newChannelType}
+                  onChange={(e) => setNewChannelType(e.target.value as any)}
+                  className="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
                 >
                   <option value="text">Text</option>
                   <option value="voice">Voice</option>
@@ -1492,128 +1459,128 @@ function ChannelsTab(props: { serverData: ServerData | null; onRefresh: () => vo
                   <option value="music">Music / Stage</option>
                   <option value="temp_voice_generator">Temp Voice Generator (Create-on-Join)</option>
                 </select>
-                <p class="text-xs text-text-muted mt-1">
-                  {newChannelType() === 'temp_voice_generator' && 
+                <p className="text-xs text-text-muted mt-1">
+                  {newChannelType === 'temp_voice_generator' &&
                     'Users joining this channel will automatically get their own temporary voice channel.'
                   }
                 </p>
               </div>
 
               <div>
-                <label class="block text-sm font-medium text-text-secondary mb-1">Category (optional)</label>
+                <label className="block text-sm font-medium text-text-secondary mb-1">Category (optional)</label>
                 <select
-                  value={newChannelCategory() || ''}
-                  onChange={(e) => setNewChannelCategory(e.currentTarget.value || null)}
-                  class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
+                  value={newChannelCategory || ''}
+                  onChange={(e) => setNewChannelCategory(e.target.value || null)}
+                  className="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
                 >
                   <option value="">No category</option>
-                  <For each={categories()}>
-                    {(cat) => <option value={cat.id}>{cat.name}</option>}
-                  </For>
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                  ))}
                 </select>
               </div>
             </div>
 
-            <div class="flex justify-end gap-2 mt-6">
+            <div className="flex justify-end gap-2 mt-6">
               <button
                 onClick={() => setShowCreateChannel(false)}
-                class="px-4 py-2 bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary text-sm font-medium rounded transition-colors"
+                className="px-4 py-2 bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary text-sm font-medium rounded transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreateChannel}
-                disabled={!newChannelName().trim() || actionInProgress()}
-                class="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
+                disabled={!newChannelName.trim() || actionInProgress}
+                className="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
               >
-                {actionInProgress() ? 'Creating...' : 'Create'}
+                {actionInProgress ? 'Creating...' : 'Create'}
               </button>
             </div>
           </div>
         </div>
-      </Show>
+      )}
 
       {/* Create Category Modal */}
-      <Show when={showCreateCategory()}>
-        <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div class="bg-bg-primary rounded-lg p-6 w-full max-w-md">
-            <h3 class="text-lg font-bold text-text-primary mb-4">Create Category</h3>
+      {showCreateCategory && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-bg-primary rounded-lg p-6 w-full max-w-md">
+            <h3 className="text-lg font-bold text-text-primary mb-4">Create Category</h3>
 
             <div>
-              <label class="block text-sm font-medium text-text-secondary mb-1">Category Name</label>
+              <label className="block text-sm font-medium text-text-secondary mb-1">Category Name</label>
               <input
                 type="text"
-                value={newCategoryName()}
-                onInput={(e) => setNewCategoryName(e.currentTarget.value)}
+                value={newCategoryName}
+                onChange={(e) => setNewCategoryName(e.target.value)}
                 placeholder="TEXT CHANNELS"
-                class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:border-brand-primary"
+                className="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:border-brand-primary"
               />
             </div>
 
-            <div class="flex justify-end gap-2 mt-6">
+            <div className="flex justify-end gap-2 mt-6">
               <button
                 onClick={() => setShowCreateCategory(false)}
-                class="px-4 py-2 bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary text-sm font-medium rounded transition-colors"
+                className="px-4 py-2 bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary text-sm font-medium rounded transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreateCategory}
-                disabled={!newCategoryName().trim() || actionInProgress()}
-                class="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
+                disabled={!newCategoryName.trim() || actionInProgress}
+                className="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
               >
-                {actionInProgress() ? 'Creating...' : 'Create'}
+                {actionInProgress ? 'Creating...' : 'Create'}
               </button>
             </div>
           </div>
         </div>
-      </Show>
+      )}
 
       {/* Announcement Settings */}
-      <div class="mt-8 pt-6 border-t border-border-subtle">
-        <h3 class="text-lg font-bold text-text-primary mb-4">Announcement Settings</h3>
-        <p class="text-sm text-text-muted mb-4">
+      <div className="mt-8 pt-6 border-t border-border-subtle">
+        <h3 className="text-lg font-bold text-text-primary mb-4">Announcement Settings</h3>
+        <p className="text-sm text-text-muted mb-4">
           Configure automatic announcements posted in the welcome channel.
         </p>
-        <div class="bg-bg-secondary rounded-lg p-4 space-y-3">
-          <label class="flex items-center gap-3 cursor-pointer">
+        <div className="bg-bg-secondary rounded-lg p-4 space-y-3">
+          <label className="flex items-center gap-3 cursor-pointer">
             <input
               type="checkbox"
-              checked={announceJoins()}
-              onChange={(e) => setAnnounceJoins(e.currentTarget.checked)}
-              class="w-4 h-4 rounded border-border-subtle bg-bg-tertiary"
+              checked={announceJoins}
+              onChange={(e) => setAnnounceJoins(e.target.checked)}
+              className="w-4 h-4 rounded border-border-subtle bg-bg-tertiary"
             />
-            <span class="text-sm text-text-primary">Announce when members join</span>
+            <span className="text-sm text-text-primary">Announce when members join</span>
           </label>
-          <label class="flex items-center gap-3 cursor-pointer">
+          <label className="flex items-center gap-3 cursor-pointer">
             <input
               type="checkbox"
-              checked={announceLeaves()}
-              onChange={(e) => setAnnounceLeaves(e.currentTarget.checked)}
-              class="w-4 h-4 rounded border-border-subtle bg-bg-tertiary"
+              checked={announceLeaves}
+              onChange={(e) => setAnnounceLeaves(e.target.checked)}
+              className="w-4 h-4 rounded border-border-subtle bg-bg-tertiary"
             />
-            <span class="text-sm text-text-primary">Announce when members leave</span>
+            <span className="text-sm text-text-primary">Announce when members leave</span>
           </label>
-          <label class="flex items-center gap-3 cursor-pointer">
+          <label className="flex items-center gap-3 cursor-pointer">
             <input
               type="checkbox"
-              checked={announceOnline()}
-              onChange={(e) => setAnnounceOnline(e.currentTarget.checked)}
-              class="w-4 h-4 rounded border-border-subtle bg-bg-tertiary"
+              checked={announceOnline}
+              onChange={(e) => setAnnounceOnline(e.target.checked)}
+              className="w-4 h-4 rounded border-border-subtle bg-bg-tertiary"
             />
-            <span class="text-sm text-text-primary">Announce when members come online</span>
+            <span className="text-sm text-text-primary">Announce when members come online</span>
           </label>
-          <div class="pt-2 flex items-center gap-3">
+          <div className="pt-2 flex items-center gap-3">
             <button
               onClick={handleSaveAnnouncements}
-              disabled={announceSaving()}
-              class="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
+              disabled={announceSaving}
+              className="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
             >
-              {announceSaving() ? 'Saving...' : 'Save Announcements'}
+              {announceSaving ? 'Saving...' : 'Save Announcements'}
             </button>
-            <Show when={announceSuccess()}>
-              <span class="text-sm text-success">Saved!</span>
-            </Show>
+            {announceSuccess && (
+              <span className="text-sm text-success">Saved!</span>
+            )}
           </div>
         </div>
       </div>
@@ -1626,16 +1593,16 @@ function ChannelsTab(props: { serverData: ServerData | null; onRefresh: () => vo
 
 // Temp Channel Settings Component
 function TempChannelSettings() {
-  const [_settings, setSettings] = createSignal<{
+  const [_settings, setSettings] = useState<{
     empty_timeout_seconds: number;
     max_temp_channels_per_user: number;
     inherit_generator_permissions: boolean;
     default_user_limit: number;
     default_bitrate: number;
   } | null>(null);
-  const [isLoading, setIsLoading] = createSignal(true);
-  const [isSaving, setIsSaving] = createSignal(false);
-  const [timeoutMinutes, setTimeoutMinutes] = createSignal(5);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [timeoutMinutes, setTimeoutMinutes] = useState(5);
 
   const fetchSettings = async () => {
     try {
@@ -1649,15 +1616,15 @@ function TempChannelSettings() {
     }
   };
 
-  createEffect(() => {
+  useEffect(() => {
     fetchSettings();
-  });
+  }, []);
 
   const handleSave = async () => {
     setIsSaving(true);
     try {
       const updated = await api.patch<any>('/voice/temp-settings', {
-        empty_timeout_seconds: timeoutMinutes() * 60,
+        empty_timeout_seconds: timeoutMinutes * 60,
       });
       setSettings(updated);
       alert('Temp channel settings saved!');
@@ -1669,40 +1636,42 @@ function TempChannelSettings() {
   };
 
   return (
-    <div class="mt-8 pt-6 border-t border-border-subtle">
-      <h3 class="text-lg font-bold text-text-primary mb-4">Temp Voice Channel Settings</h3>
-      <p class="text-sm text-text-muted mb-4">
+    <div className="mt-8 pt-6 border-t border-border-subtle">
+      <h3 className="text-lg font-bold text-text-primary mb-4">Temp Voice Channel Settings</h3>
+      <p className="text-sm text-text-muted mb-4">
         Configure how temporary voice channels behave when users join a "Create Channel" voice channel.
       </p>
 
-      <Show when={!isLoading()} fallback={<div class="text-text-muted">Loading settings...</div>}>
-        <div class="space-y-4">
+      {isLoading ? (
+        <div className="text-text-muted">Loading settings...</div>
+      ) : (
+        <div className="space-y-4">
           <div>
-            <label class="block text-sm font-medium text-text-secondary mb-1">
+            <label className="block text-sm font-medium text-text-secondary mb-1">
               Empty Channel Timeout (minutes)
             </label>
             <input
               type="number"
               min="1"
               max="60"
-              value={timeoutMinutes()}
-              onInput={(e) => setTimeoutMinutes(parseInt(e.currentTarget.value) || 5)}
-              class="w-32 px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
+              value={timeoutMinutes}
+              onChange={(e) => setTimeoutMinutes(parseInt(e.target.value) || 5)}
+              className="w-32 px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
             />
-            <p class="text-xs text-text-muted mt-1">
+            <p className="text-xs text-text-muted mt-1">
               Time before an empty temp channel is automatically deleted.
             </p>
           </div>
 
           <button
             onClick={handleSave}
-            disabled={isSaving()}
-            class="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
+            disabled={isSaving}
+            className="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
           >
-            {isSaving() ? 'Saving...' : 'Save Settings'}
+            {isSaving ? 'Saving...' : 'Save Settings'}
           </button>
         </div>
-      </Show>
+      )}
     </div>
   );
 }
@@ -1719,16 +1688,16 @@ interface Invite {
 }
 
 function InvitesTab() {
-  const [invites, setInvites] = createSignal<Invite[]>([]);
-  const [isLoading, setIsLoading] = createSignal(true);
-  const [error, setError] = createSignal<string | null>(null);
-  const [showCreateModal, setShowCreateModal] = createSignal(false);
-  const [copiedCode, setCopiedCode] = createSignal<string | null>(null);
+  const [invites, setInvites] = useState<Invite[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   // Create form states
-  const [expiresIn, setExpiresIn] = createSignal<string>('1d');
-  const [maxUses, setMaxUses] = createSignal<string>('');
-  const [actionInProgress, setActionInProgress] = createSignal(false);
+  const [expiresIn, setExpiresIn] = useState<string>('1d');
+  const [maxUses, setMaxUses] = useState<string>('');
+  const [actionInProgress, setActionInProgress] = useState(false);
 
   const fetchInvites = async () => {
     setIsLoading(true);
@@ -1743,9 +1712,9 @@ function InvitesTab() {
     }
   };
 
-  createEffect(() => {
+  useEffect(() => {
     fetchInvites();
-  });
+  }, []);
 
   const handleCreateInvite = async () => {
     setActionInProgress(true);
@@ -1753,7 +1722,7 @@ function InvitesTab() {
       const body: Record<string, any> = {};
 
       // Convert expiresIn to actual expiry
-      if (expiresIn() !== 'never') {
+      if (expiresIn !== 'never') {
         const hours = {
           '30m': 0.5,
           '1h': 1,
@@ -1761,14 +1730,14 @@ function InvitesTab() {
           '12h': 12,
           '1d': 24,
           '7d': 168,
-        }[expiresIn()] || 24;
+        }[expiresIn] || 24;
 
         const expiresAt = new Date(Date.now() + hours * 60 * 60 * 1000);
         body.expires_at = expiresAt.toISOString();
       }
 
-      if (maxUses() && parseInt(maxUses()) > 0) {
-        body.max_uses = parseInt(maxUses());
+      if (maxUses && parseInt(maxUses) > 0) {
+        body.max_uses = parseInt(maxUses);
       }
 
       const newInvite = await api.post<Invite>('/invites', body);
@@ -1820,107 +1789,104 @@ function InvitesTab() {
 
   return (
     <div>
-      <div class="flex items-center justify-between mb-5">
-        <h2 class="text-xl font-bold text-text-primary">Invites</h2>
+      <div className="flex items-center justify-between mb-5">
+        <h2 className="text-xl font-bold text-text-primary">Invites</h2>
         <button
           onClick={() => setShowCreateModal(true)}
-          class="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors"
+          className="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors"
         >
           Create Invite
         </button>
       </div>
 
-      <p class="text-sm text-text-muted mb-4">
+      <p className="text-sm text-text-muted mb-4">
         Create invite links to share with others. You can set expiration times and usage limits.
       </p>
 
-      <Show when={isLoading()}>
-        <div class="text-center py-8">
-          <div class="text-text-muted">Loading invites...</div>
+      {isLoading && (
+        <div className="text-center py-8">
+          <div className="text-text-muted">Loading invites...</div>
         </div>
-      </Show>
+      )}
 
-      <Show when={error()}>
-        <div class="bg-danger/10 border border-danger/30 rounded-lg p-4 mb-4">
-          <p class="text-sm text-danger">{error()}</p>
+      {error && (
+        <div className="bg-danger/10 border border-danger/30 rounded-lg p-4 mb-4">
+          <p className="text-sm text-danger">{error}</p>
         </div>
-      </Show>
+      )}
 
-      <Show when={!isLoading() && !error()}>
-        <Show when={invites().length === 0}>
-          <div class="bg-bg-secondary rounded-lg p-4">
-            <div class="text-sm text-text-muted">No active invites. Create one to invite people to your server!</div>
-          </div>
-        </Show>
+      {!isLoading && !error && (
+        <>
+          {invites.length === 0 && (
+            <div className="bg-bg-secondary rounded-lg p-4">
+              <div className="text-sm text-text-muted">No active invites. Create one to invite people to your server!</div>
+            </div>
+          )}
 
-        <Show when={invites().length > 0}>
-          <div class="space-y-2">
-            <For each={invites()}>
-              {(invite) => (
-                <div class={`flex items-center justify-between p-3 rounded-lg ${isExpired(invite.expires_at) ? 'bg-bg-secondary/50 opacity-60' : 'bg-bg-secondary'
+          {invites.length > 0 && (
+            <div className="space-y-2">
+              {invites.map((invite) => (
+                <div key={invite.code} className={`flex items-center justify-between p-3 rounded-lg ${isExpired(invite.expires_at) ? 'bg-bg-secondary/50 opacity-60' : 'bg-bg-secondary'
                   }`}>
-                  <div class="flex-1">
-                    <div class="flex items-center gap-2">
-                      <code class="text-brand-primary font-mono text-sm">{invite.code}</code>
-                      <Show when={isExpired(invite.expires_at)}>
-                        <span class="text-xs px-1.5 py-0.5 rounded bg-danger/20 text-danger">Expired</span>
-                      </Show>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <code className="text-brand-primary font-mono text-sm">{invite.code}</code>
+                      {isExpired(invite.expires_at) && (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-danger/20 text-danger">Expired</span>
+                      )}
                     </div>
-                    <div class="text-xs text-text-muted mt-1">
+                    <div className="text-xs text-text-muted mt-1">
                       Created by {invite.created_by_username} •
                       Uses: {invite.uses}{invite.max_uses ? `/${invite.max_uses}` : ''} •
                       Expires: {formatExpiry(invite.expires_at)}
                     </div>
                   </div>
-                  <div class="flex items-center gap-2">
+                  <div className="flex items-center gap-2">
                     <button
                       onClick={() => copyToClipboard(invite.code)}
-                      class="p-2 text-text-secondary hover:text-text-primary hover:bg-bg-modifier-hover rounded transition-colors"
+                      className="p-2 text-text-secondary hover:text-text-primary hover:bg-bg-modifier-hover rounded transition-colors"
                       title="Copy invite link"
                     >
-                      <Show
-                        when={copiedCode() === invite.code}
-                        fallback={
-                          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                          </svg>
-                        }
-                      >
-                        <svg class="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                      {copiedCode === invite.code ? (
+                        <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
                         </svg>
-                      </Show>
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                      )}
                     </button>
                     <button
                       onClick={() => handleDeleteInvite(invite.code)}
-                      class="p-2 text-danger hover:bg-danger/20 rounded transition-colors"
+                      className="p-2 text-danger hover:bg-danger/20 rounded transition-colors"
                       title="Delete invite"
                     >
-                      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                       </svg>
                     </button>
                   </div>
                 </div>
-              )}
-            </For>
-          </div>
-        </Show>
-      </Show>
+              ))}
+            </div>
+          )}
+        </>
+      )}
 
       {/* Create Invite Modal */}
-      <Show when={showCreateModal()}>
-        <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div class="bg-bg-primary rounded-lg p-6 w-full max-w-md">
-            <h3 class="text-lg font-bold text-text-primary mb-4">Create Invite Link</h3>
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-bg-primary rounded-lg p-6 w-full max-w-md">
+            <h3 className="text-lg font-bold text-text-primary mb-4">Create Invite Link</h3>
 
-            <div class="space-y-4">
+            <div className="space-y-4">
               <div>
-                <label class="block text-sm font-medium text-text-secondary mb-1">Expire After</label>
+                <label className="block text-sm font-medium text-text-secondary mb-1">Expire After</label>
                 <select
-                  value={expiresIn()}
-                  onChange={(e) => setExpiresIn(e.currentTarget.value)}
-                  class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
+                  value={expiresIn}
+                  onChange={(e) => setExpiresIn(e.target.value)}
+                  className="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
                 >
                   <option value="30m">30 minutes</option>
                   <option value="1h">1 hour</option>
@@ -1933,37 +1899,37 @@ function InvitesTab() {
               </div>
 
               <div>
-                <label class="block text-sm font-medium text-text-secondary mb-1">Max Number of Uses</label>
+                <label className="block text-sm font-medium text-text-secondary mb-1">Max Number of Uses</label>
                 <input
                   type="number"
-                  value={maxUses()}
-                  onInput={(e) => setMaxUses(e.currentTarget.value)}
+                  value={maxUses}
+                  onChange={(e) => setMaxUses(e.target.value)}
                   placeholder="No limit"
                   min="1"
-                  class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:border-brand-primary"
+                  className="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:border-brand-primary"
                 />
-                <p class="text-xs text-text-muted mt-1">Leave blank for unlimited uses</p>
+                <p className="text-xs text-text-muted mt-1">Leave blank for unlimited uses</p>
               </div>
             </div>
 
-            <div class="flex justify-end gap-2 mt-6">
+            <div className="flex justify-end gap-2 mt-6">
               <button
                 onClick={() => setShowCreateModal(false)}
-                class="px-4 py-2 bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary text-sm font-medium rounded transition-colors"
+                className="px-4 py-2 bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary text-sm font-medium rounded transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreateInvite}
-                disabled={actionInProgress()}
-                class="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
+                disabled={actionInProgress}
+                className="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
               >
-                {actionInProgress() ? 'Creating...' : 'Create Invite'}
+                {actionInProgress ? 'Creating...' : 'Create Invite'}
               </button>
             </div>
           </div>
         </div>
-      </Show>
+      )}
     </div>
   );
 }
@@ -1979,11 +1945,11 @@ interface BannedUser {
 }
 
 function BansTab() {
-  const [searchQuery, setSearchQuery] = createSignal('');
-  const [bans, setBans] = createSignal<BannedUser[]>([]);
-  const [isLoading, setIsLoading] = createSignal(true);
-  const [error, setError] = createSignal<string | null>(null);
-  const [unbanningId, setUnbanningId] = createSignal<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [bans, setBans] = useState<BannedUser[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [unbanningId, setUnbanningId] = useState<string | null>(null);
 
   const fetchBans = async () => {
     setIsLoading(true);
@@ -1998,9 +1964,9 @@ function BansTab() {
     }
   };
 
-  createEffect(() => {
+  useEffect(() => {
     fetchBans();
-  });
+  }, []);
 
   const handleUnban = async (userId: string) => {
     if (!confirm('Are you sure you want to unban this user?')) return;
@@ -2016,11 +1982,11 @@ function BansTab() {
     }
   };
 
-  const filteredBans = () => {
-    const query = searchQuery().toLowerCase();
-    if (!query) return bans();
-    return bans().filter(b => b.username.toLowerCase().includes(query));
-  };
+  const filteredBans = useMemo(() => {
+    const query = searchQuery.toLowerCase();
+    if (!query) return bans;
+    return bans.filter(b => b.username.toLowerCase().includes(query));
+  }, [searchQuery, bans]);
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString();
@@ -2028,81 +1994,75 @@ function BansTab() {
 
   return (
     <div>
-      <h2 class="text-xl font-bold text-text-primary mb-5">Server Bans</h2>
+      <h2 className="text-xl font-bold text-text-primary mb-5">Server Bans</h2>
 
-      <div class="mb-4">
+      <div className="mb-4">
         <input
           type="text"
-          value={searchQuery()}
-          onInput={(e) => setSearchQuery(e.currentTarget.value)}
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search bans by username..."
-          class="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:border-brand-primary"
+          className="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:border-brand-primary"
         />
       </div>
 
-      <Show when={isLoading()}>
-        <div class="text-center py-8">
-          <div class="text-text-muted">Loading bans...</div>
+      {isLoading && (
+        <div className="text-center py-8">
+          <div className="text-text-muted">Loading bans...</div>
         </div>
-      </Show>
+      )}
 
-      <Show when={error()}>
-        <div class="bg-danger/10 border border-danger/30 rounded-lg p-4 mb-4">
-          <p class="text-sm text-danger">{error()}</p>
+      {error && (
+        <div className="bg-danger/10 border border-danger/30 rounded-lg p-4 mb-4">
+          <p className="text-sm text-danger">{error}</p>
         </div>
-      </Show>
+      )}
 
-      <Show when={!isLoading() && !error()}>
-        <Show
-          when={filteredBans().length > 0}
-          fallback={
-            <div class="bg-bg-secondary rounded-lg p-4">
-              <div class="text-sm text-text-muted">
-                {searchQuery() ? 'No bans match your search.' : 'No banned users.'}
-              </div>
-            </div>
-          }
-        >
-          <div class="space-y-2">
-            <For each={filteredBans()}>
-              {(ban) => (
-                <div class="flex items-center justify-between p-3 bg-bg-secondary rounded-lg">
-                  <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-full bg-bg-tertiary flex items-center justify-center overflow-hidden">
-                      <Show
-                        when={ban.avatar_url}
-                        fallback={
-                          <span class="text-text-muted font-medium">
-                            {ban.username.charAt(0).toUpperCase()}
-                          </span>
-                        }
-                      >
-                        <img src={ban.avatar_url!} alt={ban.username} class="w-full h-full object-cover" />
-                      </Show>
+      {!isLoading && !error && (
+        <>
+          {filteredBans.length > 0 ? (
+            <div className="space-y-2">
+              {filteredBans.map((ban) => (
+                <div key={ban.user_id} className="flex items-center justify-between p-3 bg-bg-secondary rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-bg-tertiary flex items-center justify-center overflow-hidden">
+                      {ban.avatar_url ? (
+                        <img src={ban.avatar_url} alt={ban.username} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-text-muted font-medium">
+                          {ban.username.charAt(0).toUpperCase()}
+                        </span>
+                      )}
                     </div>
                     <div>
-                      <div class="font-medium text-text-primary">{ban.username}</div>
-                      <div class="text-xs text-text-muted">
+                      <div className="font-medium text-text-primary">{ban.username}</div>
+                      <div className="text-xs text-text-muted">
                         Banned on {formatDate(ban.banned_at)}
-                        <Show when={ban.reason}>
+                        {ban.reason && (
                           <span> • {ban.reason}</span>
-                        </Show>
+                        )}
                       </div>
                     </div>
                   </div>
                   <button
                     onClick={() => handleUnban(ban.user_id)}
-                    disabled={unbanningId() === ban.user_id}
-                    class="px-3 py-1.5 bg-success/20 text-success text-sm font-medium rounded hover:bg-success/30 transition-colors disabled:opacity-50"
+                    disabled={unbanningId === ban.user_id}
+                    className="px-3 py-1.5 bg-success/20 text-success text-sm font-medium rounded hover:bg-success/30 transition-colors disabled:opacity-50"
                   >
-                    {unbanningId() === ban.user_id ? 'Unbanning...' : 'Unban'}
+                    {unbanningId === ban.user_id ? 'Unbanning...' : 'Unban'}
                   </button>
                 </div>
-              )}
-            </For>
-          </div>
-        </Show>
-      </Show>
+              ))}
+            </div>
+          ) : (
+            <div className="bg-bg-secondary rounded-lg p-4">
+              <div className="text-sm text-text-muted">
+                {searchQuery ? 'No bans match your search.' : 'No banned users.'}
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -2125,10 +2085,10 @@ interface AuditLogEntry {
 }
 
 function AuditLogTab() {
-  const [entries, setEntries] = createSignal<AuditLogEntry[]>([]);
-  const [isLoading, setIsLoading] = createSignal(true);
-  const [actionFilter, setActionFilter] = createSignal('');
-  const [error, setError] = createSignal<string | null>(null);
+  const [entries, setEntries] = useState<AuditLogEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [actionFilter, setActionFilter] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
   const actionTypes = [
     { value: '', label: 'All Actions' },
@@ -2147,12 +2107,13 @@ function AuditLogTab() {
     { value: 'message_delete', label: 'Message Delete' },
   ];
 
-  const fetchAuditLog = async () => {
+  const fetchAuditLog = async (filter?: string) => {
     setIsLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams();
-      if (actionFilter()) params.append('action_type', actionFilter());
+      const filterValue = filter !== undefined ? filter : actionFilter;
+      if (filterValue) params.append('action_type', filterValue);
       params.append('limit', '50');
 
       const data = await api.get<{ entries: AuditLogEntry[] }>(`/audit-log?${params}`);
@@ -2164,9 +2125,9 @@ function AuditLogTab() {
     }
   };
 
-  createEffect(() => {
+  useEffect(() => {
     fetchAuditLog();
-  });
+  }, []);
 
   const formatAction = (action: string) => {
     return action.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
@@ -2178,99 +2139,94 @@ function AuditLogTab() {
   };
 
   const getActionIcon = (action: string) => {
-    if (action.includes('create')) return '➕';
-    if (action.includes('delete')) return '🗑️';
-    if (action.includes('update')) return '✏️';
-    if (action.includes('ban')) return '🔨';
-    if (action.includes('kick')) return '👢';
-    if (action.includes('unban')) return '✅';
-    return '📝';
+    if (action.includes('create')) return '+';
+    if (action.includes('delete')) return 'x';
+    if (action.includes('update')) return '~';
+    if (action.includes('ban')) return '!';
+    if (action.includes('kick')) return '>';
+    if (action.includes('unban')) return 'o';
+    return '*';
   };
 
   return (
     <div>
-      <h2 class="text-xl font-bold text-text-primary mb-5">Audit Log</h2>
+      <h2 className="text-xl font-bold text-text-primary mb-5">Audit Log</h2>
 
-      <p class="text-sm text-text-muted mb-4">
+      <p className="text-sm text-text-muted mb-4">
         View a record of all administrative actions taken in this server.
       </p>
 
-      <div class="flex gap-2 mb-4">
+      <div className="flex gap-2 mb-4">
         <select
-          value={actionFilter()}
-          onChange={(e) => { setActionFilter(e.currentTarget.value); fetchAuditLog(); }}
-          class="px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
+          value={actionFilter}
+          onChange={(e) => { setActionFilter(e.target.value); fetchAuditLog(e.target.value); }}
+          className="px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
         >
-          <For each={actionTypes}>
-            {(type) => <option value={type.value}>{type.label}</option>}
-          </For>
+          {actionTypes.map((type) => (
+            <option key={type.value} value={type.value}>{type.label}</option>
+          ))}
         </select>
         <button
-          onClick={fetchAuditLog}
-          class="px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary hover:bg-bg-modifier-hover transition-colors"
+          onClick={() => fetchAuditLog()}
+          className="px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary hover:bg-bg-modifier-hover transition-colors"
         >
-          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
         </button>
       </div>
 
-      <Show when={isLoading()}>
-        <div class="text-center py-8">
-          <div class="text-text-muted">Loading audit log...</div>
+      {isLoading && (
+        <div className="text-center py-8">
+          <div className="text-text-muted">Loading audit log...</div>
         </div>
-      </Show>
+      )}
 
-      <Show when={error()}>
-        <div class="bg-danger/10 border border-danger/30 rounded-lg p-4 mb-4">
-          <p class="text-sm text-danger">{error()}</p>
+      {error && (
+        <div className="bg-danger/10 border border-danger/30 rounded-lg p-4 mb-4">
+          <p className="text-sm text-danger">{error}</p>
         </div>
-      </Show>
+      )}
 
-      <Show when={!isLoading() && !error()}>
-        <Show
-          when={entries().length > 0}
-          fallback={
-            <div class="text-center py-8">
-              <p class="text-text-muted">No audit log entries found.</p>
-            </div>
-          }
-        >
-          <div class="space-y-2">
-            <For each={entries()}>
-              {(entry) => (
-                <div class="p-3 bg-bg-secondary rounded-lg">
-                  <div class="flex items-start gap-3">
-                    <span class="text-lg">{getActionIcon(entry.action)}</span>
-                    <div class="flex-1 min-w-0">
-                      <div class="flex items-center gap-2 mb-1">
-                        <span class="font-medium text-text-primary">{entry.user.username}</span>
-                        <span class="text-text-muted">{formatAction(entry.action)}</span>
-                        <Show when={entry.target_name}>
-                          <span class="text-text-secondary">{entry.target_name}</span>
-                        </Show>
+      {!isLoading && !error && (
+        <>
+          {entries.length > 0 ? (
+            <div className="space-y-2">
+              {entries.map((entry) => (
+                <div key={entry.id} className="p-3 bg-bg-secondary rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <span className="text-lg font-mono">{getActionIcon(entry.action)}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-medium text-text-primary">{entry.user.username}</span>
+                        <span className="text-text-muted">{formatAction(entry.action)}</span>
+                        {entry.target_name && (
+                          <span className="text-text-secondary">{entry.target_name}</span>
+                        )}
                       </div>
-                      <Show when={entry.reason}>
-                        <p class="text-sm text-text-muted mb-1">Reason: {entry.reason}</p>
-                      </Show>
-                      <Show when={entry.changes}>
-                        <div class="text-xs text-text-muted">
-                          <For each={Object.entries(entry.changes || {})}>
-                            {([key, change]) => (
-                              <div>{key}: {String(change.old)} → {String(change.new)}</div>
-                            )}
-                          </For>
+                      {entry.reason && (
+                        <p className="text-sm text-text-muted mb-1">Reason: {entry.reason}</p>
+                      )}
+                      {entry.changes && (
+                        <div className="text-xs text-text-muted">
+                          {Object.entries(entry.changes).map(([key, change]) => (
+                            <div key={key}>{key}: {String(change.old)} → {String(change.new)}</div>
+                          ))}
                         </div>
-                      </Show>
-                      <div class="text-xs text-text-muted mt-1">{formatDate(entry.created_at)}</div>
+                      )}
+                      <div className="text-xs text-text-muted mt-1">{formatDate(entry.created_at)}</div>
                     </div>
                   </div>
                 </div>
-              )}
-            </For>
-          </div>
-        </Show>
-      </Show>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <p className="text-text-muted">No audit log entries found.</p>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -2280,21 +2236,21 @@ interface SoundboardSettingsTabProps {
   serverId: string;
 }
 
-function SoundboardSettingsTab(props: SoundboardSettingsTabProps) {
-  const [config, setConfig] = createSignal({
+function SoundboardSettingsTab({ serverId }: SoundboardSettingsTabProps) {
+  const [config, setConfig] = useState({
     enabled: true,
     max_sounds_per_user: 3,
     max_sound_duration_seconds: 5,
     max_sound_size_bytes: 1048576,
   });
-  const [loading, setLoading] = createSignal(true);
-  const [saving, setSaving] = createSignal(false);
-  const [saved, setSaved] = createSignal(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   const fetchConfig = async () => {
     try {
       setLoading(true);
-      const response = await api.get<any>(`/servers/${props.serverId}/soundboard/settings`);
+      const response = await api.get<any>(`/servers/${serverId}/soundboard/settings`);
       setConfig(response);
     } catch (err) {
       console.error('[SoundboardSettings] Failed to fetch config:', err);
@@ -2303,16 +2259,16 @@ function SoundboardSettingsTab(props: SoundboardSettingsTabProps) {
     }
   };
 
-  createEffect(() => {
-    if (props.serverId) {
+  useEffect(() => {
+    if (serverId) {
       fetchConfig();
     }
-  });
+  }, [serverId]);
 
   const handleSave = async () => {
     try {
       setSaving(true);
-      const updated = await api.patch<any>(`/servers/${props.serverId}/soundboard/settings`, config());
+      const updated = await api.patch<any>(`/servers/${serverId}/soundboard/settings`, config);
       setConfig(updated);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -2324,63 +2280,65 @@ function SoundboardSettingsTab(props: SoundboardSettingsTabProps) {
   };
 
   return (
-    <div class="space-y-6">
+    <div className="space-y-6">
       <div>
-        <h3 class="text-lg font-semibold text-text-primary mb-1">Soundboard Settings</h3>
-        <p class="text-sm text-text-secondary">Configure the soundboard for this server.</p>
+        <h3 className="text-lg font-semibold text-text-primary mb-1">Soundboard Settings</h3>
+        <p className="text-sm text-text-secondary">Configure the soundboard for this server.</p>
       </div>
 
-      <Show when={!loading()} fallback={<div class="text-text-muted">Loading...</div>}>
-        <div class="space-y-4">
+      {loading ? (
+        <div className="text-text-muted">Loading...</div>
+      ) : (
+        <div className="space-y-4">
           {/* Enable toggle */}
-          <label class="flex items-center justify-between p-3 bg-bg-secondary rounded-lg">
+          <label className="flex items-center justify-between p-3 bg-bg-secondary rounded-lg">
             <div>
-              <div class="text-sm font-medium text-text-primary">Enable Soundboard</div>
-              <div class="text-xs text-text-secondary">Allow members to upload and play sounds</div>
+              <div className="text-sm font-medium text-text-primary">Enable Soundboard</div>
+              <div className="text-xs text-text-secondary">Allow members to upload and play sounds</div>
             </div>
             <input
               type="checkbox"
-              checked={config().enabled}
-              onChange={(e) => setConfig(prev => ({ ...prev, enabled: e.currentTarget.checked }))}
-              class="w-5 h-5 rounded"
+              checked={config.enabled}
+              onChange={(e) => setConfig(prev => ({ ...prev, enabled: e.target.checked }))}
+              className="w-5 h-5 rounded"
             />
           </label>
 
           {/* Max sounds per user */}
-          <div class="p-3 bg-bg-secondary rounded-lg">
-            <label class="block text-sm font-medium text-text-primary mb-1">
+          <div className="p-3 bg-bg-secondary rounded-lg">
+            <label className="block text-sm font-medium text-text-primary mb-1">
               Max Sounds Per User
             </label>
             <input
               type="number"
               min="1"
               max="10"
-              value={config().max_sounds_per_user}
-              onInput={(e) => setConfig(prev => ({ ...prev, max_sounds_per_user: parseInt(e.currentTarget.value) || 3 }))}
-              class="w-20 px-2 py-1 bg-bg-primary border border-border-primary rounded text-sm text-text-primary"
+              value={config.max_sounds_per_user}
+              onChange={(e) => setConfig(prev => ({ ...prev, max_sounds_per_user: parseInt(e.target.value) || 3 }))}
+              className="w-20 px-2 py-1 bg-bg-primary border border-border-primary rounded text-sm text-text-primary"
             />
-            <span class="text-xs text-text-muted ml-2">(1-10)</span>
+            <span className="text-xs text-text-muted ml-2">(1-10)</span>
           </div>
 
           {/* Max duration */}
-          <div class="p-3 bg-bg-secondary rounded-lg">
-            <label class="block text-sm font-medium text-text-primary mb-1">
+          <div className="p-3 bg-bg-secondary rounded-lg">
+            <label className="block text-sm font-medium text-text-primary mb-1">
               Max Sound Duration (seconds)
             </label>
             <input
               type="number"
               min="1"
               max="10"
-              value={config().max_sound_duration_seconds}
-              onInput={(e) => setConfig(prev => ({ ...prev, max_sound_duration_seconds: parseInt(e.currentTarget.value) || 5 }))}
-              class="w-20 px-2 py-1 bg-bg-primary border border-border-primary rounded text-sm text-text-primary"
+              value={config.max_sound_duration_seconds}
+              onChange={(e) => setConfig(prev => ({ ...prev, max_sound_duration_seconds: parseInt(e.target.value) || 5 }))}
+              className="w-20 px-2 py-1 bg-bg-primary border border-border-primary rounded text-sm text-text-primary"
             />
-            <span class="text-xs text-text-muted ml-2">(1-10 seconds)</span>
+            <span className="text-xs text-text-muted ml-2">(1-10 seconds)</span>
           </div>
 
           {/* Max file size */}
-          <div class="p-3 bg-bg-secondary rounded-lg">
-            <label class="block text-sm font-medium text-text-primary mb-1">
+          <div className="p-3 bg-bg-secondary rounded-lg">
+            <label className="block text-sm font-medium text-text-primary mb-1">
               Max Sound File Size (MB)
             </label>
             <input
@@ -2388,28 +2346,28 @@ function SoundboardSettingsTab(props: SoundboardSettingsTabProps) {
               min="0.1"
               max="10"
               step="0.1"
-              value={Math.round(config().max_sound_size_bytes / 1024 / 1024 * 10) / 10}
-              onInput={(e) => setConfig(prev => ({ ...prev, max_sound_size_bytes: Math.round((parseFloat(e.currentTarget.value) || 1) * 1024 * 1024) }))}
-              class="w-20 px-2 py-1 bg-bg-primary border border-border-primary rounded text-sm text-text-primary"
+              value={Math.round(config.max_sound_size_bytes / 1024 / 1024 * 10) / 10}
+              onChange={(e) => setConfig(prev => ({ ...prev, max_sound_size_bytes: Math.round((parseFloat(e.target.value) || 1) * 1024 * 1024) }))}
+              className="w-20 px-2 py-1 bg-bg-primary border border-border-primary rounded text-sm text-text-primary"
             />
-            <span class="text-xs text-text-muted ml-2">(0.1-10 MB)</span>
+            <span className="text-xs text-text-muted ml-2">(0.1-10 MB)</span>
           </div>
 
           {/* Save button */}
-          <div class="flex items-center gap-3">
+          <div className="flex items-center gap-3">
             <button
-              class="px-4 py-2 bg-accent-primary hover:bg-accent-primary/80 text-white rounded text-sm font-medium disabled:opacity-50 transition-colors"
+              className="px-4 py-2 bg-accent-primary hover:bg-accent-primary/80 text-white rounded text-sm font-medium disabled:opacity-50 transition-colors"
               onClick={handleSave}
-              disabled={saving()}
+              disabled={saving}
             >
-              {saving() ? 'Saving...' : 'Save Changes'}
+              {saving ? 'Saving...' : 'Save Changes'}
             </button>
-            <Show when={saved()}>
-              <span class="text-sm text-green-400">Saved!</span>
-            </Show>
+            {saved && (
+              <span className="text-sm text-green-400">Saved!</span>
+            )}
           </div>
         </div>
-      </Show>
+      )}
     </div>
   );
 }
@@ -2432,22 +2390,22 @@ const AFK_TIMEOUT_OPTIONS = [
   { value: 3600, label: '1 hour' },
 ];
 
-function AfkSettingsTab(props: AfkSettingsTabProps) {
-  const [afkTimeout, setAfkTimeout] = createSignal(props.afkTimeout);
-  const [afkChannelId, setAfkChannelId] = createSignal<string | null>(props.afkChannelId);
-  const [saving, setSaving] = createSignal(false);
-  const [saved, setSaved] = createSignal(false);
+function AfkSettingsTab({ serverId, afkTimeout: initialAfkTimeout, afkChannelId: initialAfkChannelId, voiceChannels, onSave }: AfkSettingsTabProps) {
+  const [afkTimeout, setAfkTimeout] = useState(initialAfkTimeout);
+  const [afkChannelId, setAfkChannelId] = useState<string | null>(initialAfkChannelId);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   const handleSave = async () => {
     setSaving(true);
     setSaved(false);
     try {
       await api.patch('/server', {
-        afk_timeout: afkTimeout(),
-        afk_channel_id: afkChannelId() || null,
+        afk_timeout: afkTimeout,
+        afk_channel_id: afkChannelId || null,
       });
       setSaved(true);
-      props.onSave();
+      onSave();
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
       console.error('Failed to save AFK settings:', err);
@@ -2457,82 +2415,78 @@ function AfkSettingsTab(props: AfkSettingsTabProps) {
   };
 
   return (
-    <div class="space-y-6">
+    <div className="space-y-6">
       <div>
-        <h3 class="text-lg font-semibold text-text-primary mb-1">AFK Settings</h3>
-        <p class="text-sm text-text-muted">
+        <h3 className="text-lg font-semibold text-text-primary mb-1">AFK Settings</h3>
+        <p className="text-sm text-text-muted">
           Configure when idle users are automatically moved to the AFK channel.
           Users who are streaming are exempt from the AFK timer.
         </p>
       </div>
 
-      <div class="space-y-4">
+      <div className="space-y-4">
         <div>
-          <label class="block text-sm font-medium text-text-secondary mb-1">
+          <label className="block text-sm font-medium text-text-secondary mb-1">
             AFK Channel
           </label>
           <select
-            value={afkChannelId() || ''}
-            onChange={(e) => setAfkChannelId(e.currentTarget.value || null)}
-            class="w-full bg-bg-tertiary border border-bg-modifier-accent rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-primary"
+            value={afkChannelId || ''}
+            onChange={(e) => setAfkChannelId(e.target.value || null)}
+            className="w-full bg-bg-tertiary border border-bg-modifier-accent rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-primary"
           >
             <option value="">No AFK Channel</option>
-            <For each={props.voiceChannels}>
-              {(channel) => (
-                <option value={channel.id}>{channel.name}</option>
-              )}
-            </For>
+            {voiceChannels.map((channel) => (
+              <option key={channel.id} value={channel.id}>{channel.name}</option>
+            ))}
           </select>
-          <p class="text-xs text-text-muted mt-1">
+          <p className="text-xs text-text-muted mt-1">
             Idle users in voice channels will be moved to this channel.
           </p>
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-text-secondary mb-1">
+          <label className="block text-sm font-medium text-text-secondary mb-1">
             AFK Timeout
           </label>
           <select
-            value={afkTimeout()}
-            onChange={(e) => setAfkTimeout(parseInt(e.currentTarget.value))}
-            class="w-full bg-bg-tertiary border border-bg-modifier-accent rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-primary"
+            value={afkTimeout}
+            onChange={(e) => setAfkTimeout(parseInt(e.target.value))}
+            className="w-full bg-bg-tertiary border border-bg-modifier-accent rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-primary"
           >
-            <For each={AFK_TIMEOUT_OPTIONS}>
-              {(option) => (
-                <option value={option.value}>{option.label}</option>
-              )}
-            </For>
+            {AFK_TIMEOUT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
           </select>
-          <p class="text-xs text-text-muted mt-1">
+          <p className="text-xs text-text-muted mt-1">
             How long a user must be idle before being moved to the AFK channel.
           </p>
         </div>
 
-        <div class="bg-bg-tertiary rounded-md p-4">
-          <h4 class="text-sm font-medium text-text-primary mb-2">What counts as activity?</h4>
-          <ul class="text-xs text-text-muted space-y-1">
+        <div className="bg-bg-tertiary rounded-md p-4">
+          <h4 className="text-sm font-medium text-text-primary mb-2">What counts as activity?</h4>
+          <ul className="text-xs text-text-muted space-y-1">
             <li>Speaking into the microphone</li>
             <li>Sending messages or typing</li>
             <li>Toggling mute, deafen, or screen share</li>
             <li>Any mouse, keyboard, or touch interaction</li>
           </ul>
-          <p class="text-xs text-text-muted mt-2">
+          <p className="text-xs text-text-muted mt-2">
             Users who are screen sharing are never moved to AFK.
           </p>
         </div>
       </div>
 
-      <div class="flex items-center gap-3">
+      <div className="flex items-center gap-3">
         <button
           onClick={handleSave}
-          class="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white rounded-md text-sm font-medium transition-colors disabled:opacity-50"
-          disabled={saving()}
+          className="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white rounded-md text-sm font-medium transition-colors disabled:opacity-50"
+          disabled={saving}
         >
-          {saving() ? 'Saving...' : 'Save Changes'}
+          {saving ? 'Saving...' : 'Save Changes'}
         </button>
-        <Show when={saved()}>
-          <span class="text-sm text-green-400">Saved!</span>
-        </Show>
+        {saved && (
+          <span className="text-sm text-green-400">Saved!</span>
+        )}
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import { createSignal, createRoot } from 'solid-js';
+import { create } from 'zustand';
 
 export interface VoiceParticipant {
   userId: string;
@@ -22,7 +22,6 @@ export interface VoicePermissions {
 }
 
 export type ConnectionQualityLevel = 'excellent' | 'good' | 'poor' | 'lost' | 'unknown';
-
 export type ScreenShareQuality = 'standard' | 'high' | 'native';
 
 export interface ScreenShareState {
@@ -55,384 +54,168 @@ export interface VoiceState {
   error: string | null;
 }
 
-function createVoiceStore() {
-  const [state, setState] = createSignal<VoiceState>({
-    connectionState: 'idle',
-    currentChannelId: null,
-    currentChannelName: null,
-    participants: {},
-    permissions: null,
-    localState: {
-      isMuted: false,
-      isDeafened: false,
-      isSpeaking: false,
-    },
-    screenShare: {
-      isSharing: false,
-      quality: 'standard',
-    },
-    connectionQuality: {
-      level: 'unknown',
-      ping: null,
-      jitter: null,
-      packetLoss: null,
-    },
-    error: null,
-  });
-
+interface VoiceActions {
   // Derived state helpers
-  const isConnected = () => state().connectionState === 'connected';
-  const isConnecting = () => state().connectionState === 'connecting';
-  const currentChannelId = () => state().currentChannelId;
-  const currentChannelName = () => state().currentChannelName;
-  const isMuted = () => state().localState.isMuted;
-  const isDeafened = () => state().localState.isDeafened;
-  const isSpeaking = () => state().localState.isSpeaking;
-  const error = () => state().error;
-  const permissions = () => state().permissions;
-  const isScreenSharing = () => state().screenShare.isSharing;
-  const screenShareQuality = () => state().screenShare.quality;
-  const connectionQuality = () => state().connectionQuality;
+  isConnected: () => boolean;
+  isConnecting: () => boolean;
+  getParticipants: (channelId: string) => VoiceParticipant[];
+  currentParticipants: () => VoiceParticipant[];
+  // State setters
+  setConnecting: (channelId: string, channelName: string) => void;
+  setConnected: (permissions: VoicePermissions) => void;
+  setDisconnected: () => void;
+  setError: (error: string) => void;
+  setReconnecting: () => void;
+  setMuted: (muted: boolean) => void;
+  setDeafened: (deafened: boolean) => void;
+  setSpeaking: (speaking: boolean) => void;
+  setScreenSharing: (isSharing: boolean) => void;
+  setScreenShareQuality: (quality: ScreenShareQuality) => void;
+  setConnectionQuality: (quality: ConnectionQualityState) => void;
+  // Participant management
+  addParticipant: (channelId: string, user: { id: string; username: string; display_name?: string | null; avatar_url?: string | null; is_streaming?: boolean }) => void;
+  removeParticipant: (channelId: string, userId: string) => void;
+  updateParticipantState: (channelId: string, userId: string, updates: { isMuted?: boolean; isDeafened?: boolean; isSpeaking?: boolean; isStreaming?: boolean }) => void;
+  setChannelParticipants: (channelId: string, participants: VoiceParticipant[]) => void;
+  clearChannelParticipants: (channelId: string) => void;
+}
 
-  // Get participants for a specific channel
-  const getParticipants = (channelId: string): VoiceParticipant[] => {
-    return state().participants[channelId] || [];
-  };
+export const useVoiceStore = create<VoiceState & VoiceActions>((set, get) => ({
+  connectionState: 'idle',
+  currentChannelId: null,
+  currentChannelName: null,
+  participants: {},
+  permissions: null,
+  localState: { isMuted: false, isDeafened: false, isSpeaking: false },
+  screenShare: { isSharing: false, quality: 'standard' },
+  connectionQuality: { level: 'unknown', ping: null, jitter: null, packetLoss: null },
+  error: null,
 
-  // Get participants for current channel
-  const currentParticipants = (): VoiceParticipant[] => {
-    const channelId = state().currentChannelId;
-    if (!channelId) return [];
-    return state().participants[channelId] || [];
-  };
+  isConnected: () => get().connectionState === 'connected',
+  isConnecting: () => get().connectionState === 'connecting',
+  getParticipants: (channelId) => get().participants[channelId] || [],
+  currentParticipants: () => {
+    const { currentChannelId, participants } = get();
+    return currentChannelId ? participants[currentChannelId] || [] : [];
+  },
 
-  // Set connecting state
-  const setConnecting = (channelId: string, channelName: string) => {
-    setState(prev => ({
-      ...prev,
-      connectionState: 'connecting',
-      currentChannelId: channelId,
-      currentChannelName: channelName,
-      error: null,
-    }));
-  };
+  setConnecting: (channelId, channelName) => set({ connectionState: 'connecting', currentChannelId: channelId, currentChannelName: channelName, error: null }),
+  setConnected: (permissions) => set({ connectionState: 'connected', permissions, error: null }),
+  setDisconnected: () => set({
+    connectionState: 'idle', currentChannelId: null, currentChannelName: null, permissions: null,
+    localState: { isMuted: false, isDeafened: false, isSpeaking: false },
+    screenShare: { isSharing: false, quality: 'standard' },
+    connectionQuality: { level: 'unknown', ping: null, jitter: null, packetLoss: null },
+    error: null,
+  }),
+  setError: (error) => set({ connectionState: 'error', error }),
+  setReconnecting: () => set({ connectionState: 'reconnecting' }),
 
-  // Set connected state
-  const setConnected = (permissions: VoicePermissions) => {
-    setState(prev => ({
-      ...prev,
-      connectionState: 'connected',
-      permissions,
-      error: null,
-    }));
-  };
+  setMuted: (muted) => set((s) => ({ localState: { ...s.localState, isMuted: muted } })),
+  setDeafened: (deafened) => set((s) => ({ localState: { ...s.localState, isDeafened: deafened, isMuted: deafened ? true : s.localState.isMuted } })),
+  setSpeaking: (speaking) => set((s) => ({ localState: { ...s.localState, isSpeaking: speaking } })),
+  setScreenSharing: (isSharing) => set((s) => ({ screenShare: { ...s.screenShare, isSharing } })),
+  setScreenShareQuality: (quality) => set((s) => ({ screenShare: { ...s.screenShare, quality } })),
+  setConnectionQuality: (quality) => set({ connectionQuality: quality }),
 
-  // Set disconnected state
-  const setDisconnected = () => {
-    setState(prev => ({
-      ...prev,
-      connectionState: 'idle',
-      currentChannelId: null,
-      currentChannelName: null,
-      permissions: null,
-      localState: {
-        isMuted: false,
-        isDeafened: false,
-        isSpeaking: false,
-      },
-      screenShare: {
-        isSharing: false,
-        quality: 'standard',
-      },
-      connectionQuality: {
-        level: 'unknown',
-        ping: null,
-        jitter: null,
-        packetLoss: null,
-      },
-      error: null,
-    }));
-  };
-
-  // Set error state
-  const setError = (error: string) => {
-    setState(prev => ({
-      ...prev,
-      connectionState: 'error',
-      error,
-    }));
-  };
-
-  // Set reconnecting state
-  const setReconnecting = () => {
-    setState(prev => ({
-      ...prev,
-      connectionState: 'reconnecting',
-    }));
-  };
-
-  // Update local muted state
-  const setMuted = (muted: boolean) => {
-    setState(prev => ({
-      ...prev,
-      localState: {
-        ...prev.localState,
-        isMuted: muted,
-      },
-    }));
-  };
-
-  // Update local deafened state
-  const setDeafened = (deafened: boolean) => {
-    setState(prev => ({
-      ...prev,
-      localState: {
-        ...prev.localState,
-        isDeafened: deafened,
-        // If deafening, also mute
-        isMuted: deafened ? true : prev.localState.isMuted,
-      },
-    }));
-  };
-
-  // Update local speaking state
-  const setSpeaking = (speaking: boolean) => {
-    setState(prev => ({
-      ...prev,
-      localState: {
-        ...prev.localState,
-        isSpeaking: speaking,
-      },
-    }));
-  };
-
-  // Update screen sharing state
-  const setScreenSharing = (isSharing: boolean) => {
-    setState(prev => ({
-      ...prev,
-      screenShare: {
-        ...prev.screenShare,
-        isSharing,
-      },
-    }));
-  };
-
-  // Update screen share quality
-  const setScreenShareQuality = (quality: ScreenShareQuality) => {
-    setState(prev => ({
-      ...prev,
-      screenShare: {
-        ...prev.screenShare,
-        quality,
-      },
-    }));
-  };
-
-  // Update connection quality
-  const setConnectionQuality = (quality: ConnectionQualityState) => {
-    setState(prev => ({
-      ...prev,
-      connectionQuality: quality,
-    }));
-  };
-
-  // Add a participant to a channel
-  const addParticipant = (channelId: string, user: {
-    id: string;
-    username: string;
-    display_name?: string | null;
-    avatar_url?: string | null;
-    is_streaming?: boolean;
-  }) => {
-    setState(prev => {
-      const channelParticipants = [...(prev.participants[channelId] || [])];
-      
-      const existingIndex = channelParticipants.findIndex(p => p.userId === user.id);
-      if (existingIndex !== -1) {
-        const existing = channelParticipants[existingIndex];
-        channelParticipants[existingIndex] = {
-          ...existing,
-          username: user.username,
-          displayName: user.display_name || null,
-          avatarUrl: user.avatar_url || null,
-          isStreaming: user.is_streaming ?? existing.isStreaming,
-        };
-        return {
-          ...prev,
-          participants: { ...prev.participants, [channelId]: channelParticipants },
-        };
-      }
-      
-      console.log('[VoiceStore] Adding participant:', user.id, user.username, 'to channel:', channelId);
-      channelParticipants.push({
-        userId: user.id,
+  addParticipant: (channelId, user) => set((s) => {
+    const channelParticipants = [...(s.participants[channelId] || [])];
+    const existingIndex = channelParticipants.findIndex((p) => p.userId === user.id);
+    if (existingIndex !== -1) {
+      channelParticipants[existingIndex] = {
+        ...channelParticipants[existingIndex],
         username: user.username,
         displayName: user.display_name || null,
         avatarUrl: user.avatar_url || null,
-        isMuted: false,
-        isDeafened: false,
-        isSpeaking: false,
-        isStreaming: user.is_streaming || false,
+        isStreaming: user.is_streaming ?? channelParticipants[existingIndex].isStreaming,
+      };
+    } else {
+      channelParticipants.push({
+        userId: user.id, username: user.username,
+        displayName: user.display_name || null, avatarUrl: user.avatar_url || null,
+        isMuted: false, isDeafened: false, isSpeaking: false, isStreaming: user.is_streaming || false,
       });
-      
-      console.log('[VoiceStore] Channel now has', channelParticipants.length, 'participants');
-      
-      return {
-        ...prev,
-        participants: { ...prev.participants, [channelId]: channelParticipants },
-      };
-    });
-  };
+    }
+    return { participants: { ...s.participants, [channelId]: channelParticipants } };
+  }),
 
-  // Remove a participant from a channel
-  const removeParticipant = (channelId: string, userId: string) => {
-    setState(prev => {
-      const existing = prev.participants[channelId] || [];
-      const channelParticipants = existing.filter(p => p.userId !== userId);
-      
-      if (channelParticipants.length === existing.length) {
-        console.log('[VoiceStore] Participant not found for removal:', userId, 'in channel:', channelId);
-        return prev;
-      }
-      
-      console.log('[VoiceStore] Removing participant:', userId, 'from channel:', channelId);
-      console.log('[VoiceStore] Channel now has', channelParticipants.length, 'participants');
-      
-      const newParticipants = { ...prev.participants };
-      if (channelParticipants.length > 0) {
-        newParticipants[channelId] = channelParticipants;
-      } else {
-        delete newParticipants[channelId];
-      }
-      
-      return {
-        ...prev,
-        participants: newParticipants,
-      };
-    });
-  };
+  removeParticipant: (channelId, userId) => set((s) => {
+    const existing = s.participants[channelId] || [];
+    const filtered = existing.filter((p) => p.userId !== userId);
+    if (filtered.length === existing.length) return s;
+    const newParticipants = { ...s.participants };
+    if (filtered.length > 0) newParticipants[channelId] = filtered;
+    else delete newParticipants[channelId];
+    return { participants: newParticipants };
+  }),
 
-  // Update a participant's mute/deafen/streaming state
-  // Only updates fields that are explicitly provided (not undefined)
-  const updateParticipantState = (channelId: string, userId: string, updates: {
-    isMuted?: boolean;
-    isDeafened?: boolean;
-    isSpeaking?: boolean;
-    isStreaming?: boolean;
-  }) => {
-    setState(prev => {
-      const channelParticipants = [...(prev.participants[channelId] || [])];
-      
-      const index = channelParticipants.findIndex(p => p.userId === userId);
-      if (index === -1) return prev;
-      
-      // Filter out undefined values to avoid overwriting existing state
-      const filteredUpdates: Partial<VoiceParticipant> = {};
-      if (updates.isMuted !== undefined) filteredUpdates.isMuted = updates.isMuted;
-      if (updates.isDeafened !== undefined) filteredUpdates.isDeafened = updates.isDeafened;
-      if (updates.isSpeaking !== undefined) filteredUpdates.isSpeaking = updates.isSpeaking;
-      if (updates.isStreaming !== undefined) filteredUpdates.isStreaming = updates.isStreaming;
-      
-      channelParticipants[index] = {
-        ...channelParticipants[index],
-        ...filteredUpdates,
-      };
-      
-      return {
-        ...prev,
-        participants: { ...prev.participants, [channelId]: channelParticipants },
-      };
-    });
-  };
+  updateParticipantState: (channelId, userId, updates) => set((s) => {
+    const channelParticipants = [...(s.participants[channelId] || [])];
+    const index = channelParticipants.findIndex((p) => p.userId === userId);
+    if (index === -1) return s;
+    const filtered: Partial<VoiceParticipant> = {};
+    if (updates.isMuted !== undefined) filtered.isMuted = updates.isMuted;
+    if (updates.isDeafened !== undefined) filtered.isDeafened = updates.isDeafened;
+    if (updates.isSpeaking !== undefined) filtered.isSpeaking = updates.isSpeaking;
+    if (updates.isStreaming !== undefined) filtered.isStreaming = updates.isStreaming;
+    channelParticipants[index] = { ...channelParticipants[index], ...filtered };
+    return { participants: { ...s.participants, [channelId]: channelParticipants } };
+  }),
 
-  // Set participants for a channel (from initial fetch) - merges with existing to avoid race conditions
-  const setChannelParticipants = (channelId: string, participants: VoiceParticipant[]) => {
-    setState(prev => {
-      const existing = prev.participants[channelId] || [];
-      
-      const existingMap = new Map(existing.map(p => [p.userId, p]));
-      
-      const merged: VoiceParticipant[] = [];
-      const seenIds = new Set<string>();
-      
-      for (const p of participants) {
-        const existingParticipant = existingMap.get(p.userId);
-        if (existingParticipant) {
-          merged.push({
-            ...p,
-            isSpeaking: existingParticipant.isSpeaking,
-            isStreaming: p.isStreaming || existingParticipant.isStreaming,
-          });
-        } else {
-          merged.push(p);
-        }
-        seenIds.add(p.userId);
-      }
-      
-      for (const p of existing) {
-        if (!seenIds.has(p.userId)) {
-          console.log('[VoiceStore] Preserving participant added by socket event:', p.userId);
-          merged.push(p);
-        }
-      }
-      
-      return {
-        ...prev,
-        participants: { ...prev.participants, [channelId]: merged },
-      };
-    });
-  };
+  setChannelParticipants: (channelId, participants) => set((s) => {
+    const existing = s.participants[channelId] || [];
+    const existingMap = new Map(existing.map((p) => [p.userId, p]));
+    const merged: VoiceParticipant[] = [];
+    const seenIds = new Set<string>();
+    for (const p of participants) {
+      const ep = existingMap.get(p.userId);
+      merged.push(ep ? { ...p, isSpeaking: ep.isSpeaking, isStreaming: p.isStreaming || ep.isStreaming } : p);
+      seenIds.add(p.userId);
+    }
+    for (const p of existing) {
+      if (!seenIds.has(p.userId)) merged.push(p);
+    }
+    return { participants: { ...s.participants, [channelId]: merged } };
+  }),
 
-  // Clear all participants for a channel
-  const clearChannelParticipants = (channelId: string) => {
-    setState(prev => {
-      const newParticipants = { ...prev.participants };
-      delete newParticipants[channelId];
-      
-      return {
-        ...prev,
-        participants: newParticipants,
-      };
-    });
-  };
+  clearChannelParticipants: (channelId) => set((s) => {
+    const newParticipants = { ...s.participants };
+    delete newParticipants[channelId];
+    return { participants: newParticipants };
+  }),
+}));
 
-  return {
-    state,
-    // Derived state
-    isConnected,
-    isConnecting,
-    currentChannelId,
-    currentChannelName,
-    isMuted,
-    isDeafened,
-    isSpeaking,
-    error,
-    permissions,
-    getParticipants,
-    currentParticipants,
-    isScreenSharing,
-    screenShareQuality,
-    connectionQuality,
-    // State setters
-    setConnecting,
-    setConnected,
-    setDisconnected,
-    setError,
-    setReconnecting,
-    setMuted,
-    setDeafened,
-    setSpeaking,
-    setScreenSharing,
-    setScreenShareQuality,
-    setConnectionQuality,
-    // Participant management
-    addParticipant,
-    removeParticipant,
-    updateParticipantState,
-    setChannelParticipants,
-    clearChannelParticipants,
-  };
-}
-
-// Create singleton store
-export const voiceStore = createRoot(createVoiceStore);
+// Convenience alias for non-hook contexts (voice service, socket handlers)
+export const voiceStore = {
+  getState: () => useVoiceStore.getState(),
+  isConnected: () => useVoiceStore.getState().isConnected(),
+  isConnecting: () => useVoiceStore.getState().isConnecting(),
+  currentChannelId: () => useVoiceStore.getState().currentChannelId,
+  currentChannelName: () => useVoiceStore.getState().currentChannelName,
+  isMuted: () => useVoiceStore.getState().localState.isMuted,
+  isDeafened: () => useVoiceStore.getState().localState.isDeafened,
+  isSpeaking: () => useVoiceStore.getState().localState.isSpeaking,
+  error: () => useVoiceStore.getState().error,
+  permissions: () => useVoiceStore.getState().permissions,
+  getParticipants: (channelId: string) => useVoiceStore.getState().getParticipants(channelId),
+  currentParticipants: () => useVoiceStore.getState().currentParticipants(),
+  isScreenSharing: () => useVoiceStore.getState().screenShare.isSharing,
+  screenShareQuality: () => useVoiceStore.getState().screenShare.quality,
+  connectionQuality: () => useVoiceStore.getState().connectionQuality,
+  setConnecting: (channelId: string, channelName: string) => useVoiceStore.getState().setConnecting(channelId, channelName),
+  setConnected: (permissions: VoicePermissions) => useVoiceStore.getState().setConnected(permissions),
+  setDisconnected: () => useVoiceStore.getState().setDisconnected(),
+  setError: (error: string) => useVoiceStore.getState().setError(error),
+  setReconnecting: () => useVoiceStore.getState().setReconnecting(),
+  setMuted: (muted: boolean) => useVoiceStore.getState().setMuted(muted),
+  setDeafened: (deafened: boolean) => useVoiceStore.getState().setDeafened(deafened),
+  setSpeaking: (speaking: boolean) => useVoiceStore.getState().setSpeaking(speaking),
+  setScreenSharing: (isSharing: boolean) => useVoiceStore.getState().setScreenSharing(isSharing),
+  setScreenShareQuality: (quality: ScreenShareQuality) => useVoiceStore.getState().setScreenShareQuality(quality),
+  setConnectionQuality: (quality: ConnectionQualityState) => useVoiceStore.getState().setConnectionQuality(quality),
+  addParticipant: (channelId: string, user: { id: string; username: string; display_name?: string | null; avatar_url?: string | null; is_streaming?: boolean }) => useVoiceStore.getState().addParticipant(channelId, user),
+  removeParticipant: (channelId: string, userId: string) => useVoiceStore.getState().removeParticipant(channelId, userId),
+  updateParticipantState: (channelId: string, userId: string, updates: { isMuted?: boolean; isDeafened?: boolean; isSpeaking?: boolean; isStreaming?: boolean }) => useVoiceStore.getState().updateParticipantState(channelId, userId, updates),
+  setChannelParticipants: (channelId: string, participants: VoiceParticipant[]) => useVoiceStore.getState().setChannelParticipants(channelId, participants),
+  clearChannelParticipants: (channelId: string) => useVoiceStore.getState().clearChannelParticipants(channelId),
+};

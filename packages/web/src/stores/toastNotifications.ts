@@ -1,4 +1,5 @@
-import { createSignal } from 'solid-js';
+import { create } from 'zustand';
+import { getElectronAPI } from '@/lib/electron';
 
 export interface ToastNotification {
   id: string;
@@ -10,31 +11,47 @@ export interface ToastNotification {
   duration?: number;
 }
 
-const [toasts, setToasts] = createSignal<ToastNotification[]>([]);
+interface ToastState {
+  toasts: ToastNotification[];
+  addToast: (notification: Omit<ToastNotification, 'id'>) => void;
+  removeToast: (id: string) => void;
+}
 
 let idCounter = 0;
 
-function addToast(notification: Omit<ToastNotification, 'id'>) {
-  const id = `toast-${++idCounter}-${Date.now()}`;
-  const duration = notification.duration ?? 5000;
+export const useToastStore = create<ToastState>((set) => ({
+  toasts: [],
 
-  const toast: ToastNotification = { ...notification, id };
-  setToasts(prev => [...prev, toast]);
+  addToast: (notification) => {
+    const id = `toast-${++idCounter}-${Date.now()}`;
+    const duration = notification.duration ?? 5000;
+    const toast: ToastNotification = { ...notification, id };
 
-  // Auto-remove after duration
-  if (duration > 0) {
-    setTimeout(() => {
-      removeToast(id);
-    }, duration);
-  }
-}
+    set((s) => ({ toasts: [...s.toasts, toast] }));
 
-function removeToast(id: string) {
-  setToasts(prev => prev.filter(t => t.id !== id));
-}
+    // Fire native notification + flash frame in Electron for DMs and mentions
+    const electronAPI = getElectronAPI();
+    if (electronAPI && (notification.type === 'dm' || notification.type === 'mention')) {
+      electronAPI.showNotification(notification.title, notification.message);
+      electronAPI.flashFrame(true);
+    }
 
+    if (duration > 0) {
+      setTimeout(() => {
+        set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
+      }, duration);
+    }
+  },
+
+  removeToast: (id) => {
+    set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
+  },
+}));
+
+// Convenience alias for non-hook contexts
 export const toastStore = {
-  toasts,
-  addToast,
-  removeToast,
+  getState: () => useToastStore.getState(),
+  toasts: () => useToastStore.getState().toasts,
+  addToast: (notification: Omit<ToastNotification, 'id'>) => useToastStore.getState().addToast(notification),
+  removeToast: (id: string) => useToastStore.getState().removeToast(id),
 };

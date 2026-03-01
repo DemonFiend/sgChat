@@ -1,4 +1,3 @@
-import { Show } from 'solid-js';
 import { clsx } from 'clsx';
 
 type AvatarSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
@@ -8,7 +7,7 @@ interface AvatarProps {
   alt?: string;
   size?: AvatarSize;
   status?: 'online' | 'idle' | 'dnd' | 'offline' | null;
-  class?: string;
+  className?: string;
 }
 
 const sizeClasses: Record<AvatarSize, string> = {
@@ -34,62 +33,53 @@ const statusColors: Record<string, string> = {
   offline: 'bg-status-offline',
 };
 
-export function Avatar(props: AvatarProps) {
-  const size = () => props.size || 'md';
-  
-  // Generate color from name for fallback
+export function Avatar({ src, alt, size = 'md', status, className }: AvatarProps) {
   const fallbackColor = () => {
-    if (!props.alt) return 'bg-accent';
+    if (!alt) return 'bg-accent';
     const colors = ['bg-red-500', 'bg-orange-500', 'bg-amber-500', 'bg-green-500', 'bg-teal-500', 'bg-blue-500', 'bg-indigo-500', 'bg-purple-500', 'bg-pink-500'];
-    const index = props.alt.charCodeAt(0) % colors.length;
-    return colors[index];
+    return colors[alt.charCodeAt(0) % colors.length];
   };
 
   const initials = () => {
-    if (!props.alt) return '?';
-    const parts = props.alt.split(' ');
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[1][0]).toUpperCase();
-    }
-    return props.alt.slice(0, 2).toUpperCase();
+    if (!alt) return '?';
+    const parts = alt.split(' ');
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return alt.slice(0, 2).toUpperCase();
   };
 
   return (
-    <div class={clsx('relative inline-flex shrink-0', props.class)}>
-      <Show
-        when={props.src}
-        fallback={
-          <div
-            class={clsx(
-              'rounded-full flex items-center justify-center text-white font-semibold',
-              sizeClasses[size()],
-              fallbackColor()
-            )}
-          >
-            <span class={size() === 'xs' ? 'text-xs' : size() === 'sm' ? 'text-xs' : 'text-sm'}>
-              {initials()}
-            </span>
-          </div>
-        }
-      >
+    <div className={clsx('relative inline-flex shrink-0', className)}>
+      {src ? (
         <img
-          src={props.src!}
-          alt={props.alt || 'Avatar'}
+          src={src}
+          alt={alt || 'Avatar'}
           loading="lazy"
           decoding="async"
-          class={clsx('rounded-full object-cover', sizeClasses[size()])}
+          className={clsx('rounded-full object-cover', sizeClasses[size])}
         />
-      </Show>
+      ) : (
+        <div
+          className={clsx(
+            'rounded-full flex items-center justify-center text-white font-semibold',
+            sizeClasses[size],
+            fallbackColor()
+          )}
+        >
+          <span className={size === 'xs' || size === 'sm' ? 'text-xs' : 'text-sm'}>
+            {initials()}
+          </span>
+        </div>
+      )}
 
-      <Show when={props.status}>
+      {status && (
         <span
-          class={clsx(
+          className={clsx(
             'absolute bottom-0 right-0 rounded-full border-bg-primary',
-            statusSizeClasses[size()],
-            statusColors[props.status!]
+            statusSizeClasses[size],
+            statusColors[status]
           )}
         />
-      </Show>
+      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 {
   "name": "@sgchat/web",
-  "version": "1.0.0",
-  "description": "sgChat web client - served by the API server",
+  "version": "2.0.0",
+  "description": "sgChat web client — React 19, served by the API server",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,33 +11,34 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@livekit/components-react": "^2.7.0",
     "@sgchat/shared": "workspace:*",
-    "solid-js": "^1.9.3",
-    "@solidjs/router": "^0.15.2",
-    "@tanstack/solid-query": "^5.62.7",
-    "@tanstack/solid-virtual": "^3.10.9",
-    "socket.io-client": "^4.8.1",
-    "livekit-client": "^2.6.2",
+    "@tanstack/react-virtual": "^3.13.19",
+    "clsx": "^2.1.1",
     "dexie": "^4.0.10",
-    "marked": "^14.1.4",
     "dompurify": "^3.2.3",
-    "clsx": "^2.1.1"
+    "framer-motion": "^12.0.0",
+    "livekit-client": "^2.6.2",
+    "marked": "^14.1.4",
+    "react": "^19.0.0",
+    "react-aria-components": "^1.6.0",
+    "react-dom": "^19.0.0",
+    "react-router": "^7.1.0",
+    "socket.io-client": "^4.8.1",
+    "zustand": "^5.0.3"
   },
   "devDependencies": {
-    "vite": "^6.0.7",
-    "vite-plugin-solid": "^2.10.2",
     "@tailwindcss/vite": "^4.0.0",
-    "tailwindcss": "^4.0.0",
-    "vite-plugin-pwa": "^0.21.1",
-    "typescript": "^5.7.2",
     "@types/dompurify": "^3.0.5",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7",
+    "vite-plugin-pwa": "^0.21.1",
     "workbox-window": "^7.3.0"
   },
-  "keywords": [
-    "chat",
-    "solidjs",
-    "web-client"
-  ],
   "author": "DemonFiend",
   "license": "MIT"
 }

@@ -1,4 +1,4 @@
-import { createSignal, createRoot } from 'solid-js';
+import { create } from 'zustand';
 import { networkStore, getEffectiveUrl } from './network';
 import { encryptPassword, decryptPassword, hashPasswordForTransit } from '../lib/crypto';
 
@@ -10,12 +10,11 @@ export interface User {
   avatar_url: string | null;
   status: 'online' | 'idle' | 'dnd' | 'offline';
   custom_status: string | null;
-  custom_status_expires_at: string | null; // ISO date string for expiration
+  custom_status_expires_at: string | null;
   created_at: string;
   permissions?: UserPermissions;
 }
 
-// Named boolean permissions (not bitmasks)
 export interface UserPermissions {
   administrator: boolean;
   manage_server: boolean;
@@ -49,65 +48,45 @@ export interface UserPermissions {
   use_voice_activity: boolean;
 }
 
-interface AuthState {
-  user: User | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-}
-
 export type AuthErrorReason = 'session_expired' | 'server_unreachable' | 'token_invalid';
 
-// Memory-only token storage (secure - not in localStorage)
+// Memory-only token storage (secure — not in localStorage)
 let accessToken: string | null = null;
 let tokenExpiresAt: number = 0;
-
-// Proactive token refresh interval
 let proactiveRefreshInterval: ReturnType<typeof setInterval> | null = null;
 
-/**
- * Get the effective API URL for auth requests.
- * Uses getEffectiveUrl to handle proxy routing for same-origin cookie flow.
- */
 function getApiUrl(): string {
   const currentUrl = networkStore.currentUrl();
   return getEffectiveUrl(currentUrl);
 }
 
-function createAuthStore() {
-  const [state, setState] = createSignal<AuthState>({
-    user: null,
-    isAuthenticated: false,
-    isLoading: true,
-  });
+interface AuthState {
+  user: User | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  authError: AuthErrorReason | null;
+}
 
-  // Global auth error signal -- when set, the SessionExpiredOverlay takes over
-  const [authError, setAuthError] = createSignal<AuthErrorReason | null>(null);
+interface AuthActions {
+  getAccessToken: () => string | null;
+  login: (email: string, password: string) => Promise<User>;
+  loginWithRememberMe: (email: string, password: string, rememberMe: boolean) => Promise<User>;
+  register: (email: string, username: string, password: string) => Promise<User>;
+  logout: (forgetDevice?: boolean) => Promise<void>;
+  refreshAccessToken: () => Promise<string>;
+  checkAuth: () => Promise<boolean>;
+  setNotLoading: () => void;
+  attemptAutoLogin: () => Promise<boolean>;
+  updateStatus: (status: User['status']) => void;
+  updateCustomStatus: (custom_status: string | null, expires_at?: string | null) => void;
+  clearExpiredCustomStatus: () => boolean;
+  refreshUser: () => Promise<User | null>;
+  updateAvatarUrl: (avatar_url: string | null) => void;
+  triggerAuthError: (reason: AuthErrorReason) => void;
+  clearAuthError: () => void;
+}
 
-  /**
-   * Trigger a graceful auth failure. This sets the error reason which
-   * the SessionExpiredOverlay component uses to show a user-friendly
-   * message before redirecting back to the login page.
-   */
-  const triggerAuthError = (reason: AuthErrorReason) => {
-    // Only set if not already in error state (avoid spamming)
-    if (authError() === null) {
-      setAuthError(reason);
-    }
-  };
-
-  /** Clear the auth error (e.g. when user manually navigates to login) */
-  const clearAuthError = () => {
-    setAuthError(null);
-  };
-
-  const getAccessToken = (): string | null => {
-    // Check if token is expired (with 30s buffer)
-    if (accessToken && Date.now() < tokenExpiresAt - 30000) {
-      return accessToken;
-    }
-    return null;
-  };
-
+export const useAuthStore = create<AuthState & AuthActions>((set, get) => {
   const setTokens = (token: string, expiresIn: number = 900) => {
     accessToken = token;
     tokenExpiresAt = Date.now() + expiresIn * 1000;
@@ -119,30 +98,17 @@ function createAuthStore() {
     stopProactiveRefresh();
   };
 
-  /**
-   * Start proactive token refresh interval.
-   * Checks every minute if token expires in < 2 minutes and refreshes early.
-   */
   const startProactiveRefresh = () => {
-    // Clear any existing interval
     stopProactiveRefresh();
-    
     proactiveRefreshInterval = setInterval(async () => {
-      // If token expires in less than 2 minutes (120000ms), refresh now
       if (tokenExpiresAt && Date.now() > tokenExpiresAt - 120000) {
         try {
-          await refreshAccessToken();
-          console.log('[Auth] Proactive token refresh successful');
-        } catch (err) {
-          console.error('[Auth] Proactive token refresh failed:', err);
-        }
+          await get().refreshAccessToken();
+        } catch { /* handled in refreshAccessToken */ }
       }
-    }, 60000); // Check every minute
+    }, 60000);
   };
 
-  /**
-   * Stop proactive token refresh interval.
-   */
   const stopProactiveRefresh = () => {
     if (proactiveRefreshInterval) {
       clearInterval(proactiveRefreshInterval);
@@ -150,344 +116,207 @@ function createAuthStore() {
     }
   };
 
-  const login = async (email: string, password: string): Promise<User> => {
-    const apiUrl = getApiUrl();
-    if (!apiUrl) {
-      throw new Error('No network selected');
-    }
-
-    // Hash password client-side so plaintext never appears in network requests
-    const hashedPassword = await hashPasswordForTransit(password);
-
-    const response = await fetch(`${apiUrl}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ email, password: hashedPassword }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Login failed');
-    }
-
-    const data = await response.json();
-    setTokens(data.access_token, 900); // 15 min
-    startProactiveRefresh();
-
-    setState({
-      user: data.user,
-      isAuthenticated: true,
-      isLoading: false,
-    });
-
-    return data.user;
-  };
-
-  /**
-   * Login with optional "Remember me" - encrypts and stores credentials
-   */
-  const loginWithRememberMe = async (
-    email: string,
-    password: string,
-    rememberMe: boolean
-  ): Promise<User> => {
-    const user = await login(email, password);
-    const apiUrl = getApiUrl();
-
-    if (rememberMe && apiUrl) {
-      // Encrypt and store credentials
-      const encrypted = await encryptPassword(password);
-      networkStore.saveAccountForNetwork(apiUrl, email, encrypted);
-    } else if (apiUrl) {
-      // Just save email without credentials
-      networkStore.saveAccountForNetwork(apiUrl, email, undefined);
-    }
-
-    return user;
-  };
-
-  const register = async (
-    email: string,
-    username: string,
-    password: string
-  ): Promise<User> => {
-    const apiUrl = getApiUrl();
-    if (!apiUrl) {
-      throw new Error('No network selected');
-    }
-
-    // Hash password client-side so plaintext never appears in network requests
-    const hashedPassword = await hashPasswordForTransit(password);
-
-    const response = await fetch(`${apiUrl}/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ email, username, password: hashedPassword }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Registration failed');
-    }
-
-    const data = await response.json();
-    setTokens(data.access_token, 900);
-    startProactiveRefresh();
-
-    setState({
-      user: data.user,
-      isAuthenticated: true,
-      isLoading: false,
-    });
-
-    // Save the email for this network (no password stored on register)
-    networkStore.saveAccountForNetwork(apiUrl, email, undefined);
-
-    return data.user;
-  };
-
-  const refreshAccessToken = async (): Promise<string> => {
-    const apiUrl = getApiUrl();
-    if (!apiUrl) {
-      throw new Error('No network selected');
-    }
-
-    // Snapshot auth state BEFORE any clearing so we know if user was logged in
-    const wasAuthenticated = state().isAuthenticated || accessToken !== null;
-
-    let response: Response;
-    try {
-      response = await fetch(`${apiUrl}/auth/refresh`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-    } catch {
-      // Network error -- server is unreachable
-      clearTokens();
-      setState({ user: null, isAuthenticated: false, isLoading: false });
-      // Only show the overlay if the user was previously logged in
-      // (avoids showing it on first page load when server happens to be down)
-      if (wasAuthenticated) {
-        triggerAuthError('server_unreachable');
-      }
-      throw new Error('Server unreachable');
-    }
-
-    if (!response.ok) {
-      clearTokens();
-      setState({ user: null, isAuthenticated: false, isLoading: false });
-      // Only trigger the overlay if we were previously authenticated
-      // (avoids showing it on initial page load when there's no session)
-      if (wasAuthenticated) {
-        triggerAuthError('session_expired');
-      }
-      throw new Error('Session expired');
-    }
-
-    const data = await response.json();
-    setTokens(data.access_token, 900);
-    return data.access_token;
-  };
-
-  const logout = async (forgetDevice: boolean = false) => {
-    const apiUrl = getApiUrl();
-    const currentUser = state().user;
-    
-    try {
-      if (apiUrl) {
-        await fetch(`${apiUrl}/auth/logout`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        });
-      }
-    } catch {
-      // Ignore errors on logout
-    }
-
-    // Clear stored credentials if "forget device" is checked
-    if (forgetDevice && apiUrl && currentUser) {
-      networkStore.clearStoredCredentials(apiUrl, currentUser.email);
-    }
-
-    clearTokens();
-    setState({ user: null, isAuthenticated: false, isLoading: false });
-  };
-
-  const checkAuth = async (): Promise<boolean> => {
-    const apiUrl = getApiUrl();
-    if (!apiUrl) {
-      setState({ user: null, isAuthenticated: false, isLoading: false });
-      return false;
-    }
-
-    setState((prev) => ({ ...prev, isLoading: true }));
-
-    try {
-      const token = await refreshAccessToken();
-
-      // Fetch current user
-      const response = await fetch(`${apiUrl}/users/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch user');
-      }
-
-      const user = await response.json();
-      setState({ user, isAuthenticated: true, isLoading: false });
-      startProactiveRefresh();
-      return true;
-    } catch {
-      setState({ user: null, isAuthenticated: false, isLoading: false });
-      return false;
-    }
-  };
-
-  // Set loading to false initially (will be set to true when checking auth)
-  const setNotLoading = () => {
-    setState((prev) => ({ ...prev, isLoading: false }));
-  };
-
-  /**
-   * Attempt auto-login using stored credentials
-   * Returns true if successful, false otherwise
-   */
-  const attemptAutoLogin = async (): Promise<boolean> => {
-    const apiUrl = getApiUrl();
-    if (!apiUrl) return false;
-
-    const accounts = networkStore.getAccountsForNetwork(apiUrl);
-    // Find first account with valid (non-expired) stored credentials
-    const accountWithCreds = accounts.find(
-      (a) => a.encryptedPassword && a.rememberMe && !networkStore.isCredentialExpired(a)
-    );
-
-    if (!accountWithCreds || !accountWithCreds.encryptedPassword) {
-      return false;
-    }
-
-    try {
-      const password = await decryptPassword(accountWithCreds.encryptedPassword);
-      await login(accountWithCreds.email, password);
-      // Update lastUsed without changing credentials
-      networkStore.saveAccountForNetwork(apiUrl, accountWithCreds.email, accountWithCreds.encryptedPassword);
-      return true;
-    } catch (error) {
-      console.error('Auto-login failed:', error);
-      // Clear corrupted/invalid credentials
-      networkStore.clearStoredCredentials(apiUrl, accountWithCreds.email);
-      return false;
-    }
-  };
-
-  // Update user status locally
-  const updateStatus = (status: User['status']) => {
-    setState(prev => ({
-      ...prev,
-      user: prev.user ? { ...prev.user, status } : null
-    }));
-  };
-
-  // Update custom status locally
-  const updateCustomStatus = (custom_status: string | null, expires_at?: string | null) => {
-    setState(prev => ({
-      ...prev,
-      user: prev.user ? { 
-        ...prev.user, 
-        custom_status,
-        custom_status_expires_at: expires_at ?? null
-      } : null
-    }));
-  };
-
-  // Check and clear expired custom status
-  const clearExpiredCustomStatus = () => {
-    const currentUser = state().user;
-    if (currentUser?.custom_status_expires_at) {
-      const expiresAt = new Date(currentUser.custom_status_expires_at);
-      if (expiresAt <= new Date()) {
-        setState(prev => ({
-          ...prev,
-          user: prev.user ? { 
-            ...prev.user, 
-            custom_status: null,
-            custom_status_expires_at: null 
-          } : null
-        }));
-        return true; // Was expired and cleared
-      }
-    }
-    return false; // Not expired
-  };
-
-  /**
-   * Refresh user data from the server.
-   * Useful after avatar changes or other profile updates.
-   */
-  const refreshUser = async (): Promise<User | null> => {
-    const apiUrl = getApiUrl();
-    const token = getAccessToken();
-    
-    if (!apiUrl || !token) {
-      return null;
-    }
-
-    try {
-      const response = await fetch(`${apiUrl}/users/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        return null;
-      }
-
-      const user = await response.json();
-      setState(prev => ({ ...prev, user }));
-      return user;
-    } catch {
-      return null;
-    }
-  };
-
-  /**
-   * Update user avatar URL locally (used by real-time events).
-   */
-  const updateAvatarUrl = (avatar_url: string | null) => {
-    setState(prev => ({
-      ...prev,
-      user: prev.user ? { ...prev.user, avatar_url } : null
-    }));
-  };
-
   return {
-    state,
-    authError,
-    getAccessToken,
-    login,
-    loginWithRememberMe,
-    register,
-    logout,
-    refreshAccessToken,
-    checkAuth,
-    setNotLoading,
-    attemptAutoLogin,
-    updateStatus,
-    updateCustomStatus,
-    clearExpiredCustomStatus,
-    refreshUser,
-    updateAvatarUrl,
-    triggerAuthError,
-    clearAuthError,
-  };
-}
+    user: null,
+    isAuthenticated: false,
+    isLoading: true,
+    authError: null,
 
-// Create singleton store
-export const authStore = createRoot(createAuthStore);
+    getAccessToken: () => {
+      if (accessToken && Date.now() < tokenExpiresAt - 30000) return accessToken;
+      return null;
+    },
+
+    triggerAuthError: (reason) => {
+      if (get().authError === null) set({ authError: reason });
+    },
+    clearAuthError: () => set({ authError: null }),
+
+    login: async (email, password) => {
+      const apiUrl = getApiUrl();
+      if (!apiUrl) throw new Error('No network selected');
+      const hashedPassword = await hashPasswordForTransit(password);
+      const response = await fetch(`${apiUrl}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email, password: hashedPassword }),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Login failed');
+      }
+      const data = await response.json();
+      setTokens(data.access_token, 900);
+      startProactiveRefresh();
+      set({ user: data.user, isAuthenticated: true, isLoading: false });
+      return data.user;
+    },
+
+    loginWithRememberMe: async (email, password, rememberMe) => {
+      const user = await get().login(email, password);
+      const apiUrl = getApiUrl();
+      if (rememberMe && apiUrl) {
+        const encrypted = await encryptPassword(password);
+        networkStore.saveAccountForNetwork(apiUrl, email, encrypted);
+      } else if (apiUrl) {
+        networkStore.saveAccountForNetwork(apiUrl, email, undefined);
+      }
+      return user;
+    },
+
+    register: async (email, username, password) => {
+      const apiUrl = getApiUrl();
+      if (!apiUrl) throw new Error('No network selected');
+      const hashedPassword = await hashPasswordForTransit(password);
+      const response = await fetch(`${apiUrl}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email, username, password: hashedPassword }),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Registration failed');
+      }
+      const data = await response.json();
+      setTokens(data.access_token, 900);
+      startProactiveRefresh();
+      set({ user: data.user, isAuthenticated: true, isLoading: false });
+      networkStore.saveAccountForNetwork(apiUrl, email, undefined);
+      return data.user;
+    },
+
+    refreshAccessToken: async () => {
+      const apiUrl = getApiUrl();
+      if (!apiUrl) throw new Error('No network selected');
+      const wasAuthenticated = get().isAuthenticated || accessToken !== null;
+      let response: Response;
+      try {
+        response = await fetch(`${apiUrl}/auth/refresh`, { method: 'POST', credentials: 'include' });
+      } catch {
+        clearTokens();
+        set({ user: null, isAuthenticated: false, isLoading: false });
+        if (wasAuthenticated) get().triggerAuthError('server_unreachable');
+        throw new Error('Server unreachable');
+      }
+      if (!response.ok) {
+        clearTokens();
+        set({ user: null, isAuthenticated: false, isLoading: false });
+        if (wasAuthenticated) get().triggerAuthError('session_expired');
+        throw new Error('Session expired');
+      }
+      const data = await response.json();
+      setTokens(data.access_token, 900);
+      return data.access_token;
+    },
+
+    logout: async (forgetDevice = false) => {
+      const apiUrl = getApiUrl();
+      const currentUser = get().user;
+      try {
+        if (apiUrl) {
+          await fetch(`${apiUrl}/auth/logout`, {
+            method: 'POST', credentials: 'include',
+            headers: { Authorization: `Bearer ${accessToken}` },
+          });
+        }
+      } catch { /* ignore */ }
+      if (forgetDevice && apiUrl && currentUser) {
+        networkStore.clearStoredCredentials(apiUrl, currentUser.email);
+      }
+      clearTokens();
+      set({ user: null, isAuthenticated: false, isLoading: false });
+    },
+
+    checkAuth: async () => {
+      const apiUrl = getApiUrl();
+      if (!apiUrl) { set({ user: null, isAuthenticated: false, isLoading: false }); return false; }
+      set((s) => ({ ...s, isLoading: true }));
+      try {
+        const token = await get().refreshAccessToken();
+        const response = await fetch(`${apiUrl}/users/me`, {
+          headers: { Authorization: `Bearer ${token}` }, credentials: 'include',
+        });
+        if (!response.ok) throw new Error('Failed to fetch user');
+        const user = await response.json();
+        set({ user, isAuthenticated: true, isLoading: false });
+        startProactiveRefresh();
+        return true;
+      } catch {
+        set({ user: null, isAuthenticated: false, isLoading: false });
+        return false;
+      }
+    },
+
+    setNotLoading: () => set((s) => ({ ...s, isLoading: false })),
+
+    attemptAutoLogin: async () => {
+      const apiUrl = getApiUrl();
+      if (!apiUrl) return false;
+      const accounts = networkStore.getAccountsForNetwork(apiUrl);
+      const account = accounts.find(
+        (a) => a.encryptedPassword && a.rememberMe && !networkStore.isCredentialExpired(a)
+      );
+      if (!account?.encryptedPassword) return false;
+      try {
+        const password = await decryptPassword(account.encryptedPassword);
+        await get().login(account.email, password);
+        networkStore.saveAccountForNetwork(apiUrl, account.email, account.encryptedPassword);
+        return true;
+      } catch (error) {
+        console.error('Auto-login failed:', error);
+        networkStore.clearStoredCredentials(apiUrl, account.email);
+        return false;
+      }
+    },
+
+    updateStatus: (status) => set((s) => ({ ...s, user: s.user ? { ...s.user, status } : null })),
+    updateCustomStatus: (custom_status, expires_at) => set((s) => ({
+      ...s, user: s.user ? { ...s.user, custom_status, custom_status_expires_at: expires_at ?? null } : null,
+    })),
+    clearExpiredCustomStatus: () => {
+      const user = get().user;
+      if (user?.custom_status_expires_at && new Date(user.custom_status_expires_at) <= new Date()) {
+        set((s) => ({ ...s, user: s.user ? { ...s.user, custom_status: null, custom_status_expires_at: null } : null }));
+        return true;
+      }
+      return false;
+    },
+    refreshUser: async () => {
+      const apiUrl = getApiUrl();
+      const token = get().getAccessToken();
+      if (!apiUrl || !token) return null;
+      try {
+        const response = await fetch(`${apiUrl}/users/me`, {
+          headers: { Authorization: `Bearer ${token}` }, credentials: 'include',
+        });
+        if (!response.ok) return null;
+        const user = await response.json();
+        set((s) => ({ ...s, user }));
+        return user;
+      } catch { return null; }
+    },
+    updateAvatarUrl: (avatar_url) => set((s) => ({ ...s, user: s.user ? { ...s.user, avatar_url } : null })),
+  };
+});
+
+// Convenience alias for non-hook contexts (API client, socket service)
+export const authStore = {
+  getState: () => useAuthStore.getState(),
+  state: () => {
+    const s = useAuthStore.getState();
+    return { user: s.user, isAuthenticated: s.isAuthenticated, isLoading: s.isLoading };
+  },
+  authError: () => useAuthStore.getState().authError,
+  getAccessToken: () => useAuthStore.getState().getAccessToken(),
+  refreshAccessToken: () => useAuthStore.getState().refreshAccessToken(),
+  loginWithRememberMe: (email: string, password: string, rememberMe: boolean) =>
+    useAuthStore.getState().loginWithRememberMe(email, password, rememberMe),
+  register: (email: string, username: string, password: string) =>
+    useAuthStore.getState().register(email, username, password),
+  logout: (forgetDevice?: boolean) => useAuthStore.getState().logout(forgetDevice),
+  checkAuth: () => useAuthStore.getState().checkAuth(),
+  attemptAutoLogin: () => useAuthStore.getState().attemptAutoLogin(),
+  triggerAuthError: (reason: AuthErrorReason) => useAuthStore.getState().triggerAuthError(reason),
+};

@@ -1,51 +1,45 @@
-import { Show } from 'solid-js';
 import { clsx } from 'clsx';
 
 interface UnreadIndicatorProps {
   count?: number;
   hasMentions?: boolean;
-  class?: string;
+  className?: string;
 }
 
-export function UnreadIndicator(props: UnreadIndicatorProps) {
-  const displayCount = () => {
-    if (!props.count || props.count <= 0) return null;
-    if (props.count > 99) return '99+';
-    return props.count.toString();
-  };
+export function UnreadIndicator({ count, hasMentions, className }: UnreadIndicatorProps) {
+  if (!count || count <= 0) return null;
+
+  const displayCount = count > 99 ? '99+' : count.toString();
 
   return (
-    <Show when={props.count && props.count > 0}>
-      <span
-        class={clsx(
-          "inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-xs font-bold",
-          props.hasMentions 
-            ? "bg-danger text-white" 
-            : "bg-text-muted text-bg-primary",
-          props.class
-        )}
-      >
-        {displayCount()}
-      </span>
-    </Show>
+    <span
+      className={clsx(
+        "inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-xs font-bold",
+        hasMentions
+          ? "bg-danger text-white"
+          : "bg-text-muted text-bg-primary",
+        className
+      )}
+    >
+      {displayCount}
+    </span>
   );
 }
 
-// Dot indicator for simpler unread state (no count)
 interface UnreadDotProps {
   isUnread: boolean;
-  class?: string;
+  className?: string;
 }
 
-export function UnreadDot(props: UnreadDotProps) {
+export function UnreadDot({ isUnread, className }: UnreadDotProps) {
+  if (!isUnread) return null;
+
   return (
-    <Show when={props.isUnread}>
-      <span 
-        class={clsx(
-          "w-2 h-2 rounded-full bg-text-primary",
-          props.class
-        )} 
-      />
-    </Show>
+    <span
+      className={clsx(
+        "w-2 h-2 rounded-full bg-text-primary",
+        className
+      )}
+    />
   );
 }
