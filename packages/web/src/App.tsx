@@ -5,6 +5,7 @@ import { useNetworkStore } from '@/stores/network';
 import { socketService } from '@/lib/socket';
 import { SessionExpiredOverlay } from '@/components/ui/SessionExpiredOverlay';
 import { NotificationToast } from '@/components/ui/NotificationToast';
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 
 const LoginPage = lazy(() => import('@/features/auth/LoginPage').then((m) => ({ default: m.LoginPage })));
 const RegisterPage = lazy(() => import('@/features/auth/RegisterPage').then((m) => ({ default: m.RegisterPage })));
@@ -171,8 +172,10 @@ function AppRoutes() {
 
 export function App() {
   return (
-    <BrowserRouter>
-      <AppRoutes />
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <AppRoutes />
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }

@@ -1,8 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Link, useParams, useNavigate } from 'react-router';
+import { useParams } from 'react-router';
 import { clsx } from 'clsx';
 import { authStore } from '@/stores/auth';
-import { networkStore } from '@/stores/network';
 import { useVoiceStore } from '@/stores/voice';
 import { serverPopupStore } from '@/stores/serverPopup';
 import { canManageChannels } from '@/stores/permissions';
@@ -34,7 +33,6 @@ interface ServerSidebarProps {
 
 export function ServerSidebar({ server, channels, categories, onServerSettingsClick, onChannelSettingsClick, onCreateChannel }: ServerSidebarProps) {
   const { channelId } = useParams<{ channelId?: string }>();
-  const navigate = useNavigate();
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
   const voiceConnected = useVoiceStore((s) => s.connectionState === 'connected');
@@ -86,12 +84,6 @@ export function ServerSidebar({ server, channels, categories, onServerSettingsCl
     document.body.style.userSelect = 'none';
   };
 
-  const handleLogout = async () => {
-    await authStore.logout(false);
-    networkStore.clearConnection();
-    navigate('/login', { replace: true });
-  };
-
   return (
     <div
       className="flex flex-col h-full bg-bg-secondary border-r border-bg-tertiary relative"
@@ -111,17 +103,6 @@ export function ServerSidebar({ server, channels, categories, onServerSettingsCl
 
       {/* Header with Server Info and Settings */}
       <div className="flex items-center gap-2 p-3 border-b border-bg-tertiary">
-        {/* Logout Button */}
-        <button
-          onClick={handleLogout}
-          className="p-2 rounded hover:bg-bg-modifier-hover text-text-muted hover:text-danger transition-colors"
-          title="Log Out"
-        >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-          </svg>
-        </button>
-
         {/* Server Icon & Name */}
         <button
           onClick={() => serverPopupStore.reopenPopup()}

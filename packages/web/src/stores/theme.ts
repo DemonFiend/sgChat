@@ -6,7 +6,7 @@ export type Theme = 'midnight' | 'dark' | 'light' | 'oled' | 'nord';
 const STORAGE_KEY = 'sgchat-theme';
 const ALL_THEMES: Theme[] = ['midnight', 'dark', 'light', 'oled', 'nord'];
 
-function getInitialTheme(): Theme {
+export function getInitialTheme(): Theme {
   if (typeof window === 'undefined') return 'nord';
   const stored = localStorage.getItem(STORAGE_KEY) as Theme | null;
   if (stored && ALL_THEMES.includes(stored)) return stored;
@@ -15,7 +15,7 @@ function getInitialTheme(): Theme {
   return isElectron() ? 'midnight' : 'nord';
 }
 
-function applyTheme(newTheme: Theme) {
+export function applyTheme(newTheme: Theme) {
   // Suppress transitions on initial load to prevent flash
   document.documentElement.classList.add('no-theme-transition');
   document.documentElement.setAttribute('data-theme', newTheme);
@@ -32,9 +32,7 @@ interface ThemeState {
 }
 
 export const useThemeStore = create<ThemeState>((set, get) => {
-  // Apply initial theme on load
   const initial = getInitialTheme();
-  if (typeof window !== 'undefined') applyTheme(initial);
 
   return {
     theme: initial,

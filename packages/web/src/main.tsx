@@ -1,8 +1,11 @@
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { isElectron } from './lib/electron';
+import { applyTheme, getInitialTheme } from './stores/theme';
 import './styles/index.css';
-import './stores/theme'; // Eagerly initialize theme (applies data-theme on <html>)
+
+// Apply theme before React renders (outside store constructor to avoid render conflicts)
+applyTheme(getInitialTheme());
 
 // Flag Electron environment on <html> for CSS hooks
 if (isElectron()) {

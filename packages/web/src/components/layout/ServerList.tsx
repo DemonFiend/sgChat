@@ -19,8 +19,8 @@ interface ServerListProps {
 export function ServerList({ servers }: ServerListProps) {
   const location = useLocation();
   const [lastClickTime, setLastClickTime] = useState(0);
-  const { reopenPopup } = useServerPopupStore();
-  const { isAuthenticated } = useAuthStore();
+  const reopenPopup = useServerPopupStore((s) => s.reopenPopup);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
   // Single-server mode: server is "active" when not on DMs
   const isActive = (_serverId: string) =>

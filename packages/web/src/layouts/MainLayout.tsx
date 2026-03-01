@@ -20,7 +20,6 @@ import { UserPanel } from '@/components/layout/UserPanel';
 import { TitleBar } from '@/components/ui/TitleBar';
 import { ServerSettingsModal } from '@/components/ui/ServerSettingsModal';
 import { ChannelSettingsModal } from '@/components/ui/ChannelSettingsModal';
-import { VoiceConnectedBar } from '@/components/ui/VoiceConnectedBar';
 import { UserContextMenu, type ContextMenuItem } from '@/components/ui/UserContextMenu';
 import { UserProfilePopover } from '@/components/ui/UserProfilePopover';
 import { UserSettingsModal } from '@/components/ui/UserSettingsModal';
@@ -548,7 +547,6 @@ export function MainLayout() {
             }
             onCreateChannel={canManageChannels() ? () => setShowServerSettings(true) : undefined}
           />
-          <VoiceConnectedBar />
           {voiceConnected && currentServer && (
             <SoundboardPanel serverId={currentServer.id} />
           )}

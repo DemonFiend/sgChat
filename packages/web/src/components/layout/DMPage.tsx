@@ -74,7 +74,7 @@ export function DMPage() {
     } catch {
       // fallback below
     }
-    navigate('/channels/unknown');
+    navigate('/channels');
   };
 
   const fetchFriends = useCallback(async () => {
