@@ -25,6 +25,9 @@ import { UserContextMenu, type ContextMenuItem } from '@/components/ui/UserConte
 import { UserProfilePopover } from '@/components/ui/UserProfilePopover';
 import { UserSettingsModal } from '@/components/ui/UserSettingsModal';
 import { FloatingUserPanel } from '@/components/layout/FloatingUserPanel';
+import { ServerWelcomePopup } from '@/components/ui/ServerWelcomePopup';
+import { UnclaimedServerBanner } from '@/components/ui/UnclaimedServerBanner';
+import { ClaimAdminModal } from '@/components/ui/ClaimAdminModal';
 import { useGlobalShortcuts } from '@/hooks/useElectron';
 import { slideInRight, easeTransition } from '@/lib/motion';
 import type { Channel, Category } from '@/components/layout/ChannelList';
@@ -37,6 +40,7 @@ interface ServerData {
   motd?: string;
   server_time?: string;
   timezone?: string;
+  admin_claimed?: boolean;
 }
 
 interface MemberData {
@@ -85,6 +89,7 @@ export function MainLayout() {
     position: { x: number; y: number };
   } | null>(null);
   const [showUserSettings, setShowUserSettings] = useState(false);
+  const [showClaimAdmin, setShowClaimAdmin] = useState(false);
 
   // Server time offset (minutes) for FloatingUserPanel
   const serverTimeOffset = useMemo(() => {
@@ -137,8 +142,12 @@ export function MainLayout() {
           );
         }
 
-        // Auto-navigate to first text channel if no valid channelId
-        if (!channelId) {
+        // Auto-navigate to first text channel if channelId is missing or invalid
+        // (e.g. server ID from ServerList click instead of a channel ID)
+        const matchedChannel = channelId
+          ? fetchedChannels.find((c) => c.id === channelId)
+          : null;
+        if (!matchedChannel) {
           const firstText = fetchedChannels
             .filter((c) => c.type === 'text')
             .sort((a, b) => a.position - b.position)[0];
@@ -175,6 +184,9 @@ export function MainLayout() {
       if (firstText) {
         navigate(`/channels/${firstText.id}`, { replace: true });
       }
+      return;
+    } else {
+      // Channels not loaded yet — skip message fetch, will retry when channels arrive
       return;
     }
 
@@ -474,6 +486,12 @@ export function MainLayout() {
       {/* Electron title bar — renders nothing in browser */}
       <TitleBar />
 
+      {/* Unclaimed server banner */}
+      <UnclaimedServerBanner
+        isVisible={currentServer?.admin_claimed === false}
+        onClaimClick={() => setShowClaimAdmin(true)}
+      />
+
       {/* Main content area — adjusts for title bar height */}
       <div
         className="flex flex-1 min-h-0"
@@ -663,6 +681,22 @@ export function MainLayout() {
           ]}
         />
       )}
+
+      {/* Claim Admin Modal */}
+      <ClaimAdminModal
+        isOpen={showClaimAdmin}
+        onClose={() => setShowClaimAdmin(false)}
+        onSuccess={() => {
+          setShowClaimAdmin(false);
+          // Refresh server data to update claimed status
+          api.get<ServerData>('/server').then((server) => {
+            setCurrentServer(server);
+          }).catch(() => {});
+        }}
+      />
+
+      {/* Server Welcome Popup */}
+      <ServerWelcomePopup />
     </div>
   );
 }

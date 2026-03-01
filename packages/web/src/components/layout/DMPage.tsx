@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { DMSidebar, type Friend, type FriendRequest, type SearchResult } from './DMSidebar';
 import { DMChatPanel, type DMMessage } from './DMChatPanel';
+import type { Channel } from './ChannelList';
 import { authStore } from '@/stores/auth';
 import { api } from '@/api';
 import { socketService } from '@/lib/socket';
@@ -55,8 +56,25 @@ export function DMPage() {
 
   const currentUserId = authStore.getState().user?.id || '';
 
-  const handleBack = () => {
-    navigate('/channels');
+  const handleBack = async () => {
+    try {
+      const channelsResponse = await api.get<
+        Channel[] | { channels: Channel[] }
+      >('/channels');
+      const channels = Array.isArray(channelsResponse)
+        ? channelsResponse
+        : channelsResponse?.channels || [];
+      const firstText = channels
+        .filter((c: Channel) => c.type === 'text')
+        .sort((a: Channel, b: Channel) => a.position - b.position)[0];
+      if (firstText) {
+        navigate(`/channels/${firstText.id}`);
+        return;
+      }
+    } catch {
+      // fallback below
+    }
+    navigate('/channels/unknown');
   };
 
   const fetchFriends = useCallback(async () => {
