@@ -70,14 +70,16 @@ function LoadingScreen() {
 }
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuthStore();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const isLoading = useAuthStore((s) => s.isLoading);
   if (isLoading) return <LoadingScreen />;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 
 function PublicRoute({ children }: { children: ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuthStore();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const isLoading = useAuthStore((s) => s.isLoading);
   if (isLoading) return <LoadingScreen />;
   if (isAuthenticated) return <Navigate to="/channels/@me" replace />;
   return <>{children}</>;
@@ -86,8 +88,16 @@ function PublicRoute({ children }: { children: ReactNode }) {
 function RootLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const [initialized, setInitialized] = useState(false);
-  const { isAuthenticated, authError, checkAuth, attemptAutoLogin } = useAuthStore();
-  const { currentUrl, testConnection, addOrUpdateNetwork, autoLogin, defaultNetwork, serverInfo } = useNetworkStore();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const authError = useAuthStore((s) => s.authError);
+  const checkAuth = useAuthStore((s) => s.checkAuth);
+  const attemptAutoLogin = useAuthStore((s) => s.attemptAutoLogin);
+  const currentUrl = useNetworkStore((s) => s.currentUrl);
+  const testConnection = useNetworkStore((s) => s.testConnection);
+  const addOrUpdateNetwork = useNetworkStore((s) => s.addOrUpdateNetwork);
+  const autoLogin = useNetworkStore((s) => s.autoLogin);
+  const defaultNetwork = useNetworkStore((s) => s.defaultNetwork);
+  const serverInfo = useNetworkStore((s) => s.serverInfo);
 
   useEffect(() => {
     const init = async () => {

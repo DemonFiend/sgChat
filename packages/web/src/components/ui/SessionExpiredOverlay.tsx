@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { clsx } from 'clsx';
 import { useAuthStore, type AuthErrorReason } from '@/stores/auth';
 
@@ -23,15 +23,20 @@ const ERROR_MESSAGES: Record<AuthErrorReason, { title: string; description: stri
 export function SessionExpiredOverlay() {
   const [countdown, setCountdown] = useState(REDIRECT_DELAY_SECONDS);
   const [isVisible, setIsVisible] = useState(false);
-  const { authError, clearAuthError } = useAuthStore();
+  const authError = useAuthStore((s) => s.authError);
+  const clearAuthError = useAuthStore((s) => s.clearAuthError);
 
   const messages = authError ? ERROR_MESSAGES[authError] : ERROR_MESSAGES.session_expired;
   const progressPercent = (countdown / REDIRECT_DELAY_SECONDS) * 100;
 
+  // Stable ref so handleRedirect never changes
+  const clearAuthErrorRef = useRef(clearAuthError);
+  clearAuthErrorRef.current = clearAuthError;
+
   const handleRedirect = useCallback(() => {
-    clearAuthError();
+    clearAuthErrorRef.current();
     window.location.href = REDIRECT_URL;
-  }, [clearAuthError]);
+  }, []);
 
   // Fade in after a brief delay
   useEffect(() => {

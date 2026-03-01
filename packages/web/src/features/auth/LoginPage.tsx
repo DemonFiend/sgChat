@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { Button, Input, NetworkSelector } from '@/components/ui';
 import { useAuthStore } from '@/stores/auth';
@@ -25,7 +25,7 @@ export function LoginPage() {
     return accounts.some((a) => a.rememberMe && a.encryptedPassword && !isCredentialExpired(a));
   };
 
-  const handleNetworkReady = (url: string) => {
+  const handleNetworkReady = useCallback((url: string) => {
     const accounts = getAccountsForNetwork(url);
     if (accounts.length > 0) {
       setEmail(accounts[0].email);
@@ -33,7 +33,7 @@ export function LoginPage() {
         setRememberMe(true);
       }
     }
-  };
+  }, [getAccountsForNetwork]);
 
   // Auto-populate saved credentials when already connected on mount
   useEffect(() => {

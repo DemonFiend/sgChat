@@ -54,6 +54,7 @@ export type AuthErrorReason = 'session_expired' | 'server_unreachable' | 'token_
 let accessToken: string | null = null;
 let tokenExpiresAt: number = 0;
 let proactiveRefreshInterval: ReturnType<typeof setInterval> | null = null;
+let refreshPromise: Promise<string> | null = null;
 
 function getApiUrl(): string {
   const currentUrl = networkStore.currentUrl();
@@ -188,27 +189,39 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => {
     },
 
     refreshAccessToken: async () => {
-      const apiUrl = getApiUrl();
-      if (!apiUrl) throw new Error('No network selected');
-      const wasAuthenticated = get().isAuthenticated || accessToken !== null;
-      let response: Response;
-      try {
-        response = await fetch(`${apiUrl}/auth/refresh`, { method: 'POST', credentials: 'include' });
-      } catch {
-        clearTokens();
-        set({ user: null, isAuthenticated: false, isLoading: false });
-        if (wasAuthenticated) get().triggerAuthError('server_unreachable');
-        throw new Error('Server unreachable');
-      }
-      if (!response.ok) {
-        clearTokens();
-        set({ user: null, isAuthenticated: false, isLoading: false });
-        if (wasAuthenticated) get().triggerAuthError('session_expired');
-        throw new Error('Session expired');
-      }
-      const data = await response.json();
-      setTokens(data.access_token, 900);
-      return data.access_token;
+      // Short-circuit if auth error is already set
+      if (get().authError) throw new Error('Session expired');
+
+      // Dedup: if a refresh is already in-flight, all callers await the same promise
+      if (refreshPromise) return refreshPromise;
+
+      refreshPromise = (async () => {
+        const apiUrl = getApiUrl();
+        if (!apiUrl) throw new Error('No network selected');
+        const wasAuthenticated = get().isAuthenticated || accessToken !== null;
+        let response: Response;
+        try {
+          response = await fetch(`${apiUrl}/auth/refresh`, { method: 'POST', credentials: 'include' });
+        } catch {
+          clearTokens();
+          set({ user: null, isAuthenticated: false, isLoading: false });
+          if (wasAuthenticated) get().triggerAuthError('server_unreachable');
+          throw new Error('Server unreachable');
+        }
+        if (!response.ok) {
+          clearTokens();
+          set({ user: null, isAuthenticated: false, isLoading: false });
+          if (wasAuthenticated) get().triggerAuthError('session_expired');
+          throw new Error('Session expired');
+        }
+        const data = await response.json();
+        setTokens(data.access_token, 900);
+        return data.access_token;
+      })().finally(() => {
+        refreshPromise = null;
+      });
+
+      return refreshPromise;
     },
 
     logout: async (forgetDevice = false) => {

@@ -32,6 +32,8 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   const apiUrl = getApiUrl(baseUrl);
   if (!apiUrl) throw new ApiError('No network selected', 0);
 
+  if (authStore.authError()) throw new ApiError('Session expired', 401);
+
   let token = authStore.getAccessToken();
   if (!token && authStore.state().isAuthenticated) {
     try { token = await authStore.refreshAccessToken(); }
@@ -48,6 +50,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   });
 
   if (response.status === 401 && token) {
+    if (authStore.authError()) throw new ApiError('Session expired', 401);
     try {
       const newToken = await authStore.refreshAccessToken();
       requestHeaders['Authorization'] = `Bearer ${newToken}`;
@@ -75,6 +78,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
 async function uploadFile<T>(endpoint: string, file: File, fieldName: string = 'file'): Promise<T> {
   const apiUrl = getApiUrl();
   if (!apiUrl) throw new ApiError('No network selected', 0);
+  if (authStore.authError()) throw new ApiError('Session expired', 401);
 
   let token = authStore.getAccessToken();
   if (!token && authStore.state().isAuthenticated) {
@@ -93,6 +97,7 @@ async function uploadFile<T>(endpoint: string, file: File, fieldName: string = '
   });
 
   if (response.status === 401 && token) {
+    if (authStore.authError()) throw new ApiError('Session expired', 401);
     try {
       const newToken = await authStore.refreshAccessToken();
       requestHeaders['Authorization'] = `Bearer ${newToken}`;
