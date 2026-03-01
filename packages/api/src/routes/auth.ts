@@ -115,6 +115,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 
       return {
         access_token,
+        refresh_token,
         user,
       };
     },
@@ -189,6 +190,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 
       return {
         access_token,
+        refresh_token,
         user: safeUser,
       };
     },
@@ -196,7 +198,9 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 
   // Refresh token (reads from httpOnly cookie, rotates token)
   fastify.post('/refresh', async (request, reply) => {
-    const refresh_token = request.cookies.refresh_token;
+    // Dual-mode: accept from cookie (web) or request body (desktop/mobile)
+    const body = request.body as { refresh_token?: string } | undefined;
+    const refresh_token = request.cookies.refresh_token || body?.refresh_token;
 
     if (!refresh_token) {
       return reply.status(401).send({
@@ -250,7 +254,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         maxAge: 7 * 24 * 60 * 60, // 7 days
       });
 
-      return { access_token };
+      return { access_token, refresh_token: new_refresh_token };
     } catch (err) {
       reply.clearCookie('refresh_token', getRefreshTokenCookieOptions());
       return reply.status(401).send({
@@ -265,8 +269,10 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
   // This ensures logout works even if the access token is expired
   fastify.post('/logout', {
     handler: async (request, reply) => {
-      const refresh_token = request.cookies.refresh_token;
-      
+      // Dual-mode: accept from cookie (web) or request body (desktop/mobile)
+      const body = request.body as { refresh_token?: string } | undefined;
+      const refresh_token = request.cookies.refresh_token || body?.refresh_token;
+
       if (!refresh_token) {
         // Already logged out or no session
         return { message: 'Already logged out' };

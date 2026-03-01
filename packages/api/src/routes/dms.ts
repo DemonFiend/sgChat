@@ -3,6 +3,7 @@ import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { sendMessageSchema, RATE_LIMITS } from '@sgchat/shared';
 import { notFound, forbidden, badRequest } from '../utils/errors.js';
+import { sanitizeContent } from '../utils/sanitize.js';
 import { areFriends, isBlocked } from './friends.js';
 import { z } from 'zod';
 import { getDMStorageStats, getSegmentsForDM, getOrCreateSegment, onMessageCreated } from '../services/segmentation.js';
@@ -119,6 +120,9 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
         return forbidden(reply, 'Cannot message this user');
       }
 
+      // Sanitize message content (strip HTML tags — defense-in-depth)
+      body.content = sanitizeContent(body.content);
+
       const message = await db.messages.create({
         dm_channel_id: id,
         author_id: request.user!.id,
@@ -135,10 +139,10 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
       } catch (segmentError) {
         console.error('Failed to assign DM message to segment:', segmentError);
       }
-      
+
       // Get author info for the formatted message
       const author = await db.users.findById(request.user!.id);
-      
+
       const formattedMessage = {
         id: message.id,
         dm_channel_id: message.dm_channel_id,
@@ -261,6 +265,9 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
         dm = await db.dmChannels.create(request.user!.id, userId);
         isNewChannel = true;
       }
+
+      // Sanitize message content (strip HTML tags — defense-in-depth)
+      body.content = sanitizeContent(body.content);
 
       const message = await db.messages.create({
         dm_channel_id: dm.id,

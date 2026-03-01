@@ -3,6 +3,7 @@ import { authenticate } from '../middleware/auth.js';
 import { storage } from '../lib/storage.js';
 import { badRequest } from '../utils/errors.js';
 import { nanoid } from 'nanoid';
+import { fileTypeFromBuffer } from 'file-type';
 
 // Max file size: 10MB for general uploads
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -22,6 +23,25 @@ const ALLOWED_FILE_TYPES = [
   'video/mp4',
   'video/webm',
 ];
+
+// MIME types that can be verified via magic number (binary file headers)
+// Text-based types (text/plain, text/markdown, application/json) cannot be detected
+const MAGIC_DETECTABLE = new Set([
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+  'application/pdf', 'application/zip',
+  'audio/mpeg', 'audio/wav', 'audio/ogg',
+  'video/mp4', 'video/webm',
+]);
+
+/**
+ * Validate that file content matches the declared MIME type using magic numbers.
+ * Prevents uploading disguised executables (e.g., .exe renamed to .jpg).
+ */
+async function validateFileContent(buffer: Buffer, declaredMime: string): Promise<boolean> {
+  if (!MAGIC_DETECTABLE.has(declaredMime)) return true;
+  const detected = await fileTypeFromBuffer(buffer);
+  return detected?.mime === declaredMime;
+}
 
 export const uploadRoutes: FastifyPluginAsync = async (fastify) => {
   /**
@@ -53,6 +73,11 @@ export const uploadRoutes: FastifyPluginAsync = async (fastify) => {
       // Check content type
       if (!ALLOWED_FILE_TYPES.includes(data.mimetype)) {
         return badRequest(reply, `File type not allowed: ${data.mimetype}`);
+      }
+
+      // Validate actual file content matches declared MIME type (magic number check)
+      if (!await validateFileContent(buffer, data.mimetype)) {
+        return badRequest(reply, 'File content does not match declared type');
       }
 
       // Generate unique filename
@@ -104,6 +129,11 @@ export const uploadRoutes: FastifyPluginAsync = async (fastify) => {
       const maxImageSize = 5 * 1024 * 1024;
       if (buffer.length > maxImageSize) {
         return badRequest(reply, `Image too large. Maximum size is 5MB`);
+      }
+
+      // Validate actual file content matches declared MIME type (magic number check)
+      if (!await validateFileContent(buffer, data.mimetype)) {
+        return badRequest(reply, 'File content does not match declared image type');
       }
 
       // Generate unique filename

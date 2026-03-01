@@ -5,12 +5,13 @@ import { db } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
 import { publishEvent, getSequences, resyncEvents, onEvent } from '../lib/eventBus.js';
 import { calculatePermissions } from '../services/permissions.js';
-import { TextPermissions, VoicePermissions, hasPermission } from '@sgchat/shared';
+import { TextPermissions, VoicePermissions, hasPermission, MAX_MESSAGE_LENGTH } from '@sgchat/shared';
 import type { EventEnvelope, GatewayHello, GatewayReady, GatewayResume, GatewayResumed } from '@sgchat/shared';
 import { isBlocked } from '../routes/friends.js';
 import { createNotification } from '../routes/notifications.js';
 import { cancelPendingCreation } from '../services/tempChannelTimers.js';
 import { markTempChannelEmpty } from '../services/tempChannels.js';
+import { sanitizeContent } from '../utils/sanitize.js';
 
 // ── Constants ──────────────────────────────────────────────────
 /** Heartbeat interval sent to client in gateway.hello (ms) */
@@ -35,6 +36,51 @@ function checkIdempotency(key: string | undefined): boolean {
   if (!key) return false; // no key → not a duplicate
   if (idempotencyCache.has(key)) return true; // duplicate
   idempotencyCache.set(key, Date.now());
+  return false;
+}
+
+// ── Socket event rate limiting ──────────────────────────────────
+class SocketRateLimiter {
+  private buckets = new Map<string, { count: number; resetAt: number }>();
+  private cleanup = setInterval(() => {
+    const now = Date.now();
+    for (const [k, b] of this.buckets) if (now > b.resetAt) this.buckets.delete(k);
+  }, 60_000);
+
+  check(key: string, max: number, windowMs: number): boolean {
+    const now = Date.now();
+    const b = this.buckets.get(key);
+    if (!b || now > b.resetAt) {
+      this.buckets.set(key, { count: 1, resetAt: now + windowMs });
+      return true;
+    }
+    if (b.count >= max) return false;
+    b.count++;
+    return true;
+  }
+}
+
+const socketLimiter = new SocketRateLimiter();
+
+const SOCKET_LIMITS = {
+  'message:send':   { max: 5,  windowMs: 5_000 },
+  'message:edit':   { max: 5,  windowMs: 10_000 },
+  'message:delete': { max: 10, windowMs: 10_000 },
+  'dm:send':        { max: 5,  windowMs: 5_000 },
+  'typing:start':   { max: 5,  windowMs: 5_000 },
+  'dm:typing:start':{ max: 5,  windowMs: 5_000 },
+  'presence:update':{ max: 3,  windowMs: 10_000 },
+  'status_comment:update': { max: 3, windowMs: 30_000 },
+  'voice:join':     { max: 5,  windowMs: 30_000 },
+  'voice:update':   { max: 10, windowMs: 10_000 },
+} as const;
+
+function isRateLimited(socket: Socket, userId: string, event: keyof typeof SOCKET_LIMITS): boolean {
+  const cfg = SOCKET_LIMITS[event];
+  if (!socketLimiter.check(`${userId}:${event}`, cfg.max, cfg.windowMs)) {
+    socket.emit('error', { message: 'Rate limit exceeded', code: 'RATE_LIMITED' });
+    return true;
+  }
   return false;
 }
 
@@ -269,11 +315,25 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       idempotency_key?: string;
     }) => {
       try {
+        if (isRateLimited(socket, userId, 'message:send')) return;
+
         // Update voice activity on message send
         redis.updateVoiceActivity(userId).catch(() => {});
 
         if (!data.content || data.content.trim().length === 0) {
           socket.emit('error', { message: 'Message cannot be empty' });
+          return;
+        }
+
+        if (data.content.length > MAX_MESSAGE_LENGTH) {
+          socket.emit('error', { message: `Message must be at most ${MAX_MESSAGE_LENGTH} characters` });
+          return;
+        }
+
+        // Sanitize message content (strip HTML tags)
+        data.content = sanitizeContent(data.content);
+        if (data.content.trim().length === 0) {
+          socket.emit('error', { message: 'Message content is invalid' });
           return;
         }
 
@@ -406,8 +466,22 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       content: string;
     }) => {
       try {
+        if (isRateLimited(socket, userId, 'message:edit')) return;
+
         if (!data.content || data.content.trim().length === 0) {
           socket.emit('error', { message: 'Message cannot be empty' });
+          return;
+        }
+
+        if (data.content.length > MAX_MESSAGE_LENGTH) {
+          socket.emit('error', { message: `Message must be at most ${MAX_MESSAGE_LENGTH} characters` });
+          return;
+        }
+
+        // Sanitize message content (strip HTML tags)
+        data.content = sanitizeContent(data.content);
+        if (data.content.trim().length === 0) {
+          socket.emit('error', { message: 'Message content is invalid' });
           return;
         }
 
@@ -454,6 +528,8 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
 
     socket.on('message:delete', async (data: { message_id: string }) => {
       try {
+        if (isRateLimited(socket, userId, 'message:delete')) return;
+
         const message = await db.messages.findById(data.message_id);
         if (!message) return;
 
@@ -490,6 +566,8 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
 
     // Handler for typing start (supports both dot and colon notation for backwards compat)
     const handleTypingStart = async (data: { channel_id: string }) => {
+      if (isRateLimited(socket, userId, 'typing:start')) return;
+
       // Update voice activity on typing (user is active)
       redis.updateVoiceActivity(userId).catch(() => {});
 
@@ -563,6 +641,8 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
     // ── Presence Updates ──────────────────────────────────────
 
     socket.on('presence:update', async (data: { status: string }) => {
+      if (isRateLimited(socket, userId, 'presence:update')) return;
+
       const validStatuses = ['online', 'idle', 'dnd', 'offline'];
       const status = validStatuses.includes(data.status) ? data.status : 'online';
       
@@ -589,9 +669,11 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       expires_at?: string | null;
     }) => {
       try {
+        if (isRateLimited(socket, userId, 'status_comment:update')) return;
+
         // Validate & sanitize
         const sanitizedText = data.text
-          ? data.text.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().slice(0, 128)
+          ? sanitizeContent(data.text).replace(/\s+/g, ' ').trim().slice(0, 128)
           : null;
         const emoji = data.emoji ?? null;
         const expiresAt = data.expires_at ? new Date(data.expires_at) : null;
@@ -635,6 +717,8 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       deafened?: boolean;
     }) => {
       try {
+        if (isRateLimited(socket, userId, 'voice:join')) return;
+
         const channel = await db.channels.findById(data.channel_id);
         if (!channel) return;
 
@@ -718,6 +802,8 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
 
     socket.on('voice:update', async (data: { muted?: boolean; deafened?: boolean; screen_sharing?: boolean }) => {
       try {
+        if (isRateLimited(socket, userId, 'voice:update')) return;
+
         const channelId = await redis.getUserVoiceChannel(userId);
         if (!channelId) return;
 
@@ -767,8 +853,22 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       idempotency_key?: string;
     }) => {
       try {
+        if (isRateLimited(socket, userId, 'dm:send')) return;
+
         if (!data.content || data.content.trim().length === 0) {
           socket.emit('error', { message: 'Message cannot be empty' });
+          return;
+        }
+
+        if (data.content.length > MAX_MESSAGE_LENGTH) {
+          socket.emit('error', { message: `Message must be at most ${MAX_MESSAGE_LENGTH} characters` });
+          return;
+        }
+
+        // Sanitize message content (strip HTML tags)
+        data.content = sanitizeContent(data.content);
+        if (data.content.trim().length === 0) {
+          socket.emit('error', { message: 'Message content is invalid' });
           return;
         }
 
@@ -879,6 +979,8 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
 
     // Handler for DM typing start (supports both dot and colon notation)
     const handleDmTypingStart = async (data: { user_id: string }) => {
+      if (isRateLimited(socket, userId, 'dm:typing:start')) return;
+
       const targetUserId = data.user_id;
       const key = `dm:${userId}:${targetUserId}`;
       

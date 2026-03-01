@@ -5,6 +5,7 @@ import { dirname, join, resolve } from 'path';
 import { existsSync } from 'fs';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import helmet from '@fastify/helmet';
 import jwt from '@fastify/jwt';
 import cookie from '@fastify/cookie';
 import multipart from '@fastify/multipart';
@@ -109,12 +110,28 @@ async function start() {
     },
   });
 
-  // Parse CORS origins - supports comma-separated list or single origin
-  const corsOrigins = process.env.CORS_ORIGIN
-    ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
-    : true; // true = reflect request origin (allow all)
+  // Parse CORS origins - defaults to restrictive (same-origin only) when not set
+  const rawCorsOrigin = process.env.CORS_ORIGIN;
+  let corsOrigins: string[] | boolean;
+  if (rawCorsOrigin === '*') {
+    corsOrigins = true; // explicit wildcard for dev only
+  } else if (rawCorsOrigin) {
+    corsOrigins = rawCorsOrigin.split(',').map(o => o.trim()).filter(Boolean);
+  } else {
+    corsOrigins = false; // restrictive default — same-origin only
+    console.warn('⚠️  CORS_ORIGIN not set — CORS disabled (same-origin only).');
+  }
 
-  // Register plugins
+  // Register plugins — security headers first
+  await fastify.register(helmet, {
+    hsts: false, // Handled by reverse proxy (Nginx Proxy Manager) — not the API server
+    frameguard: { action: 'deny' },
+    hidePoweredBy: true,
+    crossOriginOpenerPolicy: { policy: 'same-origin' },
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    contentSecurityPolicy: false, // CSP handled by Nginx (web) and Tauri (desktop)
+  });
+
   await fastify.register(cors, {
     origin: corsOrigins,
     credentials: true,
