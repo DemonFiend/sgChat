@@ -108,9 +108,8 @@ export function MainLayout() {
         const server = await api.get<ServerData>('/server');
         setCurrentServer(server);
         setServers([server]);
-        // Store the server ID so reopenPopup works (double-click server icon)
-        // Don't auto-show popup — it blocks the entire app with a dark overlay
-        useServerPopupStore.setState({ currentServerId: server.id });
+        // Show server welcome popup (24h cooldown managed by the store)
+        useServerPopupStore.getState().showPopup(server.id);
 
         // Fetch channels
         const channelsResponse = await api.get<
