@@ -4,6 +4,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useNetworkStore } from '@/stores/network';
 import { socketService } from '@/lib/socket';
 import { SessionExpiredOverlay } from '@/components/ui/SessionExpiredOverlay';
+import { NotificationToast } from '@/components/ui/NotificationToast';
 
 const LoginPage = lazy(() => import('@/features/auth/LoginPage').then((m) => ({ default: m.LoginPage })));
 const RegisterPage = lazy(() => import('@/features/auth/RegisterPage').then((m) => ({ default: m.RegisterPage })));
@@ -135,6 +136,7 @@ function RootLayout({ children }: { children: ReactNode }) {
       <Suspense fallback={<LoadingScreen />}>
         {children}
       </Suspense>
+      <NotificationToast />
     </>
   );
 }

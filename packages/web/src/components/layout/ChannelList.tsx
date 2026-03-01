@@ -34,6 +34,7 @@ interface ChannelListProps {
   categories: Category[];
   serverId: string;
   onChannelSettingsClick?: (channel: Channel) => void;
+  onCreateChannel?: () => void;
 }
 
 const VOICE_TYPES: ChannelType[] = ['voice', 'temp_voice', 'temp_voice_generator', 'music'];
@@ -103,7 +104,7 @@ const collapseArrow = (collapsed: boolean) => (
   </svg>
 );
 
-export function ChannelList({ channels, categories, serverId, onChannelSettingsClick }: ChannelListProps) {
+export function ChannelList({ channels, categories, serverId, onChannelSettingsClick, onCreateChannel }: ChannelListProps) {
   const { channelId } = useParams<{ channelId?: string }>();
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
 
@@ -139,14 +140,27 @@ export function ChannelList({ channels, categories, serverId, onChannelSettingsC
 
               return (
                 <div key={category.id} className="px-2 pt-3" role="group">
-                  <button
-                    onClick={() => toggleSection(category.id)}
-                    aria-expanded={!collapsedSections.has(category.id)}
-                    className="flex items-center w-full px-1 mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted hover:text-text-secondary"
-                  >
-                    {collapseArrow(collapsedSections.has(category.id))}
-                    {category.name}
-                  </button>
+                  <div className="flex items-center mb-1 group/header">
+                    <button
+                      onClick={() => toggleSection(category.id)}
+                      aria-expanded={!collapsedSections.has(category.id)}
+                      className="flex items-center flex-1 px-1 text-xs font-semibold uppercase tracking-wide text-text-muted hover:text-text-secondary"
+                    >
+                      {collapseArrow(collapsedSections.has(category.id))}
+                      {category.name}
+                    </button>
+                    {onCreateChannel && (
+                      <button
+                        onClick={onCreateChannel}
+                        className="opacity-0 group-hover/header:opacity-100 p-0.5 rounded hover:bg-bg-modifier-hover text-text-muted hover:text-text-primary transition-all"
+                        title="Create Channel"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
                   {!collapsedSections.has(category.id) && categoryChannels.map((channel) => (
                     <ChannelItem
                       key={channel.id}
@@ -168,14 +182,27 @@ export function ChannelList({ channels, categories, serverId, onChannelSettingsC
             if (uncategorized.length === 0) return null;
             return (
               <div className="px-2 pt-3" role="group">
-                <button
-                  onClick={() => toggleSection('uncategorized')}
-                  aria-expanded={!collapsedSections.has('uncategorized')}
-                  className="flex items-center w-full px-1 mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted hover:text-text-secondary"
-                >
-                  {collapseArrow(collapsedSections.has('uncategorized'))}
-                  Channels
-                </button>
+                <div className="flex items-center mb-1 group/header">
+                  <button
+                    onClick={() => toggleSection('uncategorized')}
+                    aria-expanded={!collapsedSections.has('uncategorized')}
+                    className="flex items-center flex-1 px-1 text-xs font-semibold uppercase tracking-wide text-text-muted hover:text-text-secondary"
+                  >
+                    {collapseArrow(collapsedSections.has('uncategorized'))}
+                    Channels
+                  </button>
+                  {onCreateChannel && (
+                    <button
+                      onClick={onCreateChannel}
+                      className="opacity-0 group-hover/header:opacity-100 p-0.5 rounded hover:bg-bg-modifier-hover text-text-muted hover:text-text-primary transition-all"
+                      title="Create Channel"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
                 {!collapsedSections.has('uncategorized') && uncategorized.map((channel) => (
                   <ChannelItem
                     key={channel.id}
@@ -192,26 +219,52 @@ export function ChannelList({ channels, categories, serverId, onChannelSettingsC
       ) : (
         <>
           <div className="px-2 pt-3">
-            <button
-              onClick={() => toggleSection('text')}
-              className="flex items-center w-full px-1 mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted hover:text-text-secondary"
-            >
-              {collapseArrow(collapsedSections.has('text'))}
-              Text Channels
-            </button>
+            <div className="flex items-center mb-1 group/header">
+              <button
+                onClick={() => toggleSection('text')}
+                className="flex items-center flex-1 px-1 text-xs font-semibold uppercase tracking-wide text-text-muted hover:text-text-secondary"
+              >
+                {collapseArrow(collapsedSections.has('text'))}
+                Text Channels
+              </button>
+              {onCreateChannel && (
+                <button
+                  onClick={onCreateChannel}
+                  className="opacity-0 group-hover/header:opacity-100 p-0.5 rounded hover:bg-bg-modifier-hover text-text-muted hover:text-text-primary transition-all"
+                  title="Create Channel"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                </button>
+              )}
+            </div>
             {!collapsedSections.has('text') && textChannels.map((channel) => (
               <ChannelItem key={channel.id} channel={channel} isActive={channelId === channel.id} serverId={serverId} onSettingsClick={onChannelSettingsClick} />
             ))}
           </div>
 
           <div className="px-2 pt-3">
-            <button
-              onClick={() => toggleSection('voice')}
-              className="flex items-center w-full px-1 mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted hover:text-text-secondary"
-            >
-              {collapseArrow(collapsedSections.has('voice'))}
-              Voice Channels
-            </button>
+            <div className="flex items-center mb-1 group/header">
+              <button
+                onClick={() => toggleSection('voice')}
+                className="flex items-center flex-1 px-1 text-xs font-semibold uppercase tracking-wide text-text-muted hover:text-text-secondary"
+              >
+                {collapseArrow(collapsedSections.has('voice'))}
+                Voice Channels
+              </button>
+              {onCreateChannel && (
+                <button
+                  onClick={onCreateChannel}
+                  className="opacity-0 group-hover/header:opacity-100 p-0.5 rounded hover:bg-bg-modifier-hover text-text-muted hover:text-text-primary transition-all"
+                  title="Create Channel"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                </button>
+              )}
+            </div>
             {!collapsedSections.has('voice') && voiceChannels.map((channel) => (
               <ChannelItem key={channel.id} channel={channel} isActive={channelId === channel.id} serverId={serverId} onSettingsClick={onChannelSettingsClick} />
             ))}

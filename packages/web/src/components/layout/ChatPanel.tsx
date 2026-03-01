@@ -4,6 +4,8 @@ import { clsx } from 'clsx';
 import { Avatar } from '@/components/ui/Avatar';
 import { MessageContent } from '@/components/ui/MessageContent';
 import { ReactionPicker } from '@/components/ui/ReactionPicker';
+import { GifPicker } from '@/components/ui/GifPicker';
+import { api } from '@/api';
 
 export interface MessageAuthor {
   id: string;
@@ -66,6 +68,7 @@ interface ChatPanelProps {
   typingUsers?: TypingUser[];
   replyingTo?: Message | null;
   onCancelReply?: () => void;
+  onReplyClick?: (message: Message) => void;
   isMemberListOpen?: boolean;
   onToggleMemberList?: () => void;
 }
@@ -74,13 +77,18 @@ export function ChatPanel({
   channel, messages, onSendMessage, onReactionAdd, onReactionRemove,
   onEditMessage, onDeleteMessage, onAuthorClick,
   onTypingStart, onTypingStop, currentUserId, typingUsers,
-  replyingTo, onCancelReply,
+  replyingTo, onCancelReply, onReplyClick,
   isMemberListOpen, onToggleMemberList,
 }: ChatPanelProps) {
   const [messageInput, setMessageInput] = useState('');
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
   const [reactionPickerMsg, setReactionPickerMsg] = useState<{ id: string; anchor: HTMLElement } | null>(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showGifPicker, setShowGifPicker] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const emojiButtonRef = useRef<HTMLButtonElement>(null);
+  const gifButtonRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTypingRef = useRef(false);
@@ -155,6 +163,26 @@ export function ChatPanel({
       handleSend();
     }
   }, [handleSend]);
+
+  const handleFileUpload = useCallback(() => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*,video/*,audio/*,.pdf,.txt,.zip';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      setIsUploading(true);
+      try {
+        const result = await api.upload<{ url: string }>('/upload', file);
+        onSendMessage?.(result.url);
+      } catch (err) {
+        console.error('File upload failed:', err);
+      } finally {
+        setIsUploading(false);
+      }
+    };
+    input.click();
+  }, [onSendMessage]);
 
   const formatTime = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -276,6 +304,7 @@ export function ChatPanel({
                       onDeleteClick={onDeleteMessage ? () => onDeleteMessage(message.id) : undefined}
                       onReactClick={(anchor: HTMLElement) => setReactionPickerMsg({ id: message.id, anchor })}
                       onAuthorClick={onAuthorClick}
+                      onReplyClick={onReplyClick ? () => onReplyClick(message) : undefined}
                     />
                   </div>
                 );
@@ -344,10 +373,22 @@ export function ChatPanel({
 
           <div className="flex items-end bg-bg-tertiary rounded-lg">
             {/* Attach button */}
-            <button className="p-3 text-text-muted hover:text-text-primary transition-colors">
-              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-              </svg>
+            <button
+              onClick={handleFileUpload}
+              disabled={isUploading}
+              className="p-3 text-text-muted hover:text-text-primary transition-colors disabled:opacity-50"
+              title="Upload a file"
+            >
+              {isUploading ? (
+                <svg className="w-6 h-6 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : (
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                </svg>
+              )}
             </button>
 
             {/* Text input */}
@@ -366,6 +407,36 @@ export function ChatPanel({
               style={{ minHeight: '24px' }}
             />
 
+            {/* Emoji picker button */}
+            <button
+              ref={emojiButtonRef}
+              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+              className={clsx(
+                'p-3 transition-colors',
+                showEmojiPicker ? 'text-brand-primary' : 'text-text-muted hover:text-text-primary',
+              )}
+              title="Emoji"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </button>
+
+            {/* GIF picker button */}
+            <button
+              ref={gifButtonRef}
+              onClick={() => setShowGifPicker(!showGifPicker)}
+              className={clsx(
+                'p-3 transition-colors',
+                showGifPicker ? 'text-brand-primary' : 'text-text-muted hover:text-text-primary',
+              )}
+              title="Send a GIF"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M11.5 9H13v6h-1.5V9zM9 9H6c-.5 0-1 .5-1 1v4c0 .5.5 1 1 1h3c.5 0 1-.5 1-1v-4c0-.5-.5-1-1-1zm-.5 4.5h-2v-3h2v3zM19 10.5V9h-4.5v6H16v-2h2v-1.5h-2v-1h3z" />
+              </svg>
+            </button>
+
             {/* Send button */}
             <button
               onClick={handleSend}
@@ -377,6 +448,29 @@ export function ChatPanel({
               </svg>
             </button>
           </div>
+
+          {/* Emoji Picker Portal */}
+          <ReactionPicker
+            isOpen={showEmojiPicker}
+            onClose={() => setShowEmojiPicker(false)}
+            onSelect={(emoji) => {
+              setMessageInput((prev) => prev + emoji);
+              setShowEmojiPicker(false);
+              inputRef.current?.focus();
+            }}
+            anchorRef={emojiButtonRef.current}
+          />
+
+          {/* GIF Picker Portal */}
+          <GifPicker
+            isOpen={showGifPicker}
+            onClose={() => setShowGifPicker(false)}
+            onSelect={(gifUrl) => {
+              onSendMessage?.(gifUrl);
+              setShowGifPicker(false);
+            }}
+            anchorRef={gifButtonRef.current}
+          />
         </div>
       )}
     </div>
@@ -399,6 +493,7 @@ interface MessageItemProps {
   onDeleteClick?: () => void;
   onReactClick?: (anchor: HTMLElement) => void;
   onAuthorClick?: (author: MessageAuthor, rect: DOMRect) => void;
+  onReplyClick?: () => void;
 }
 
 const MemoizedMessageItem = memo(MessageItem, (prev, next) => {
@@ -418,15 +513,22 @@ function MessageActionToolbar({
   onReactClick,
   onEditStart,
   onDeleteClick,
+  onReplyClick,
 }: {
   isOwnMessage: boolean;
   onReactClick?: (anchor: HTMLElement) => void;
   onEditStart?: () => void;
   onDeleteClick?: () => void;
+  onReplyClick?: () => void;
 }) {
   const btnClass = 'p-1 rounded hover:bg-bg-modifier-active text-text-muted hover:text-text-primary transition-colors';
   return (
     <div className="absolute -top-3 right-4 opacity-0 group-hover:opacity-100 flex items-center gap-0.5 bg-bg-secondary rounded border border-border shadow-md p-0.5 z-10">
+      <button className={btnClass} title="Reply" onClick={onReplyClick}>
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+        </svg>
+      </button>
       <button
         className={btnClass}
         title="Add Reaction"
@@ -457,7 +559,7 @@ function MessageActionToolbar({
 function MessageItem({
   message, showAuthor, formatTime, onReactionAdd, onReactionRemove, currentUserId,
   isEditing, editContent, onEditChange, onEditSave, onEditCancel, onEditStart,
-  onDeleteClick, onReactClick, onAuthorClick,
+  onDeleteClick, onReactClick, onAuthorClick, onReplyClick,
 }: MessageItemProps) {
   const isSystem = message.type === 'system' || message.system_event != null;
   const author = message.author || { id: 'unknown', username: 'Unknown User', display_name: null, avatar_url: null };
@@ -576,6 +678,7 @@ function MessageItem({
           onReactClick={onReactClick}
           onEditStart={onEditStart}
           onDeleteClick={isOwnMessage ? onDeleteClick : undefined}
+          onReplyClick={onReplyClick}
         />
         <div className="flex gap-4">
           <div className="flex-shrink-0 pt-0.5">
@@ -607,6 +710,7 @@ function MessageItem({
         onReactClick={onReactClick}
         onEditStart={onEditStart}
         onDeleteClick={isOwnMessage ? onDeleteClick : undefined}
+        onReplyClick={onReplyClick}
       />
       <div className="flex gap-4">
         <div className="w-10 flex-shrink-0 flex items-start justify-end pt-0.5">

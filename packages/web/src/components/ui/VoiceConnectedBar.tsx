@@ -1,7 +1,10 @@
+import { useState } from 'react';
 import { useVoiceStore } from '@/stores/voice';
 import { voiceService } from '@/lib/voiceService';
 import { ScreenShareButton, ScreenShareQualityIndicator } from './ScreenShareButton';
 import { PingIndicator } from './PingIndicator';
+import { VoiceParticipantsList } from './VoiceParticipantsList';
+import { Modal } from './Modal';
 
 export function VoiceConnectedBar() {
   const connectionState = useVoiceStore((s) => s.connectionState);
@@ -10,7 +13,9 @@ export function VoiceConnectedBar() {
   const isDeafened = useVoiceStore((s) => s.localState.isDeafened);
   const isScreenSharing = useVoiceStore((s) => s.screenShare.isSharing);
   const currentChannelName = useVoiceStore((s) => s.currentChannelName);
+  const currentChannelId = useVoiceStore((s) => s.currentChannelId);
   const error = useVoiceStore((s) => s.error);
+  const [showParticipants, setShowParticipants] = useState(false);
 
   const isConnected = connectionState === 'connected';
   const isConnecting = connectionState === 'connecting';
@@ -44,15 +49,18 @@ export function VoiceConnectedBar() {
         </div>
       )}
 
-      {/* Channel Name */}
-      <div className="flex items-center gap-2 mb-3">
+      {/* Channel Name (clickable to show participants) */}
+      <button
+        onClick={() => setShowParticipants(true)}
+        className="flex items-center gap-2 mb-3 w-full text-left hover:bg-bg-modifier-hover rounded px-1 py-0.5 -mx-1 transition-colors"
+      >
         <svg className="w-4 h-4 text-text-muted flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
         </svg>
         <span className="text-sm text-text-primary font-medium truncate">
           {currentChannelName || 'Voice Channel'}
         </span>
-      </div>
+      </button>
 
       {/* Controls */}
       <div className="flex items-center gap-2">
@@ -114,6 +122,20 @@ export function VoiceConnectedBar() {
       {error && (
         <div className="mt-2 text-xs text-danger">{error}</div>
       )}
+
+      {/* Voice Participants Modal */}
+      <Modal
+        isOpen={showParticipants}
+        onClose={() => setShowParticipants(false)}
+        title={`${currentChannelName || 'Voice Channel'} — Participants`}
+      >
+        {currentChannelId && (
+          <VoiceParticipantsList
+            channelId={currentChannelId}
+            channelName={currentChannelName || 'Voice Channel'}
+          />
+        )}
+      </Modal>
     </div>
   );
 }

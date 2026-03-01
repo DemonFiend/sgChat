@@ -52,11 +52,8 @@ export const useThemeStore = create<ThemeState>((set, get) => {
   };
 });
 
-/** Midnight is only available in the desktop app */
 export function getAvailableThemes(): Theme[] {
-  return isElectron()
-    ? ALL_THEMES
-    : ALL_THEMES.filter(t => t !== 'midnight');
+  return ALL_THEMES;
 }
 
 export const themeNames: Record<Theme, string> = {

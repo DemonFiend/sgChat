@@ -193,51 +193,130 @@
   --color-scrollbar-track: #3b4252;
 }
 
-/* Midnight theme — Modern dark, refined accents */
+/* Midnight theme — Modern indigo-accented dark with glassmorphism & glows */
 [data-theme='midnight'] {
-  --color-bg-primary: #1e1f22;
-  --color-bg-secondary: #1a1b1e;
-  --color-bg-tertiary: #111214;
-  --color-bg-modifier-hover: rgba(255, 255, 255, 0.04);
-  --color-bg-modifier-active: rgba(255, 255, 255, 0.08);
-  --color-bg-modifier-selected: rgba(255, 255, 255, 0.12);
+  /* Deep blue-black backgrounds */
+  --color-bg-primary: #12131a;
+  --color-bg-secondary: #0e0f15;
+  --color-bg-tertiary: #090a0f;
+  --color-bg-modifier-hover: rgba(99, 102, 241, 0.06);
+  --color-bg-modifier-active: rgba(99, 102, 241, 0.12);
+  --color-bg-modifier-selected: rgba(99, 102, 241, 0.16);
 
-  --color-text-primary: #e1e1e6;
-  --color-text-secondary: #a0a0a8;
-  --color-text-muted: #6e6e78;
-  --color-text-link: #5865f2;
+  /* Crisp high-contrast text */
+  --color-text-primary: #e8e9f0;
+  --color-text-secondary: #9597a8;
+  --color-text-muted: #5c5e72;
+  --color-text-link: #818cf8;
 
-  --color-interactive-normal: #a0a0a8;
-  --color-interactive-hover: #d1d1d6;
-  --color-interactive-active: #e1e1e6;
-  --color-interactive-muted: #3a3a40;
+  /* Interactive states */
+  --color-interactive-normal: #9597a8;
+  --color-interactive-hover: #c8cad6;
+  --color-interactive-active: #e8e9f0;
+  --color-interactive-muted: #2a2b3d;
 
-  --color-accent: #5865f2;
-  --color-accent-hover: #4752c4;
-  --color-accent-active: #3c45a5;
-  --color-brand-primary: #5865f2;
-  --color-brand-primary-hover: #4752c4;
+  /* Indigo accent system */
+  --color-accent: #6366f1;
+  --color-accent-hover: #5558e3;
+  --color-accent-active: #4f46e5;
+  --color-brand-primary: #6366f1;
+  --color-brand-primary-hover: #5558e3;
 
-  --color-success: #2dc770;
-  --color-warning: #f0b232;
-  --color-danger: #ed4245;
-  --color-info: #5865f2;
+  /* Vibrant status colors */
+  --color-success: #34d399;
+  --color-warning: #fbbf24;
+  --color-danger: #f87171;
+  --color-info: #818cf8;
 
-  --color-status-online: #2dc770;
-  --color-status-idle: #f0b232;
-  --color-status-dnd: #ed4245;
-  --color-status-offline: #6e6e78;
+  --color-status-online: #34d399;
+  --color-status-idle: #fbbf24;
+  --color-status-dnd: #f87171;
+  --color-status-offline: #5c5e72;
 
-  --color-border: #2a2a2e;
-  --color-border-strong: #3a3a40;
-  --color-divider: #2a2a2e;
+  /* Semi-transparent indigo borders */
+  --color-border: rgba(99, 102, 241, 0.12);
+  --color-border-strong: rgba(99, 102, 241, 0.22);
+  --color-divider: rgba(99, 102, 241, 0.08);
 
-  --color-scrollbar-thumb: #2a2a2e;
-  --color-scrollbar-track: #1a1b1e;
+  /* Indigo-tinted scrollbar */
+  --color-scrollbar-thumb: rgba(99, 102, 241, 0.2);
+  --color-scrollbar-track: #0e0f15;
 
-  --shadow-low: 0 1px 0 rgba(0, 0, 0, 0.3), 0 1.5px 0 rgba(0, 0, 0, 0.1);
-  --shadow-medium: 0 4px 8px rgba(0, 0, 0, 0.3);
-  --shadow-high: 0 8px 16px rgba(0, 0, 0, 0.4);
+  /* Glow-enhanced shadows */
+  --shadow-low: 0 1px 3px rgba(0, 0, 0, 0.4), 0 0 8px rgba(99, 102, 241, 0.03);
+  --shadow-medium: 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 20px rgba(99, 102, 241, 0.05);
+  --shadow-high: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 40px rgba(99, 102, 241, 0.08);
+}
+
+/* ============================================
+   Midnight Theme — Enhanced UI Effects
+   Glassmorphism, glows, gradients
+   ============================================ */
+
+/* Sidebar glassmorphism */
+[data-theme='midnight'] .bg-bg-secondary {
+  background: linear-gradient(180deg, rgba(14, 15, 21, 0.92) 0%, rgba(9, 10, 15, 0.96) 100%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Brand/accent button glow */
+[data-theme='midnight'] .bg-brand-primary,
+[data-theme='midnight'] .bg-accent {
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.3), 0 0 4px rgba(99, 102, 241, 0.2);
+}
+[data-theme='midnight'] .bg-brand-primary:hover,
+[data-theme='midnight'] .bg-accent:hover {
+  box-shadow: 0 0 20px rgba(99, 102, 241, 0.45), 0 0 8px rgba(99, 102, 241, 0.3);
+}
+
+/* Selected sidebar items — left accent border + indigo tint */
+[data-theme='midnight'] .bg-bg-modifier-selected {
+  border-left: 2px solid #6366f1;
+  background: linear-gradient(90deg, rgba(99, 102, 241, 0.12) 0%, rgba(99, 102, 241, 0.04) 100%);
+}
+
+/* Input focus glow */
+[data-theme='midnight'] input:focus,
+[data-theme='midnight'] textarea:focus,
+[data-theme='midnight'] select:focus {
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25), 0 0 12px rgba(99, 102, 241, 0.1);
+}
+
+/* Status indicator glows */
+[data-theme='midnight'] .bg-status-online {
+  box-shadow: 0 0 6px rgba(52, 211, 153, 0.5);
+}
+[data-theme='midnight'] .bg-status-dnd {
+  box-shadow: 0 0 6px rgba(248, 113, 113, 0.5);
+}
+[data-theme='midnight'] .bg-status-idle {
+  box-shadow: 0 0 6px rgba(251, 191, 36, 0.5);
+}
+
+/* Enhanced hover for interactive elements */
+[data-theme='midnight'] .hover\:bg-bg-modifier-hover:hover {
+  background: rgba(99, 102, 241, 0.08);
+  box-shadow: inset 0 0 20px rgba(99, 102, 241, 0.03);
+}
+
+/* Danger button glow */
+[data-theme='midnight'] .bg-danger {
+  box-shadow: 0 0 10px rgba(248, 113, 113, 0.25);
+}
+
+/* Modal/popup glassmorphism */
+[data-theme='midnight'] .shadow-high {
+  background: linear-gradient(135deg, rgba(18, 19, 26, 0.98) 0%, rgba(14, 15, 21, 0.98) 100%);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(99, 102, 241, 0.1);
+}
+
+/* Gradient divider lines */
+[data-theme='midnight'] .border-divider,
+[data-theme='midnight'] .border-bg-tertiary {
+  border-image: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.15), transparent) 1;
 }
 
 /* ============================================

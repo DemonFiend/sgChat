@@ -5,6 +5,7 @@ import { BendyLine } from '@/components/ui/BendyLine';
 import { GifPicker } from '@/components/ui/GifPicker';
 import { ReactionPicker } from '@/components/ui/ReactionPicker';
 import { DMVoiceControls } from '@/components/ui/DMVoiceControls';
+import { api } from '@/api';
 import type { Friend } from './DMSidebar';
 
 export interface DMMessage {
@@ -43,6 +44,7 @@ export function DMChatPanel({
   const [showTimeTooltip, setShowTimeTooltip] = useState(false);
   const [showGifPicker, setShowGifPicker] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const gifButtonRef = useRef<HTMLButtonElement>(null);
@@ -147,6 +149,26 @@ export function DMChatPanel({
       inputRef.current?.focus();
     }
   };
+
+  const handleFileUpload = useCallback(() => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*,video/*,audio/*,.pdf,.txt,.zip';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      setIsUploading(true);
+      try {
+        const result = await api.upload<{ url: string }>('/upload', file);
+        onSendMessage(result.url);
+      } catch (err) {
+        console.error('File upload failed:', err);
+      } finally {
+        setIsUploading(false);
+      }
+    };
+    input.click();
+  }, [onSendMessage]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -383,10 +405,22 @@ export function DMChatPanel({
               anchorRef={emojiButtonRef.current}
             />
 
-            <button className="w-10 h-10 bg-bg-tertiary rounded-full flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-bg-modifier-hover transition-colors">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-              </svg>
+            <button
+              onClick={handleFileUpload}
+              disabled={isUploading}
+              className="w-10 h-10 bg-bg-tertiary rounded-full flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-bg-modifier-hover transition-colors disabled:opacity-50"
+              title="Upload a file"
+            >
+              {isUploading ? (
+                <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                </svg>
+              )}
             </button>
             <button
               ref={gifButtonRef}

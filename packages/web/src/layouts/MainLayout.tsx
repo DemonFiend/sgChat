@@ -28,7 +28,11 @@ import { FloatingUserPanel } from '@/components/layout/FloatingUserPanel';
 import { ServerWelcomePopup } from '@/components/ui/ServerWelcomePopup';
 import { UnclaimedServerBanner } from '@/components/ui/UnclaimedServerBanner';
 import { ClaimAdminModal } from '@/components/ui/ClaimAdminModal';
+import { StreamViewer } from '@/components/ui/StreamViewer';
+import { useStreamViewerStore } from '@/stores/streamViewer';
+import { SoundboardPanel } from '@/components/ui/SoundboardPanel';
 import { useGlobalShortcuts } from '@/hooks/useElectron';
+import { canManageChannels } from '@/stores/permissions';
 import { slideInRight, easeTransition } from '@/lib/motion';
 import type { Channel, Category } from '@/components/layout/ChannelList';
 
@@ -57,7 +61,9 @@ export function MainLayout() {
   const { channelId } = useParams<{ channelId?: string }>();
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
-
+  const activeStream = useStreamViewerStore((s) => s.activeStream);
+  const streamVideoElement = useStreamViewerStore((s) => s.videoElement);
+  const voiceConnected = useVoiceStore((s) => s.connectionState === 'connected');
 
   // Core state
   const [servers, setServers] = useState<ServerData[]>([]);
@@ -382,9 +388,11 @@ export function MainLayout() {
       socketService.emit('message:send', {
         channel_id: currentChannel.id,
         content,
+        ...(replyingTo?.id ? { reply_to_id: replyingTo.id } : {}),
       });
+      setReplyingTo(null);
     },
-    [currentChannel],
+    [currentChannel, replyingTo],
   );
 
   const handleTypingStart = useCallback(() => {
@@ -528,8 +536,12 @@ export function MainLayout() {
                 server_id: currentServer?.id || '',
               })
             }
+            onCreateChannel={canManageChannels() ? () => setShowServerSettings(true) : undefined}
           />
           <VoiceConnectedBar />
+          {voiceConnected && currentServer && (
+            <SoundboardPanel serverId={currentServer.id} />
+          )}
           <UserPanel onSettingsClick={() => setShowUserSettings(true)} />
         </div>
 
@@ -550,6 +562,7 @@ export function MainLayout() {
             typingUsers={typingUsers}
             replyingTo={replyingTo}
             onCancelReply={() => setReplyingTo(null)}
+            onReplyClick={(message) => setReplyingTo(message)}
             isMemberListOpen={isMemberListOpen}
             onToggleMemberList={() => setIsMemberListOpen(!isMemberListOpen)}
           />
@@ -698,6 +711,19 @@ export function MainLayout() {
 
       {/* Server Welcome Popup */}
       <ServerWelcomePopup />
+
+      {/* Stream Viewer (screen share) */}
+      {activeStream && (
+        <StreamViewer
+          streamerId={activeStream.streamerId}
+          streamerName={activeStream.streamerName}
+          streamerAvatar={activeStream.streamerAvatar}
+          channelId={activeStream.channelId}
+          channelName={activeStream.channelName}
+          videoElement={streamVideoElement}
+          onClose={() => useStreamViewerStore.getState().leaveStream()}
+        />
+      )}
     </div>
   );
 }
