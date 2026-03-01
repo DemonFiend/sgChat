@@ -1,15 +1,18 @@
 import { create } from 'zustand';
+import { isElectron } from '@/lib/electron';
 
 export type Theme = 'midnight' | 'dark' | 'light' | 'oled' | 'nord';
 
 const STORAGE_KEY = 'sgchat-theme';
+const ALL_THEMES: Theme[] = ['midnight', 'dark', 'light', 'oled', 'nord'];
 
 function getInitialTheme(): Theme {
-  if (typeof window === 'undefined') return 'midnight';
+  if (typeof window === 'undefined') return 'nord';
   const stored = localStorage.getItem(STORAGE_KEY) as Theme | null;
-  if (stored && ['midnight', 'dark', 'light', 'oled', 'nord'].includes(stored)) return stored;
+  if (stored && ALL_THEMES.includes(stored)) return stored;
   if (window.matchMedia('(prefers-color-scheme: light)').matches) return 'light';
-  return 'midnight';
+  // Midnight is the default for the desktop app, Nord for the web
+  return isElectron() ? 'midnight' : 'nord';
 }
 
 function applyTheme(newTheme: Theme) {
@@ -40,14 +43,21 @@ export const useThemeStore = create<ThemeState>((set, get) => {
       applyTheme(newTheme);
     },
     toggleTheme: () => {
-      const themes: Theme[] = ['midnight', 'dark', 'light', 'oled', 'nord'];
-      const currentIndex = themes.indexOf(get().theme);
-      const nextTheme = themes[(currentIndex + 1) % themes.length];
+      const available = getAvailableThemes();
+      const currentIndex = available.indexOf(get().theme);
+      const nextTheme = available[(currentIndex + 1) % available.length];
       set({ theme: nextTheme });
       applyTheme(nextTheme);
     },
   };
 });
+
+/** Midnight is only available in the desktop app */
+export function getAvailableThemes(): Theme[] {
+  return isElectron()
+    ? ALL_THEMES
+    : ALL_THEMES.filter(t => t !== 'midnight');
+}
 
 export const themeNames: Record<Theme, string> = {
   midnight: 'Midnight',

@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router';
 import { clsx } from 'clsx';
 import { authStore } from '@/stores/auth';
 import { networkStore, getEffectiveUrl } from '@/stores/network';
-import { useThemeStore, themeNames, type Theme } from '@/stores/theme';
+import { useThemeStore, themeNames, getAvailableThemes, type Theme } from '@/stores/theme';
 import { Avatar } from './Avatar';
 import { AvatarPicker } from './AvatarPicker';
 import { api } from '@/api';
@@ -608,7 +608,7 @@ function ProfileTab({ user }: { user: ReturnType<typeof authStore.getState>['use
 function AppearanceTab() {
   const theme = useThemeStore(s => s.theme);
   const setTheme = useThemeStore(s => s.setTheme);
-  const themes: Theme[] = ['midnight', 'dark', 'light', 'oled', 'nord'];
+  const themes = getAvailableThemes();
 
   return (
     <div>
@@ -617,7 +617,7 @@ function AppearanceTab() {
       <div className="space-y-6">
         <div>
           <h3 className="text-xs font-bold uppercase text-text-muted mb-4">Theme</h3>
-          <div className="grid grid-cols-5 gap-2">
+          <div className={clsx('grid gap-2', themes.length > 4 ? 'grid-cols-5' : 'grid-cols-4')}>
             {themes.map((t) => (
               <button
                 key={t}
