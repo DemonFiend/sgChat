@@ -18,6 +18,8 @@ export interface ServerInfo {
   name: string;
   icon_url: string | null;
   motd?: string;
+  server_time?: string;
+  timezone?: string;
 }
 
 interface ServerSidebarProps {
@@ -42,7 +44,9 @@ export function ServerSidebar({ server, channels, categories, onServerSettingsCl
       .replace(/\{username\}/gi, user?.display_name || user?.username || 'User')
       .replace(/\{servername\}/gi, server?.name || '')
       .replace(/\{servericon\}/gi, server?.icon_url || '')
-      .replace(/\{servertime\}/gi, '')
+      .replace(/\{servertime\}/gi, server?.server_time
+        ? new Date(server.server_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : '')
       .replace(/\{if:([^}]*)\}([\s\S]*?)\{\/if\}/gi, (_match, _cond, body) => body);
   };
 

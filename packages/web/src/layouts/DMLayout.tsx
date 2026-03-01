@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router';
 import { api } from '@/api';
 import { ServerList } from '@/components/layout/ServerList';
 import { DMPage } from '@/components/layout/DMPage';
 import { UserPanel } from '@/components/layout/UserPanel';
 import { TitleBar } from '@/components/ui/TitleBar';
 import { VoiceConnectedBar } from '@/components/ui/VoiceConnectedBar';
+import { UserSettingsModal } from '@/components/ui/UserSettingsModal';
+import { FloatingUserPanel } from '@/components/layout/FloatingUserPanel';
 
 interface ServerData {
   id: string;
@@ -13,7 +16,9 @@ interface ServerData {
 }
 
 export function DMLayout() {
+  const navigate = useNavigate();
   const [servers, setServers] = useState<ServerData[]>([]);
+  const [showUserSettings, setShowUserSettings] = useState(false);
 
   // Fetch server info via REST (not socket events)
   useEffect(() => {
@@ -35,15 +40,26 @@ export function DMLayout() {
         className="flex flex-1 min-h-0"
         style={{ height: 'calc(100vh - var(--title-bar-height))' }}
       >
-        <ServerList servers={servers} onCreateServer={() => {}} />
+        <ServerList servers={servers} />
         <div className="flex flex-col h-full">
           <div className="flex-1 min-h-0">
             <DMPage />
           </div>
           <VoiceConnectedBar />
-          <UserPanel />
+          <UserPanel onSettingsClick={() => setShowUserSettings(true)} />
         </div>
       </div>
+
+      <FloatingUserPanel
+        onSettingsClick={() => setShowUserSettings(true)}
+        onDMClick={() => {}}
+        serverTimeOffset={0}
+      />
+
+      <UserSettingsModal
+        isOpen={showUserSettings}
+        onClose={() => setShowUserSettings(false)}
+      />
     </div>
   );
 }

@@ -3,6 +3,9 @@ import { Link, useParams } from 'react-router';
 import { motion } from 'framer-motion';
 import { clsx } from 'clsx';
 import { UnreadIndicator } from '@/components/ui/UnreadIndicator';
+import { useVoiceStore } from '@/stores/voice';
+import { voiceService } from '@/lib/voiceService';
+import { InlineParticipants } from '@/components/ui/VoiceParticipantsList';
 
 export type ChannelType = 'text' | 'voice' | 'music' | 'announcement' | 'temp_voice_generator' | 'temp_voice';
 
@@ -32,6 +35,9 @@ interface ChannelListProps {
   serverId: string;
   onChannelSettingsClick?: (channel: Channel) => void;
 }
+
+const VOICE_TYPES: ChannelType[] = ['voice', 'temp_voice', 'temp_voice_generator', 'music'];
+const isVoiceType = (type: ChannelType) => VOICE_TYPES.includes(type);
 
 const channelIcon = (type: ChannelType) => {
   switch (type) {
@@ -81,6 +87,22 @@ const channelIcon = (type: ChannelType) => {
   }
 };
 
+const settingsIcon = (
+  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+  </svg>
+);
+
+const collapseArrow = (collapsed: boolean) => (
+  <svg
+    className={clsx('w-3 h-3 mr-1 transition-transform', collapsed && '-rotate-90')}
+    fill="none" viewBox="0 0 24 24" stroke="currentColor"
+  >
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+  </svg>
+);
+
 export function ChannelList({ channels, categories, serverId, onChannelSettingsClick }: ChannelListProps) {
   const { channelId } = useParams<{ channelId?: string }>();
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
@@ -94,9 +116,11 @@ export function ChannelList({ channels, categories, serverId, onChannelSettingsC
     });
   };
 
-  const textChannels = channels.filter((c) => c.type === 'text').sort((a, b) => a.position - b.position);
+  const textChannels = channels
+    .filter((c) => c.type === 'text' || c.type === 'announcement')
+    .sort((a, b) => a.position - b.position);
   const voiceChannels = channels
-    .filter((c) => ['voice', 'temp_voice', 'temp_voice_generator', 'music'].includes(c.type) && !c.is_afk_channel && c.name.toLowerCase() !== 'afk')
+    .filter((c) => VOICE_TYPES.includes(c.type))
     .sort((a, b) => a.position - b.position);
 
   const useCategoryView = categories.length > 0;
@@ -120,12 +144,7 @@ export function ChannelList({ channels, categories, serverId, onChannelSettingsC
                     aria-expanded={!collapsedSections.has(category.id)}
                     className="flex items-center w-full px-1 mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted hover:text-text-secondary"
                   >
-                    <svg
-                      className={clsx('w-3 h-3 mr-1 transition-transform', collapsedSections.has(category.id) && '-rotate-90')}
-                      fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                    </svg>
+                    {collapseArrow(collapsedSections.has(category.id))}
                     {category.name}
                   </button>
                   {!collapsedSections.has(category.id) && categoryChannels.map((channel) => (
@@ -140,6 +159,35 @@ export function ChannelList({ channels, categories, serverId, onChannelSettingsC
                 </div>
               );
             })}
+
+          {/* Uncategorized channels */}
+          {(() => {
+            const uncategorized = channels
+              .filter((c) => c.category_id === null)
+              .sort((a, b) => a.position - b.position);
+            if (uncategorized.length === 0) return null;
+            return (
+              <div className="px-2 pt-3" role="group">
+                <button
+                  onClick={() => toggleSection('uncategorized')}
+                  aria-expanded={!collapsedSections.has('uncategorized')}
+                  className="flex items-center w-full px-1 mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted hover:text-text-secondary"
+                >
+                  {collapseArrow(collapsedSections.has('uncategorized'))}
+                  Channels
+                </button>
+                {!collapsedSections.has('uncategorized') && uncategorized.map((channel) => (
+                  <ChannelItem
+                    key={channel.id}
+                    channel={channel}
+                    isActive={channelId === channel.id}
+                    serverId={serverId}
+                    onSettingsClick={onChannelSettingsClick}
+                  />
+                ))}
+              </div>
+            );
+          })()}
         </>
       ) : (
         <>
@@ -148,12 +196,7 @@ export function ChannelList({ channels, categories, serverId, onChannelSettingsC
               onClick={() => toggleSection('text')}
               className="flex items-center w-full px-1 mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted hover:text-text-secondary"
             >
-              <svg
-                className={clsx('w-3 h-3 mr-1 transition-transform', collapsedSections.has('text') && '-rotate-90')}
-                fill="none" viewBox="0 0 24 24" stroke="currentColor"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-              </svg>
+              {collapseArrow(collapsedSections.has('text'))}
               Text Channels
             </button>
             {!collapsedSections.has('text') && textChannels.map((channel) => (
@@ -166,12 +209,7 @@ export function ChannelList({ channels, categories, serverId, onChannelSettingsC
               onClick={() => toggleSection('voice')}
               className="flex items-center w-full px-1 mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted hover:text-text-secondary"
             >
-              <svg
-                className={clsx('w-3 h-3 mr-1 transition-transform', collapsedSections.has('voice') && '-rotate-90')}
-                fill="none" viewBox="0 0 24 24" stroke="currentColor"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-              </svg>
+              {collapseArrow(collapsedSections.has('voice'))}
               Voice Channels
             </button>
             {!collapsedSections.has('voice') && voiceChannels.map((channel) => (
@@ -193,6 +231,45 @@ interface ChannelItemProps {
 
 const ChannelItem = memo(function ChannelItem({ channel, isActive, serverId, onSettingsClick }: ChannelItemProps) {
   const hasUnread = (channel.unread_count ?? 0) > 0;
+  const voice = isVoiceType(channel.type);
+  const currentVoiceChannelId = useVoiceStore((s) => s.currentChannelId);
+  const isInThisVoice = voice && currentVoiceChannelId === channel.id;
+
+  if (voice) {
+    return (
+      <div role="treeitem">
+        <motion.div whileHover={{ x: 2 }} transition={{ duration: 0.1 }}>
+          <div
+            onClick={() => voiceService.join(channel.id, channel.name)}
+            className={clsx(
+              'group/channel relative flex items-center gap-1.5 px-2 py-1.5 mb-0.5 rounded text-sm transition-colors cursor-pointer',
+              isInThisVoice
+                ? 'bg-bg-modifier-selected text-text-primary'
+                : 'text-text-muted hover:bg-bg-modifier-hover hover:text-text-secondary',
+            )}
+          >
+            {channelIcon(channel.type)}
+            <span className="truncate flex-1">{channel.name}</span>
+
+            {channel.is_afk_channel && (
+              <span className="text-[10px] text-text-muted uppercase font-semibold tracking-wide">AFK</span>
+            )}
+
+            {onSettingsClick && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onSettingsClick(channel); }}
+                className="opacity-0 group-hover/channel:opacity-100 p-0.5 rounded hover:bg-bg-modifier-active text-text-muted hover:text-text-primary transition-all"
+                title="Edit Channel"
+              >
+                {settingsIcon}
+              </button>
+            )}
+          </div>
+        </motion.div>
+        <InlineParticipants channelId={channel.id} />
+      </div>
+    );
+  }
 
   return (
     <motion.div whileHover={{ x: 2 }} transition={{ duration: 0.1 }} role="treeitem">
@@ -204,7 +281,7 @@ const ChannelItem = memo(function ChannelItem({ channel, isActive, serverId, onS
             ? 'bg-bg-modifier-selected text-text-primary'
             : hasUnread
               ? 'text-text-primary font-medium hover:bg-bg-modifier-hover'
-              : 'text-text-muted hover:bg-bg-modifier-hover hover:text-text-secondary'
+              : 'text-text-muted hover:bg-bg-modifier-hover hover:text-text-secondary',
         )}
       >
         {hasUnread && !isActive && (
@@ -220,10 +297,7 @@ const ChannelItem = memo(function ChannelItem({ channel, isActive, serverId, onS
             className="opacity-0 group-hover/channel:opacity-100 p-0.5 rounded hover:bg-bg-modifier-active text-text-muted hover:text-text-primary transition-all"
             title="Edit Channel"
           >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
+            {settingsIcon}
           </button>
         )}
 

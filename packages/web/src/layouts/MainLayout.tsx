@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuthStore } from '@/stores/auth';
@@ -23,7 +23,8 @@ import { ChannelSettingsModal } from '@/components/ui/ChannelSettingsModal';
 import { VoiceConnectedBar } from '@/components/ui/VoiceConnectedBar';
 import { UserContextMenu, type ContextMenuItem } from '@/components/ui/UserContextMenu';
 import { UserProfilePopover } from '@/components/ui/UserProfilePopover';
-import { CreateServerModal } from '@/components/ui/CreateServerModal';
+import { UserSettingsModal } from '@/components/ui/UserSettingsModal';
+import { FloatingUserPanel } from '@/components/layout/FloatingUserPanel';
 import { useGlobalShortcuts } from '@/hooks/useElectron';
 import { slideInRight, easeTransition } from '@/lib/motion';
 import type { Channel, Category } from '@/components/layout/ChannelList';
@@ -34,6 +35,8 @@ interface ServerData {
   icon_url: string | null;
   owner_id: string;
   motd?: string;
+  server_time?: string;
+  timezone?: string;
 }
 
 interface MemberData {
@@ -81,7 +84,13 @@ export function MainLayout() {
     member: MemberData;
     position: { x: number; y: number };
   } | null>(null);
-  const [showCreateServer, setShowCreateServer] = useState(false);
+  const [showUserSettings, setShowUserSettings] = useState(false);
+
+  // Server time offset (minutes) for FloatingUserPanel
+  const serverTimeOffset = useMemo(() => {
+    if (!currentServer?.server_time) return 0;
+    return Math.round((new Date(currentServer.server_time).getTime() - Date.now()) / 60000);
+  }, [currentServer?.server_time]);
 
   // Ref to track loaded channels for auto-redirect logic
   const channelsRef = useRef<Channel[]>([]);
@@ -471,10 +480,7 @@ export function MainLayout() {
         style={{ height: 'calc(100vh - var(--title-bar-height))' }}
       >
         {/* Server List (leftmost column) */}
-        <ServerList
-          servers={servers}
-          onCreateServer={() => setShowCreateServer(true)}
-        />
+        <ServerList servers={servers} />
 
         {/* Server Sidebar (channels + voice bar + user panel) */}
         <div className="flex flex-col h-full">
@@ -486,6 +492,8 @@ export function MainLayout() {
                     name: currentServer.name,
                     icon_url: currentServer.icon_url,
                     motd: currentServer.motd,
+                    server_time: currentServer.server_time,
+                    timezone: currentServer.timezone,
                   }
                 : null
             }
@@ -503,7 +511,7 @@ export function MainLayout() {
             }
           />
           <VoiceConnectedBar />
-          <UserPanel />
+          <UserPanel onSettingsClick={() => setShowUserSettings(true)} />
         </div>
 
         {/* Chat Panel + Member List */}
@@ -598,16 +606,17 @@ export function MainLayout() {
         />
       )}
 
-      {/* Create Server Modal */}
-      <CreateServerModal
-        isOpen={showCreateServer}
-        onClose={() => setShowCreateServer(false)}
-        onCreated={(server) => {
-          setServers((prev) => [
-            ...prev,
-            { ...server, icon_url: null, owner_id: user?.id || '' },
-          ]);
-        }}
+      {/* Floating User Panel (bottom-right) */}
+      <FloatingUserPanel
+        onSettingsClick={() => setShowUserSettings(true)}
+        onDMClick={() => navigate('/channels/@me')}
+        serverTimeOffset={serverTimeOffset}
+      />
+
+      {/* User Settings Modal */}
+      <UserSettingsModal
+        isOpen={showUserSettings}
+        onClose={() => setShowUserSettings(false)}
       />
 
       {/* User Context Menu */}

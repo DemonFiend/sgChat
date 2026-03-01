@@ -14,10 +14,9 @@ interface Server {
 
 interface ServerListProps {
   servers: Server[];
-  onCreateServer: () => void;
 }
 
-export function ServerList({ servers, onCreateServer }: ServerListProps) {
+export function ServerList({ servers }: ServerListProps) {
   const location = useLocation();
   const [lastClickTime, setLastClickTime] = useState(0);
   const { reopenPopup } = useServerPopupStore();
@@ -123,36 +122,6 @@ export function ServerList({ servers, onCreateServer }: ServerListProps) {
         </Tooltip>
       ))}
 
-      {/* Add Server Button */}
-      <Tooltip content="Add a Server" position="right">
-        <button
-          onClick={onCreateServer}
-          className={clsx(
-            'flex items-center justify-center w-12 h-12 mb-2 rounded-2xl',
-            'bg-bg-primary text-success hover:rounded-xl hover:bg-success hover:text-white',
-            'transition-all duration-200'
-          )}
-        >
-          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-          </svg>
-        </button>
-      </Tooltip>
-
-      {/* Explore Public Servers */}
-      <Tooltip content="Explore Public Servers" position="right">
-        <button
-          className={clsx(
-            'flex items-center justify-center w-12 h-12 rounded-2xl',
-            'bg-bg-primary text-success hover:rounded-xl hover:bg-success hover:text-white',
-            'transition-all duration-200'
-          )}
-        >
-          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-        </button>
-      </Tooltip>
     </nav>
   );
 }
