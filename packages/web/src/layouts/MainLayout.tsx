@@ -17,7 +17,6 @@ import {
   type TypingUser,
 } from '@/components/layout/ChatPanel';
 import { MemberList } from '@/components/layout/MemberList';
-import { UserPanel } from '@/components/layout/UserPanel';
 import { TitleBar } from '@/components/ui/TitleBar';
 import { ServerSettingsModal } from '@/components/ui/ServerSettingsModal';
 import { ChannelSettingsModal } from '@/components/ui/ChannelSettingsModal';
@@ -246,8 +245,17 @@ export function MainLayout() {
   // ── Wire up real-time message events (correct event names) ─────
   useEffect(() => {
     const handleNewMessage = (message: Message & { channel_id?: string }) => {
-      // Only show messages for the current channel
-      if (message.channel_id && message.channel_id !== channelId) return;
+      // If message is for a different channel, increment its unread count
+      if (message.channel_id && message.channel_id !== channelId) {
+        setChannels((prev) =>
+          prev.map((c) =>
+            c.id === message.channel_id
+              ? { ...c, unread_count: (c.unread_count || 0) + 1 }
+              : c,
+          ),
+        );
+        return;
+      }
       setMessages((prev) => [...prev, message]);
       setTypingUsers((prev) =>
         prev.filter((u) => u.id !== message.author.id),
@@ -413,6 +421,50 @@ export function MainLayout() {
     };
   }, []);
 
+  // ── Wire up voice join/leave events for real-time participant updates ──
+  useEffect(() => {
+    const voiceState = useVoiceStore.getState();
+
+    const handleVoiceJoin = (data: any) => {
+      const channelId = data.channel_id;
+      const userData = data.user;
+      if (!channelId || !userData) return;
+      voiceState.addParticipant(channelId, {
+        id: userData.id,
+        username: userData.username,
+        display_name: userData.display_name,
+        avatar_url: userData.avatar_url,
+      });
+    };
+
+    const handleVoiceLeave = (data: any) => {
+      const channelId = data.channel_id;
+      const userId = data.user_id;
+      if (!channelId || !userId) return;
+      voiceState.removeParticipant(channelId, userId);
+    };
+
+    socketService.on(
+      'voice.join',
+      handleVoiceJoin as (data: unknown) => void,
+    );
+    socketService.on(
+      'voice.leave',
+      handleVoiceLeave as (data: unknown) => void,
+    );
+
+    return () => {
+      socketService.off(
+        'voice.join',
+        handleVoiceJoin as (data: unknown) => void,
+      );
+      socketService.off(
+        'voice.leave',
+        handleVoiceLeave as (data: unknown) => void,
+      );
+    };
+  }, []);
+
   // ── Action handlers (correct socket event names) ───────────────
   const handleSendMessage = useCallback(
     (content: string) => {
@@ -555,7 +607,7 @@ export function MainLayout() {
         <ServerList servers={servers} />
 
         {/* Server Sidebar (channels + voice bar + user panel) */}
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col h-full flex-shrink-0">
           <ServerSidebar
             server={
               currentServer
@@ -587,7 +639,6 @@ export function MainLayout() {
             <SoundboardPanel serverId={currentServer.id} />
           )}
           <VoiceConnectedBar />
-          <UserPanel onSettingsClick={() => setShowUserSettings(true)} />
         </div>
 
         {/* Chat Panel + Member List */}
@@ -620,7 +671,7 @@ export function MainLayout() {
                 animate="animate"
                 exit="exit"
                 transition={easeTransition}
-                className="h-full overflow-hidden"
+                className="h-full overflow-hidden flex-shrink-0"
               >
                 <MemberList
                   groups={memberGroups}

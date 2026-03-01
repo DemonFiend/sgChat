@@ -202,7 +202,7 @@ export function ChatPanel({
   };
 
   return (
-    <div className="flex flex-col h-full bg-bg-primary">
+    <div className="flex flex-col h-full flex-1 min-w-0 bg-bg-primary">
       {/* Channel Header */}
       <header className="h-12 px-4 flex items-center gap-3 border-b border-bg-tertiary bg-bg-primary shadow-sm flex-shrink-0">
         <div className="flex items-center gap-2">
