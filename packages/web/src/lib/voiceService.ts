@@ -78,6 +78,7 @@ class VoiceServiceClass {
   private localMutes: Set<string> = new Set();
   private _isServerMuted: boolean = false;
   private _isServerDeafened: boolean = false;
+  private _isIntentionalLeave: boolean = false;
 
   /**
    * Set the container element for audio elements
@@ -383,6 +384,11 @@ class VoiceServiceClass {
 
     } catch (err: any) {
       console.error('[VoiceService] Failed to join voice channel:', err);
+      // If we registered in Redis (via API) but LiveKit failed, clean up server state
+      const failedChannelId = voiceStore.currentChannelId();
+      if (failedChannelId) {
+        socketService.emit('voice:leave', { channel_id: failedChannelId });
+      }
       voiceStore.setError(err?.message || 'Failed to join voice channel');
       throw err;
     }
@@ -406,6 +412,9 @@ class VoiceServiceClass {
 
     try {
       console.log('[VoiceService] Leaving voice channel:', channelId);
+
+      // Flag so the Disconnected event handler doesn't double-emit voice:leave
+      this._isIntentionalLeave = true;
 
       // Stop connection quality monitoring
       this.stopConnectionQualityMonitoring();
@@ -448,6 +457,8 @@ class VoiceServiceClass {
       this.stopConnectionQualityMonitoring();
       voiceStore.setDisconnected();
       this.clearStoredVoiceChannel();
+    } finally {
+      this._isIntentionalLeave = false;
     }
   }
 
@@ -624,7 +635,8 @@ class VoiceServiceClass {
   async handleForceMove(toChannelId: string, toChannelName: string): Promise<void> {
     console.log('[VoiceService] Force moved to channel:', toChannelId);
 
-    // Disconnect locally without notifying the server
+    // Disconnect locally without notifying the server (backend already updated Redis)
+    this._isIntentionalLeave = true;
     if (this.room) {
       this.stopConnectionQualityMonitoring();
       this.teardownActivityTracking();
@@ -636,6 +648,7 @@ class VoiceServiceClass {
       this.cleanupAudioElements();
       this.cleanupVideoElements();
     }
+    this._isIntentionalLeave = false;
 
     voiceStore.setDisconnected();
     await this.join(toChannelId, toChannelName);
@@ -1036,6 +1049,25 @@ class VoiceServiceClass {
 
   // Private methods
 
+  /**
+   * Handle an unexpected LiveKit disconnect (not from leave()).
+   * Notifies the server so Redis voice state gets cleaned up,
+   * preventing ghost participants (e.g. in AFK channels where
+   * the restricted token causes an immediate disconnect).
+   */
+  private handleUnexpectedDisconnect(): void {
+    if (!this._isIntentionalLeave) {
+      const channelId = voiceStore.currentChannelId();
+      if (channelId) {
+        console.log('[VoiceService] Unexpected disconnect, notifying server for channel:', channelId);
+        socketService.emit('voice:leave', { channel_id: channelId });
+      }
+    }
+    voiceStore.setDisconnected();
+    this.cleanupAudioElements();
+    this.cleanupVideoElements();
+  }
+
   private setupRoomEventListeners(): void {
     if (!this.room) return;
 
@@ -1210,22 +1242,18 @@ class VoiceServiceClass {
     // Connection state changed
     this.room.on(RoomEvent.ConnectionStateChanged, (state) => {
       console.log('[VoiceService] Connection state changed:', state);
-      
+
       if (state === ConnectionState.Reconnecting) {
         voiceStore.setReconnecting();
       } else if (state === ConnectionState.Disconnected) {
-        voiceStore.setDisconnected();
-        this.cleanupAudioElements();
-        this.cleanupVideoElements();
+        this.handleUnexpectedDisconnect();
       }
     });
 
     // Disconnected
     this.room.on(RoomEvent.Disconnected, (reason) => {
       console.log('[VoiceService] Disconnected:', reason);
-      voiceStore.setDisconnected();
-      this.cleanupAudioElements();
-      this.cleanupVideoElements();
+      this.handleUnexpectedDisconnect();
     });
   }
 
