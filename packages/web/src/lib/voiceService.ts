@@ -627,10 +627,10 @@ class VoiceServiceClass {
   }
 
   /**
-   * Handle force move from server (AFK timeout or moderator action).
-   * The backend has already updated Redis state, so we only disconnect
-   * the local LiveKit room without emitting voice:leave to the server
-   * (which would incorrectly remove us from the destination channel).
+   * Handle force move from server (temp channel auto-move, AFK timeout,
+   * or moderator action). The backend removes us from the old channel in
+   * Redis and publishes voice.leave before sending force_move, so we only
+   * need to disconnect the local LiveKit room and rejoin the new channel.
    */
   async handleForceMove(toChannelId: string, toChannelName: string): Promise<void> {
     console.log('[VoiceService] Force moved to channel:', toChannelId);

@@ -403,6 +403,20 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
         return forbidden(reply, 'Missing MOVE_MEMBERS permission');
       }
 
+      // Remove user from old channel in Redis and publish voice.leave
+      // so other clients update their participant lists before the move.
+      await redis.leaveVoiceChannel(user_id);
+
+      await publishEvent({
+        type: 'voice.leave',
+        actorId: user_id,
+        resourceId: `server:${fromChannel.server_id}`,
+        payload: {
+          channel_id: from_channel_id,
+          user_id: user_id,
+        },
+      });
+
       // Notify user via event bus to switch channels
       await publishEvent({
         type: 'voice.force_move',

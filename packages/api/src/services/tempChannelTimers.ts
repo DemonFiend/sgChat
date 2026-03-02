@@ -6,6 +6,7 @@
  */
 
 import { redis } from '../lib/redis.js';
+import { db } from '../lib/db.js';
 import { publishEvent } from '../lib/eventBus.js';
 import { createTempVoiceChannel } from './tempChannels.js';
 
@@ -45,12 +46,22 @@ export function scheduleTempChannelCreation(
         generatorChannelId
       );
 
-      // NOTE: Do NOT update Redis here. The frontend will handle Redis state
-      // via its leave() + join() cycle when it processes the force_move event.
-      // Updating Redis here causes a race condition: the frontend's leave()
-      // socket handler calls redis.leaveVoiceChannel() which looks up the
-      // user's CURRENT channel (now the temp channel, not the generator),
-      // removing them from the temp channel and corrupting participant tracking.
+      // Remove user from the generator channel in Redis and publish voice.leave
+      // so other clients update their participant lists. The frontend's
+      // handleForceMove() skips emitting voice:leave (it trusts the backend
+      // to have already cleaned up), and the subsequent join() call will add
+      // the user to the temp channel via redis.joinVoiceChannel().
+      await redis.leaveVoiceChannel(userId);
+
+      await publishEvent({
+        type: 'voice.leave',
+        actorId: userId,
+        resourceId: `server:${serverId}`,
+        payload: {
+          channel_id: generatorChannelId,
+          user_id: userId,
+        },
+      });
 
       // Send force_move event so the frontend auto-moves the user
       await publishEvent({
