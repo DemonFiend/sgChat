@@ -397,6 +397,32 @@ export function DMPage() {
     socketService.emit('dm.typing.stop', { user_id: selectedFriend.id });
   }, [selectedFriend]);
 
+  // Build a lightweight MentionContext for DMs (friend + current user only)
+  const dmMentionContext = useMemo<MentionContextValue>(() => {
+    const membersMap = new Map<string, MentionMember>();
+    const currentUser = authStore.getState().user;
+    if (currentUser) {
+      membersMap.set(currentUser.id, {
+        username: currentUser.username,
+        display_name: currentUser.display_name || null,
+        avatar_url: currentUser.avatar_url || null,
+      });
+    }
+    if (selectedFriend) {
+      membersMap.set(selectedFriend.id, {
+        username: selectedFriend.username,
+        display_name: selectedFriend.display_name,
+        avatar_url: selectedFriend.avatar_url,
+      });
+    }
+    return {
+      members: membersMap,
+      channels: new Map(),
+      roles: new Map(),
+      currentUserId,
+    };
+  }, [selectedFriend, currentUserId]);
+
   if (isLoading) {
     return (
       <div className="flex h-full w-full bg-bg-primary items-center justify-center">
@@ -452,32 +478,6 @@ export function DMPage() {
       </div>
     );
   }
-
-  // Build a lightweight MentionContext for DMs (friend + current user only)
-  const dmMentionContext = useMemo<MentionContextValue>(() => {
-    const membersMap = new Map<string, MentionMember>();
-    const currentUser = authStore.getState().user;
-    if (currentUser) {
-      membersMap.set(currentUser.id, {
-        username: currentUser.username,
-        display_name: currentUser.display_name || null,
-        avatar_url: currentUser.avatar_url || null,
-      });
-    }
-    if (selectedFriend) {
-      membersMap.set(selectedFriend.id, {
-        username: selectedFriend.username,
-        display_name: selectedFriend.display_name,
-        avatar_url: selectedFriend.avatar_url,
-      });
-    }
-    return {
-      members: membersMap,
-      channels: new Map(),
-      roles: new Map(),
-      currentUserId,
-    };
-  }, [selectedFriend, currentUserId]);
 
   return (
     <div className="flex h-full w-full bg-bg-primary">
