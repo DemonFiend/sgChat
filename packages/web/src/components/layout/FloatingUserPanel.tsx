@@ -23,15 +23,17 @@ const CLEAR_AFTER_OPTIONS = [
 interface FloatingUserPanelProps {
   onSettingsClick: () => void;
   onDMClick: () => void;
-  serverTimeOffset?: number;
+  serverTimezone?: string;
+  userTimezone?: string;
 }
 
 export function FloatingUserPanel({
   onSettingsClick,
   onDMClick,
-  serverTimeOffset = 0,
+  serverTimezone,
+  userTimezone,
 }: FloatingUserPanelProps) {
-  const [localTime, setLocalTime] = useState(new Date());
+  const [, setTick] = useState(0);
   const [showTimeTooltip, setShowTimeTooltip] = useState<'local' | 'server' | null>(null);
   const [showStatusPicker, setShowStatusPicker] = useState(false);
   const [customStatusText, setCustomStatusText] = useState('');
@@ -41,17 +43,15 @@ export function FloatingUserPanel({
 
   // Update time every second
   useEffect(() => {
-    const interval = setInterval(() => setLocalTime(new Date()), 1000);
+    const interval = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(interval);
   }, []);
 
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
-
-  const serverTime = useMemo(() => {
-    return new Date(localTime.getTime() + serverTimeOffset * 60000);
-  }, [localTime, serverTimeOffset]);
+  const formatTimeForZone = useCallback((tz?: string) => {
+    const opts: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
+    if (tz) opts.timeZone = tz;
+    return new Date().toLocaleTimeString([], opts);
+  }, []);
 
   const statusColor = useMemo(() => {
     const status = user?.status || 'offline';
@@ -191,7 +191,7 @@ export function FloatingUserPanel({
               {showTimeTooltip === 'local' && (
                 <div className="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-bg-floating text-text-primary text-sm px-3 py-2 rounded-lg shadow-lg whitespace-nowrap border border-bg-tertiary">
                   <div className="text-text-muted text-xs mb-1">Local Time</div>
-                  <div className="font-mono font-medium">{formatTime(localTime)}</div>
+                  <div className="font-mono font-medium">{formatTimeForZone(userTimezone)}</div>
                 </div>
               )}
             </div>
@@ -211,7 +211,7 @@ export function FloatingUserPanel({
               {showTimeTooltip === 'server' && (
                 <div className="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-bg-floating text-text-primary text-sm px-3 py-2 rounded-lg shadow-lg whitespace-nowrap border border-bg-tertiary">
                   <div className="text-text-muted text-xs mb-1">Server Time</div>
-                  <div className="font-mono font-medium">{formatTime(serverTime)}</div>
+                  <div className="font-mono font-medium">{formatTimeForZone(serverTimezone)}</div>
                 </div>
               )}
             </div>

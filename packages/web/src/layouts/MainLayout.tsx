@@ -112,13 +112,15 @@ export function MainLayout() {
     position: { x: number; y: number };
   } | null>(null);
   const [showUserSettings, setShowUserSettings] = useState(false);
+  const [userTimezone, setUserTimezone] = useState<string | undefined>(undefined);
   const [showClaimAdmin, setShowClaimAdmin] = useState(false);
 
-  // Server time offset (minutes) for FloatingUserPanel
-  const serverTimeOffset = useMemo(() => {
-    if (!currentServer?.server_time) return 0;
-    return Math.round((new Date(currentServer.server_time).getTime() - Date.now()) / 60000);
-  }, [currentServer?.server_time]);
+  // Fetch user timezone from settings on mount
+  useEffect(() => {
+    api.get<{ timezone?: string }>('/users/me/settings').then((settings) => {
+      if (settings?.timezone) setUserTimezone(settings.timezone);
+    }).catch(() => {});
+  }, []);
 
   // Ref to track loaded channels for auto-redirect logic
   const channelsRef = useRef<Channel[]>([]);
@@ -913,7 +915,8 @@ export function MainLayout() {
       <FloatingUserPanel
         onSettingsClick={() => setShowUserSettings(true)}
         onDMClick={() => navigate('/channels/@me')}
-        serverTimeOffset={serverTimeOffset}
+        serverTimezone={currentServer?.timezone}
+        userTimezone={userTimezone}
       />
 
       {/* User Settings Modal */}

@@ -260,6 +260,13 @@ function GifRenderer({ src, isOwnMessage, compact }: { src: string; isOwnMessage
     };
   }, []);
 
+  // Handle already-cached images (browser may not fire onLoad for cached imgs)
+  useEffect(() => {
+    if (imgRef.current?.complete && imgRef.current.naturalWidth > 0) {
+      handleLoad();
+    }
+  }, [src, handleLoad]);
+
   return (
     <div className={containerClasses}>
       <canvas ref={canvasRef} className="hidden" />

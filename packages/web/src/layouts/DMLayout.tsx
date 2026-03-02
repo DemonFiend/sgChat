@@ -18,6 +18,7 @@ export function DMLayout() {
   const [servers, setServers] = useState<ServerData[]>([]);
   const [showUserSettings, setShowUserSettings] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [userTimezone, setUserTimezone] = useState<string | undefined>(undefined);
 
   // Fetch server info via REST (not socket events)
   useEffect(() => {
@@ -31,6 +32,10 @@ export function DMLayout() {
       }
     };
     fetchServer();
+    // Fetch user timezone
+    api.get<{ timezone?: string }>('/users/me/settings').then((settings) => {
+      if (settings?.timezone) setUserTimezone(settings.timezone);
+    }).catch(() => {});
   }, []);
 
   return (
@@ -57,7 +62,7 @@ export function DMLayout() {
       <FloatingUserPanel
         onSettingsClick={() => setShowUserSettings(true)}
         onDMClick={() => {}}
-        serverTimeOffset={0}
+        userTimezone={userTimezone}
       />
 
       <UserSettingsModal

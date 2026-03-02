@@ -1,4 +1,4 @@
-import { AccessToken, TrackSource } from 'livekit-server-sdk';
+import { AccessToken } from 'livekit-server-sdk';
 
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || '';
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || '';
@@ -29,27 +29,12 @@ export async function generateLiveKitToken(options: LiveKitTokenOptions): Promis
     identity: options.identity,
   });
 
-  // Build allowed sources based on permissions
-  const canPublishSources: TrackSource[] = [];
-  
-  if (options.canPublish) {
-    canPublishSources.push(TrackSource.MICROPHONE);
-  }
-  if (options.canPublishVideo) {
-    canPublishSources.push(TrackSource.CAMERA);
-  }
-  if (options.canPublishScreen) {
-    canPublishSources.push(TrackSource.SCREEN_SHARE);
-    canPublishSources.push(TrackSource.SCREEN_SHARE_AUDIO);
-  }
-
   at.addGrant({
     room: options.room,
     roomJoin: true,
     canPublish: options.canPublish ?? true,
     canPublishData: true,
     canSubscribe: options.canSubscribe ?? true,
-    canPublishSources: canPublishSources.length > 0 ? canPublishSources : undefined,
   });
 
   return await at.toJwt();
