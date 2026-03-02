@@ -132,6 +132,7 @@ async function start() {
     crossOriginOpenerPolicy: { policy: 'same-origin' },
     crossOriginResourcePolicy: { policy: 'cross-origin' },
     contentSecurityPolicy: false, // CSP handled by Nginx (web) and Tauri (desktop)
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' }, // Allow referer for Giphy CDN
   });
 
   await fastify.register(cors, {
