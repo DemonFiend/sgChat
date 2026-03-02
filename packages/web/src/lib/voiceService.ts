@@ -611,11 +611,28 @@ class VoiceServiceClass {
   }
 
   /**
-   * Handle force move from moderator
+   * Handle force move from server (AFK timeout or moderator action).
+   * The backend has already updated Redis state, so we only disconnect
+   * the local LiveKit room without emitting voice:leave to the server
+   * (which would incorrectly remove us from the destination channel).
    */
   async handleForceMove(toChannelId: string, toChannelName: string): Promise<void> {
     console.log('[VoiceService] Force moved to channel:', toChannelId);
-    await this.leave();
+
+    // Disconnect locally without notifying the server
+    if (this.room) {
+      this.stopConnectionQualityMonitoring();
+      this.teardownActivityTracking();
+      if (voiceStore.isScreenSharing()) {
+        await this.stopScreenShare();
+      }
+      await this.room.disconnect();
+      this.room = null;
+      this.cleanupAudioElements();
+      this.cleanupVideoElements();
+    }
+
+    voiceStore.setDisconnected();
     await this.join(toChannelId, toChannelName);
   }
 

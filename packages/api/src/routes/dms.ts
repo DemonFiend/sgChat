@@ -3,7 +3,7 @@ import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { sendMessageSchema, RATE_LIMITS } from '@sgchat/shared';
 import { notFound, forbidden, badRequest } from '../utils/errors.js';
-import { sanitizeContent } from '../utils/sanitize.js';
+import { sanitizeMessage } from '../utils/sanitize.js';
 import { areFriends, isBlocked } from './friends.js';
 import { z } from 'zod';
 import { getDMStorageStats, getSegmentsForDM, getOrCreateSegment, onMessageCreated } from '../services/segmentation.js';
@@ -121,7 +121,7 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       // Sanitize message content (strip HTML tags — defense-in-depth)
-      body.content = sanitizeContent(body.content);
+      body.content = sanitizeMessage(body.content);
 
       const message = await db.messages.create({
         dm_channel_id: id,
@@ -267,7 +267,7 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       // Sanitize message content (strip HTML tags — defense-in-depth)
-      body.content = sanitizeContent(body.content);
+      body.content = sanitizeMessage(body.content);
 
       const message = await db.messages.create({
         dm_channel_id: dm.id,

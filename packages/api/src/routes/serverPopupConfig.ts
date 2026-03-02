@@ -172,7 +172,8 @@ export const serverPopupConfigRoutes: FastifyPluginAsync = async (fastify) => {
             // Broadcast updates to connected clients
             fastify.io?.to(`server:${server.id}`).emit('server.popup_config.update', updatedConfig);
             if (Object.keys(serverUpdates).length > 0) {
-                fastify.io?.to(`server:${server.id}`).emit('server.update', serverUpdates);
+                // Include server id so the frontend handler accepts the event
+                fastify.io?.to(`server:${server.id}`).emit('server.update', { id: server.id, ...serverUpdates });
             }
 
             // Return updated config

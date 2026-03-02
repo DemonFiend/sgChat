@@ -7,7 +7,7 @@ import { publishEvent } from '../lib/eventBus.js';
 import { createNotification } from './notifications.js';
 import { ServerPermissions, TextPermissions, hasPermission, sendMessageSchema } from '@sgchat/shared';
 import { notFound, forbidden, badRequest } from '../utils/errors.js';
-import { sanitizeContent } from '../utils/sanitize.js';
+import { sanitizeMessage } from '../utils/sanitize.js';
 import { z } from 'zod';
 import {
   getChannelStorageStats,
@@ -285,7 +285,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       // Sanitize message content (strip HTML tags — defense-in-depth)
-      body.content = sanitizeContent(body.content);
+      body.content = sanitizeMessage(body.content);
 
       const message = await db.messages.create({
         channel_id: id,

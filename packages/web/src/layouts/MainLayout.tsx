@@ -47,6 +47,14 @@ interface ServerData {
   admin_claimed?: boolean;
 }
 
+interface MemberRole {
+  id: string;
+  name: string;
+  color: string | null;
+  position: number;
+  is_hoisted: boolean;
+}
+
 interface MemberData {
   id: string;
   username: string;
@@ -55,6 +63,7 @@ interface MemberData {
   status: 'online' | 'idle' | 'dnd' | 'offline';
   role_color?: string | null;
   custom_status?: string | null;
+  roles?: MemberRole[];
 }
 
 export function MainLayout() {
@@ -623,14 +632,53 @@ export function MainLayout() {
     setIsMemberListOpen((prev) => !prev);
   }, []);
 
-  // Group members for MemberList (memoized to prevent new refs every render)
+  // Group members for MemberList — hoisted roles get their own sections
   const memberGroups = useMemo(() => {
     const online = members.filter((m) => m.status !== 'offline');
     const offline = members.filter((m) => m.status === 'offline');
-    return [
-      { name: 'Online', members: online },
-      { name: 'Offline', members: offline },
-    ];
+
+    // Collect hoisted roles from all members, keyed by id
+    const hoistedMap = new Map<string, { name: string; color: string | null; position: number }>();
+    for (const m of members) {
+      for (const r of m.roles ?? []) {
+        if (r.is_hoisted && !hoistedMap.has(r.id)) {
+          hoistedMap.set(r.id, { name: r.name, color: r.color, position: r.position });
+        }
+      }
+    }
+
+    const hoistedRoles = [...hoistedMap.entries()].sort((a, b) => b[1].position - a[1].position);
+
+    if (hoistedRoles.length === 0) {
+      return [
+        { name: 'Online', members: online },
+        { name: 'Offline', members: offline },
+      ];
+    }
+
+    const groups: { name: string; color?: string; members: typeof online }[] = [];
+    const assigned = new Set<string>();
+
+    for (const [roleId, role] of hoistedRoles) {
+      const roleMembers = online.filter((m) => {
+        if (assigned.has(m.id)) return false;
+        const highest = (m.roles ?? [])
+          .filter((r) => r.is_hoisted)
+          .sort((a, b) => b.position - a.position)[0];
+        return highest?.id === roleId;
+      });
+      for (const m of roleMembers) assigned.add(m.id);
+      if (roleMembers.length > 0) {
+        groups.push({ name: role.name, color: role.color ?? undefined, members: roleMembers });
+      }
+    }
+
+    const unhoisted = online.filter((m) => !assigned.has(m.id));
+    if (unhoisted.length > 0) {
+      groups.push({ name: 'Online', members: unhoisted });
+    }
+    groups.push({ name: 'Offline', members: offline });
+    return groups;
   }, [members]);
 
   // Wire up Electron global shortcuts for mute/deafen

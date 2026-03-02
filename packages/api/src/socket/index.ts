@@ -11,7 +11,7 @@ import { isBlocked } from '../routes/friends.js';
 import { createNotification } from '../routes/notifications.js';
 import { cancelPendingCreation } from '../services/tempChannelTimers.js';
 import { markTempChannelEmpty } from '../services/tempChannels.js';
-import { sanitizeContent } from '../utils/sanitize.js';
+import { sanitizeContent, sanitizeMessage } from '../utils/sanitize.js';
 
 // ── Constants ──────────────────────────────────────────────────
 /** Heartbeat interval sent to client in gateway.hello (ms) */
@@ -330,8 +330,8 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
           return;
         }
 
-        // Sanitize message content (strip HTML tags)
-        data.content = sanitizeContent(data.content);
+        // Sanitize message content (strip HTML tags, preserve bare URLs)
+        data.content = sanitizeMessage(data.content);
         if (data.content.trim().length === 0) {
           socket.emit('error', { message: 'Message content is invalid' });
           return;
@@ -478,8 +478,8 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
           return;
         }
 
-        // Sanitize message content (strip HTML tags)
-        data.content = sanitizeContent(data.content);
+        // Sanitize message content (strip HTML tags, preserve bare URLs)
+        data.content = sanitizeMessage(data.content);
         if (data.content.trim().length === 0) {
           socket.emit('error', { message: 'Message content is invalid' });
           return;
@@ -865,8 +865,8 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
           return;
         }
 
-        // Sanitize message content (strip HTML tags)
-        data.content = sanitizeContent(data.content);
+        // Sanitize message content (strip HTML tags, preserve bare URLs)
+        data.content = sanitizeMessage(data.content);
         if (data.content.trim().length === 0) {
           socket.emit('error', { message: 'Message content is invalid' });
           return;
