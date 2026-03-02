@@ -1,4 +1,5 @@
 import sanitize from 'sanitize-html';
+import { MENTION_REGEX } from '@sgchat/shared';
 
 /**
  * Sanitization options: strip ALL HTML tags.
@@ -26,10 +27,28 @@ export function sanitizeContent(text: string): string {
 /**
  * Sanitize a chat message. Plain URLs (GIFs, images) are returned as-is
  * because sanitize-html can mangle query-string ampersands (`&` → `&amp;`).
- * Everything else goes through the normal HTML-strip pipeline.
+ * Mention syntax (<@uuid>, <#uuid>, <@&uuid>, <t:unix>, <motd>) is preserved
+ * by replacing with placeholders before sanitization and restoring after.
  */
 export function sanitizeMessage(text: string): string {
   const trimmed = text.trim();
   if (BARE_URL_RE.test(trimmed)) return trimmed;
-  return sanitize(text, SANITIZE_OPTIONS);
+
+  // Preserve mention syntax (angle-bracket mentions look like HTML tags and
+  // would be stripped by sanitize-html)
+  const preserved: string[] = [];
+  const withPlaceholders = text.replace(
+    new RegExp(MENTION_REGEX.source, 'gi'),
+    (match) => {
+      preserved.push(match);
+      return `__MENTION_${preserved.length - 1}__`;
+    },
+  );
+
+  let sanitized = sanitize(withPlaceholders, SANITIZE_OPTIONS);
+
+  // Restore mention syntax
+  sanitized = sanitized.replace(/__MENTION_(\d+)__/g, (_, i) => preserved[parseInt(i, 10)]);
+
+  return sanitized;
 }

@@ -5,6 +5,7 @@ import { db } from '../lib/db.js';
 import { canAccessChannel, calculatePermissions } from '../services/permissions.js';
 import { publishEvent } from '../lib/eventBus.js';
 import { createNotification } from './notifications.js';
+import { processMentions } from '../services/mentions.js';
 import { ServerPermissions, TextPermissions, hasPermission, sendMessageSchema } from '@sgchat/shared';
 import { notFound, forbidden, badRequest } from '../utils/errors.js';
 import { sanitizeMessage } from '../utils/sanitize.js';
@@ -337,43 +338,18 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
         payload: formattedMessage,
       });
 
-      // ── A6: Detect @mentions and create high-priority notifications ──
-      const mentionRegex = /@(\w+)/g;
-      let mentionMatch;
-      const mentionedUsernames = new Set<string>();
-      while ((mentionMatch = mentionRegex.exec(body.content)) !== null) {
-        mentionedUsernames.add(mentionMatch[1]);
-      }
-
-      const notifiedUserIds = new Set<string>();
+      // ── A6: Detect mentions and create notifications ──
       const currentUserId = request.user!.id;
-
-      if (mentionedUsernames.size > 0) {
-        const usernames = Array.from(mentionedUsernames).slice(0, 20);
-        for (const username of usernames) {
-          const mentionedUser = await db.users.findByUsername(username);
-          if (mentionedUser && mentionedUser.id !== currentUserId) {
-            notifiedUserIds.add(mentionedUser.id);
-            await createNotification({
-              userId: mentionedUser.id,
-              type: 'mention',
-              priority: 'high',
-              data: {
-                channel_id: id,
-                channel_name: channel.name,
-                server_id: channel.server_id,
-                message_id: message.id,
-                from_user: {
-                  id: author.id,
-                  username: author.username,
-                  avatar_url: author.avatar_url || null,
-                },
-                message_preview: body.content.slice(0, 100),
-              },
-            });
-          }
-        }
-      }
+      const notifiedUserIds = await processMentions({
+        content: body.content,
+        messageId: message.id,
+        channelId: id,
+        channelName: channel.name,
+        serverId: channel.server_id,
+        authorId: currentUserId,
+        authorUsername: author.username,
+        authorAvatarUrl: author.avatar_url || null,
+      });
 
       // A6: Notify the author of the message being replied to
       if (body.reply_to_id) {

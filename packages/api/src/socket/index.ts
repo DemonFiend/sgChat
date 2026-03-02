@@ -9,6 +9,7 @@ import { TextPermissions, VoicePermissions, hasPermission, MAX_MESSAGE_LENGTH } 
 import type { EventEnvelope, GatewayHello, GatewayReady, GatewayResume, GatewayResumed } from '@sgchat/shared';
 import { isBlocked } from '../routes/friends.js';
 import { createNotification } from '../routes/notifications.js';
+import { processMentions } from '../services/mentions.js';
 import { cancelPendingCreation } from '../services/tempChannelTimers.js';
 import { markTempChannelEmpty } from '../services/tempChannels.js';
 import { sanitizeContent, sanitizeMessage } from '../utils/sanitize.js';
@@ -386,44 +387,17 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
           payload: formattedMessage,
         });
 
-        // A6: Detect @mentions and create high-priority notifications
-        const mentionRegex = /@(\w+)/g;
-        let mentionMatch;
-        const mentionedUsernames = new Set<string>();
-        while ((mentionMatch = mentionRegex.exec(data.content)) !== null) {
-          mentionedUsernames.add(mentionMatch[1]);
-        }
-
-        // Track who already got notified to avoid duplicates
-        const notifiedUserIds = new Set<string>();
-
-        if (mentionedUsernames.size > 0) {
-          // Look up mentioned users (limit to prevent abuse)
-          const usernames = Array.from(mentionedUsernames).slice(0, 20);
-          for (const username of usernames) {
-            const mentionedUser = await db.users.findByUsername(username);
-            if (mentionedUser && mentionedUser.id !== userId) {
-              notifiedUserIds.add(mentionedUser.id);
-              await createNotification({
-                userId: mentionedUser.id,
-                type: 'mention',
-                priority: 'high',
-                data: {
-                  channel_id: data.channel_id,
-                  channel_name: channel.name,
-                  server_id: channel.server_id,
-                  message_id: message.id,
-                  from_user: {
-                    id: author.id,
-                    username: author.username,
-                    avatar_url: author.avatar_url || null,
-                  },
-                  message_preview: data.content.slice(0, 100),
-                },
-              });
-            }
-          }
-        }
+        // A6: Detect mentions (<@userId>, <@&roleId>, @here, @everyone) and notify
+        const notifiedUserIds = await processMentions({
+          content: data.content,
+          messageId: message.id,
+          channelId: data.channel_id,
+          channelName: channel.name,
+          serverId: channel.server_id,
+          authorId: userId,
+          authorUsername: author.username,
+          authorAvatarUrl: author.avatar_url || null,
+        });
 
         // A6: Notify the author of the message being replied to
         if (data.reply_to_id) {

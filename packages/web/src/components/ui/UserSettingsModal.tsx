@@ -506,10 +506,19 @@ function AccountTab({ user, onClose, onSwitchTab }: { user: ReturnType<typeof au
 function ProfileTab({ user }: { user: ReturnType<typeof authStore.getState>['user'] }) {
   const [displayName, setDisplayName] = useState(user?.display_name || '');
   const [customStatus, setCustomStatus] = useState(user?.custom_status || '');
+  const [bio, setBio] = useState(user?.bio || '');
   const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url || null);
+  const [bannerUrl, setBannerUrl] = useState(user?.banner_url || null);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  // Banner upload state
+  const bannerFileInputRef = useRef<HTMLInputElement>(null);
+  const [bannerUploading, setBannerUploading] = useState(false);
+  const [bannerDeleting, setBannerDeleting] = useState(false);
+  const [bannerError, setBannerError] = useState<string | null>(null);
+  const [bannerPreview, setBannerPreview] = useState<string | null>(null);
 
   // Privacy settings (from user_settings)
   const [timezone, setTimezone] = useState('');
@@ -534,9 +543,10 @@ function ProfileTab({ user }: { user: ReturnType<typeof authStore.getState>['use
     })();
   }, []);
 
-  // Track if profile fields have changed (not avatar - that saves immediately)
+  // Track if profile fields have changed (not avatar/banner - those save immediately)
   const hasChanges = displayName !== (user?.display_name || '') ||
-    customStatus !== (user?.custom_status || '');
+    customStatus !== (user?.custom_status || '') ||
+    bio !== (user?.bio || '');
 
   const handleSavePrivacy = async () => {
     setSavingPrivacy(true);
@@ -564,12 +574,14 @@ function ProfileTab({ user }: { user: ReturnType<typeof authStore.getState>['use
       await api.patch('/users/me', {
         display_name: displayName || null,
         custom_status: customStatus || null,
+        bio: bio || null,
       });
 
       // Update auth store immediately for responsive UI
       authStore.getState().updateUser({
         display_name: displayName || null,
         custom_status: customStatus || null,
+        bio: bio || null,
       });
 
       setSaveSuccess(true);
@@ -585,6 +597,56 @@ function ProfileTab({ user }: { user: ReturnType<typeof authStore.getState>['use
     setAvatarUrl(newUrl);
     // Update auth store immediately for responsive UI
     authStore.getState().updateAvatarUrl(newUrl);
+  };
+
+  const handleBannerUpload = async (file: File) => {
+    setBannerError(null);
+
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      setBannerError('Invalid file type. Allowed: JPEG, PNG, GIF, WebP');
+      return;
+    }
+
+    const maxSize = 8 * 1024 * 1024; // 8MB
+    if (file.size > maxSize) {
+      setBannerError('File too large. Maximum size: 8 MB');
+      return;
+    }
+
+    // Show local preview immediately
+    const reader = new FileReader();
+    reader.onload = (e) => setBannerPreview(e.target?.result as string);
+    reader.readAsDataURL(file);
+
+    setBannerUploading(true);
+    try {
+      const result = await api.upload<{ banner_url: string }>('/users/me/banner', file, 'banner');
+      setBannerUrl(result.banner_url);
+      setBannerPreview(null);
+      authStore.getState().updateUser({ banner_url: result.banner_url });
+    } catch (err: any) {
+      setBannerError(err.message || 'Failed to upload banner');
+      setBannerPreview(null);
+    } finally {
+      setBannerUploading(false);
+    }
+  };
+
+  const handleBannerDelete = async () => {
+    if (bannerDeleting) return;
+    setBannerDeleting(true);
+    setBannerError(null);
+    try {
+      await api.delete('/users/me/banner');
+      setBannerUrl(null);
+      setBannerPreview(null);
+      authStore.getState().updateUser({ banner_url: null });
+    } catch (err: any) {
+      setBannerError(err.message || 'Failed to remove banner');
+    } finally {
+      setBannerDeleting(false);
+    }
   };
 
   // We need a ref-based approach for handleSavePrivacy since toggles
@@ -653,6 +715,32 @@ function ProfileTab({ user }: { user: ReturnType<typeof authStore.getState>['use
 
           <div>
             <label className="block text-xs font-bold uppercase text-text-muted mb-2">
+              About Me
+            </label>
+            <textarea
+              value={bio}
+              onChange={(e) => {
+                if (e.target.value.length <= 500) setBio(e.target.value);
+              }}
+              placeholder="Tell others about yourself..."
+              rows={4}
+              className="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:border-brand-primary resize-none"
+            />
+            <div className="flex justify-end mt-1">
+              <span
+                className={clsx(
+                  'text-xs',
+                  bio.length > 450 ? 'text-warning' : 'text-text-muted',
+                  bio.length >= 500 && 'text-danger'
+                )}
+              >
+                {bio.length}/500
+              </span>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold uppercase text-text-muted mb-2">
               Avatar
             </label>
             <AvatarPicker
@@ -661,6 +749,99 @@ function ProfileTab({ user }: { user: ReturnType<typeof authStore.getState>['use
               displayName={displayName || user?.display_name || undefined}
               onAvatarChange={handleAvatarChange}
             />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold uppercase text-text-muted mb-2">
+              Profile Banner
+            </label>
+            <div className="space-y-3">
+              {/* Banner preview */}
+              <div
+                className={clsx(
+                  'relative w-full h-[120px] rounded-lg overflow-hidden cursor-pointer group border border-border-subtle',
+                  !bannerPreview && !bannerUrl && 'bg-bg-tertiary'
+                )}
+                onClick={() => bannerFileInputRef.current?.click()}
+              >
+                {(bannerPreview || bannerUrl) ? (
+                  <img
+                    src={bannerPreview || bannerUrl!}
+                    alt="Profile banner"
+                    className={clsx(
+                      'w-full h-full object-cover transition-opacity',
+                      bannerUploading && 'opacity-50'
+                    )}
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <div className="text-center">
+                      <svg className="w-8 h-8 text-text-muted mx-auto mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <span className="text-xs text-text-muted">Click to upload a banner</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Hover overlay */}
+                <div className={clsx(
+                  'absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity',
+                  bannerUploading && 'opacity-100'
+                )}>
+                  {bannerUploading ? (
+                    <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <span className="text-sm text-white font-medium">Change Banner</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Hidden file input */}
+              <input
+                ref={bannerFileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/gif,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleBannerUpload(file);
+                  e.target.value = '';
+                }}
+              />
+
+              {/* Banner action buttons */}
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => bannerFileInputRef.current?.click()}
+                  disabled={bannerUploading}
+                  className="px-3 py-1.5 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
+                >
+                  {bannerUploading ? 'Uploading...' : 'Upload Banner'}
+                </button>
+
+                {(bannerUrl || bannerPreview) && (
+                  <button
+                    onClick={handleBannerDelete}
+                    disabled={bannerDeleting || bannerUploading}
+                    className="px-3 py-1.5 bg-bg-secondary hover:bg-bg-modifier-hover text-text-primary text-sm font-medium rounded transition-colors disabled:opacity-50"
+                  >
+                    {bannerDeleting ? 'Removing...' : 'Remove Banner'}
+                  </button>
+                )}
+              </div>
+
+              <p className="text-xs text-text-muted">
+                JPEG, PNG, GIF, or WebP. Max 8 MB. Recommended size: 680x240.
+              </p>
+
+              {/* Banner error */}
+              {bannerError && (
+                <div className="p-3 bg-danger/10 border border-danger/30 rounded text-sm text-danger">
+                  {bannerError}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Save button with status */}
@@ -786,7 +967,17 @@ function ProfileTab({ user }: { user: ReturnType<typeof authStore.getState>['use
         <div className="w-[300px]">
           <h3 className="text-xs font-bold uppercase text-text-muted mb-4">Preview</h3>
           <div className="bg-bg-secondary rounded-lg overflow-hidden">
-            <div className="h-[60px] bg-brand-primary" />
+            {(bannerPreview || bannerUrl) ? (
+              <div className="h-[60px] overflow-hidden">
+                <img
+                  src={bannerPreview || bannerUrl!}
+                  alt="Profile banner"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            ) : (
+              <div className="h-[60px] bg-brand-primary" />
+            )}
             <div className="px-4 pb-4">
               <div className="flex items-end gap-3 -mt-[30px]">
                 <Avatar
@@ -803,6 +994,12 @@ function ProfileTab({ user }: { user: ReturnType<typeof authStore.getState>['use
                 <p className="text-sm text-text-muted">@{user?.username}</p>
                 {customStatus && (
                   <p className="text-sm text-text-muted mt-2">{customStatus}</p>
+                )}
+                {bio && (
+                  <div className="mt-3 pt-3 border-t border-border-subtle">
+                    <p className="text-xs font-bold uppercase text-text-muted mb-1">About Me</p>
+                    <p className="text-sm text-text-primary whitespace-pre-wrap break-words">{bio}</p>
+                  </div>
                 )}
               </div>
             </div>

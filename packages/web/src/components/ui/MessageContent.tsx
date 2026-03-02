@@ -1,5 +1,16 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { isImageUrl, getImageType, extractImageUrls } from '@/lib/imageUtils';
+import { parseMentions, parseMessageLinks } from '@sgchat/shared';
+import type { ParsedMention, ParsedMessageLink } from '@sgchat/shared';
+import {
+  UserMentionBadge,
+  ChannelMentionBadge,
+  RoleMentionBadge,
+  BroadcastMentionBadge,
+  TimeMentionBadge,
+  MOTDBadge,
+  MessageLinkEmbed,
+} from './MentionBadges';
 
 const GIF_AUTOPLAY_DURATION = 6000;
 
@@ -9,52 +20,140 @@ export interface MessageContentProps {
   compact?: boolean;
 }
 
-interface ParsedContent {
-  type: 'text' | 'image';
+interface ParsedSegment {
+  type: 'text' | 'image' | 'mention' | 'messageLink';
   value: string;
+  mention?: ParsedMention;
+  link?: ParsedMessageLink;
 }
 
-export function MessageContent({ content, isOwnMessage, compact }: MessageContentProps) {
-  const parsedContent = useMemo((): ParsedContent[] => {
-    if (!content) return [];
+/**
+ * Parse content into segments: text, images, mentions, and message links.
+ * Mentions and message links are parsed from text portions only.
+ */
+function parseContentSegments(content: string): ParsedSegment[] {
+  if (!content) return [];
 
-    if (isImageUrl(content)) {
-      return [{ type: 'image', value: content }];
-    }
+  // If entire content is a single image URL, render as image only
+  if (isImageUrl(content)) {
+    return [{ type: 'image', value: content }];
+  }
 
-    const imageUrls = extractImageUrls(content);
-    if (imageUrls.length === 0) {
-      return [{ type: 'text', value: content }];
-    }
+  // First, split by image URLs
+  const imageUrls = extractImageUrls(content);
+  const rawSegments: { type: 'text' | 'image'; value: string }[] = [];
 
-    const segments: ParsedContent[] = [];
+  if (imageUrls.length === 0) {
+    rawSegments.push({ type: 'text', value: content });
+  } else {
     let remaining = content;
-
     for (const url of imageUrls) {
       const urlIndex = remaining.indexOf(url);
       if (urlIndex > 0) {
         const textBefore = remaining.substring(0, urlIndex).trim();
-        if (textBefore) segments.push({ type: 'text', value: textBefore });
+        if (textBefore) rawSegments.push({ type: 'text', value: textBefore });
       }
-      segments.push({ type: 'image', value: url });
+      rawSegments.push({ type: 'image', value: url });
       remaining = remaining.substring(urlIndex + url.length);
     }
-
     const trimmedRemaining = remaining.trim();
-    if (trimmedRemaining) segments.push({ type: 'text', value: trimmedRemaining });
+    if (trimmedRemaining) rawSegments.push({ type: 'text', value: trimmedRemaining });
+  }
 
-    return segments;
-  }, [content]);
+  // Now, parse mentions and message links from text segments
+  const segments: ParsedSegment[] = [];
+
+  for (const seg of rawSegments) {
+    if (seg.type === 'image') {
+      segments.push({ type: 'image', value: seg.value });
+      continue;
+    }
+
+    // Collect all mentions and message links in this text
+    const mentions = parseMentions(seg.value);
+    const links = parseMessageLinks(seg.value);
+
+    // Merge mentions and links into a single sorted array of "tokens"
+    const tokens: { start: number; end: number; kind: 'mention' | 'link'; data: any }[] = [];
+    for (const m of mentions) {
+      tokens.push({ start: m.start, end: m.end, kind: 'mention', data: m });
+    }
+    for (const l of links) {
+      tokens.push({ start: l.start, end: l.end, kind: 'link', data: l });
+    }
+    tokens.sort((a, b) => a.start - b.start);
+
+    if (tokens.length === 0) {
+      segments.push({ type: 'text', value: seg.value });
+      continue;
+    }
+
+    let cursor = 0;
+    for (const token of tokens) {
+      // Text before this token
+      if (token.start > cursor) {
+        segments.push({ type: 'text', value: seg.value.slice(cursor, token.start) });
+      }
+      if (token.kind === 'mention') {
+        segments.push({ type: 'mention', value: token.data.raw, mention: token.data });
+      } else {
+        segments.push({ type: 'messageLink', value: token.data.raw, link: token.data });
+      }
+      cursor = token.end;
+    }
+    // Text after last token
+    if (cursor < seg.value.length) {
+      segments.push({ type: 'text', value: seg.value.slice(cursor) });
+    }
+  }
+
+  return segments;
+}
+
+function MentionRenderer({ mention }: { mention: ParsedMention }) {
+  switch (mention.type) {
+    case 'user':
+      return <UserMentionBadge mention={mention} />;
+    case 'channel':
+      return <ChannelMentionBadge mention={mention} />;
+    case 'role':
+      return <RoleMentionBadge mention={mention} />;
+    case 'here':
+    case 'everyone':
+      return <BroadcastMentionBadge type={mention.type} />;
+    case 'time':
+      return <TimeMentionBadge mention={mention} />;
+    case 'motd':
+      return <MOTDBadge />;
+    default:
+      return <span>{mention.raw}</span>;
+  }
+}
+
+export function MessageContent({ content, isOwnMessage, compact }: MessageContentProps) {
+  const segments = useMemo(() => parseContentSegments(content), [content]);
 
   return (
     <div className="message-content">
-      {parsedContent.map((segment, i) =>
-        segment.type === 'image' ? (
-          <ImageRenderer key={i} src={segment.value} isOwnMessage={isOwnMessage} compact={compact} />
-        ) : (
-          <span key={i} className="break-words whitespace-pre-wrap">{segment.value}</span>
-        )
-      )}
+      {segments.map((segment, i) => {
+        switch (segment.type) {
+          case 'image':
+            return (
+              <ImageRenderer key={i} src={segment.value} isOwnMessage={isOwnMessage} compact={compact} />
+            );
+          case 'mention':
+            return <MentionRenderer key={i} mention={segment.mention!} />;
+          case 'messageLink':
+            return <MessageLinkEmbed key={i} link={segment.link!} />;
+          case 'text':
+          default:
+            return (
+              <span key={i} className="break-words whitespace-pre-wrap">
+                {segment.value}
+              </span>
+            );
+        }
+      })}
     </div>
   );
 }

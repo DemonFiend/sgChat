@@ -85,7 +85,9 @@ async function broadcastStatusComment(
 const updateProfileSchema = z.object({
   username: usernameSchema.optional(),
   avatar_url: z.string().url().nullable().optional(),
+  banner_url: z.string().url().nullable().optional(),
   display_name: z.string().min(1).max(32).nullable().optional(),
+  bio: z.string().max(500).nullable().optional(),
   status: z.enum(['online', 'idle', 'dnd', 'offline']).optional(),
   custom_status: z.string().max(128).nullable().optional(),
   custom_status_expires_at: z.string().datetime().nullable().optional(),
@@ -215,7 +217,9 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
       const updates: any = {};
       if (body.username) updates.username = body.username;
       if ('avatar_url' in body) updates.avatar_url = body.avatar_url;
+      if ('banner_url' in body) updates.banner_url = body.banner_url;
       if ('display_name' in body) updates.display_name = body.display_name;
+      if ('bio' in body) updates.bio = body.bio;
       if ('status' in body) updates.status = body.status;
       if ('custom_status' in body) updates.custom_status = body.custom_status;
       if ('custom_status_expires_at' in body) {
@@ -780,6 +784,70 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
     },
   });
 
+  // Upload banner image
+  fastify.post('/me/banner', {
+    onRequest: [authenticate],
+    config: {
+      rateLimit: { max: 10, timeWindow: '1 hour' },
+    },
+    handler: async (request, reply) => {
+      const userId = request.user!.id;
+      const data = await request.file();
+      if (!data) return badRequest(reply, 'No file uploaded');
+
+      const buffer = await data.toBuffer();
+      if (buffer.length > 8 * 1024 * 1024) {
+        return badRequest(reply, 'File too large. Maximum size: 8MB');
+      }
+
+      try {
+        await validateImage(buffer);
+      } catch (error) {
+        return badRequest(reply, error instanceof Error ? error.message : 'Invalid image');
+      }
+
+      // Delete old banner if exists
+      const user = await db.users.findById(userId);
+      if (user?.banner_url) {
+        const oldPath = user.banner_url.split('/').slice(-2).join('/');
+        await storage.deleteFile(oldPath);
+      }
+
+      // Upload new banner
+      const filename = `${userId}-banner-${nanoid(8)}.webp`;
+      const storagePath = `banners/${filename}`;
+      const processed = await processAvatarImage(buffer, 600, 80);
+      const bannerUrl = await storage.uploadFile(processed.buffer, storagePath, 'image/webp');
+
+      await db.sql`
+        UPDATE users SET banner_url = ${bannerUrl}, updated_at = NOW()
+        WHERE id = ${userId}
+      `;
+
+      return { banner_url: bannerUrl };
+    },
+  });
+
+  // Delete banner image
+  fastify.delete('/me/banner', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const userId = request.user!.id;
+      const user = await db.users.findById(userId);
+      if (!user?.banner_url) return badRequest(reply, 'No banner to delete');
+
+      const oldPath = user.banner_url.split('/').slice(-2).join('/');
+      await storage.deleteFile(oldPath);
+
+      await db.sql`
+        UPDATE users SET banner_url = NULL, updated_at = NOW()
+        WHERE id = ${userId}
+      `;
+
+      return { message: 'Banner deleted' };
+    },
+  });
+
   // Revert to previous avatar
   fastify.post('/me/avatar/revert', {
     onRequest: [authenticate],
@@ -1064,6 +1132,8 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
         username: user.username,
         display_name: user.display_name || user.username,
         avatar_url: user.avatar_url,
+        banner_url: user.banner_url || null,
+        bio: user.bio || null,
         status: user.status,
         custom_status_emoji: user.custom_status_emoji,
         custom_status: user.custom_status,

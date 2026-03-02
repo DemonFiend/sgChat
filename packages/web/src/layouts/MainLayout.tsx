@@ -1,6 +1,13 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { AnimatePresence, motion } from 'framer-motion';
+import {
+  MentionProvider,
+  type MentionContextValue,
+  type MentionMember,
+  type MentionChannel,
+  type MentionRole,
+} from '@/contexts/MentionContext';
 import { useAuthStore } from '@/stores/auth';
 import { useServerPopupStore } from '@/stores/serverPopup';
 import { useVoiceStore } from '@/stores/voice';
@@ -681,6 +688,58 @@ export function MainLayout() {
     return groups;
   }, [members]);
 
+  // Build MentionContext value from current state
+  const mentionContextValue = useMemo<MentionContextValue>(() => {
+    const membersMap = new Map<string, MentionMember>();
+    for (const m of members) {
+      membersMap.set(m.id, {
+        username: m.username,
+        display_name: m.display_name,
+        avatar_url: m.avatar_url,
+        role_color: m.role_color,
+      });
+    }
+
+    const channelsMap = new Map<string, MentionChannel>();
+    for (const c of channels) {
+      channelsMap.set(c.id, { name: c.name, type: c.type });
+    }
+
+    const rolesMap = new Map<string, MentionRole>();
+    for (const m of members) {
+      for (const r of m.roles ?? []) {
+        if (!rolesMap.has(r.id)) {
+          rolesMap.set(r.id, { name: r.name, color: r.color });
+        }
+      }
+    }
+
+    return {
+      members: membersMap,
+      channels: channelsMap,
+      roles: rolesMap,
+      serverTimezone: currentServer?.timezone,
+      currentUserId: user?.id,
+      onUserClick: (userId: string, rect: DOMRect) => {
+        const member = members.find((m) => m.id === userId);
+        if (member) {
+          setProfilePopover({ member, rect });
+        } else {
+          setProfilePopover({
+            member: { id: userId, username: 'Unknown', display_name: null, avatar_url: null, status: 'offline' as const },
+            rect,
+          });
+        }
+      },
+      onChannelClick: (channelId: string) => {
+        navigate(`/channels/${channelId}`);
+      },
+      onMOTDClick: currentServer?.motd
+        ? () => useServerPopupStore.getState().showPopup(currentServer!.id)
+        : undefined,
+    };
+  }, [members, channels, currentServer?.timezone, currentServer?.motd, currentServer?.id, user?.id, navigate]);
+
   // Wire up Electron global shortcuts for mute/deafen
   useGlobalShortcuts({
     onMuteToggle: useCallback(() => {
@@ -755,7 +814,8 @@ export function MainLayout() {
           <VoiceConnectedBar />
         </div>
 
-        {/* Chat Panel + Member List */}
+        {/* Chat Panel + Member List — wrapped with MentionProvider */}
+        <MentionProvider value={mentionContextValue}>
         <div className="flex-1 flex h-full min-w-0">
           <ChatPanel
             channel={currentChannel}
@@ -797,6 +857,7 @@ export function MainLayout() {
             )}
           </AnimatePresence>
         </div>
+        </MentionProvider>
       </div>
 
       {/* Server Settings Modal */}

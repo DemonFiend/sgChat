@@ -8,6 +8,8 @@ export interface User {
   username: string;
   display_name: string | null;
   avatar_url: string | null;
+  banner_url: string | null;
+  bio: string | null;
   status: 'online' | 'idle' | 'dnd' | 'offline';
   custom_status: string | null;
   custom_status_expires_at: string | null;

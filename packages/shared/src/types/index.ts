@@ -23,6 +23,8 @@ export interface User {
   username: string;
   email: string;
   avatar_url: string | null;
+  banner_url: string | null;
+  bio: string | null;
   status: UserStatus;
   custom_status: string | null;
   custom_status_emoji: string | null;

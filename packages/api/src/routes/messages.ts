@@ -287,4 +287,68 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
       return reactions;
     },
   });
+
+  /**
+   * GET /messages/:id/preview - Compact message preview for link embedding.
+   * Checks read permissions before returning.
+   */
+  fastify.get<{ Params: { id: string } }>('/:id/preview', {
+    onRequest: [authenticate],
+    config: {
+      rateLimit: { max: 60, timeWindow: '1 minute' },
+    },
+    handler: async (request, reply) => {
+      const { id } = request.params;
+
+      const message = await db.messages.findById(id);
+      if (!message) return notFound(reply, 'Message');
+
+      // Channel message: check read permission
+      if (message.channel_id) {
+        const channel = await db.channels.findById(message.channel_id);
+        if (!channel) return notFound(reply, 'Channel');
+
+        const perms = await calculatePermissions(request.user!.id, channel.server_id, message.channel_id);
+        if (!hasPermission(perms.text, TextPermissions.READ_MESSAGE_HISTORY)) {
+          return reply.code(403).send({ error: 'no_permission' });
+        }
+
+        const author = message.author_id ? await db.users.findById(message.author_id) : null;
+
+        return {
+          id: message.id,
+          channel_id: message.channel_id,
+          channel_name: channel.name,
+          content_preview: (message.content || '').slice(0, 200),
+          author: author
+            ? { id: author.id, username: author.username, display_name: author.display_name || author.username, avatar_url: author.avatar_url }
+            : null,
+          created_at: message.created_at,
+        };
+      }
+
+      // DM message: only participants can view
+      if (message.dm_channel_id) {
+        const [dm] = await db.sql`SELECT * FROM dm_channels WHERE id = ${message.dm_channel_id}`;
+        if (!dm) return notFound(reply, 'DM channel');
+        if (dm.user1_id !== request.user!.id && dm.user2_id !== request.user!.id) {
+          return reply.code(403).send({ error: 'no_permission' });
+        }
+
+        const author = message.author_id ? await db.users.findById(message.author_id) : null;
+
+        return {
+          id: message.id,
+          dm_channel_id: message.dm_channel_id,
+          content_preview: (message.content || '').slice(0, 200),
+          author: author
+            ? { id: author.id, username: author.username, display_name: author.display_name || author.username, avatar_url: author.avatar_url }
+            : null,
+          created_at: message.created_at,
+        };
+      }
+
+      return notFound(reply, 'Message');
+    },
+  });
 };

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { DMSidebar, type Friend, type FriendRequest, type SearchResult } from './DMSidebar';
 import { DMChatPanel, type DMMessage } from './DMChatPanel';
@@ -7,6 +7,7 @@ import { authStore } from '@/stores/auth';
 import { api } from '@/api';
 import { socketService } from '@/lib/socket';
 import { soundService } from '@/lib/soundService';
+import { MentionProvider, type MentionContextValue, type MentionMember } from '@/contexts/MentionContext';
 
 // API response types
 interface FriendRequestsResponse {
@@ -452,6 +453,32 @@ export function DMPage() {
     );
   }
 
+  // Build a lightweight MentionContext for DMs (friend + current user only)
+  const dmMentionContext = useMemo<MentionContextValue>(() => {
+    const membersMap = new Map<string, MentionMember>();
+    const currentUser = authStore.getState().user;
+    if (currentUser) {
+      membersMap.set(currentUser.id, {
+        username: currentUser.username,
+        display_name: currentUser.display_name || null,
+        avatar_url: currentUser.avatar_url || null,
+      });
+    }
+    if (selectedFriend) {
+      membersMap.set(selectedFriend.id, {
+        username: selectedFriend.username,
+        display_name: selectedFriend.display_name,
+        avatar_url: selectedFriend.avatar_url,
+      });
+    }
+    return {
+      members: membersMap,
+      channels: new Map(),
+      roles: new Map(),
+      currentUserId,
+    };
+  }, [selectedFriend, currentUserId]);
+
   return (
     <div className="flex h-full w-full bg-bg-primary">
       <DMSidebar
@@ -473,17 +500,19 @@ export function DMPage() {
         onBlockUser={handleBlockUser}
         onUnblockUser={handleUnblockUser}
       />
-      <DMChatPanel
-        friend={selectedFriend}
-        messages={messages}
-        currentUserId={currentUserId}
-        currentUserAvatar={authStore.getState().user?.avatar_url}
-        currentUserDisplayName={authStore.getState().user?.display_name || authStore.getState().user?.username}
-        onSendMessage={handleSendMessage}
-        onTypingStart={handleTypingStart}
-        onTypingStop={handleTypingStop}
-        isTyping={isTyping}
-      />
+      <MentionProvider value={dmMentionContext}>
+        <DMChatPanel
+          friend={selectedFriend}
+          messages={messages}
+          currentUserId={currentUserId}
+          currentUserAvatar={authStore.getState().user?.avatar_url}
+          currentUserDisplayName={authStore.getState().user?.display_name || authStore.getState().user?.username}
+          onSendMessage={handleSendMessage}
+          onTypingStart={handleTypingStart}
+          onTypingStop={handleTypingStop}
+          isTyping={isTyping}
+        />
+      </MentionProvider>
     </div>
   );
 }

@@ -15,7 +15,9 @@ CREATE TABLE users (
   email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
   avatar_url TEXT,
-  
+  banner_url TEXT,
+  bio TEXT CHECK (length(bio) <= 500),
+
   -- Status
   status TEXT DEFAULT 'offline' CHECK (status IN ('online', 'idle', 'dnd', 'offline')),
   custom_status TEXT CHECK (length(custom_status) <= 128),

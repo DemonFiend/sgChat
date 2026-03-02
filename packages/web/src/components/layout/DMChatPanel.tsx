@@ -1,10 +1,18 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Avatar } from '@/components/ui/Avatar';
 import { MessageContent } from '@/components/ui/MessageContent';
 import { BendyLine } from '@/components/ui/BendyLine';
 import { GifPicker } from '@/components/ui/GifPicker';
 import { ReactionPicker } from '@/components/ui/ReactionPicker';
 import { DMVoiceControls } from '@/components/ui/DMVoiceControls';
+import {
+  MentionAutocomplete,
+  buildAtItems,
+  detectTrigger,
+  type AutocompleteItem,
+} from '@/components/ui/MentionAutocomplete';
+import { useMentionContext } from '@/contexts/MentionContext';
+import { convertMentionsToWireFormat, shiftMappings, type MentionMapping } from '@/lib/mentionUtils';
 import { api } from '@/api';
 import type { Friend } from './DMSidebar';
 
@@ -52,6 +60,26 @@ export function DMChatPanel({
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTypingRef = useRef(false);
   const timeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Mention autocomplete state
+  const [mentionTrigger, setMentionTrigger] = useState<{
+    triggerType: '@' | '#';
+    triggerStart: number;
+    query: string;
+  } | null>(null);
+  const [mentionMappings, setMentionMappings] = useState<MentionMapping[]>([]);
+  const mentionContext = useMentionContext();
+
+  const atItems = useMemo(() => {
+    const memberArr = Array.from(mentionContext.members.entries()).map(([id, m]) => ({
+      id,
+      username: m.username,
+      display_name: m.display_name,
+      avatar_url: m.avatar_url,
+      role_color: m.role_color,
+    }));
+    return buildAtItems(memberArr, []);
+  }, [mentionContext.members]);
 
   // Calculate friend's local time from their timezone
   const updateFriendTime = useCallback(() => {
@@ -133,6 +161,31 @@ export function DMChatPanel({
     }, 3000);
   };
 
+  const handleMentionSelect = useCallback((item: AutocompleteItem) => {
+    if (!mentionTrigger || !inputRef.current) return;
+    const before = messageInput.slice(0, mentionTrigger.triggerStart);
+    const after = messageInput.slice(mentionTrigger.triggerStart + 1 + mentionTrigger.query.length);
+    const insertText = item.insertText + ' ';
+    const newInput = before + insertText + after;
+    const delta = insertText.length - (1 + mentionTrigger.query.length);
+    const shifted = shiftMappings(mentionMappings, mentionTrigger.triggerStart, delta);
+    if (item.wireFormat && item.wireFormat !== item.insertText) {
+      shifted.push({
+        displayText: item.insertText,
+        wireFormat: item.wireFormat,
+        startIndex: mentionTrigger.triggerStart,
+      });
+    }
+    setMentionMappings(shifted);
+    setMessageInput(newInput);
+    setMentionTrigger(null);
+    const cursorPos = before.length + insertText.length;
+    requestAnimationFrame(() => {
+      inputRef.current?.setSelectionRange(cursorPos, cursorPos);
+      inputRef.current?.focus();
+    });
+  }, [mentionTrigger, messageInput, mentionMappings]);
+
   const handleSend = () => {
     const content = messageInput.trim();
     if (content) {
@@ -144,8 +197,13 @@ export function DMChatPanel({
           typingTimeoutRef.current = null;
         }
       }
-      onSendMessage(content);
+      const wireContent = mentionMappings.length > 0
+        ? convertMentionsToWireFormat(content, mentionMappings)
+        : content;
+      onSendMessage(wireContent);
       setMessageInput('');
+      setMentionMappings([]);
+      setMentionTrigger(null);
       inputRef.current?.focus();
     }
   };
@@ -171,6 +229,10 @@ export function DMChatPanel({
   }, [onSendMessage]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (mentionTrigger) {
+      const handler = (MentionAutocomplete as any)._handleKeyDown;
+      if (handler && handler(e)) return;
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -355,13 +417,29 @@ export function DMChatPanel({
 
         {/* Message Input */}
         <div className="p-4 flex items-end gap-3">
-          <div className="flex-1 flex items-end bg-bg-tertiary rounded-lg">
+          <div className="flex-1 flex flex-col relative">
+            {/* Mention Autocomplete */}
+            {mentionTrigger && (
+              <MentionAutocomplete
+                query={mentionTrigger.query}
+                triggerType={mentionTrigger.triggerType}
+                items={atItems}
+                onSelect={handleMentionSelect}
+                onClose={() => setMentionTrigger(null)}
+              />
+            )}
+          <div className="flex items-end bg-bg-tertiary rounded-lg">
             <textarea
               ref={inputRef}
               value={messageInput}
               onChange={(e) => {
-                setMessageInput(e.target.value);
+                const newValue = e.target.value;
+                const cursorPos = e.target.selectionStart ?? newValue.length;
+                setMessageInput(newValue);
                 handleTyping();
+                // Only detect @ triggers in DMs (no # channels)
+                const trigger = detectTrigger(newValue, cursorPos);
+                setMentionTrigger(trigger?.triggerType === '@' ? trigger : null);
               }}
               onKeyDown={handleKeyDown}
               placeholder={`Message @${friend.username}`}
@@ -378,6 +456,7 @@ export function DMChatPanel({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
               </svg>
             </button>
+          </div>
           </div>
 
           {/* Bottom Right Action Buttons */}

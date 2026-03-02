@@ -37,6 +37,13 @@ interface UserProfilePopoverProps {
 
 type FriendStatus = 'none' | 'friends' | 'pending_outgoing' | 'pending_incoming' | 'loading';
 
+interface UserProfileCache {
+  bio: string | null;
+  banner_url: string | null;
+}
+
+const profileCache = new Map<string, UserProfileCache>();
+
 export function UserProfilePopover({
   onClose,
   anchorRect,
@@ -69,9 +76,33 @@ export function UserProfilePopover({
   const [showMovePicker, setShowMovePicker] = useState(false);
   const [confirmAction, setConfirmAction] = useState<'warn' | 'kick' | 'ban' | null>(null);
   const [modReason, setModReason] = useState('');
+  const [bio, setBio] = useState<string | null>(null);
+  const [bannerUrl, setBannerUrl] = useState<string | null>(null);
 
   const isConnected = useVoiceStore((s) => s.isConnected());
   const isDeafened = useVoiceStore((s) => s.localState.isDeafened);
+
+  useEffect(() => {
+    const cached = profileCache.get(userId);
+    if (cached) {
+      setBio(cached.bio);
+      setBannerUrl(cached.banner_url);
+      return;
+    }
+
+    let cancelled = false;
+    api.get<{ bio: string | null; banner_url: string | null }>(`/users/${userId}`).then((data) => {
+      if (cancelled) return;
+      const profile = { bio: data.bio ?? null, banner_url: data.banner_url ?? null };
+      profileCache.set(userId, profile);
+      setBio(profile.bio);
+      setBannerUrl(profile.banner_url);
+    }).catch(() => {
+      // Silently ignore - bio/banner are optional enhancements
+    });
+
+    return () => { cancelled = true; };
+  }, [userId]);
 
   const fetchFriendStatus = useCallback(async () => {
     try {
@@ -367,9 +398,11 @@ export function UserProfilePopover({
       <div
         className="h-16 relative"
         style={{
-          background: roleColor
-            ? `${roleColor}40`
-            : 'var(--color-brand-primary-30, rgba(88, 101, 242, 0.3))',
+          background: bannerUrl
+            ? `url(${bannerUrl}) center/cover no-repeat`
+            : roleColor
+              ? `${roleColor}40`
+              : 'var(--color-brand-primary-30, rgba(88, 101, 242, 0.3))',
         }}
       >
         <div className="absolute -bottom-8 left-4">
@@ -407,6 +440,13 @@ export function UserProfilePopover({
           </div>
         )}
       </div>
+
+      {bio && (
+        <div className="px-4 pb-2">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-text-muted mb-1">About Me</h4>
+          <p className="text-sm text-text-secondary whitespace-pre-wrap break-words">{bio}</p>
+        </div>
+      )}
 
       {/* Action Buttons */}
       {!isCurrentUser && (

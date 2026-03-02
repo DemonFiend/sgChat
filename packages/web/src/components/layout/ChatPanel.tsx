@@ -1,10 +1,24 @@
-import { useState, useRef, useEffect, useCallback, memo } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { clsx } from 'clsx';
 import { Avatar } from '@/components/ui/Avatar';
 import { MessageContent } from '@/components/ui/MessageContent';
 import { ReactionPicker } from '@/components/ui/ReactionPicker';
 import { GifPicker } from '@/components/ui/GifPicker';
+import {
+  MentionAutocomplete,
+  buildAtItems,
+  buildChannelItems,
+  detectTrigger,
+  type AutocompleteItem,
+} from '@/components/ui/MentionAutocomplete';
+import { useMentionContext } from '@/contexts/MentionContext';
+import {
+  convertMentionsToWireFormat,
+  shiftMappings,
+  parseTimeInput,
+  type MentionMapping,
+} from '@/lib/mentionUtils';
 import { api } from '@/api';
 
 export interface MessageAuthor {
@@ -93,6 +107,42 @@ export function ChatPanel({
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTypingRef = useRef(false);
 
+  // Mention autocomplete state
+  const [mentionTrigger, setMentionTrigger] = useState<{
+    triggerType: '@' | '#';
+    triggerStart: number;
+    query: string;
+  } | null>(null);
+  const [mentionMappings, setMentionMappings] = useState<MentionMapping[]>([]);
+  const [stimePrompt, setStimePrompt] = useState(false);
+  const mentionContext = useMentionContext();
+
+  // Build autocomplete item lists from MentionContext
+  const atItems = useMemo(() => {
+    const memberArr = Array.from(mentionContext.members.entries()).map(([id, m]) => ({
+      id,
+      username: m.username,
+      display_name: m.display_name,
+      avatar_url: m.avatar_url,
+      role_color: m.role_color,
+    }));
+    const roleArr = Array.from(mentionContext.roles.entries()).map(([id, r]) => ({
+      id,
+      name: r.name,
+      color: r.color,
+    }));
+    return buildAtItems(memberArr, roleArr);
+  }, [mentionContext.members, mentionContext.roles]);
+
+  const channelItems = useMemo(() => {
+    const channelArr = Array.from(mentionContext.channels.entries()).map(([id, c]) => ({
+      id,
+      name: c.name,
+      type: c.type,
+    }));
+    return buildChannelItems(channelArr);
+  }, [mentionContext.channels]);
+
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
 
@@ -151,18 +201,123 @@ export function ChatPanel({
           typingTimeoutRef.current = null;
         }
       }
-      onSendMessage(content);
+      // Convert display-text mentions to wire format before sending
+      const wireContent = mentionMappings.length > 0
+        ? convertMentionsToWireFormat(content, mentionMappings)
+        : content;
+      onSendMessage(wireContent);
       setMessageInput('');
+      setMentionMappings([]);
+      setMentionTrigger(null);
+      setStimePrompt(false);
       inputRef.current?.focus();
     }
-  }, [messageInput, onSendMessage, onTypingStop]);
+  }, [messageInput, onSendMessage, onTypingStop, mentionMappings]);
+
+  // Handle mention autocomplete selection
+  const handleMentionSelect = useCallback((item: AutocompleteItem) => {
+    if (!mentionTrigger || !inputRef.current) return;
+
+    // @stime special flow: prompt for time input
+    if (item.type === 'stime') {
+      setStimePrompt(true);
+      setMentionTrigger(null);
+      return;
+    }
+
+    const before = messageInput.slice(0, mentionTrigger.triggerStart);
+    const after = messageInput.slice(
+      mentionTrigger.triggerStart + 1 + mentionTrigger.query.length,
+    );
+    const insertText = item.insertText + ' ';
+    const newInput = before + insertText + after;
+
+    // Update mappings — shift existing ones and add new one
+    const delta = insertText.length - (1 + mentionTrigger.query.length);
+    const shifted = shiftMappings(
+      mentionMappings,
+      mentionTrigger.triggerStart,
+      delta,
+    );
+
+    // Only add mapping if wireFormat differs from insertText (not for @here/@everyone)
+    if (item.wireFormat && item.wireFormat !== item.insertText) {
+      shifted.push({
+        displayText: item.insertText,
+        wireFormat: item.wireFormat,
+        startIndex: mentionTrigger.triggerStart,
+      });
+    }
+
+    setMentionMappings(shifted);
+    setMessageInput(newInput);
+    setMentionTrigger(null);
+
+    // Restore cursor position
+    const cursorPos = before.length + insertText.length;
+    requestAnimationFrame(() => {
+      inputRef.current?.setSelectionRange(cursorPos, cursorPos);
+      inputRef.current?.focus();
+    });
+  }, [mentionTrigger, messageInput, mentionMappings]);
+
+  // Handle @stime time input
+  const handleStimeInput = useCallback((timeStr: string) => {
+    const ts = parseTimeInput(timeStr);
+    if (ts === null) return;
+
+    const serverTz = mentionContext.serverTimezone || 'UTC';
+    const date = new Date(ts * 1000);
+    const displayTime = date.toLocaleTimeString('en-US', {
+      timeZone: serverTz,
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+    const displayText = `${displayTime} Server Time`;
+    const wireFormat = `<t:${ts}>`;
+
+    const cursorPos = inputRef.current?.selectionStart ?? messageInput.length;
+    const before = messageInput.slice(0, cursorPos);
+    const after = messageInput.slice(cursorPos);
+    const newInput = before + displayText + ' ' + after;
+
+    const newMapping: MentionMapping = {
+      displayText,
+      wireFormat,
+      startIndex: cursorPos,
+    };
+
+    setMentionMappings((prev) => [...prev, newMapping]);
+    setMessageInput(newInput);
+    setStimePrompt(false);
+
+    requestAnimationFrame(() => {
+      const newCursor = cursorPos + displayText.length + 1;
+      inputRef.current?.setSelectionRange(newCursor, newCursor);
+      inputRef.current?.focus();
+    });
+  }, [messageInput, mentionContext.serverTimezone]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    // Let autocomplete handle keys when open
+    if (mentionTrigger) {
+      const handler = (MentionAutocomplete as any)._handleKeyDown;
+      if (handler && handler(e)) return;
+    }
+
+    // @stime prompt: Enter submits the time
+    if (stimePrompt && e.key === 'Escape') {
+      e.preventDefault();
+      setStimePrompt(false);
+      return;
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
-  }, [handleSend]);
+  }, [handleSend, mentionTrigger, stimePrompt]);
 
   const handleFileUpload = useCallback(() => {
     const input = document.createElement('input');
@@ -371,6 +526,54 @@ export function ChatPanel({
             </div>
           )}
 
+          {/* Mention Autocomplete */}
+          <div className="relative">
+            {mentionTrigger && (
+              <MentionAutocomplete
+                query={mentionTrigger.query}
+                triggerType={mentionTrigger.triggerType}
+                items={mentionTrigger.triggerType === '@' ? atItems : channelItems}
+                onSelect={handleMentionSelect}
+                onClose={() => setMentionTrigger(null)}
+              />
+            )}
+          </div>
+
+          {/* @stime Time Input Prompt */}
+          {stimePrompt && (
+            <div className="flex items-center gap-2 px-3 py-2 mb-1 bg-brand-primary/10 border border-brand-primary/20 rounded-lg text-sm">
+              <svg className="w-4 h-4 text-brand-primary flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="text-text-muted">Enter your local time:</span>
+              <input
+                type="text"
+                placeholder="e.g. 3pm, 15:00, 3:30 PM"
+                className="flex-1 bg-transparent text-text-primary outline-none text-sm"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleStimeInput((e.target as HTMLInputElement).value);
+                  }
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setStimePrompt(false);
+                    inputRef.current?.focus();
+                  }
+                }}
+              />
+              <button
+                onClick={() => { setStimePrompt(false); inputRef.current?.focus(); }}
+                className="text-text-muted hover:text-text-primary"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          )}
+
           <div className="flex items-end bg-bg-tertiary rounded-lg">
             {/* Attach button */}
             <button
@@ -396,8 +599,14 @@ export function ChatPanel({
               ref={inputRef}
               value={messageInput}
               onChange={(e) => {
-                setMessageInput(e.target.value);
+                const newValue = e.target.value;
+                const cursorPos = e.target.selectionStart ?? newValue.length;
+                setMessageInput(newValue);
                 handleTyping();
+
+                // Detect mention trigger
+                const trigger = detectTrigger(newValue, cursorPos);
+                setMentionTrigger(trigger);
               }}
               onKeyDown={handleKeyDown}
               placeholder={`Message #${channel.name || 'channel'}`}
