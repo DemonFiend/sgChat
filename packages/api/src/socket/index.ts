@@ -769,7 +769,11 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         // Clear voice activity tracking
         await redis.clearVoiceActivity(userId);
 
-        const channelId = data?.channel_id || await redis.getUserVoiceChannel(userId);
+        // Use the Redis-tracked channel as the source of truth (the client
+        // may think it's still in an old channel after a force-move).
+        const redisChannelId = await redis.getUserVoiceChannel(userId);
+        const clientChannelId = data?.channel_id;
+        const channelId = redisChannelId || clientChannelId;
         if (!channelId) return;
 
         const channel = await db.channels.findById(channelId);
@@ -786,6 +790,24 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
               user_id: userId,
             },
           });
+
+          // If the client thought it was in a different channel (e.g. force-move
+          // happened but the client didn't process it), also publish a leave for
+          // that channel so all UIs clean up.
+          if (clientChannelId && clientChannelId !== channelId) {
+            const oldChannel = await db.channels.findById(clientChannelId);
+            if (oldChannel) {
+              await publishEvent({
+                type: 'voice.leave',
+                actorId: userId,
+                resourceId: `server:${oldChannel.server_id}`,
+                payload: {
+                  channel_id: clientChannelId,
+                  user_id: userId,
+                },
+              });
+            }
+          }
 
           // Mark temp channel as empty if no participants remain
           if (channel.is_temp_channel) {

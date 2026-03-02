@@ -393,8 +393,13 @@ class VoiceServiceClass {
    */
   async leave(): Promise<void> {
     const channelId = voiceStore.currentChannelId();
-    
+
     if (!this.room) {
+      // Still notify the server even if LiveKit room is gone (e.g. connection
+      // failed after force-move) so Redis state gets cleaned up.
+      if (channelId) {
+        socketService.emit('voice:leave', { channel_id: channelId });
+      }
       voiceStore.setDisconnected();
       return;
     }
