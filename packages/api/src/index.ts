@@ -159,6 +159,9 @@ async function start() {
   await fastify.register(rateLimitPlugin);
   await fastify.register(errorHandler);
 
+  // Reserve io decorator slot (assigned after Socket.IO init, post-ready)
+  fastify.decorate('io', undefined);
+
   // ============================================================
   // API routes - all prefixed under /api
   // ============================================================
@@ -287,8 +290,8 @@ async function start() {
     },
   });
 
-  // Expose io on fastify so routes can emit events via fastify.io
-  fastify.decorate('io', io);
+  // Assign io so routes can emit events via fastify.io
+  fastify.io = io;
 
   initSocketIO(io, fastify);
 
