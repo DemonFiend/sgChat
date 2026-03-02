@@ -9,7 +9,7 @@ import sanitize from 'sanitize-html';
 const SANITIZE_OPTIONS: sanitize.IOptions = {
   allowedTags: [],
   allowedAttributes: {},
-  disallowedTagsMode: 'recursiveEscape',
+  disallowedTagsMode: 'discard',
 };
 
 /**

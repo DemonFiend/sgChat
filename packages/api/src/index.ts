@@ -287,6 +287,9 @@ async function start() {
     },
   });
 
+  // Expose io on fastify so routes can emit events via fastify.io
+  fastify.decorate('io', io);
+
   initSocketIO(io, fastify);
 
   // Start HTTP server
