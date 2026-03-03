@@ -1,7 +1,8 @@
 import { FastifyPluginAsync } from 'fastify';
+import fp from 'fastify-plugin';
 import { ZodError } from 'zod';
 
-export const errorHandler: FastifyPluginAsync = async (fastify) => {
+export const errorHandler = fp(async (fastify) => {
   fastify.setErrorHandler((error, request, reply) => {
     // Zod validation errors
     if (error instanceof ZodError) {
@@ -37,4 +38,4 @@ export const errorHandler: FastifyPluginAsync = async (fastify) => {
       message: error.message || 'An unexpected error occurred',
     });
   });
-};
+}, { name: 'error-handler' });

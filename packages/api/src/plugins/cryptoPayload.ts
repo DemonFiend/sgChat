@@ -9,6 +9,7 @@
  */
 
 import { FastifyPluginAsync } from 'fastify';
+import fp from 'fastify-plugin';
 import { redis } from '../lib/redis.js';
 import { isEncryptedPayload, CRYPTO_EXEMPT_ENDPOINTS, CRYPTO_IV_BYTES } from '@sgchat/shared';
 import type { EncryptedPayload } from '@sgchat/shared';
@@ -55,7 +56,7 @@ function isExemptRoute(url: string): boolean {
   );
 }
 
-export const cryptoPayloadPlugin: FastifyPluginAsync = async (fastify) => {
+export const cryptoPayloadPlugin = fp(async (fastify) => {
   // ── Decrypt incoming requests ─────────────────────────────────
   fastify.addHook('preHandler', async (request, reply) => {
     // Skip if no body or not an object
@@ -133,4 +134,4 @@ export const cryptoPayloadPlugin: FastifyPluginAsync = async (fastify) => {
       return payload;
     }
   });
-};
+}, { name: 'crypto-payload' });
