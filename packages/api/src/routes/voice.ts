@@ -318,22 +318,32 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
         },
       });
 
+      const livekitUrl = getLiveKitUrl();
+      const speak = hasPermission(perms.voice, VoicePermissions.SPEAK);
+      const video = hasPermission(perms.voice, VoicePermissions.VIDEO);
+      const stream = hasPermission(perms.voice, VoicePermissions.STREAM);
+
       return {
         token,
-        url: getLiveKitUrl(),
+        livekit_token: token,
+        url: livekitUrl,
+        livekit_url: livekitUrl,
         room_name: `voice:${actualChannelId}`,
         channel_id: actualChannelId,
         is_temp_channel: channel.is_temp_channel || false,
         bitrate: channel.bitrate || 64000,
         user_limit: channel.user_limit || 0,
         permissions: {
-          canSpeak: hasPermission(perms.voice, VoicePermissions.SPEAK),
-          canVideo: hasPermission(perms.voice, VoicePermissions.VIDEO),
-          canStream: hasPermission(perms.voice, VoicePermissions.STREAM),
+          canSpeak: speak,
+          canVideo: video,
+          canStream: stream,
           canMuteMembers: hasPermission(perms.voice, VoicePermissions.MUTE_MEMBERS),
           canMoveMembers: hasPermission(perms.voice, VoicePermissions.MOVE_MEMBERS),
           canDisconnectMembers: hasPermission(perms.voice, VoicePermissions.DISCONNECT_MEMBERS),
           canDeafenMembers: hasPermission(perms.voice, VoicePermissions.DEAFEN_MEMBERS),
+          can_speak: speak,
+          can_video: video,
+          can_stream: stream,
         },
       };
     },
