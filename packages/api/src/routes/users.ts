@@ -4,7 +4,7 @@ import { db } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
 import { storage } from '../lib/storage.js';
 import { publishEvent } from '../lib/eventBus.js';
-import { UserStatus, usernameSchema, updateStatusSchema, updateCustomStatusSchema, updateStatusCommentSchema, toNamedPermissions, DEFAULT_AVATAR_LIMITS } from '@sgchat/shared';
+import { UserStatus, usernameSchema, updateStatusSchema, updateCustomStatusSchema, updateStatusCommentSchema, toNamedPermissions, DEFAULT_AVATAR_LIMITS, isPreHashedPassword } from '@sgchat/shared';
 import type { AvatarLimits, UserAvatar } from '@sgchat/shared';
 import { z } from 'zod';
 import { notFound, badRequest, unauthorized, forbidden } from '../utils/errors.js';
@@ -520,6 +520,11 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
     handler: async (request, reply) => {
       const { currentPassword, newPassword } = changePasswordSchema.parse(request.body);
 
+      // Enforce pre-hashed password format
+      if (!isPreHashedPassword(currentPassword) || !isPreHashedPassword(newPassword)) {
+        return badRequest(reply, 'Passwords must be pre-hashed (sha256:<hex>)');
+      }
+
       const user = await db.users.findByIdWithPassword(request.user!.id);
       if (!user) {
         return notFound(reply, 'User');
@@ -557,6 +562,11 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
     },
     handler: async (request, reply) => {
       const { email, password } = changeEmailSchema.parse(request.body);
+
+      // Enforce pre-hashed password format
+      if (!isPreHashedPassword(password)) {
+        return badRequest(reply, 'Password must be pre-hashed (sha256:<hex>)');
+      }
 
       const user = await db.users.findByIdWithPassword(request.user!.id);
       if (!user) {

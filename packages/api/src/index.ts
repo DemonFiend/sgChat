@@ -35,6 +35,8 @@ import { gatewayRoutes } from './routes/gateway.js';
 import { notificationRoutes } from './routes/notifications.js';
 import { giphyRoutes } from './routes/giphy.js';
 import { soundboardRoutes } from './routes/soundboard.js';
+import { cryptoRoutes } from './routes/crypto.js';
+import { cryptoPayloadPlugin } from './plugins/cryptoPayload.js';
 import { initSocketIO } from './socket/index.js';
 import { cleanupEmptyTempChannels } from './services/tempChannels.js';
 import { checkAndMoveAfkUsers } from './services/afkService.js';
@@ -158,6 +160,7 @@ async function start() {
 
   await fastify.register(rateLimitPlugin);
   await fastify.register(errorHandler);
+  await fastify.register(cryptoPayloadPlugin);
 
   // Reserve io decorator slot (assigned after Socket.IO init, post-ready)
   fastify.decorate('io', undefined);
@@ -193,6 +196,9 @@ async function start() {
 
     // Soundboard routes
     await api.register(soundboardRoutes, { prefix: '/servers' });
+
+    // Crypto key exchange (unauthenticated)
+    await api.register(cryptoRoutes, { prefix: '/crypto' });
 
     // Health check with server info for client network discovery
     api.get('/health', async () => {

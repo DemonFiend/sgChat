@@ -3,3 +3,4 @@ export * from './permissions/index.js';
 export * from './validators/index.js';
 export * from './constants.js';
 export * from './mentions.js';
+export * from './crypto.js';

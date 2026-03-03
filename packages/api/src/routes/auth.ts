@@ -14,6 +14,7 @@ import {
   ALL_PERMISSIONS,
   permissionToString,
   RoleTemplates,
+  isPreHashedPassword,
 } from '@sgchat/shared';
 import { z } from 'zod';
 
@@ -54,6 +55,16 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     },
     handler: async (request, reply) => {
       const body = registerSchema.parse(request.body);
+
+      // Enforce pre-hashed password format (sha256:<hex>)
+      if (!isPreHashedPassword(body.password)) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: 'Password must be pre-hashed (sha256:<hex>). Plaintext passwords are not accepted.',
+          code: 'PASSWORD_NOT_HASHED',
+        });
+      }
 
       // Check if username or email already exists
       const existingUser = await db.users.findByUsername(body.username);
@@ -132,6 +143,16 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     },
     handler: async (request, reply) => {
       const body = loginSchema.parse(request.body);
+
+      // Enforce pre-hashed password format (sha256:<hex>)
+      if (!isPreHashedPassword(body.password)) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: 'Password must be pre-hashed (sha256:<hex>). Plaintext passwords are not accepted.',
+          code: 'PASSWORD_NOT_HASHED',
+        });
+      }
 
       // Find user by email (with password hash for verification)
       const userWithPassword = await db.users.findByEmailWithPassword(body.email);
@@ -557,6 +578,16 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     },
     handler: async (request, reply) => {
       const { token, password } = resetPasswordSchema.parse(request.body);
+
+      // Enforce pre-hashed password format (sha256:<hex>)
+      if (!isPreHashedPassword(password)) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: 'Password must be pre-hashed (sha256:<hex>). Plaintext passwords are not accepted.',
+          code: 'PASSWORD_NOT_HASHED',
+        });
+      }
 
       // Hash the provided token to compare with stored hash
       const tokenHash = crypto.createHash('sha256').update(token).digest('hex');

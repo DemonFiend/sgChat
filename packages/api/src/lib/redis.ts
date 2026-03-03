@@ -319,4 +319,39 @@ export const redis = {
     }
     await client.del(`gw:session:${sessionId}`);
   },
+
+  // ── Crypto session management (payload encryption) ──────────
+
+  /** Store an AES-256 key for a crypto session */
+  async setCryptoSession(sessionId: string, keyHex: string, ttl: number = 3600) {
+    const data = JSON.stringify({ keyHex, createdAt: Date.now() });
+    await client.setex(`crypto:${sessionId}`, ttl, data);
+  },
+
+  /** Retrieve a crypto session's AES key */
+  async getCryptoSession(
+    sessionId: string,
+  ): Promise<{ keyHex: string; createdAt: number } | null> {
+    const raw = await client.get(`crypto:${sessionId}`);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  },
+
+  /** Refresh a crypto session TTL (won't extend beyond 4hr absolute max) */
+  async refreshCryptoSession(sessionId: string) {
+    const session = await this.getCryptoSession(sessionId);
+    if (!session) return;
+    const ageMs = Date.now() - session.createdAt;
+    if (ageMs > 14400 * 1000) return; // 4hr max
+    await client.expire(`crypto:${sessionId}`, 3600);
+  },
+
+  /** Delete a crypto session */
+  async deleteCryptoSession(sessionId: string) {
+    await client.del(`crypto:${sessionId}`);
+  },
 };

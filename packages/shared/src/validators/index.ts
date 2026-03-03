@@ -15,6 +15,14 @@ export const passwordSchema = z
   .min(8, 'Password must be at least 8 characters')
   .max(128, 'Password must be at most 128 characters');
 
+/** Password format for network transit: must be sha256-prehashed */
+export const transitPasswordSchema = z
+  .string()
+  .regex(
+    /^sha256:[a-f0-9]{64}$/,
+    'Password must be pre-hashed (sha256:<hex>). Plaintext passwords are not accepted.',
+  );
+
 export const registerSchema = z.object({
   username: usernameSchema,
   email: emailSchema,

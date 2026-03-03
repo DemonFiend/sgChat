@@ -1,6 +1,13 @@
 import { io, Socket } from 'socket.io-client';
 import { create } from 'zustand';
 import { authStore } from '@/stores/auth';
+import { isEncryptedPayload } from '@sgchat/shared';
+import {
+  getCryptoSessionId,
+  hasCryptoSession,
+  encryptForTransport,
+  decryptFromTransport,
+} from '@/lib/transportCrypto';
 
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
 
@@ -21,6 +28,9 @@ let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let heartbeatInterval = 30000;
 const pendingHandlers: Map<string, Set<(data: unknown) => void>> = new Map();
 
+// Maps original handler → wrapped handler for proper cleanup
+const handlerWrapperMap = new WeakMap<Function, Function>();
+
 const startHeartbeat = () => {
   stopHeartbeat();
   heartbeatTimer = setInterval(() => {
@@ -29,7 +39,10 @@ const startHeartbeat = () => {
 };
 
 const stopHeartbeat = () => {
-  if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
 };
 
 const registerPendingHandlers = () => {
@@ -41,14 +54,19 @@ const registerPendingHandlers = () => {
 
 function connect() {
   const token = authStore.getAccessToken();
-  if (!token) { console.warn('Cannot connect socket: no auth token'); return; }
+  if (!token) {
+    console.warn('Cannot connect socket: no auth token');
+    return;
+  }
   if (socket?.connected) return;
 
   useSocketStore.setState({ connectionState: 'connecting' });
 
   const wsUrl = import.meta.env.VITE_WS_URL || undefined;
+  const cryptoSessionId = getCryptoSessionId();
+
   socket = io(wsUrl, {
-    auth: { token },
+    auth: { token, cryptoSessionId },
     path: '/socket.io',
     transports: ['websocket', 'polling'],
     reconnection: true,
@@ -75,12 +93,20 @@ function connect() {
     useSocketStore.setState({ connectionState: 'disconnected' });
     stopHeartbeat();
     if (reason === 'io server disconnect') {
-      if (refreshRetryCount >= MAX_REFRESH_RETRIES) { socket?.disconnect(); return; }
+      if (refreshRetryCount >= MAX_REFRESH_RETRIES) {
+        socket?.disconnect();
+        return;
+      }
       refreshRetryCount++;
       try {
         const newToken = await authStore.refreshAccessToken();
-        if (socket) { socket.auth = { token: newToken }; socket.connect(); }
-      } catch { console.error('[Socket] Token refresh failed after server disconnect'); }
+        if (socket) {
+          socket.auth = { token: newToken, cryptoSessionId: getCryptoSessionId() };
+          socket.connect();
+        }
+      } catch {
+        console.error('[Socket] Token refresh failed after server disconnect');
+      }
     }
   });
 
@@ -90,12 +116,20 @@ function connect() {
 
   socket.on('connect_error', async (error) => {
     if (error.message === 'Invalid token' || error.message === 'jwt expired') {
-      if (refreshRetryCount >= MAX_REFRESH_RETRIES) { socket?.disconnect(); return; }
+      if (refreshRetryCount >= MAX_REFRESH_RETRIES) {
+        socket?.disconnect();
+        return;
+      }
       refreshRetryCount++;
       try {
         const newToken = await authStore.refreshAccessToken();
-        if (socket) { socket.auth = { token: newToken }; socket.connect(); }
-      } catch { console.error('[Socket] Token refresh failed on connect error'); }
+        if (socket) {
+          socket.auth = { token: newToken, cryptoSessionId: getCryptoSessionId() };
+          socket.connect();
+        }
+      } catch {
+        console.error('[Socket] Token refresh failed on connect error');
+      }
     }
   });
 }
@@ -107,32 +141,68 @@ function disconnect() {
   useSocketStore.setState({ connectionState: 'disconnected' });
 }
 
-function emit<T = unknown>(event: string, data?: unknown): Promise<T> {
-  return new Promise((resolve, reject) => {
-    if (!socket?.connected) { reject(new Error('Socket not connected')); return; }
-    socket.emit(event, data, (response: T) => resolve(response));
+async function emit<T = unknown>(event: string, data?: unknown): Promise<T> {
+  return new Promise(async (resolve, reject) => {
+    if (!socket?.connected) {
+      reject(new Error('Socket not connected'));
+      return;
+    }
+
+    let payload = data;
+    if (data !== undefined && hasCryptoSession()) {
+      try {
+        payload = await encryptForTransport(JSON.stringify(data));
+      } catch {
+        // Fallback to unencrypted
+      }
+    }
+
+    socket.emit(event, payload, (response: T) => resolve(response));
   });
 }
 
 function on<T = unknown>(event: string, handler: (data: T) => void) {
+  // Wrap handler to auto-decrypt incoming encrypted payloads
+  const wrappedHandler = async (data: unknown) => {
+    if (isEncryptedPayload(data)) {
+      try {
+        const plaintext = await decryptFromTransport(data);
+        handler(JSON.parse(plaintext) as T);
+      } catch {
+        // If decryption fails, pass raw data
+        handler(data as T);
+      }
+    } else {
+      handler(data as T);
+    }
+  };
+
+  handlerWrapperMap.set(handler, wrappedHandler);
+
   if (!pendingHandlers.has(event)) pendingHandlers.set(event, new Set());
-  pendingHandlers.get(event)!.add(handler as (data: unknown) => void);
-  if (socket) socket.on(event, handler);
+  pendingHandlers.get(event)!.add(wrappedHandler as (data: unknown) => void);
+  if (socket) socket.on(event, wrappedHandler as any);
 }
 
 function off(event: string, handler?: (data: unknown) => void) {
-  if (handler && pendingHandlers.has(event)) {
-    pendingHandlers.get(event)!.delete(handler);
-    if (pendingHandlers.get(event)!.size === 0) pendingHandlers.delete(event);
-  } else if (!handler) {
+  if (handler) {
+    // Find the wrapped handler for proper cleanup
+    const wrapped = handlerWrapperMap.get(handler) || handler;
+    handlerWrapperMap.delete(handler);
+
+    if (pendingHandlers.has(event)) {
+      pendingHandlers.get(event)!.delete(wrapped as (data: unknown) => void);
+      if (pendingHandlers.get(event)!.size === 0) pendingHandlers.delete(event);
+    }
+    if (socket) socket.off(event, wrapped as any);
+  } else {
     pendingHandlers.delete(event);
-  }
-  if (socket) {
-    if (handler) socket.off(event, handler);
-    else socket.off(event);
+    if (socket) socket.off(event);
   }
 }
 
-function getSocket() { return socket; }
+function getSocket() {
+  return socket;
+}
 
 export const socketService = { connect, disconnect, emit, on, off, getSocket };

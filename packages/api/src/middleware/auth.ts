@@ -10,8 +10,10 @@ export interface UserPayload {
 declare module 'fastify' {
   interface FastifyRequest {
     user: UserPayload;
+    /** Set by crypto payload plugin when request was encrypted */
+    cryptoSessionId?: string;
   }
-  
+
   interface FastifyInstance {
     io?: SocketIOServer;
   }

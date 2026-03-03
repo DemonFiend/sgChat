@@ -5,7 +5,10 @@ import { db } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
 import { publishEvent, getSequences, resyncEvents, onEvent } from '../lib/eventBus.js';
 import { calculatePermissions } from '../services/permissions.js';
-import { TextPermissions, VoicePermissions, hasPermission, MAX_MESSAGE_LENGTH } from '@sgchat/shared';
+import {
+  TextPermissions, VoicePermissions, hasPermission, MAX_MESSAGE_LENGTH,
+  isEncryptedPayload,
+} from '@sgchat/shared';
 import type { EventEnvelope, GatewayHello, GatewayReady, GatewayResume, GatewayResumed } from '@sgchat/shared';
 import { isBlocked } from '../routes/friends.js';
 import { createNotification } from '../routes/notifications.js';
@@ -13,6 +16,7 @@ import { processMentions } from '../services/mentions.js';
 import { cancelPendingCreation } from '../services/tempChannelTimers.js';
 import { markTempChannelEmpty } from '../services/tempChannels.js';
 import { sanitizeContent, sanitizeMessage } from '../utils/sanitize.js';
+import { encryptPayload, decryptPayload } from '../plugins/cryptoPayload.js';
 
 // ── Constants ──────────────────────────────────────────────────
 /** Heartbeat interval sent to client in gateway.hello (ms) */
@@ -90,13 +94,23 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
   io.use(async (socket, next) => {
     try {
       const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.replace('Bearer ', '');
-      
+
       if (!token) {
         return next(new Error('Authentication required'));
       }
 
       const decoded = fastify.jwt.verify(token) as any;
       socket.data.user = decoded;
+
+      // Store crypto session key if client provides one
+      const cryptoSessionId = socket.handshake.auth.cryptoSessionId;
+      if (cryptoSessionId) {
+        const session = await redis.getCryptoSession(cryptoSessionId);
+        if (session) {
+          socket.data.cryptoKeyHex = session.keyHex;
+        }
+      }
+
       next();
     } catch (err) {
       next(new Error('Invalid token'));
@@ -104,17 +118,53 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
   });
 
   // ── Subscribe to event bus and relay to Socket.IO rooms ─────
-  onEvent((envelope: EventEnvelope) => {
-    // Emit the envelope to the matching Socket.IO room.
-    // The resource_id doubles as the room name (channel:{id}, dm:{id}, user:{id}, server:{id}).
-    io.to(envelope.resource_id).emit('event', envelope);
+  onEvent(async (envelope: EventEnvelope) => {
+    // Fetch all sockets in the room to handle per-socket encryption
+    const sockets = await io.in(envelope.resource_id).fetchSockets();
 
-    // Also emit with the event type name for direct listeners
-    io.to(envelope.resource_id).emit(envelope.type, envelope.payload);
+    for (const s of sockets) {
+      if (s.data.cryptoKeyHex) {
+        // Encrypt payload for this socket's session key
+        try {
+          const encPayload = await encryptPayload(
+            JSON.stringify(envelope.payload),
+            s.data.cryptoKeyHex,
+          );
+          s.emit('event', { ...envelope, payload: encPayload });
+          s.emit(envelope.type, encPayload);
+        } catch {
+          // Fallback to unencrypted on error
+          s.emit('event', envelope);
+          s.emit(envelope.type, envelope.payload);
+        }
+      } else {
+        // Legacy unencrypted client
+        s.emit('event', envelope);
+        s.emit(envelope.type, envelope.payload);
+      }
+    }
   });
 
   // ── Connection handler ──────────────────────────────────────
   io.on('connection', async (socket: Socket) => {
+    // ── Per-socket incoming event decryption ──────────────────
+    // Uses socket.use() to transparently decrypt incoming event data
+    // before handlers see it. socket.use() is Socket.IO's official
+    // per-event middleware API.
+    if (socket.data.cryptoKeyHex) {
+      socket.use(async ([_event, ...args], next) => {
+        if (args.length > 0 && isEncryptedPayload(args[0])) {
+          try {
+            const plaintext = await decryptPayload(args[0], socket.data.cryptoKeyHex);
+            args[0] = JSON.parse(plaintext);
+          } catch {
+            socket.emit('error', { message: 'Decryption failed', code: 'DECRYPT_ERROR' });
+            return;
+          }
+        }
+        next();
+      });
+    }
     const userId = socket.data.user.id;
     const sessionId = randomUUID();
     fastify.log.info(`Socket connected: ${socket.data.user.username} (${userId}) session=${sessionId}`);

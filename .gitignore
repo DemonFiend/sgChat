@@ -50,6 +50,7 @@ temp/
 # Internal docs (not for repo)
 CLIENT_HANDOFF.md
 SERVER_HANDOFF.md
+SERVER-CHANGES.md
 Publishing2Dev.md
 P2D.md
 agent-workstream.md
