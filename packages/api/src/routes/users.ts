@@ -12,6 +12,8 @@ import argon2 from 'argon2';
 import { getDefaultServer } from './server.js';
 import { processAvatarImage, validateImage } from '../lib/imageProcessor.js';
 import { nanoid } from 'nanoid';
+import { emitEncrypted } from '../lib/socketEmit.js';
+import { extractFileData } from './upload.js';
 
 const ALLOWED_AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/ogg'];
 
@@ -477,7 +479,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
       const [updatedSettings] = await db.sql`
         SELECT * FROM user_settings WHERE user_id = ${request.user!.id}
       `;
-      fastify.io?.to(`user:${request.user!.id}`).emit('user.settings.update', updatedSettings || {});
+      await emitEncrypted(fastify.io, `user:${request.user!.id}`, 'user.settings.update', updatedSettings || {});
 
       return { message: 'Settings updated' };
     },
@@ -502,7 +504,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
       const [updatedSettings] = await db.sql`
         SELECT * FROM user_settings WHERE user_id = ${request.user!.id}
       `;
-      fastify.io?.to(`user:${request.user!.id}`).emit('user.settings.update', updatedSettings || {});
+      await emitEncrypted(fastify.io, `user:${request.user!.id}`, 'user.settings.update', updatedSettings || {});
 
       return { message: 'Settings updated' };
     },
@@ -625,7 +627,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
     if (!user) return;
 
     // Broadcast to user's own room
-    fastify.io?.to(`user:${userId}`).emit('user.update', user);
+    await emitEncrypted(fastify.io, `user:${userId}`, 'user.update', user);
 
     // Broadcast presence.update to all servers the user is in
     await broadcastPresence(userId, {
@@ -646,17 +648,16 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
     },
     handler: async (request, reply) => {
       const userId = request.user!.id;
-      const data = await request.file();
-      
-      if (!data) {
+      const fileData = await extractFileData(request);
+
+      if (!fileData) {
         return badRequest(reply, 'No file uploaded');
       }
 
       // Get configurable limits
       const limits = await getAvatarLimits();
 
-      // Read file buffer
-      const buffer = await data.toBuffer();
+      const { buffer, filename, mimetype, fields } = fileData;
 
       // Validate file size
       if (buffer.length > limits.max_upload_size_bytes) {
@@ -802,10 +803,10 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
     },
     handler: async (request, reply) => {
       const userId = request.user!.id;
-      const data = await request.file();
-      if (!data) return badRequest(reply, 'No file uploaded');
+      const fileData = await extractFileData(request);
+      if (!fileData) return badRequest(reply, 'No file uploaded');
 
-      const buffer = await data.toBuffer();
+      const { buffer, filename, mimetype, fields } = fileData;
       if (buffer.length > 8 * 1024 * 1024) {
         return badRequest(reply, 'File too large. Maximum size: 8MB');
       }
@@ -824,8 +825,8 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       // Upload new banner
-      const filename = `${userId}-banner-${nanoid(8)}.webp`;
-      const storagePath = `banners/${filename}`;
+      const bannerFilename = `${userId}-banner-${nanoid(8)}.webp`;
+      const storagePath = `banners/${bannerFilename}`;
       const processed = await processAvatarImage(buffer, 600, 80);
       const bannerUrl = await storage.uploadFile(processed.buffer, storagePath, 'image/webp');
 
@@ -1075,7 +1076,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Emit socket event to blocked user
-      fastify.io?.to(`user:${userId}`).emit('user.block', {
+      await emitEncrypted(fastify.io, `user:${userId}`, 'user.block', {
         user_id: currentUserId,
       });
 
@@ -1255,29 +1256,29 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
       const member = await db.members.findByUserAndServer(request.user!.id, serverId);
       if (!member) return forbidden(reply, 'Not a server member');
 
-      const data = await request.file();
-      if (!data) return badRequest(reply, 'No file uploaded');
+      const fileData = await extractFileData(request);
+      if (!fileData) return badRequest(reply, 'No file uploaded');
 
-      if (!ALLOWED_AUDIO_TYPES.includes(data.mimetype)) {
-        return badRequest(reply, `Audio type not allowed: ${data.mimetype}`);
+      const { buffer, filename, mimetype, fields } = fileData;
+
+      if (!ALLOWED_AUDIO_TYPES.includes(mimetype)) {
+        return badRequest(reply, `Audio type not allowed: ${mimetype}`);
       }
 
-      const buffer = await data.toBuffer();
       const maxSize = 1 * 1024 * 1024; // 1MB
       if (buffer.length > maxSize) {
         return badRequest(reply, 'File too large. Maximum size is 1MB');
       }
 
       // Get duration from form field
-      const fields = data.fields as any;
-      const duration = parseFloat(fields?.duration?.value || '0');
+      const duration = parseFloat(fields.duration || '0');
       if (duration <= 0 || duration > 5) {
         return badRequest(reply, 'Duration must be between 0 and 5 seconds');
       }
 
-      const ext = data.filename.split('.').pop() || 'mp3';
+      const ext = filename.split('.').pop() || 'mp3';
       const storagePath = `user-sounds/${request.user!.id}/${serverId}/${type}-${nanoid(12)}.${ext}`;
-      const url = await storage.uploadFile(buffer, storagePath, data.mimetype);
+      const url = await storage.uploadFile(buffer, storagePath, mimetype);
 
       const sound = await db.userVoiceSounds.upsert({
         user_id: request.user!.id,

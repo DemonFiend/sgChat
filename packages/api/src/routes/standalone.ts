@@ -21,6 +21,7 @@ import {
   createInviteSchema
 } from '@sgchat/shared';
 import { notFound, forbidden, badRequest, conflict, sendError } from '../utils/errors.js';
+import { emitEncrypted } from '../lib/socketEmit.js';
 import { z } from 'zod';
 
 const updateRoleSchema = z.object({
@@ -193,7 +194,7 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
         VALUES (${server.id}, ${request.user!.id}, 'role_create', 'role', ${role.id}, ${JSON.stringify({ created: role })})
       `;
 
-      fastify.io?.to(`server:${server.id}`).emit('role.create', role);
+      await emitEncrypted(fastify.io, `server:${server.id}`, 'role.create', role);
       return role;
     },
   });
@@ -254,7 +255,7 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
       await db.sql`UPDATE roles SET ${db.sql(updates)} WHERE id = ${roleId}`;
 
       const [updated] = await db.sql`SELECT * FROM roles WHERE id = ${roleId}`;
-      fastify.io?.to(`server:${server.id}`).emit('role.update', updated);
+      await emitEncrypted(fastify.io, `server:${server.id}`, 'role.update', updated);
       return updated;
     },
   });
@@ -283,7 +284,7 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
         VALUES (${server.id}, ${request.user!.id}, 'role_delete', 'role', ${roleId})
       `;
 
-      fastify.io?.to(`server:${server.id}`).emit('role.delete', { id: roleId });
+      await emitEncrypted(fastify.io, `server:${server.id}`, 'role.delete', { id: roleId });
       return { message: 'Role deleted' };
     },
   });
@@ -314,7 +315,7 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       const roles = await db.sql`SELECT * FROM roles WHERE server_id = ${server.id} ORDER BY position DESC`;
-      fastify.io?.to(`server:${server.id}`).emit('roles.reorder', roles);
+      await emitEncrypted(fastify.io, `server:${server.id}`, 'roles.reorder', roles);
       return roles;
     },
   });
@@ -522,7 +523,7 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
         VALUES (${server.id}, ${request.user!.id}, 'member_kick', 'member', ${userId}, ${body.reason || null})
       `;
 
-      fastify.io?.to(`user:${userId}`).emit('server.kicked', {
+      await emitEncrypted(fastify.io, `user:${userId}`, 'server.kicked', {
         server_id: server.id,
         server_name: server.name,
         reason: body.reason
@@ -568,7 +569,7 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
         VALUES (${server.id}, ${request.user!.id}, 'member_ban', 'member', ${userId}, ${body.reason || null})
       `;
 
-      fastify.io?.to(`user:${userId}`).emit('server.banned', {
+      await emitEncrypted(fastify.io, `user:${userId}`, 'server.banned', {
         server_id: server.id,
         server_name: server.name,
         reason: body.reason
@@ -1092,7 +1093,7 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Emit socket event (wrapped to match frontend expecting { channel: Channel })
-      fastify.io?.to(`server:${server.id}`).emit('channel.create', {
+      await emitEncrypted(fastify.io, `server:${server.id}`, 'channel.create', {
         channel: {
           id: channel.id,
           name: channel.name,

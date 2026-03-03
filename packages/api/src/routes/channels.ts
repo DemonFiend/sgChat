@@ -22,6 +22,7 @@ import {
   applySizeLimitPolicy,
 } from '../services/trimming.js';
 import { loadArchivedMessages } from '../services/archive.js';
+import { emitEncrypted } from '../lib/socketEmit.js';
 
 // ── A1: Idempotency dedup cache (in-memory, per-process) ──────
 const idempotencyCache = new Map<string, { timestamp: number; result: any }>();
@@ -470,7 +471,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       const updatedChannel = await db.channels.findById(id);
-      fastify.io?.to(`server:${channel.server_id}`).emit('channel.update', updatedChannel);
+      await emitEncrypted(fastify.io, `server:${channel.server_id}`, 'channel.update', updatedChannel);
 
       return updatedChannel;
     },
@@ -512,7 +513,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
         VALUES (${channel.server_id}, ${request.user!.id}, 'channel_delete', 'channel', ${id}, ${JSON.stringify({ deleted: channel })})
       `;
 
-      fastify.io?.to(`server:${channel.server_id}`).emit('channel.delete', { id, server_id: channel.server_id });
+      await emitEncrypted(fastify.io, `server:${channel.server_id}`, 'channel.delete', { id, server_id: channel.server_id });
 
       return { message: 'Channel deleted' };
     },
@@ -551,7 +552,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       const updatedChannels = await db.channels.findByServerId(id);
-      fastify.io?.to(`server:${id}`).emit('channels.reorder', updatedChannels);
+      await emitEncrypted(fastify.io, `server:${id}`, 'channels.reorder', updatedChannels);
 
       return updatedChannels;
     },
@@ -818,7 +819,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Emit socket event
-      fastify.io?.to(`server:${channel.server_id}`).emit('channel.permissions.update', {
+      await emitEncrypted(fastify.io, `server:${channel.server_id}`, 'channel.permissions.update', {
         channel_id: id,
         type: 'role',
         target_id: roleId,
@@ -881,7 +882,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Emit socket event
-      fastify.io?.to(`server:${channel.server_id}`).emit('channel.permissions.update', {
+      await emitEncrypted(fastify.io, `server:${channel.server_id}`, 'channel.permissions.update', {
         channel_id: id,
         type: 'user',
         target_id: userId,
@@ -915,7 +916,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Emit socket event
-      fastify.io?.to(`server:${channel.server_id}`).emit('channel.permissions.delete', {
+      await emitEncrypted(fastify.io, `server:${channel.server_id}`, 'channel.permissions.delete', {
         channel_id: id,
         type: 'role',
         target_id: roleId,
@@ -949,7 +950,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Emit socket event
-      fastify.io?.to(`server:${channel.server_id}`).emit('channel.permissions.delete', {
+      await emitEncrypted(fastify.io, `server:${channel.server_id}`, 'channel.permissions.delete', {
         channel_id: id,
         type: 'user',
         target_id: userId,
@@ -1076,7 +1077,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       const [author] = await db.sql`SELECT id, username, avatar_url FROM users WHERE id = ${message.author_id}`;
 
       // Emit socket event
-      fastify.io?.to(`channel:${id}`).emit('message.pin', {
+      await emitEncrypted(fastify.io, `channel:${id}`, 'message.pin', {
         channel_id: id,
         message: {
           id: message.id,
@@ -1136,7 +1137,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Emit socket event
-      fastify.io?.to(`channel:${id}`).emit('message.unpin', {
+      await emitEncrypted(fastify.io, `channel:${id}`, 'message.unpin', {
         channel_id: id,
         message_id: messageId,
         unpinned_by: request.user!.id,

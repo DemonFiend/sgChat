@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { notFound, forbidden, badRequest } from '../utils/errors.js';
 import { getDefaultServer } from './server.js';
 import { ServerPermissions } from '@sgchat/shared';
+import { emitEncrypted } from '../lib/socketEmit.js';
 
 const createCategorySchema = z.object({
   name: z.string().min(1).max(100),
@@ -117,7 +118,7 @@ export const categoryRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Emit socket event (wrapped to match frontend expecting { category: Category })
-      fastify.io?.to(`server:${server.id}`).emit('category.create', { category });
+      await emitEncrypted(fastify.io, `server:${server.id}`,'category.create', { category });
 
       reply.code(201);
       return category;
@@ -173,7 +174,7 @@ export const categoryRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Emit socket event (wrapped to match frontend expecting { category: Category })
-      fastify.io?.to(`server:${server.id}`).emit('category.update', { category });
+      await emitEncrypted(fastify.io, `server:${server.id}`,'category.update', { category });
 
       return category;
     },
@@ -220,7 +221,7 @@ export const categoryRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Emit socket event (frontend expects { category_id: string })
-      fastify.io?.to(`server:${server.id}`).emit('category.delete', { category_id: id });
+      await emitEncrypted(fastify.io, `server:${server.id}`,'category.delete', { category_id: id });
 
       return { message: 'Category deleted' };
     },
@@ -262,7 +263,7 @@ export const categoryRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Emit socket event
-      fastify.io?.to(`server:${server.id}`).emit('categories.reorder', categories);
+      await emitEncrypted(fastify.io, `server:${server.id}`,'categories.reorder', categories);
 
       return categories;
     },

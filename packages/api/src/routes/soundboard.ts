@@ -7,6 +7,7 @@ import { calculatePermissions } from '../services/permissions.js';
 import { ServerPermissions, hasPermission } from '@sgchat/shared';
 import { notFound, badRequest, forbidden } from '../utils/errors.js';
 import { nanoid } from 'nanoid';
+import { extractFileData } from './upload.js';
 
 const ALLOWED_AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/ogg'];
 
@@ -45,6 +46,7 @@ export const soundboardRoutes: FastifyPluginAsync = async (fastify) => {
     config: {
       rateLimit: { max: 10, timeWindow: '1 minute' },
     },
+    bodyLimit: 3 * 1024 * 1024,
     handler: async (request, reply) => {
       const { serverId } = request.params as { serverId: string };
 
@@ -71,24 +73,23 @@ export const soundboardRoutes: FastifyPluginAsync = async (fastify) => {
         return badRequest(reply, `You can only upload ${config.max_sounds_per_user} sounds per server`);
       }
 
-      const data = await request.file();
-      if (!data) return badRequest(reply, 'No file uploaded');
+      const fileData = await extractFileData(request);
+      if (!fileData) return badRequest(reply, 'No file uploaded');
 
-      if (!ALLOWED_AUDIO_TYPES.includes(data.mimetype)) {
-        return badRequest(reply, `Audio type not allowed: ${data.mimetype}. Allowed: ${ALLOWED_AUDIO_TYPES.join(', ')}`);
+      const { buffer, filename, mimetype, fields } = fileData;
+
+      if (!ALLOWED_AUDIO_TYPES.includes(mimetype)) {
+        return badRequest(reply, `Audio type not allowed: ${mimetype}. Allowed: ${ALLOWED_AUDIO_TYPES.join(', ')}`);
       }
-
-      const buffer = await data.toBuffer();
 
       if (buffer.length > config.max_sound_size_bytes) {
         return badRequest(reply, `File too large. Maximum size is ${Math.round(config.max_sound_size_bytes / 1024)}KB`);
       }
 
       // Get name and duration from form fields
-      const fields = data.fields as any;
-      const name = (fields?.name?.value || data.filename.replace(/\.[^/.]+$/, '')).slice(0, 32);
-      const emoji = fields?.emoji?.value || null;
-      const duration = parseFloat(fields?.duration?.value || '0');
+      const name = (fields.name || filename.replace(/\.[^/.]+$/, '')).slice(0, 32);
+      const emoji = fields.emoji || undefined;
+      const duration = parseFloat(fields.duration || '0');
 
       if (duration <= 0) {
         return badRequest(reply, 'Duration is required');
@@ -99,9 +100,9 @@ export const soundboardRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       // Upload to storage
-      const ext = data.filename.split('.').pop() || 'mp3';
+      const ext = filename.split('.').pop() || 'mp3';
       const storagePath = `soundboard/${serverId}/${nanoid(12)}.${ext}`;
-      const url = await storage.uploadFile(buffer, storagePath, data.mimetype);
+      const url = await storage.uploadFile(buffer, storagePath, mimetype);
 
       const sound = await db.soundboard.create({
         server_id: serverId,

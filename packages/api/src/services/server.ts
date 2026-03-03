@@ -3,6 +3,7 @@ import { db } from '../lib/db.js';
 import { nanoid } from 'nanoid';
 import { getDefaultPermissions } from './permissions.js';
 import { permissionToString, RoleTemplates, ALL_PERMISSIONS, TextPermissions } from '@sgchat/shared';
+import { emitEncrypted } from '../lib/socketEmit.js';
 
 /**
  * Create a new server with default channels, categories, and roles
@@ -407,7 +408,7 @@ export async function handleMemberJoin(
 
     // Emit member:join event to all connected clients in the server
     if (io) {
-      io.to(`server:${serverId}`).emit('member.join', {
+      await emitEncrypted(io, `server:${serverId}`, 'member.join', {
         member: {
           id: user.id,
           username: user.username,
@@ -442,7 +443,7 @@ export async function handleMemberJoin(
 
       // Broadcast to channel via Socket.IO
       if (io) {
-        io.to(`channel:${server.welcome_channel_id}`).emit('message.new', {
+        await emitEncrypted(io, `channel:${server.welcome_channel_id}`, 'message.new', {
           ...message,
           type: 'system',
         });
@@ -468,7 +469,7 @@ export async function handleMemberLeave(
 
     // Emit member:leave event to all connected clients in the server
     if (io) {
-      io.to(`server:${serverId}`).emit('member.leave', {
+      await emitEncrypted(io, `server:${serverId}`, 'member.leave', {
         user_id: userId,
       });
     }
@@ -495,7 +496,7 @@ export async function handleMemberLeave(
 
       // Broadcast to channel via Socket.IO
       if (io) {
-        io.to(`channel:${server.welcome_channel_id}`).emit('message.new', {
+        await emitEncrypted(io, `channel:${server.welcome_channel_id}`, 'message.new', {
           ...message,
           type: 'system',
         });

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getEffectiveUrl, useNetworkStore } from '@/stores/network';
-import { authStore } from '@/stores/auth';
+import { useNetworkStore } from '@/stores/network';
+import { api } from '@/api';
 
 interface GifItem {
   id: string;
@@ -32,52 +32,27 @@ export function GifPicker({ isOpen, onClose, onSelect, anchorRef }: GifPickerPro
   const currentUrl = useNetworkStore((s) => s.currentUrl);
 
   const fetchGifs = useCallback(async (query?: string) => {
-    const apiUrl = getEffectiveUrl(currentUrl);
-    const token = authStore.getAccessToken();
-
-    if (!apiUrl || !token) {
-      setError('Not authenticated');
-      return;
-    }
-
     setIsLoading(true);
     setError(null);
     setRateLimited(false);
 
     try {
       const endpoint = query
-        ? `${apiUrl}/giphy/search?q=${encodeURIComponent(query)}&limit=25`
-        : `${apiUrl}/giphy/trending?limit=25`;
+        ? `/giphy/search?q=${encodeURIComponent(query)}&limit=25`
+        : `/giphy/trending?limit=25`;
 
-      const response = await fetch(endpoint, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (response.status === 429) {
-        const data = await response.json();
+      const data = await api.get<{ gifs?: GifItem[]; message?: string }>(endpoint);
+      setGifs(data?.gifs || []);
+    } catch (err: any) {
+      if (err?.status === 429) {
         setRateLimited(true);
-        setError(data.message || 'Rate limit exceeded');
-        setGifs([]);
-        return;
-      }
-
-      if (response.status === 503) {
+        setError(err.message || 'Rate limit exceeded');
+      } else if (err?.status === 503) {
         setError('GIF feature is not available on this server');
-        setGifs([]);
-        return;
+      } else {
+        console.error('Failed to fetch GIFs:', err);
+        setError('Failed to load GIFs');
       }
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch GIFs');
-      }
-
-      const data = await response.json();
-      setGifs(data.gifs || []);
-    } catch (err) {
-      console.error('Failed to fetch GIFs:', err);
-      setError('Failed to load GIFs');
       setGifs([]);
     } finally {
       setIsLoading(false);

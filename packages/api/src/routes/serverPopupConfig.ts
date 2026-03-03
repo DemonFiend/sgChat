@@ -9,6 +9,7 @@ import { hasPermission, ServerPermissions } from '@sgchat/shared';
 import { calculatePermissions } from '../services/permissions.js';
 import { forbidden, notFound, badRequest } from '../utils/errors.js';
 import { updatePopupConfigSchema } from '@sgchat/shared';
+import { emitEncrypted } from '../lib/socketEmit.js';
 import type { ServerPopupConfig } from '@sgchat/shared';
 
 /**
@@ -170,10 +171,10 @@ export const serverPopupConfigRoutes: FastifyPluginAsync = async (fastify) => {
             });
 
             // Broadcast updates to connected clients
-            fastify.io?.to(`server:${server.id}`).emit('server.popup_config.update', updatedConfig);
+            await emitEncrypted(fastify.io, `server:${server.id}`,'server.popup_config.update', updatedConfig);
             if (Object.keys(serverUpdates).length > 0) {
                 // Include server id so the frontend handler accepts the event
-                fastify.io?.to(`server:${server.id}`).emit('server.update', { id: server.id, ...serverUpdates });
+                await emitEncrypted(fastify.io, `server:${server.id}`,'server.update', { id: server.id, ...serverUpdates });
             }
 
             // Return updated config

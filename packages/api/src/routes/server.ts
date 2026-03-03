@@ -12,6 +12,7 @@ import type { AvatarLimits, ServerRetentionSettings } from '@sgchat/shared';
 import { calculatePermissions } from '../services/permissions.js';
 import { forbidden, notFound, badRequest } from '../utils/errors.js';
 import { z } from 'zod';
+import { emitEncrypted } from '../lib/socketEmit.js';
 import { getServerStorageStats } from '../services/segmentation.js';
 import { 
   getServerRetentionSettings, 
@@ -240,7 +241,7 @@ export const globalServerRoutes: FastifyPluginAsync = async (fastify) => {
 
       // Broadcast update
       const updated = await getDefaultServer();
-      fastify.io?.to(`server:${server.id}`).emit('server.update', updated);
+      await emitEncrypted(fastify.io, `server:${server.id}`,'server.update', updated);
 
       return updated;
     },
@@ -307,7 +308,7 @@ export const globalServerRoutes: FastifyPluginAsync = async (fastify) => {
       console.log(`🔄 Server ownership transferred from ${request.user!.id} to ${newOwnerId}`);
 
       // Broadcast update
-      fastify.io?.to(`server:${server.id}`).emit('server.ownership_transferred', {
+      await emitEncrypted(fastify.io, `server:${server.id}`,'server.ownership_transferred', {
         previous_owner_id: request.user!.id,
         new_owner_id: newOwnerId,
       });

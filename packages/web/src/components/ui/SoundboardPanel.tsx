@@ -140,31 +140,12 @@ export function SoundboardPanel({ serverId }: SoundboardPanelProps) {
 
       setUploading(true);
       try {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('name', name.slice(0, 32));
-        formData.append('duration', duration.toString());
-
-        const token = authStore.getAccessToken();
-        const response = await fetch(
-          `${getEffectiveUrl(null)}/servers/${serverId}/soundboard`,
-          {
-            method: 'POST',
-            headers: {
-              ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-            },
-            credentials: 'include',
-            body: formData,
-          }
+        const sound = await api.upload<any>(
+          `/servers/${serverId}/soundboard`,
+          file,
+          'file',
+          { name: name.slice(0, 32), duration: duration.toString() },
         );
-
-        if (!response.ok) {
-          const err = await response.json().catch(() => ({ error: 'Upload failed' }));
-          setError(err.error || err.message || 'Upload failed');
-          return;
-        }
-
-        const sound = await response.json();
         setSounds(prev => [sound, ...prev]);
       } catch (err: any) {
         setError(err.message || 'Upload failed');

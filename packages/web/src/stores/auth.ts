@@ -1,6 +1,14 @@
 import { create } from 'zustand';
 import { networkStore, getEffectiveUrl } from './network';
 import { encryptPassword, decryptPassword, hashPasswordForTransit } from '../lib/crypto';
+import { isEncryptedPayload } from '@sgchat/shared';
+import {
+  ensureCryptoSession,
+  encryptForTransport,
+  decryptFromTransport,
+  getCryptoSessionId,
+  hasCryptoSession,
+} from '../lib/transportCrypto';
 
 export interface User {
   id: string;
@@ -61,6 +69,47 @@ let refreshPromise: Promise<string> | null = null;
 function getApiUrl(): string {
   const currentUrl = networkStore.currentUrl();
   return getEffectiveUrl(currentUrl);
+}
+
+/**
+ * Encrypted fetch wrapper for auth endpoints.
+ * Uses transportCrypto directly to avoid circular dependency with api/client.ts.
+ */
+async function encryptedFetch(
+  url: string,
+  init: RequestInit & { body?: string },
+): Promise<Response> {
+  const apiUrl = getApiUrl();
+  const headers = new Headers(init.headers);
+
+  // Establish crypto session if needed
+  if (apiUrl) {
+    try {
+      await ensureCryptoSession(apiUrl);
+    } catch {
+      // Fallback to unencrypted if session negotiation fails
+    }
+  }
+
+  // Encrypt body if crypto session active and body exists
+  if (hasCryptoSession() && init.body) {
+    const encrypted = await encryptForTransport(init.body);
+    headers.set('Content-Type', 'application/json');
+    headers.set('X-Crypto-Session', getCryptoSessionId()!);
+    return fetch(url, { ...init, headers, body: JSON.stringify(encrypted) });
+  }
+
+  return fetch(url, { ...init, headers });
+}
+
+/** Decrypt response JSON if encrypted */
+async function decryptResponseJson(response: Response): Promise<unknown> {
+  const data = await response.json();
+  if (isEncryptedPayload(data)) {
+    const plaintext = await decryptFromTransport(data);
+    return JSON.parse(plaintext);
+  }
+  return data;
 }
 
 interface AuthState {
@@ -140,17 +189,17 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => {
       const apiUrl = getApiUrl();
       if (!apiUrl) throw new Error('No network selected');
       const hashedPassword = await hashPasswordForTransit(password);
-      const response = await fetch(`${apiUrl}/auth/login`, {
+      const response = await encryptedFetch(`${apiUrl}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ email, password: hashedPassword }),
       });
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Login failed');
+        const error = await decryptResponseJson(response);
+        throw new Error((error as any).message || 'Login failed');
       }
-      const data = await response.json();
+      const data = (await decryptResponseJson(response)) as any;
       setTokens(data.access_token, 900);
       startProactiveRefresh();
       set({ user: data.user, isAuthenticated: true, isLoading: false });
@@ -173,17 +222,17 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => {
       const apiUrl = getApiUrl();
       if (!apiUrl) throw new Error('No network selected');
       const hashedPassword = await hashPasswordForTransit(password);
-      const response = await fetch(`${apiUrl}/auth/register`, {
+      const response = await encryptedFetch(`${apiUrl}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ email, username, password: hashedPassword }),
       });
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Registration failed');
+        const error = await decryptResponseJson(response);
+        throw new Error((error as any).message || 'Registration failed');
       }
-      const data = await response.json();
+      const data = (await decryptResponseJson(response)) as any;
       setTokens(data.access_token, 900);
       startProactiveRefresh();
       set({ user: data.user, isAuthenticated: true, isLoading: false });
@@ -204,7 +253,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => {
         const wasAuthenticated = get().isAuthenticated || accessToken !== null;
         let response: Response;
         try {
-          response = await fetch(`${apiUrl}/auth/refresh`, { method: 'POST', credentials: 'include' });
+          response = await encryptedFetch(`${apiUrl}/auth/refresh`, { method: 'POST', credentials: 'include' });
         } catch {
           clearTokens();
           set({ user: null, isAuthenticated: false, isLoading: false });
@@ -217,7 +266,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => {
           if (wasAuthenticated) get().triggerAuthError('session_expired');
           throw new Error('Session expired');
         }
-        const data = await response.json();
+        const data = (await decryptResponseJson(response)) as any;
         setTokens(data.access_token, 900);
         return data.access_token;
       })().finally(() => {
@@ -232,7 +281,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => {
       const currentUser = get().user;
       try {
         if (apiUrl) {
-          await fetch(`${apiUrl}/auth/logout`, {
+          await encryptedFetch(`${apiUrl}/auth/logout`, {
             method: 'POST', credentials: 'include',
             headers: { Authorization: `Bearer ${accessToken}` },
           });
@@ -251,11 +300,11 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => {
       set((s) => ({ ...s, isLoading: true }));
       try {
         const token = await get().refreshAccessToken();
-        const response = await fetch(`${apiUrl}/users/me`, {
+        const response = await encryptedFetch(`${apiUrl}/users/me`, {
           headers: { Authorization: `Bearer ${token}` }, credentials: 'include',
         });
         if (!response.ok) throw new Error('Failed to fetch user');
-        const user = await response.json();
+        const user = (await decryptResponseJson(response)) as User;
         set({ user, isAuthenticated: true, isLoading: false });
         startProactiveRefresh();
         return true;
@@ -304,11 +353,11 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => {
       const token = get().getAccessToken();
       if (!apiUrl || !token) return null;
       try {
-        const response = await fetch(`${apiUrl}/users/me`, {
+        const response = await encryptedFetch(`${apiUrl}/users/me`, {
           headers: { Authorization: `Bearer ${token}` }, credentials: 'include',
         });
         if (!response.ok) return null;
-        const user = await response.json();
+        const user = (await decryptResponseJson(response)) as User;
         set((s) => ({ ...s, user }));
         return user;
       } catch { return null; }

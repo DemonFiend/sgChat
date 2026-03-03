@@ -83,10 +83,26 @@ const SOCKET_LIMITS = {
 function isRateLimited(socket: Socket, userId: string, event: keyof typeof SOCKET_LIMITS): boolean {
   const cfg = SOCKET_LIMITS[event];
   if (!socketLimiter.check(`${userId}:${event}`, cfg.max, cfg.windowMs)) {
-    socket.emit('error', { message: 'Rate limit exceeded', code: 'RATE_LIMITED' });
+    socketEmit(socket, 'error', { message: 'Rate limit exceeded', code: 'RATE_LIMITED' });
     return true;
   }
   return false;
+}
+
+/**
+ * Emit to a single socket with per-socket encryption when available.
+ */
+async function socketEmit(socket: Socket, event: string, payload: unknown): Promise<void> {
+  if (socket.data.cryptoKeyHex) {
+    try {
+      const encrypted = await encryptPayload(JSON.stringify(payload), socket.data.cryptoKeyHex);
+      socket.emit(event, encrypted);
+    } catch {
+      socket.emit(event, payload); // Fallback to unencrypted
+    }
+  } else {
+    socket.emit(event, payload);
+  }
 }
 
 export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
@@ -158,7 +174,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
             const plaintext = await decryptPayload(args[0], socket.data.cryptoKeyHex);
             args[0] = JSON.parse(plaintext);
           } catch {
-            socket.emit('error', { message: 'Decryption failed', code: 'DECRYPT_ERROR' });
+            socketEmit(socket, 'error', { message: 'Decryption failed', code: 'DECRYPT_ERROR' });
             return;
           }
         }
@@ -197,7 +213,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       heartbeat_interval: HEARTBEAT_INTERVAL,
       session_id: sessionId,
     };
-    socket.emit('gateway.hello', helloPayload);
+    await socketEmit(socket, 'gateway.hello', helloPayload);
 
     // ── Send gateway.ready with current sequences ─────────────
     const sequences = await getSequences(subscriptions);
@@ -213,7 +229,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       sequences,
       subscriptions,
     };
-    socket.emit('gateway.ready', readyPayload);
+    await socketEmit(socket, 'gateway.ready', readyPayload);
 
     // ── Persist gateway session for resume support ────────────
     await redis.setGatewaySession(sessionId, userId, subscriptions);
@@ -253,8 +269,8 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
 
     resetHeartbeat();
 
-    socket.on('gateway.heartbeat', () => {
-      socket.emit('gateway.heartbeat_ack', { timestamp: new Date().toISOString() });
+    socket.on('gateway.heartbeat', async () => {
+      await socketEmit(socket, 'gateway.heartbeat_ack', { timestamp: new Date().toISOString() });
       resetHeartbeat();
       // Keep the gateway session alive while the client is active
       redis.refreshGatewaySession(sessionId).catch(() => {});
@@ -272,7 +288,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         // Validate the stored session exists and belongs to this user
         const storedSession = await redis.getGatewaySession(resumeSessionId);
         if (!storedSession || storedSession.userId !== userId) {
-          socket.emit('gateway.resume_failed', {
+          await socketEmit(socket, 'gateway.resume_failed', {
             reason: 'invalid_session',
             message: 'Session not found or expired. Please reconnect normally.',
           });
@@ -344,13 +360,13 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
           subscriptions: freshSubscriptions,
         };
 
-        socket.emit('gateway.resumed', resumedPayload);
+        await socketEmit(socket, 'gateway.resumed', resumedPayload);
         fastify.log.info(
           `Session resumed for ${socket.data.user.username}: replayed ${missedEvents.length} events`
         );
       } catch (err) {
         fastify.log.error(err, 'Gateway resume failed');
-        socket.emit('gateway.resume_failed', {
+        await socketEmit(socket, 'gateway.resume_failed', {
           reason: 'internal_error',
           message: 'Resume failed due to server error. Please reconnect normally.',
         });
@@ -372,19 +388,19 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         redis.updateVoiceActivity(userId).catch(() => {});
 
         if (!data.content || data.content.trim().length === 0) {
-          socket.emit('error', { message: 'Message cannot be empty' });
+          socketEmit(socket, 'error', { message: 'Message cannot be empty' });
           return;
         }
 
         if (data.content.length > MAX_MESSAGE_LENGTH) {
-          socket.emit('error', { message: `Message must be at most ${MAX_MESSAGE_LENGTH} characters` });
+          socketEmit(socket, 'error', { message: `Message must be at most ${MAX_MESSAGE_LENGTH} characters` });
           return;
         }
 
         // Sanitize message content (strip HTML tags, preserve bare URLs)
         data.content = sanitizeMessage(data.content);
         if (data.content.trim().length === 0) {
-          socket.emit('error', { message: 'Message content is invalid' });
+          socketEmit(socket, 'error', { message: 'Message content is invalid' });
           return;
         }
 
@@ -398,7 +414,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
 
         const perms = await calculatePermissions(userId, channel.server_id, data.channel_id);
         if (!hasPermission(perms.text, TextPermissions.SEND_MESSAGES)) {
-          socket.emit('error', { message: 'Missing SEND_MESSAGES permission' });
+          socketEmit(socket, 'error', { message: 'Missing SEND_MESSAGES permission' });
           return;
         }
 
@@ -481,7 +497,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         }
       } catch (err) {
         fastify.log.error(err);
-        socket.emit('error', { message: 'Failed to send message' });
+        socketEmit(socket, 'error', { message: 'Failed to send message' });
       }
     });
 
@@ -493,25 +509,25 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         if (isRateLimited(socket, userId, 'message:edit')) return;
 
         if (!data.content || data.content.trim().length === 0) {
-          socket.emit('error', { message: 'Message cannot be empty' });
+          socketEmit(socket, 'error', { message: 'Message cannot be empty' });
           return;
         }
 
         if (data.content.length > MAX_MESSAGE_LENGTH) {
-          socket.emit('error', { message: `Message must be at most ${MAX_MESSAGE_LENGTH} characters` });
+          socketEmit(socket, 'error', { message: `Message must be at most ${MAX_MESSAGE_LENGTH} characters` });
           return;
         }
 
         // Sanitize message content (strip HTML tags, preserve bare URLs)
         data.content = sanitizeMessage(data.content);
         if (data.content.trim().length === 0) {
-          socket.emit('error', { message: 'Message content is invalid' });
+          socketEmit(socket, 'error', { message: 'Message content is invalid' });
           return;
         }
 
         const message = await db.messages.findById(data.message_id);
         if (!message || message.author_id !== userId) {
-          socket.emit('error', { message: 'Cannot edit this message' });
+          socketEmit(socket, 'error', { message: 'Cannot edit this message' });
           return;
         }
 
@@ -546,7 +562,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         });
       } catch (err) {
         fastify.log.error(err);
-        socket.emit('error', { message: 'Failed to edit message' });
+        socketEmit(socket, 'error', { message: 'Failed to edit message' });
       }
     });
 
@@ -565,7 +581,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         }
 
         if (!canDelete) {
-          socket.emit('error', { message: 'Cannot delete this message' });
+          socketEmit(socket, 'error', { message: 'Cannot delete this message' });
           return;
         }
 
@@ -580,7 +596,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         });
       } catch (err) {
         fastify.log.error(err);
-        socket.emit('error', { message: 'Failed to delete message' });
+        socketEmit(socket, 'error', { message: 'Failed to delete message' });
       }
     });
 
@@ -729,7 +745,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         }
       } catch (err) {
         fastify.log.error(err);
-        socket.emit('error', { message: 'Failed to update status comment' });
+        socketEmit(socket, 'error', { message: 'Failed to update status comment' });
       }
     });
 
@@ -748,7 +764,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
 
         const voiceChannelTypes = ['voice', 'temp_voice', 'temp_voice_generator', 'music'];
         if (!voiceChannelTypes.includes(channel.type)) {
-          socket.emit('error', { message: 'Not a voice channel' });
+          socketEmit(socket, 'error', { message: 'Not a voice channel' });
           return;
         }
 
@@ -772,7 +788,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         await redis.updateVoiceActivity(userId);
       } catch (err) {
         fastify.log.error(err);
-        socket.emit('error', { message: 'Failed to update voice state' });
+        socketEmit(socket, 'error', { message: 'Failed to update voice state' });
       }
     });
 
@@ -902,19 +918,19 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         if (isRateLimited(socket, userId, 'dm:send')) return;
 
         if (!data.content || data.content.trim().length === 0) {
-          socket.emit('error', { message: 'Message cannot be empty' });
+          socketEmit(socket, 'error', { message: 'Message cannot be empty' });
           return;
         }
 
         if (data.content.length > MAX_MESSAGE_LENGTH) {
-          socket.emit('error', { message: `Message must be at most ${MAX_MESSAGE_LENGTH} characters` });
+          socketEmit(socket, 'error', { message: `Message must be at most ${MAX_MESSAGE_LENGTH} characters` });
           return;
         }
 
         // Sanitize message content (strip HTML tags, preserve bare URLs)
         data.content = sanitizeMessage(data.content);
         if (data.content.trim().length === 0) {
-          socket.emit('error', { message: 'Message content is invalid' });
+          socketEmit(socket, 'error', { message: 'Message content is invalid' });
           return;
         }
 
@@ -926,13 +942,13 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         if (!dmChannel) return;
 
         if (dmChannel.user1_id !== userId && dmChannel.user2_id !== userId) {
-          socket.emit('error', { message: 'Not a participant' });
+          socketEmit(socket, 'error', { message: 'Not a participant' });
           return;
         }
 
         const recipientId = dmChannel.user1_id === userId ? dmChannel.user2_id : dmChannel.user1_id;
         if (await isBlocked(userId, recipientId)) {
-          socket.emit('error', { message: 'Cannot message this user' });
+          socketEmit(socket, 'error', { message: 'Cannot message this user' });
           return;
         }
 
@@ -991,7 +1007,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         });
       } catch (err) {
         fastify.log.error(err);
-        socket.emit('error', { message: 'Failed to send DM' });
+        socketEmit(socket, 'error', { message: 'Failed to send DM' });
       }
     });
 

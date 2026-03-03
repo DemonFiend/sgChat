@@ -182,11 +182,32 @@ async function uploadFile<T>(
   endpoint: string,
   file: File,
   fieldName: string = 'file',
+  extraFields?: Record<string, string>,
+  method: RequestMethod = 'POST',
 ): Promise<T> {
   const apiUrl = getApiUrl();
   if (!apiUrl) throw new ApiError('No network selected', 0);
   if (authStore.authError()) throw new ApiError('Session expired', 401);
 
+  // If crypto session is active, encrypt the file as JSON instead of multipart
+  if (hasCryptoSession()) {
+    const arrayBuffer = await file.arrayBuffer();
+    const base64Data = btoa(
+      new Uint8Array(arrayBuffer).reduce((s, b) => s + String.fromCharCode(b), ''),
+    );
+    const payload: Record<string, unknown> = {
+      _fileUpload: true,
+      filename: file.name,
+      mimetype: file.type || 'application/octet-stream',
+      data: base64Data,
+    };
+    if (extraFields && Object.keys(extraFields).length > 0) {
+      payload.fields = extraFields;
+    }
+    return request<T>(endpoint, { method, body: payload });
+  }
+
+  // Fallback: unencrypted multipart upload
   let token = authStore.getAccessToken();
   if (!token && authStore.state().isAuthenticated) {
     try {
@@ -198,12 +219,17 @@ async function uploadFile<T>(
 
   const formData = new FormData();
   formData.append(fieldName, file);
+  if (extraFields) {
+    for (const [k, v] of Object.entries(extraFields)) {
+      formData.append(k, v);
+    }
+  }
 
   const requestHeaders: Record<string, string> = {};
   if (token) requestHeaders['Authorization'] = `Bearer ${token}`;
 
   const response = await fetch(`${apiUrl}${endpoint}`, {
-    method: 'POST',
+    method,
     headers: requestHeaders,
     credentials: 'include',
     body: formData,
@@ -215,7 +241,7 @@ async function uploadFile<T>(
       const newToken = await authStore.refreshAccessToken();
       requestHeaders['Authorization'] = `Bearer ${newToken}`;
       const retryResponse = await fetch(`${apiUrl}${endpoint}`, {
-        method: 'POST',
+        method,
         headers: requestHeaders,
         credentials: 'include',
         body: formData,
@@ -228,7 +254,8 @@ async function uploadFile<T>(
           error,
         );
       }
-      return retryResponse.json();
+      const retryData = await retryResponse.json();
+      return (await maybeDecryptResponse(retryData)) as T;
     } catch {
       throw new ApiError('Session expired', 401);
     }
@@ -238,7 +265,8 @@ async function uploadFile<T>(
     const error = await response.json().catch(() => ({}));
     throw new ApiError((error as any).message || 'Upload failed', response.status, error);
   }
-  return response.json();
+  const responseData = await response.json();
+  return (await maybeDecryptResponse(responseData)) as T;
 }
 
 interface GetOptions {
@@ -264,8 +292,13 @@ export const api = {
     request<T>(endpoint, { method: 'PATCH', body, baseUrl }),
   delete: <T>(endpoint: string, baseUrl?: string) =>
     request<T>(endpoint, { method: 'DELETE', baseUrl }),
-  upload: <T>(endpoint: string, file: File, fieldName?: string) =>
-    uploadFile<T>(endpoint, file, fieldName),
+  upload: <T>(
+    endpoint: string,
+    file: File,
+    fieldName?: string,
+    extraFields?: Record<string, string>,
+    method?: RequestMethod,
+  ) => uploadFile<T>(endpoint, file, fieldName, extraFields, method),
 };
 
 export { ApiError };

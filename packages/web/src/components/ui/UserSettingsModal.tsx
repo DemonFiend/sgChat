@@ -1640,28 +1640,13 @@ function CustomVoiceSoundsSection() {
 
       setUploading(type);
       try {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('duration', duration.toString());
-
-        const token = authStore.getAccessToken();
-        const response = await fetch(
-          `${getEffectiveUrl(null)}/users/me/servers/${sid}/sounds/${type}`,
-          {
-            method: 'PUT',
-            headers: { ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
-            credentials: 'include',
-            body: formData,
-          }
+        const sound = await api.upload<any>(
+          `/users/me/servers/${sid}/sounds/${type}`,
+          file,
+          'file',
+          { duration: duration.toString() },
+          'PUT',
         );
-
-        if (!response.ok) {
-          const err = await response.json().catch(() => ({ error: 'Upload failed' }));
-          setError(err.error || err.message || 'Upload failed');
-          return;
-        }
-
-        const sound = await response.json();
         if (type === 'join') setJoinSound(sound);
         else setLeaveSound(sound);
       } catch (err: any) {
