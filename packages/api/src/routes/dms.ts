@@ -1,4 +1,5 @@
 import { FastifyPluginAsync } from 'fastify';
+import { createHash } from 'crypto';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { sendMessageSchema, RATE_LIMITS } from '@sgchat/shared';
@@ -82,8 +83,26 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
         limit ? parseInt(limit) : 50,
         before
       );
-      
-      return messages.reverse();
+
+      const formattedMessages = messages.reverse();
+
+      // Compute hash for cache validation (matches channel messages pattern)
+      const lastMessageId =
+        formattedMessages.length > 0
+          ? formattedMessages[formattedMessages.length - 1].id
+          : 'empty';
+      const dmHash = createHash('md5')
+        .update(`${lastMessageId}:${formattedMessages.length}`)
+        .digest('hex')
+        .slice(0, 16);
+
+      const clientHash = request.headers['if-none-match'];
+      if (clientHash === dmHash) {
+        return reply.status(304).send();
+      }
+
+      reply.header('ETag', dmHash);
+      return { messages: formattedMessages, hash: dmHash };
     },
   });
 

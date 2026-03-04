@@ -56,6 +56,9 @@ P2D.md
 agent-workstream.md
 markdown/
 
+# CocoIndex local index
+.cocoindex_code/
+
 # Beads local files and agent docs
 AGENTS.md
 .beads/
