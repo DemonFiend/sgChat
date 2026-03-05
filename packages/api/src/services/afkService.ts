@@ -9,6 +9,7 @@
 import { db, sql } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
 import { publishEvent } from '../lib/eventBus.js';
+import { markTempChannelEmpty } from './tempChannels.js';
 
 /**
  * Check all voice users across all servers and move idle users to AFK.
@@ -40,7 +41,7 @@ async function checkServerAfkUsers(
 ): Promise<void> {
   // Get all voice channels for this server (excluding the AFK channel itself)
   const voiceChannels = await sql`
-    SELECT id FROM channels
+    SELECT id, type, name FROM channels
     WHERE server_id = ${serverId}
       AND type IN ('voice', 'temp_voice', 'music')
       AND id != ${afkChannelId}
@@ -101,6 +102,15 @@ async function checkServerAfkUsers(
             user_id: userId,
           },
         });
+
+        // Check if the source channel is a temp channel that is now empty
+        if (channel.type === 'temp_voice') {
+          const remaining = await redis.getVoiceChannelParticipants(channel.id);
+          if (remaining.length === 0) {
+            await markTempChannelEmpty(channel.id);
+            console.log(`[AFK] Temp channel ${channel.name} is now empty after AFK move, starting cleanup timer`);
+          }
+        }
 
         // And voice.join for the AFK channel
         const user = await db.users.findById(userId);

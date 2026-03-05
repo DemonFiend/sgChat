@@ -44,6 +44,7 @@ export interface Server {
   welcome_channel_id: UUID | null;
   afk_channel_id: UUID | null;
   afk_timeout: number;
+  temp_channel_timeout: number;
   announce_joins: boolean;
   announce_leaves: boolean;
   announce_online: boolean;

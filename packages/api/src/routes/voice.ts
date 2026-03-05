@@ -427,6 +427,15 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
         },
       });
 
+      // Check if source channel is a temp channel that is now empty
+      if (fromChannel.is_temp_channel) {
+        const participants = await redis.getVoiceChannelParticipants(from_channel_id);
+        if (participants.length === 0) {
+          await markTempChannelEmpty(from_channel_id);
+          console.log(`🕐 Temp channel is now empty after member move, starting cleanup timer`);
+        }
+      }
+
       // Notify user via event bus to switch channels
       await publishEvent({
         type: 'voice.force_move',
@@ -468,7 +477,21 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
         return forbidden(reply, 'Missing DISCONNECT_MEMBERS permission');
       }
 
-      // Notify user via event bus to disconnect
+      // Server-side cleanup (don't rely on client to emit voice:leave)
+      await redis.leaveVoiceChannel(user_id);
+
+      // Publish voice.leave so other clients update participant lists
+      await publishEvent({
+        type: 'voice.leave',
+        actorId: user_id,
+        resourceId: `server:${channel.server_id}`,
+        payload: {
+          channel_id,
+          user_id,
+        },
+      });
+
+      // Notify the disconnected user
       await publishEvent({
         type: 'voice.force_disconnect',
         actorId: request.user!.id,
@@ -478,6 +501,15 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
           disconnected_by: request.user!.id,
         },
       });
+
+      // Check if temp channel is now empty
+      if (channel.is_temp_channel) {
+        const participants = await redis.getVoiceChannelParticipants(channel_id);
+        if (participants.length === 0) {
+          await markTempChannelEmpty(channel_id);
+          console.log(`🕐 Temp channel is now empty after force disconnect, starting cleanup timer`);
+        }
+      }
 
       return { message: 'Disconnect requested' };
     },

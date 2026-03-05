@@ -56,7 +56,10 @@ CREATE TABLE servers (
   
   -- AFK settings
   afk_timeout INTEGER DEFAULT 300 CHECK (afk_timeout > 0), -- seconds
-  
+
+  -- Temp voice channel settings
+  temp_channel_timeout INTEGER DEFAULT 900 CHECK (temp_channel_timeout >= 30 AND temp_channel_timeout <= 86400), -- seconds before empty temp channels are deleted
+
   -- Server settings
   motd TEXT CHECK (length(motd) <= 2000), -- Message of the day
   motd_enabled BOOLEAN DEFAULT false,

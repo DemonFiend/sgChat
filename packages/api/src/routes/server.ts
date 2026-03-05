@@ -33,6 +33,7 @@ const updateServerSchema = z.object({
   timezone: z.string().max(50).optional(),
   afk_timeout: z.number().int().min(60).max(3600).optional(), // 1 min to 1 hour
   afk_channel_id: z.string().uuid().nullable().optional(),
+  temp_channel_timeout: z.number().int().min(30).max(86400).optional(), // 30s to 24h
   welcome_channel_id: z.string().uuid().nullable().optional(),
   announce_joins: z.boolean().optional(),
   announce_leaves: z.boolean().optional(),
@@ -124,6 +125,7 @@ export const globalServerRoutes: FastifyPluginAsync = async (fastify) => {
           announce_leaves: server.announce_leaves,
           announce_online: server.announce_online,
           afk_timeout: server.afk_timeout,
+          temp_channel_timeout: server.temp_channel_timeout,
           welcome_channel_id: server.welcome_channel_id,
           afk_channel_id: server.afk_channel_id,
         };
@@ -193,6 +195,7 @@ export const globalServerRoutes: FastifyPluginAsync = async (fastify) => {
       if (body.timezone !== undefined) updates.timezone = body.timezone;
       if (body.afk_timeout !== undefined) updates.afk_timeout = body.afk_timeout;
       if ('afk_channel_id' in body) updates.afk_channel_id = body.afk_channel_id;
+      if (body.temp_channel_timeout !== undefined) updates.temp_channel_timeout = body.temp_channel_timeout;
       if ('welcome_channel_id' in body) updates.welcome_channel_id = body.welcome_channel_id;
       if (body.announce_joins !== undefined) updates.announce_joins = body.announce_joins;
       if (body.announce_leaves !== undefined) updates.announce_leaves = body.announce_leaves;

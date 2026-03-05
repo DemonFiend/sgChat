@@ -336,10 +336,24 @@ export const db = {
     },
     async findByServerId(serverId: string) {
       return sql`
-        SELECT m.*, u.username, u.avatar_url, u.status, u.custom_status
+        SELECT m.user_id, m.server_id, m.nickname, m.announce_online, m.joined_at,
+               u.username, u.display_name, u.avatar_url, u.status, u.custom_status,
+               COALESCE(
+                 json_agg(
+                   json_build_object(
+                     'id', r.id, 'name', r.name, 'color', r.color,
+                     'position', r.position, 'is_hoisted', r.is_hoisted
+                   )
+                 ) FILTER (WHERE r.id IS NOT NULL),
+                 '[]'
+               ) AS roles
         FROM members m
         INNER JOIN users u ON m.user_id = u.id
+        LEFT JOIN member_roles mr ON m.user_id = mr.member_user_id AND m.server_id = mr.member_server_id
+        LEFT JOIN roles r ON mr.role_id = r.id
         WHERE m.server_id = ${serverId}
+        GROUP BY m.user_id, m.server_id, m.nickname, m.announce_online, m.joined_at,
+                 u.username, u.display_name, u.avatar_url, u.status, u.custom_status
         ORDER BY u.username ASC
       `;
     },

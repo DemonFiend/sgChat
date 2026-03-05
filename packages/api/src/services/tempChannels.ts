@@ -18,7 +18,7 @@ export interface TempChannelSettings {
 }
 
 const DEFAULT_TEMP_SETTINGS: TempChannelSettings = {
-  empty_timeout_seconds: 300, // 5 minutes
+  empty_timeout_seconds: 900, // 15 minutes
   max_temp_channels_per_user: 2,
   inherit_generator_permissions: true,
   default_user_limit: 0,
@@ -234,16 +234,14 @@ export async function cleanupEmptyTempChannels(): Promise<{
   deleted: number;
   channels: string[];
 }> {
-  const settings = await getTempChannelSettings();
-  const timeoutSeconds = settings.empty_timeout_seconds;
-
-  // Find temp channels that have been empty for longer than the timeout
+  // Find temp channels that have been empty for longer than their server's timeout
   const expiredChannels = await db.sql`
-    SELECT id, name, server_id
-    FROM channels
-    WHERE is_temp_channel = true
-      AND temp_channel_last_empty_at IS NOT NULL
-      AND temp_channel_last_empty_at < NOW() - (INTERVAL '1 second' * ${timeoutSeconds})
+    SELECT c.id, c.name, c.server_id
+    FROM channels c
+    INNER JOIN servers s ON c.server_id = s.id
+    WHERE c.is_temp_channel = true
+      AND c.temp_channel_last_empty_at IS NOT NULL
+      AND c.temp_channel_last_empty_at < NOW() - (INTERVAL '1 second' * COALESCE(s.temp_channel_timeout, 900))
   `;
 
   const deleted: string[] = [];
