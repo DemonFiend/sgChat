@@ -37,6 +37,8 @@ import { giphyRoutes } from './routes/giphy.js';
 import { soundboardRoutes } from './routes/soundboard.js';
 import { cryptoRoutes } from './routes/crypto.js';
 import { roleReactionRoutes } from './routes/roleReactions.js';
+import { releasesRoutes } from './routes/releases.js';
+import { crashReportsRoutes } from './routes/crashReports.js';
 import { cryptoPayloadPlugin } from './plugins/cryptoPayload.js';
 import { initSocketIO } from './socket/index.js';
 import { cleanupEmptyTempChannels } from './services/tempChannels.js';
@@ -201,6 +203,12 @@ async function start() {
     // Role reaction routes
     await api.register(roleReactionRoutes, { prefix: '/servers' });
 
+    // Releases (update check)
+    await api.register(releasesRoutes);
+
+    // Crash reports
+    await api.register(crashReportsRoutes);
+
     // Crypto key exchange (unauthenticated)
     await api.register(cryptoRoutes, { prefix: '/crypto' });
 
@@ -259,6 +267,8 @@ async function start() {
   await fastify.register(giphyRoutes, { prefix: '/giphy' });
   await fastify.register(soundboardRoutes, { prefix: '/servers' });
   await fastify.register(roleReactionRoutes, { prefix: '/servers' });
+  await fastify.register(releasesRoutes);
+  await fastify.register(crashReportsRoutes);
 
   // ============================================================
   // Web Client - serve built SPA from packages/web/dist

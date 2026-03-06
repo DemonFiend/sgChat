@@ -4,7 +4,7 @@ import { db } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
 import { storage } from '../lib/storage.js';
 import { publishEvent } from '../lib/eventBus.js';
-import { UserStatus, usernameSchema, updateStatusSchema, updateCustomStatusSchema, updateStatusCommentSchema, toNamedPermissions, DEFAULT_AVATAR_LIMITS, isPreHashedPassword } from '@sgchat/shared';
+import { UserStatus, usernameSchema, updateStatusSchema, updateCustomStatusSchema, updateStatusCommentSchema, toNamedPermissions, DEFAULT_AVATAR_LIMITS, isPreHashedPassword, updateActivitySchema, updateKeybindsSchema } from '@sgchat/shared';
 import type { AvatarLimits, UserAvatar } from '@sgchat/shared';
 import { z } from 'zod';
 import { notFound, badRequest, unauthorized, forbidden } from '../utils/errors.js';
@@ -1305,6 +1305,104 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
 
       await db.userVoiceSounds.delete(request.user!.id, serverId, type);
       return { message: 'Sound removed' };
+    },
+  });
+
+  // ── Activity / Rich Presence ───────────────────────────────
+
+  // PATCH /users/me/activity - Set activity
+  fastify.patch('/me/activity', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const parsed = updateActivitySchema.safeParse(request.body);
+      if (!parsed.success) return badRequest(reply, parsed.error.message);
+
+      const activity = parsed.data;
+      const userId = request.user!.id;
+
+      await db.sql`
+        UPDATE users
+        SET activity = ${JSON.stringify(activity)}, activity_updated_at = NOW()
+        WHERE id = ${userId}
+      `;
+
+      // Broadcast to all servers the user belongs to
+      const servers = await db.sql`
+        SELECT server_id FROM members WHERE user_id = ${userId}
+      `;
+      for (const s of servers) {
+        await publishEvent({
+          type: 'activity.update',
+          actorId: userId,
+          resourceId: `server:${s.server_id}`,
+          payload: { user_id: userId, activity },
+        });
+      }
+
+      return { success: true };
+    },
+  });
+
+  // DELETE /users/me/activity - Clear activity
+  fastify.delete('/me/activity', {
+    onRequest: [authenticate],
+    handler: async (request) => {
+      const userId = request.user!.id;
+
+      await db.sql`
+        UPDATE users
+        SET activity = NULL, activity_updated_at = NULL
+        WHERE id = ${userId}
+      `;
+
+      const servers = await db.sql`
+        SELECT server_id FROM members WHERE user_id = ${userId}
+      `;
+      for (const s of servers) {
+        await publishEvent({
+          type: 'activity.update',
+          actorId: userId,
+          resourceId: `server:${s.server_id}`,
+          payload: { user_id: userId, activity: null },
+        });
+      }
+
+      return { success: true };
+    },
+  });
+
+  // ── Keybinds Sync ──────────────────────────────────────────
+
+  // GET /users/me/keybinds
+  fastify.get('/me/keybinds', {
+    onRequest: [authenticate],
+    handler: async (request) => {
+      const [row] = await db.sql`
+        SELECT keybinds FROM user_settings WHERE user_id = ${request.user!.id}
+      `;
+      return { keybinds: row?.keybinds ?? {} };
+    },
+  });
+
+  // PATCH /users/me/keybinds - Merge keybinds
+  fastify.patch('/me/keybinds', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const parsed = updateKeybindsSchema.safeParse(request.body);
+      if (!parsed.success) return badRequest(reply, parsed.error.message);
+
+      const keybinds = parsed.data;
+      const userId = request.user!.id;
+
+      const [row] = await db.sql`
+        INSERT INTO user_settings (user_id, keybinds)
+        VALUES (${userId}, ${JSON.stringify(keybinds)})
+        ON CONFLICT (user_id)
+        DO UPDATE SET keybinds = user_settings.keybinds || ${JSON.stringify(keybinds)}, updated_at = NOW()
+        RETURNING keybinds
+      `;
+
+      return { keybinds: row.keybinds };
     },
   });
 };

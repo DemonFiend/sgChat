@@ -337,7 +337,7 @@ export const db = {
     async findByServerId(serverId: string) {
       return sql`
         SELECT m.user_id, m.server_id, m.nickname, m.announce_online, m.joined_at,
-               u.username, u.display_name, u.avatar_url, u.status, u.custom_status,
+               u.username, u.display_name, u.avatar_url, u.status, u.custom_status, u.activity,
                COALESCE(
                  json_agg(
                    json_build_object(
@@ -353,7 +353,7 @@ export const db = {
         LEFT JOIN roles r ON mr.role_id = r.id
         WHERE m.server_id = ${serverId}
         GROUP BY m.user_id, m.server_id, m.nickname, m.announce_online, m.joined_at,
-                 u.username, u.display_name, u.avatar_url, u.status, u.custom_status
+                 u.username, u.display_name, u.avatar_url, u.status, u.custom_status, u.activity
         ORDER BY u.username ASC
       `;
     },

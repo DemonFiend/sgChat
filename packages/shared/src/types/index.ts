@@ -434,6 +434,8 @@ export type EventType =
   | 'presence.update'
   // Status comments
   | 'status_comment.update'
+  // Activity
+  | 'activity.update'
   // Typing
   | 'typing.start'
   | 'typing.stop'
@@ -866,4 +868,51 @@ export interface RoleReactionMapping {
   emoji: string;
   label: string | null;
   position: number;
+}
+
+// ============================================================
+// Activity / Rich Presence
+// ============================================================
+
+export type ActivityType = 'playing' | 'listening' | 'watching' | 'streaming' | 'competing' | 'custom';
+
+export interface UserActivity {
+  type: ActivityType;
+  name: string;
+  details?: string | null;
+  state?: string | null;
+  started_at?: string | null;
+  large_image_url?: string | null;
+  small_image_url?: string | null;
+}
+
+export interface ActivityUpdatePayload {
+  user_id: UUID;
+  activity: UserActivity | null;
+}
+
+// ============================================================
+// Channel Notification Settings
+// ============================================================
+
+export type NotificationLevel = 'all' | 'mentions' | 'none' | 'default';
+
+export interface ChannelNotificationSettings {
+  level: NotificationLevel;
+  suppress_everyone: boolean;
+  suppress_roles: boolean;
+}
+
+// ============================================================
+// Releases
+// ============================================================
+
+export interface Release {
+  id: string;
+  version: string;
+  platform: string;
+  download_url: string;
+  changelog: string | null;
+  required: boolean;
+  published_at: string;
 }

@@ -5,6 +5,7 @@ import { socketService } from './socket';
 import { soundService } from './soundService';
 import { SCREEN_SHARE_QUALITIES } from '@sgchat/shared';
 import { streamViewerStore } from '@/stores/streamViewer';
+import { isElectron, getElectronAPI } from './electron';
 
 interface JoinVoiceResponse {
   token: string;
@@ -77,6 +78,7 @@ class VoiceServiceClass {
   private userVolumes: Map<string, number> = new Map();
   private localMutes: Set<string> = new Set();
   private _isServerMuted: boolean = false;
+  private electronScreenShareCleanup: (() => void) | null = null;
   private _isServerDeafened: boolean = false;
   private _isIntentionalLeave: boolean = false;
 
@@ -785,7 +787,13 @@ class VoiceServiceClass {
 
     try {
       const qualityConfig = SCREEN_SHARE_QUALITIES[quality.toUpperCase() as keyof typeof SCREEN_SHARE_QUALITIES];
-      
+
+      // Use Electron-specific path if available (WASAPI app-specific audio)
+      if (isElectron()) {
+        await this.startScreenShareElectron(quality, qualityConfig);
+        return;
+      }
+
       await this.room.localParticipant.setScreenShareEnabled(true, {
         audio: true,
         resolution: quality === 'native' ? undefined : {
@@ -800,28 +808,7 @@ class VoiceServiceClass {
         },
       });
 
-      voiceStore.setScreenSharing(true);
-      voiceStore.setScreenShareQuality(quality);
-      console.log('[VoiceService] Screen share started with quality:', quality);
-
-      // Create local video element for host preview
-      this.createLocalScreenSharePreview();
-
-      // Notify server and update local participant state
-      const channelId = voiceStore.currentChannelId();
-      if (channelId) {
-        // Update local participant's isStreaming state immediately
-        const userId = this.room?.localParticipant.identity;
-        if (userId) {
-          voiceStore.updateParticipantState(channelId, userId, { isStreaming: true });
-        }
-        
-        socketService.emit('voice:update', {
-          muted: voiceStore.isMuted(),
-          deafened: voiceStore.isDeafened(),
-          screen_sharing: true,
-        });
-      }
+      this.finalizeScreenShareStart(quality);
     } catch (err: any) {
       console.error('[VoiceService] Failed to start screen share:', err);
       if (err.name === 'NotAllowedError') {
@@ -833,13 +820,203 @@ class VoiceServiceClass {
   }
 
   /**
+   * Electron-specific screen share using desktopCapturer and optional WASAPI audio
+   */
+  private async startScreenShareElectron(
+    quality: ScreenShareQuality,
+    qualityConfig: { width: number; height: number; fps: number; bitrate: number },
+  ): Promise<void> {
+    const electronAPI = getElectronAPI();
+    if (!electronAPI || !this.room) return;
+
+    // Get available sources via Electron's desktopCapturer
+    const sources = await electronAPI.screenShare.getSources();
+    if (!sources.length) {
+      voiceStore.setError('No screen sources available');
+      return;
+    }
+
+    // Wait for user to pick a source and audio mode
+    const selection = await new Promise<{ sourceId: string; audioMode: 'system' | 'app' | 'none' } | null>((resolve) => {
+      const cleanupPick = electronAPI.screenShare.onPickRequest(() => {
+        // Picker is being shown by Electron main process
+      });
+      const cleanupAudio = electronAPI.screenShare.onAudioModeSelected((mode) => {
+        // This fires after selectSource with the chosen audio mode
+        cleanupPick();
+        cleanupAudio();
+        resolve({ sourceId: selectedSourceId, audioMode: mode });
+      });
+
+      // For now, select the first source — in practice, the Electron app
+      // shows a picker and calls selectSource(id, audioMode) which triggers onAudioModeSelected
+      let selectedSourceId = sources[0].id;
+
+      // If Electron has a native picker, it handles source selection.
+      // We just need to wait for the audio mode callback.
+      // Fallback: auto-select first source with system audio
+      const timeout = setTimeout(() => {
+        cleanupPick();
+        cleanupAudio();
+        resolve({ sourceId: sources[0].id, audioMode: 'system' });
+      }, 30000);
+
+      // Listen for source selection from Electron picker
+      const origCleanupAudio = cleanupAudio;
+      electronAPI.screenShare.onAudioModeSelected((mode) => {
+        clearTimeout(timeout);
+        resolve({ sourceId: selectedSourceId, audioMode: mode });
+      });
+    });
+
+    if (!selection) {
+      voiceStore.setError('Screen sharing was cancelled');
+      return;
+    }
+
+    // Get video track via Electron's desktopCapturer
+    const videoStream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        mandatory: {
+          chromeMediaSource: 'desktop',
+          chromeMediaSourceId: selection.sourceId,
+          maxWidth: quality === 'native' ? undefined : qualityConfig.width,
+          maxHeight: quality === 'native' ? undefined : qualityConfig.height,
+          maxFrameRate: qualityConfig.fps,
+        },
+      } as any,
+    });
+
+    const videoTrack = videoStream.getVideoTracks()[0];
+    if (!videoTrack) {
+      voiceStore.setError('Failed to capture screen video');
+      return;
+    }
+
+    // Publish video track as screen share
+    await this.room.localParticipant.publishTrack(videoTrack, {
+      source: Track.Source.ScreenShare,
+      name: 'screen_share',
+    });
+
+    // Handle audio based on mode
+    if (selection.audioMode === 'app' && await electronAPI.appAudio.isSupported()) {
+      // App-specific audio via WASAPI: receive PCM frames and create a MediaStreamTrack
+      const audioContext = new AudioContext({ sampleRate: 48000 });
+      const scriptNode = audioContext.createScriptProcessor(4096, 1, 1);
+      let pendingBuffer: Float32Array | null = null;
+
+      const cleanupPcm = electronAPI.appAudio.onPcmData((buffer: ArrayBuffer) => {
+        pendingBuffer = new Float32Array(buffer);
+      });
+
+      scriptNode.onaudioprocess = (e) => {
+        const output = e.outputBuffer.getChannelData(0);
+        if (pendingBuffer) {
+          const len = Math.min(output.length, pendingBuffer.length);
+          output.set(pendingBuffer.subarray(0, len));
+          pendingBuffer = pendingBuffer.length > len ? pendingBuffer.subarray(len) : null;
+        } else {
+          output.fill(0);
+        }
+      };
+
+      const dest = audioContext.createMediaStreamDestination();
+      scriptNode.connect(dest);
+      // Also connect to audioContext.destination to keep the node alive
+      scriptNode.connect(audioContext.destination);
+
+      const audioTrack = dest.stream.getAudioTracks()[0];
+      if (audioTrack) {
+        await this.room.localParticipant.publishTrack(audioTrack, {
+          source: Track.Source.ScreenShareAudio,
+          name: 'screen_share_audio',
+        });
+      }
+
+      const cleanupSourceLost = electronAPI.appAudio.onSourceLost(() => {
+        console.log('[VoiceService] App audio source lost, stopping screen share audio');
+        this.stopScreenShare();
+      });
+
+      this.electronScreenShareCleanup = () => {
+        cleanupPcm();
+        cleanupSourceLost();
+        electronAPI.appAudio.stop();
+        scriptNode.disconnect();
+        audioContext.close();
+      };
+    } else if (selection.audioMode === 'system') {
+      // System audio via getDisplayMedia (standard browser path)
+      try {
+        const audioStream = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: false });
+        const audioTrack = audioStream.getAudioTracks()[0];
+        if (audioTrack) {
+          await this.room.localParticipant.publishTrack(audioTrack, {
+            source: Track.Source.ScreenShareAudio,
+            name: 'screen_share_audio',
+          });
+        }
+      } catch {
+        console.warn('[VoiceService] System audio capture not available, sharing without audio');
+      }
+    }
+    // audioMode === 'none': no audio track published
+
+    this.finalizeScreenShareStart(quality);
+  }
+
+  /**
+   * Common post-start logic for screen share (both browser and Electron paths)
+   */
+  private finalizeScreenShareStart(quality: ScreenShareQuality): void {
+    voiceStore.setScreenSharing(true);
+    voiceStore.setScreenShareQuality(quality);
+    console.log('[VoiceService] Screen share started with quality:', quality);
+
+    // Create local video element for host preview
+    this.createLocalScreenSharePreview();
+
+    // Notify server and update local participant state
+    const channelId = voiceStore.currentChannelId();
+    if (channelId) {
+      const userId = this.room?.localParticipant.identity;
+      if (userId) {
+        voiceStore.updateParticipantState(channelId, userId, { isStreaming: true });
+      }
+
+      socketService.emit('voice:update', {
+        muted: voiceStore.isMuted(),
+        deafened: voiceStore.isDeafened(),
+        screen_sharing: true,
+      });
+    }
+  }
+
+  /**
    * Stop screen sharing
    */
   async stopScreenShare(): Promise<void> {
     if (!this.room) return;
 
     try {
-      await this.room.localParticipant.setScreenShareEnabled(false);
+      // Clean up Electron-specific resources
+      if (this.electronScreenShareCleanup) {
+        this.electronScreenShareCleanup();
+        this.electronScreenShareCleanup = null;
+
+        // Unpublish all screen share tracks manually (Electron path)
+        for (const pub of this.room.localParticipant.trackPublications.values()) {
+          if (pub.source === Track.Source.ScreenShare || pub.source === Track.Source.ScreenShareAudio) {
+            await this.room.localParticipant.unpublishTrack(pub.track!);
+          }
+        }
+      } else {
+        // Standard browser path
+        await this.room.localParticipant.setScreenShareEnabled(false);
+      }
+
       voiceStore.setScreenSharing(false);
       console.log('[VoiceService] Screen share stopped');
 

@@ -282,3 +282,68 @@ export type UpdateRoleReactionMappingInput = z.infer<typeof updateRoleReactionMa
 export type ReorderRoleReactionMappingsInput = z.infer<typeof reorderRoleReactionMappingsSchema>;
 export type RoleReactionSetupInput = z.infer<typeof roleReactionSetupSchema>;
 export type FormatChannelInput = z.infer<typeof formatChannelSchema>;
+
+// ============================================================
+// Activity / Rich Presence validators
+// ============================================================
+
+export const updateActivitySchema = z.object({
+  type: z.enum(['playing', 'listening', 'watching', 'streaming', 'competing', 'custom']),
+  name: z.string().min(1).max(128),
+  details: z.string().max(128).nullable().optional(),
+  state: z.string().max(128).nullable().optional(),
+  started_at: z.string().nullable().optional(),
+  large_image_url: z.string().url().nullable().optional(),
+  small_image_url: z.string().url().nullable().optional(),
+});
+
+export type UpdateActivityInput = z.infer<typeof updateActivitySchema>;
+
+// ============================================================
+// Keybinds validators
+// ============================================================
+
+export const updateKeybindsSchema = z.record(z.string().max(50), z.string().max(50));
+
+export type UpdateKeybindsInput = z.infer<typeof updateKeybindsSchema>;
+
+// ============================================================
+// Channel notification settings validators
+// ============================================================
+
+export const channelNotificationSettingsSchema = z.object({
+  level: z.enum(['all', 'mentions', 'none', 'default']),
+  suppress_everyone: z.boolean().optional(),
+  suppress_roles: z.boolean().optional(),
+});
+
+export type ChannelNotificationSettingsInput = z.infer<typeof channelNotificationSettingsSchema>;
+
+// ============================================================
+// Releases validators
+// ============================================================
+
+export const createReleaseSchema = z.object({
+  version: z.string().min(1).max(20),
+  platform: z.enum(['windows', 'mac', 'linux', 'all']).optional(),
+  download_url: z.string().url(),
+  changelog: z.string().max(5000).nullable().optional(),
+  required: z.boolean().optional(),
+});
+
+export type CreateReleaseInput = z.infer<typeof createReleaseSchema>;
+
+// ============================================================
+// Crash reports validators
+// ============================================================
+
+export const crashReportSchema = z.object({
+  version: z.string().min(1).max(20),
+  platform: z.string().min(1).max(20),
+  error_type: z.string().max(100).optional(),
+  error_message: z.string().max(1000).optional(),
+  stack_trace: z.string().max(10000).optional(),
+  metadata: z.record(z.unknown()).optional(),
+});
+
+export type CrashReportInput = z.infer<typeof crashReportSchema>;

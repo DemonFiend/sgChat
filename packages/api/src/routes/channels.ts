@@ -6,7 +6,7 @@ import { canAccessChannel, calculatePermissions } from '../services/permissions.
 import { publishEvent } from '../lib/eventBus.js';
 import { createNotification } from './notifications.js';
 import { processMentions } from '../services/mentions.js';
-import { ServerPermissions, TextPermissions, hasPermission, sendMessageSchema } from '@sgchat/shared';
+import { ServerPermissions, TextPermissions, hasPermission, sendMessageSchema, channelNotificationSettingsSchema } from '@sgchat/shared';
 import { notFound, forbidden, badRequest } from '../utils/errors.js';
 import { sanitizeMessage } from '../utils/sanitize.js';
 import { z } from 'zod';
@@ -1618,6 +1618,73 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
           ? Math.round((stats.total_size_bytes / retention.size_limit_bytes) * 100)
           : null,
       };
+    },
+  });
+
+  // ── Per-Channel Notification Settings ──────────────────────
+
+  // GET /channels/notification-settings - Bulk fetch all overrides for current user
+  fastify.get('/notification-settings', {
+    onRequest: [authenticate],
+    handler: async (request) => {
+      const rows = await db.sql`
+        SELECT channel_id, level, suppress_everyone, suppress_roles
+        FROM channel_notification_settings
+        WHERE user_id = ${request.user!.id}
+      `;
+      return { settings: rows };
+    },
+  });
+
+  // GET /channels/:id/notification-settings
+  fastify.get('/:id/notification-settings', {
+    onRequest: [authenticate],
+    handler: async (request) => {
+      const { id } = request.params as { id: string };
+      const [row] = await db.sql`
+        SELECT level, suppress_everyone, suppress_roles
+        FROM channel_notification_settings
+        WHERE user_id = ${request.user!.id} AND channel_id = ${id}
+      `;
+      return row ?? { level: 'default', suppress_everyone: false, suppress_roles: false };
+    },
+  });
+
+  // PATCH /channels/:id/notification-settings
+  fastify.patch('/:id/notification-settings', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const parsed = channelNotificationSettingsSchema.safeParse(request.body);
+      if (!parsed.success) return badRequest(reply, parsed.error.message);
+
+      const { level, suppress_everyone, suppress_roles } = parsed.data;
+      const userId = request.user!.id;
+
+      const [row] = await db.sql`
+        INSERT INTO channel_notification_settings (user_id, channel_id, level, suppress_everyone, suppress_roles)
+        VALUES (${userId}, ${id}, ${level}, ${suppress_everyone ?? false}, ${suppress_roles ?? false})
+        ON CONFLICT (user_id, channel_id)
+        DO UPDATE SET
+          level = ${level},
+          suppress_everyone = ${suppress_everyone ?? false},
+          suppress_roles = ${suppress_roles ?? false}
+        RETURNING level, suppress_everyone, suppress_roles
+      `;
+      return row;
+    },
+  });
+
+  // DELETE /channels/:id/notification-settings - Remove override
+  fastify.delete('/:id/notification-settings', {
+    onRequest: [authenticate],
+    handler: async (request) => {
+      const { id } = request.params as { id: string };
+      await db.sql`
+        DELETE FROM channel_notification_settings
+        WHERE user_id = ${request.user!.id} AND channel_id = ${id}
+      `;
+      return { success: true };
     },
   });
 };

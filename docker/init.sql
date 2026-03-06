@@ -31,7 +31,11 @@ CREATE TABLE users (
   -- Activity tracking
   last_seen_at TIMESTAMPTZ DEFAULT NOW(),
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+
+  -- Rich presence / activity
+  activity JSONB DEFAULT NULL,
+  activity_updated_at TIMESTAMPTZ DEFAULT NULL
 );
 
 CREATE INDEX idx_users_username ON users(username);
@@ -375,7 +379,10 @@ CREATE TABLE user_settings (
   -- Notification Sounds
   enable_sounds BOOLEAN DEFAULT true,
   enable_voice_join_sounds BOOLEAN DEFAULT true,
-  
+
+  -- Desktop keybinds
+  keybinds JSONB DEFAULT '{}',
+
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -1243,7 +1250,13 @@ BEGIN
     -- Weekly size limit enforcement (Sunday at 4 AM UTC)
     PERFORM cron.schedule('size-limit-weekly', '0 4 * * 0',
       $query$SELECT * FROM run_size_limit_enforcement()$query$);
-    
+
+    -- Clear stale activity every 5 minutes (15 min timeout)
+    PERFORM cron.schedule('clear-stale-activity', '*/5 * * * *',
+      $query$UPDATE users SET activity = NULL, activity_updated_at = NULL
+        WHERE activity IS NOT NULL
+          AND activity_updated_at < NOW() - INTERVAL '15 minutes'$query$);
+
     RAISE NOTICE 'pg_cron jobs scheduled successfully';
   ELSE
     RAISE NOTICE 'pg_cron extension not available, skipping job scheduling';
@@ -1403,3 +1416,51 @@ ALTER TABLE audit_log ADD CONSTRAINT audit_log_action_check CHECK (action IN (
   'role_reaction_group_delete', 'role_reaction_group_toggle',
   'role_reaction_format_channel', 'role_reaction_setup'
 ));
+
+-- ============================================================
+-- PER-CHANNEL NOTIFICATION SETTINGS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS channel_notification_settings (
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  channel_id UUID NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+  level TEXT NOT NULL DEFAULT 'default' CHECK (level IN ('all', 'mentions', 'none', 'default')),
+  suppress_everyone BOOLEAN DEFAULT false,
+  suppress_roles BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (user_id, channel_id)
+);
+
+-- ============================================================
+-- RELEASES (for desktop app update checking)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS releases (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  version TEXT NOT NULL UNIQUE,
+  platform TEXT NOT NULL DEFAULT 'windows' CHECK (platform IN ('windows', 'mac', 'linux', 'all')),
+  download_url TEXT NOT NULL,
+  changelog TEXT,
+  required BOOLEAN DEFAULT false,
+  published_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_releases_platform ON releases(platform, published_at DESC);
+
+-- ============================================================
+-- CRASH REPORTS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS crash_reports (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  version TEXT NOT NULL,
+  platform TEXT NOT NULL,
+  error_type TEXT,
+  error_message TEXT,
+  stack_trace TEXT,
+  metadata JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_crash_reports_created ON crash_reports(created_at DESC);

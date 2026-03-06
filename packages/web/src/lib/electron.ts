@@ -30,6 +30,22 @@ export interface ElectronAPI {
   // Auto-start
   getAutoStart: () => Promise<boolean>;
   setAutoStart: (enabled: boolean) => Promise<void>;
+
+  // Screen share
+  screenShare: {
+    getSources: () => Promise<Array<{ id: string; name: string; thumbnail: string }>>;
+    onPickRequest: (callback: () => void) => () => void;
+    selectSource: (id: string, audioMode: 'system' | 'app' | 'none') => void;
+    onAudioModeSelected: (callback: (mode: 'system' | 'app' | 'none') => void) => () => void;
+  };
+
+  // Per-app audio capture (WASAPI on Windows)
+  appAudio: {
+    onPcmData: (callback: (buffer: ArrayBuffer) => void) => () => void;
+    onSourceLost: (callback: () => void) => () => void;
+    stop: () => void;
+    isSupported: () => Promise<boolean>;
+  };
 }
 
 declare global {

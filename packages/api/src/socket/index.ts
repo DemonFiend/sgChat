@@ -7,7 +7,7 @@ import { publishEvent, getSequences, resyncEvents, onEvent } from '../lib/eventB
 import { calculatePermissions } from '../services/permissions.js';
 import {
   TextPermissions, VoicePermissions, hasPermission, MAX_MESSAGE_LENGTH,
-  isEncryptedPayload,
+  isEncryptedPayload, updateActivitySchema,
 } from '@sgchat/shared';
 import type { EventEnvelope, GatewayHello, GatewayReady, GatewayResume, GatewayResumed } from '@sgchat/shared';
 import { isBlocked } from '../routes/friends.js';
@@ -78,6 +78,7 @@ const SOCKET_LIMITS = {
   'status_comment:update': { max: 3, windowMs: 30_000 },
   'voice:join':     { max: 5,  windowMs: 30_000 },
   'voice:update':   { max: 10, windowMs: 10_000 },
+  'activity:update':{ max: 3,  windowMs: 30_000 },
 } as const;
 
 function isRateLimited(socket: Socket, userId: string, event: keyof typeof SOCKET_LIMITS): boolean {
@@ -250,6 +251,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
             user_id: userId,
             status: storedStatus,
             custom_status: currentUser?.custom_status || null,
+            activity: currentUser?.activity || null,
             last_seen_at: new Date().toISOString(),
           },
         });
@@ -746,6 +748,61 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       } catch (err) {
         fastify.log.error(err);
         socketEmit(socket, 'error', { message: 'Failed to update status comment' });
+      }
+    });
+
+    // ── Activity / Rich Presence ──────────────────────────────
+
+    socket.on('activity:update', async (data: any) => {
+      try {
+        if (isRateLimited(socket, userId, 'activity:update')) return;
+
+        const parsed = updateActivitySchema.safeParse(data);
+        if (!parsed.success) {
+          socketEmit(socket, 'error', { message: 'Invalid activity data' });
+          return;
+        }
+
+        const activity = parsed.data;
+        await db.sql`
+          UPDATE users SET activity = ${JSON.stringify(activity)}, activity_updated_at = NOW()
+          WHERE id = ${userId}
+        `;
+
+        for (const server of servers) {
+          await publishEvent({
+            type: 'activity.update',
+            actorId: userId,
+            resourceId: `server:${server.id}`,
+            payload: { user_id: userId, activity },
+          });
+        }
+      } catch (err) {
+        fastify.log.error(err);
+        socketEmit(socket, 'error', { message: 'Failed to update activity' });
+      }
+    });
+
+    socket.on('activity:clear', async () => {
+      try {
+        if (isRateLimited(socket, userId, 'activity:update')) return;
+
+        await db.sql`
+          UPDATE users SET activity = NULL, activity_updated_at = NULL
+          WHERE id = ${userId}
+        `;
+
+        for (const server of servers) {
+          await publishEvent({
+            type: 'activity.update',
+            actorId: userId,
+            resourceId: `server:${server.id}`,
+            payload: { user_id: userId, activity: null },
+          });
+        }
+      } catch (err) {
+        fastify.log.error(err);
+        socketEmit(socket, 'error', { message: 'Failed to clear activity' });
       }
     });
 
