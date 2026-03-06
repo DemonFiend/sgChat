@@ -1,3 +1,4 @@
+import { SYSTEM_USER_ID } from '@sgchat/shared';
 import { sql } from '../lib/db.js';
 import { publishEvent } from '../lib/eventBus.js';
 
@@ -171,7 +172,7 @@ export async function postRoleReactionMessage(
   for (const m of mappings) {
     await tx`
       INSERT INTO message_reactions (message_id, user_id, emoji)
-      VALUES (${message.id}, (SELECT owner_id FROM servers WHERE id = ${serverId}), ${m.emoji})
+      VALUES (${message.id}, ${SYSTEM_USER_ID}, ${m.emoji})
       ON CONFLICT DO NOTHING
     `;
   }

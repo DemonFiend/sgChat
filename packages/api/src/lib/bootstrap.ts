@@ -12,9 +12,11 @@ import { db } from './db.js';
 import {
   DEFAULT_EVERYONE_PERMISSIONS,
   RoleTemplates,
+  SYSTEM_USER_ID,
   TextPermissions,
   permissionToString,
 } from '@sgchat/shared';
+import { createDefaultGroups } from '../services/roleReactions.js';
 
 /**
  * Bootstrap the server on first startup
@@ -243,7 +245,16 @@ export async function bootstrapServer(): Promise<void> {
     )
   `;
 
-  console.log(`✅ Created Server Info channels: #announcements, #roles`);
+  // Add system user as a server member (needed for seeding reactions)
+  await db.sql`
+    INSERT INTO members (user_id, server_id)
+    VALUES (${SYSTEM_USER_ID}, ${server.id})
+    ON CONFLICT DO NOTHING
+  `;
+
+  // Set up default role reaction groups in #roles
+  await createDefaultGroups(server.id, rolesChannel.id);
+  console.log(`✅ Created Server Info channels: #announcements, #roles (with role reactions)`);
 
   // --- General Chat channels ---
 

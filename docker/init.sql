@@ -42,6 +42,17 @@ CREATE INDEX idx_users_username ON users(username);
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_status ON users(status) WHERE status != 'offline';
 
+-- System user (well-known UUID for seeding reactions, system messages, etc.)
+INSERT INTO users (id, username, email, password_hash, display_name, status)
+VALUES (
+  '00000000-0000-0000-0000-000000000001',
+  'System',
+  'system@localhost',
+  '!disabled',
+  'System',
+  'online'
+) ON CONFLICT (id) DO NOTHING;
+
 -- ============================================================
 -- SERVERS
 -- ============================================================

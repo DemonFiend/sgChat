@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { clsx } from 'clsx';
 import { api } from '@/api';
 import { permissions } from '@/stores';
+import { toastStore } from '@/stores/toastNotifications';
 import { ServerPopupConfigForm } from './ServerPopupConfigForm';
 import { RoleReactionsTab } from './RoleReactionsTab';
 import {
@@ -869,7 +870,20 @@ function RolesTab() {
                 className="w-5 h-5 rounded-full ring-2 ring-white/10"
                 style={{ background: editColor || '#99aab5' }}
               />
-              <h2 className="text-lg font-bold text-text-primary">{editName || 'Untitled Role'}</h2>
+              <h2 className="text-lg font-bold text-text-primary flex-1">{editName || 'Untitled Role'}</h2>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(selectedRole.id);
+                  toastStore.addToast({ type: 'system', title: 'Copied!', message: 'Role ID copied to clipboard' });
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium text-text-muted hover:text-text-primary hover:bg-bg-modifier-hover transition-colors"
+                title="Copy Role ID"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                </svg>
+                Copy ID
+              </button>
             </div>
 
             {/* Basic Info Card */}

@@ -112,7 +112,7 @@ async function negotiate(apiUrl: string): Promise<void> {
   const clientPubB64 = btoa(String.fromCharCode(...new Uint8Array(clientPubRaw)));
 
   // 3. Key exchange with server (unencrypted)
-  const response = await fetch(`${apiUrl}/api/crypto/exchange`, {
+  const response = await fetch(`${apiUrl}/crypto/exchange`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ clientPublicKey: clientPubB64 }),

@@ -278,6 +278,82 @@ export function ChannelList({ channels, categories, serverId, onChannelSettingsC
   );
 }
 
+// ── Channel Context Menu (voice channels — Copy ID only) ──
+
+function ChannelContextMenu({
+  position,
+  channelId,
+  onClose,
+}: {
+  position: { x: number; y: number };
+  channelId: string;
+  onClose: () => void;
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) onClose();
+    };
+    const id = requestAnimationFrame(() => document.addEventListener('mousedown', handler));
+    const escHandler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', escHandler);
+    return () => {
+      cancelAnimationFrame(id);
+      document.removeEventListener('mousedown', handler);
+      document.removeEventListener('keydown', escHandler);
+    };
+  }, [onClose]);
+
+  const style: React.CSSProperties = {
+    position: 'fixed',
+    top: Math.min(position.y, window.innerHeight - 60),
+    left: Math.min(position.x, window.innerWidth - 200),
+    zIndex: 200,
+  };
+
+  return createPortal(
+    <div
+      ref={menuRef}
+      style={style}
+      className="w-[200px] py-1.5 bg-bg-tertiary rounded-lg shadow-high border border-border"
+    >
+      <button
+        onClick={() => {
+          navigator.clipboard.writeText(channelId);
+          toastStore.addToast({
+            type: 'system',
+            title: 'Copied!',
+            message: 'Channel ID copied to clipboard',
+          });
+          onClose();
+        }}
+        className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-text-secondary hover:bg-bg-modifier-hover hover:text-text-primary transition-colors"
+      >
+        <svg
+          className="w-4 h-4 text-text-muted flex-shrink-0"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+            d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"
+          />
+        </svg>
+        <span>Copy Channel ID</span>
+      </button>
+    </div>,
+    document.body,
+  );
+}
+
+// ── Channel Item ──
+
 interface ChannelItemProps {
   channel: Channel;
   isActive: boolean;
@@ -291,8 +367,6 @@ const ChannelItem = memo(function ChannelItem({ channel, isActive, serverId: _se
   const currentVoiceChannelId = useVoiceStore((s) => s.currentChannelId);
   const isInThisVoice = voice && currentVoiceChannelId === channel.id;
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
-
-  const isTextLike = channel.type === 'text' || channel.type === 'announcement';
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();

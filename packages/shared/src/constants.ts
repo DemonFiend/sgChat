@@ -2,6 +2,9 @@
  * Application-wide constants
  */
 
+// System user (well-known UUID for seeding reactions, system messages, etc.)
+export const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000001';
+
 // Message limits
 export const MAX_MESSAGE_LENGTH = 2000;
 export const MAX_OFFLINE_QUEUE_SIZE = 100;
