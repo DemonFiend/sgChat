@@ -6,8 +6,9 @@ import { redis } from '../lib/redis.js';
 import { publishEvent, getSequences, resyncEvents, onEvent } from '../lib/eventBus.js';
 import { calculatePermissions } from '../services/permissions.js';
 import {
-  TextPermissions, VoicePermissions, hasPermission, MAX_MESSAGE_LENGTH,
+  TextPermissions, hasPermission, MAX_MESSAGE_LENGTH,
   isEncryptedPayload, updateActivitySchema,
+  PROTOCOL_VERSION, MIN_CLIENT_VERSION,
 } from '@sgchat/shared';
 import type { EventEnvelope, GatewayHello, GatewayReady, GatewayResume, GatewayResumed } from '@sgchat/shared';
 import { isBlocked } from '../routes/friends.js';
@@ -17,6 +18,7 @@ import { cancelPendingCreation } from '../services/tempChannelTimers.js';
 import { markTempChannelEmpty } from '../services/tempChannels.js';
 import { sanitizeContent, sanitizeMessage } from '../utils/sanitize.js';
 import { encryptPayload, decryptPayload } from '../plugins/cryptoPayload.js';
+import { APP_VERSION } from '../lib/version.js';
 
 // ── Constants ──────────────────────────────────────────────────
 /** Heartbeat interval sent to client in gateway.hello (ms) */
@@ -213,6 +215,9 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
     const helloPayload: GatewayHello = {
       heartbeat_interval: HEARTBEAT_INTERVAL,
       session_id: sessionId,
+      server_version: APP_VERSION,
+      protocol_version: PROTOCOL_VERSION,
+      min_client_version: MIN_CLIENT_VERSION,
     };
     await socketEmit(socket, 'gateway.hello', helloPayload);
 
@@ -1159,7 +1164,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
     socket.on('join:dm', async (data: { user_id: string }) => {
       const targetUserId = data.user_id;
       
-      let dmChannel = await db.dmChannels.findByUsers(userId, targetUserId);
+      const dmChannel = await db.dmChannels.findByUsers(userId, targetUserId);
       if (dmChannel) {
         socket.join(`dm:${dmChannel.id}`);
       }

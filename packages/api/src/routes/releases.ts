@@ -1,5 +1,5 @@
 import { FastifyPluginAsync } from 'fastify';
-import { authenticate, optionalAuth } from '../middleware/auth.js';
+import { authenticate } from '../middleware/auth.js';
 import { sql } from '../lib/db.js';
 import { createReleaseSchema } from '@sgchat/shared';
 import { badRequest, forbidden, notFound } from '../utils/errors.js';

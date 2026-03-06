@@ -1,6 +1,5 @@
 import { Client } from 'minio';
 import { nanoid } from 'nanoid';
-import { Readable } from 'stream';
 
 const MINIO_ENDPOINT = process.env.MINIO_ENDPOINT || 'localhost:9000';
 const MINIO_ACCESS_KEY = process.env.MINIO_ACCESS_KEY || 'minioadmin';

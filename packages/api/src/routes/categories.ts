@@ -2,7 +2,7 @@ import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { z } from 'zod';
-import { notFound, forbidden, badRequest } from '../utils/errors.js';
+import { notFound, forbidden } from '../utils/errors.js';
 import { getDefaultServer } from './server.js';
 import { ServerPermissions } from '@sgchat/shared';
 import { emitEncrypted } from '../lib/socketEmit.js';

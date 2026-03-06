@@ -3,6 +3,9 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { resolve } from 'path';
+import { readFileSync } from 'fs';
+
+const rootPkg = JSON.parse(readFileSync(resolve(__dirname, '../../package.json'), 'utf-8'));
 
 export default defineConfig({
   plugins: [
@@ -84,6 +87,9 @@ export default defineConfig({
       },
     }),
   ],
+  define: {
+    __APP_VERSION__: JSON.stringify(rootPkg.version),
+  },
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),

@@ -4,3 +4,4 @@ export * from './validators/index.js';
 export * from './constants.js';
 export * from './mentions.js';
 export * from './crypto.js';
+export * from './version.js';

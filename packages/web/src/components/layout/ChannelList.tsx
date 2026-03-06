@@ -282,7 +282,7 @@ interface ChannelItemProps {
   onSettingsClick?: (channel: Channel) => void;
 }
 
-const ChannelItem = memo(function ChannelItem({ channel, isActive, serverId, onSettingsClick }: ChannelItemProps) {
+const ChannelItem = memo(function ChannelItem({ channel, isActive, serverId: _serverId, onSettingsClick }: ChannelItemProps) {
   const hasUnread = (channel.unread_count ?? 0) > 0;
   const voice = isVoiceType(channel.type);
   const currentVoiceChannelId = useVoiceStore((s) => s.currentChannelId);

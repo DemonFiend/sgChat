@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { api } from '@/api';
 import { authStore } from '@/stores/auth';
-import { getEffectiveUrl } from '@/stores/network';
 import { soundService } from '@/lib/soundService';
 
 interface SoundboardSound {

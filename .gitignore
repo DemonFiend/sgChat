@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
 .pnpm-store/
+package-lock.json
 
 # Build outputs
 dist/
@@ -58,6 +59,9 @@ markdown/
 
 # CocoIndex local index
 .cocoindex_code/
+
+# MCP config (user-specific)
+.mcp.json
 
 # Beads local files and agent docs
 AGENTS.md

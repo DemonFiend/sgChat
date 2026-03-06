@@ -43,8 +43,6 @@ async function checkRateLimit(userId: string): Promise<{
   resetIn: number;
 }> {
   const key = `giphy:ratelimit:${userId}`;
-  const now = Math.floor(Date.now() / 1000);
-  
   // Get current count
   const current = await redis.client.get(key);
   const count = current ? parseInt(current, 10) : 0;

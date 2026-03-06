@@ -175,7 +175,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
 
       // Get reactions for all messages
       const messageIds = messages.map((m: any) => m.id);
-      let reactionsMap: Map<string, any[]> = new Map();
+      const reactionsMap: Map<string, any[]> = new Map();
 
       if (messageIds.length > 0) {
         const reactions = await db.sql`

@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router';
 import { api } from '@/api';
 import { ServerList } from '@/components/layout/ServerList';
 import { DMPage } from '@/components/layout/DMPage';
@@ -14,7 +13,6 @@ interface ServerData {
 }
 
 export function DMLayout() {
-  const navigate = useNavigate();
   const [servers, setServers] = useState<ServerData[]>([]);
   const [showUserSettings, setShowUserSettings] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);

@@ -7,8 +7,8 @@
 import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
-import { toNamedPermissions, ServerPermissions, hasPermission, DEFAULT_AVATAR_LIMITS } from '@sgchat/shared';
-import type { AvatarLimits, ServerRetentionSettings } from '@sgchat/shared';
+import { ServerPermissions, hasPermission, DEFAULT_AVATAR_LIMITS } from '@sgchat/shared';
+import type { AvatarLimits } from '@sgchat/shared';
 import { calculatePermissions } from '../services/permissions.js';
 import { forbidden, notFound, badRequest } from '../utils/errors.js';
 import { z } from 'zod';
@@ -64,9 +64,9 @@ export const globalServerRoutes: FastifyPluginAsync = async (fastify) => {
    */
   fastify.get('/', {
     onRequest: [authenticate],
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const server = await getDefaultServer();
-      
+
       if (!server) {
         // No server exists yet - return basic instance info
         return {
@@ -141,7 +141,7 @@ export const globalServerRoutes: FastifyPluginAsync = async (fastify) => {
    */
   fastify.get('/time', {
     onRequest: [authenticate],
-    handler: async (request, reply) => {
+    handler: async (_request, _reply) => {
       const server = await getDefaultServer();
       const timezone = server?.timezone || 'UTC';
       const now = new Date();

@@ -549,6 +549,12 @@ export interface GatewayHello {
   heartbeat_interval: number;
   /** Session id for resume */
   session_id: string;
+  /** Server application version (semver) */
+  server_version?: string;
+  /** Gateway protocol version (integer, only bumped for breaking changes) */
+  protocol_version?: number;
+  /** Minimum client version required by server */
+  min_client_version?: string;
 }
 
 /**

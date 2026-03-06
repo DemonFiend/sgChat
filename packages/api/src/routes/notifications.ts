@@ -17,7 +17,7 @@ import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { publishEvent } from '../lib/eventBus.js';
-import { notFound, badRequest } from '../utils/errors.js';
+import { notFound } from '../utils/errors.js';
 import { z } from 'zod';
 
 // ── Notification helper: create + push ─────────────────────────
@@ -70,7 +70,7 @@ export const notificationRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /notifications — paginated list
   fastify.get('/', {
     onRequest: [authenticate],
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const userId = request.user!.id;
       const query = listQuerySchema.parse(request.query);
 
@@ -135,7 +135,7 @@ export const notificationRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /notifications/unread-count — lightweight badge count
   fastify.get('/unread-count', {
     onRequest: [authenticate],
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const userId = request.user!.id;
 
       const [row] = await db.sql`
@@ -193,12 +193,12 @@ export const notificationRoutes: FastifyPluginAsync = async (fastify) => {
   // POST /notifications/read-all — mark all as read
   fastify.post('/read-all', {
     onRequest: [authenticate],
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const userId = request.user!.id;
       const body = (request.body as any) || {};
       const before = body.before ? new Date(body.before) : new Date();
 
-      const result = await db.sql`
+      const _result = await db.sql`
         UPDATE notifications
         SET read_at = NOW()
         WHERE user_id = ${userId}

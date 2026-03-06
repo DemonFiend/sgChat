@@ -43,7 +43,7 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /friends - List current user's friends
   fastify.get('/', {
     onRequest: [authenticate],
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const userId = request.user!.id;
 
       // Get all friendships where user is either user1 or user2
@@ -374,7 +374,7 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /friends/requests - List pending friend requests
   fastify.get('/requests', {
     onRequest: [authenticate],
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const userId = request.user!.id;
 
       // Get incoming requests (sent TO current user)

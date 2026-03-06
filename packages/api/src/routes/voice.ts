@@ -8,10 +8,8 @@ import { generateLiveKitToken, getLiveKitUrl } from '../services/livekit.js';
 import { VoicePermissions, hasPermission, RATE_LIMITS } from '@sgchat/shared';
 import { notFound, forbidden, badRequest } from '../utils/errors.js';
 import {
-  createTempVoiceChannel,
   markTempChannelEmpty,
   markTempChannelOccupied,
-  isTempVoiceGenerator
 } from '../services/tempChannels.js';
 import { scheduleTempChannelCreation, cancelPendingCreation } from '../services/tempChannelTimers.js';
 
@@ -32,9 +30,9 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
         return badRequest(reply, 'channel_id is required');
       }
 
-      let channel = await db.channels.findById(channel_id);
-      let actualChannelId = channel_id;
-      let isTempRedirect = false;
+      const channel = await db.channels.findById(channel_id);
+      const actualChannelId = channel_id;
+      const _isTempRedirect = false;
 
       if (!channel) {
         return notFound(reply, 'Voice channel');
@@ -180,8 +178,8 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
     handler: async (request, reply) => {
       const { channelId } = request.params as { channelId: string };
 
-      let channel = await db.channels.findById(channelId);
-      let actualChannelId = channelId;
+      const channel = await db.channels.findById(channelId);
+      const actualChannelId = channelId;
 
       if (!channel) {
         return notFound(reply, 'Channel');
@@ -690,7 +688,7 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
   // Get temp channel settings (admin)
   fastify.get('/temp-settings', {
     onRequest: [authenticate],
-    handler: async (request, reply) => {
+    handler: async (_request, _reply) => {
       const { getTempChannelSettings } = await import('../services/tempChannels.js');
       const settings = await getTempChannelSettings();
       return settings;
@@ -700,7 +698,7 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
   // Update temp channel settings (admin)
   fastify.patch('/temp-settings', {
     onRequest: [authenticate],
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const updates = request.body as any;
 
       // TODO: Check admin permissions
@@ -714,7 +712,7 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
   // Manually cleanup empty temp channels (admin)
   fastify.post('/cleanup-temp-channels', {
     onRequest: [authenticate],
-    handler: async (request, reply) => {
+    handler: async (_request, _reply) => {
       // TODO: Check admin permissions
 
       const { cleanupEmptyTempChannels } = await import('../services/tempChannels.js');
@@ -729,7 +727,7 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
    */
   fastify.get('/me', {
     onRequest: [authenticate],
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const userId = request.user!.id;
       
       // Get the user's current voice channel from Redis
@@ -780,7 +778,7 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
    */
   fastify.get('/participants', {
     onRequest: [authenticate],
-    handler: async (request, reply) => {
+    handler: async (_request, _reply) => {
       // Get all voice-type channels
       const voiceChannels = await db.sql`
         SELECT id, name, type FROM channels

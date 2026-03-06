@@ -272,7 +272,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
         timeWindow: '1 minute',
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const { status } = updateStatusSchema.parse(request.body);
 
       await db.users.updateStatus(request.user!.id, status as UserStatus);
@@ -300,7 +300,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
         timeWindow: '1 minute',
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const { status } = updateStatusSchema.parse(request.body);
 
       await db.users.updateStatus(request.user!.id, status as UserStatus);
@@ -333,12 +333,12 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
         timeWindow: '1 minute',
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const body = updateCustomStatusSchema.parse(request.body);
 
       await db.sql`
         UPDATE users
-        SET 
+        SET
           custom_status_emoji = ${body.emoji ?? null},
           custom_status = ${body.text ?? null},
           status_expires_at = ${body.expires_at ? new Date(body.expires_at) : null}
@@ -401,7 +401,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
         WHERE id = ${request.user!.id}
       `;
 
-      const user = await db.users.findById(request.user!.id);
+      const _user = await db.users.findById(request.user!.id);
 
       // A3: Broadcast status_comment.update through event bus
       await broadcastStatusComment(request.user!.id, {
@@ -421,7 +421,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
   // Update push token
   fastify.post('/me/push-token', {
     onRequest: [authenticate],
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const { token } = request.body as { token: string };
 
       await db.sql`
@@ -437,7 +437,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
   // Get user settings
   fastify.get('/me/settings', {
     onRequest: [authenticate],
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const [settings] = await db.sql`
         SELECT * FROM user_settings
         WHERE user_id = ${request.user!.id}
@@ -450,7 +450,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
   // Alias: /me/preferences -> /me/settings (for client compatibility)
   fastify.get('/me/preferences', {
     onRequest: [authenticate],
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const [settings] = await db.sql`
         SELECT * FROM user_settings
         WHERE user_id = ${request.user!.id}
@@ -463,9 +463,9 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
   // Update user settings
   fastify.patch('/me/settings', {
     onRequest: [authenticate],
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const body = request.body as Record<string, any>;
-      
+
       const updates: any = { ...body, user_id: request.user!.id };
       updates.updated_at = new Date();
 
@@ -488,7 +488,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
   // Alias: PATCH /me/preferences -> /me/settings
   fastify.patch('/me/preferences', {
     onRequest: [authenticate],
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const body = request.body as Record<string, any>;
       
       const updates: any = { ...body, user_id: request.user!.id };
@@ -657,7 +657,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
       // Get configurable limits
       const limits = await getAvatarLimits();
 
-      const { buffer, filename, mimetype, fields } = fileData;
+      const { buffer, filename: _filename, mimetype: _mimetype, fields: _fields } = fileData;
 
       // Validate file size
       if (buffer.length > limits.max_upload_size_bytes) {
@@ -806,7 +806,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
       const fileData = await extractFileData(request);
       if (!fileData) return badRequest(reply, 'No file uploaded');
 
-      const { buffer, filename, mimetype, fields } = fileData;
+      const { buffer, filename: _filename, mimetype: _mimetype, fields: _fields } = fileData;
       if (buffer.length > 8 * 1024 * 1024) {
         return badRequest(reply, 'File too large. Maximum size: 8MB');
       }
@@ -945,7 +945,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
   // Get avatar history (current and previous)
   fastify.get('/me/avatar/history', {
     onRequest: [authenticate],
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const userId = request.user!.id;
 
       const avatars = await db.sql`
@@ -986,7 +986,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
   // Get avatar limits (useful for frontend validation)
   fastify.get('/me/avatar/limits', {
     onRequest: [authenticate],
-    handler: async (request, reply) => {
+    handler: async (_request, _reply) => {
       const limits = await getAvatarLimits();
       return limits;
     },
@@ -999,7 +999,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
   // Get blocked users list
   fastify.get('/blocked', {
     onRequest: [authenticate],
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const currentUserId = request.user!.id;
 
       const blockedUsers = await db.sql`
@@ -1229,7 +1229,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /users/me/servers/:serverId/sounds - Get user's join/leave sounds
   fastify.get('/me/servers/:serverId/sounds', {
     onRequest: [authenticate],
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const { serverId } = request.params as { serverId: string };
       const sounds = await db.userVoiceSounds.findByUserAndServer(request.user!.id, serverId);
       const result: Record<string, any> = { join: null, leave: null };

@@ -134,12 +134,12 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
   // List all roles
   fastify.get('/roles', {
     onRequest: [authenticate],
-    handler: async (request, reply) => {
+    handler: async (_request, _reply) => {
       const server = await getDefaultServer();
       if (!server) return [];
 
       const roles = await db.sql`
-        SELECT 
+        SELECT
           r.*,
           COALESCE(COUNT(DISTINCT mr.member_user_id), 0)::int as member_count
         FROM roles r
@@ -327,7 +327,7 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
   // List members with pagination and search
   fastify.get('/members', {
     onRequest: [authenticate],
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const server = await getDefaultServer();
       if (!server) return { members: [], total: 0 };
 
@@ -947,7 +947,7 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
   // List all channels in the server with categories, unread counts, and mentions
   fastify.get('/channels', {
     onRequest: [authenticate],
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const server = await getDefaultServer();
       if (!server) {
         return { channels: [], categories: [] };

@@ -6,7 +6,6 @@
  */
 
 import { redis } from '../lib/redis.js';
-import { db } from '../lib/db.js';
 import { publishEvent } from '../lib/eventBus.js';
 import { createTempVoiceChannel } from './tempChannels.js';
 

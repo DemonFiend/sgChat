@@ -9,7 +9,6 @@ import {
   ServerPermissionMetadata,
   TextPermissionMetadata,
   VoicePermissionMetadata,
-  type PermissionMetadata,
 } from '@sgchat/shared';
 import {
   DndContext,
@@ -305,7 +304,7 @@ const tabs: { id: ServerSettingsTab; label: string; icon: ReactNode; permission?
   },
 ];
 
-export function ServerSettingsModal({ isOpen, onClose, serverName, serverIcon, serverOwnerId, onTransferOwnership }: ServerSettingsModalProps) {
+export function ServerSettingsModal({ isOpen, onClose, serverName, serverIcon: _serverIcon, serverOwnerId, onTransferOwnership }: ServerSettingsModalProps) {
   const [activeTab, setActiveTab] = useState<ServerSettingsTab>('general');
   const [serverData, setServerData] = useState<ServerData | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
@@ -2857,7 +2856,7 @@ const AFK_TIMEOUT_OPTIONS = [
   { value: 3600, label: '1 hour' },
 ];
 
-function AfkSettingsTab({ serverId, afkTimeout: initialAfkTimeout, afkChannelId: initialAfkChannelId, voiceChannels, onSave }: AfkSettingsTabProps) {
+function AfkSettingsTab({ serverId: _serverId, afkTimeout: initialAfkTimeout, afkChannelId: initialAfkChannelId, voiceChannels, onSave }: AfkSettingsTabProps) {
   const [afkTimeout, setAfkTimeout] = useState(initialAfkTimeout);
   const [afkChannelId, setAfkChannelId] = useState<string | null>(initialAfkChannelId);
   const [saving, setSaving] = useState(false);

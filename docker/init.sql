@@ -1464,3 +1464,27 @@ CREATE TABLE IF NOT EXISTS crash_reports (
 );
 
 CREATE INDEX IF NOT EXISTS idx_crash_reports_created ON crash_reports(created_at DESC);
+
+-- ============================================================
+-- MIGRATION TRACKING
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS _migrations (
+  id SERIAL PRIMARY KEY,
+  name TEXT UNIQUE NOT NULL,
+  applied_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Mark all migrations as applied (init.sql already includes their changes)
+INSERT INTO _migrations (name) VALUES
+  ('001_add_popup_config'),
+  ('002_expand_channel_types'),
+  ('003_temp_voice_channels'),
+  ('004_soundboard'),
+  ('005_user_profile_bio_banner'),
+  ('005_warnings'),
+  ('006_temp_channels_category'),
+  ('007_temp_channel_timeout'),
+  ('008_role_reactions'),
+  ('009_desktop_parity')
+ON CONFLICT (name) DO NOTHING;

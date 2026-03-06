@@ -18,7 +18,7 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
   // Get user's DM channels
   fastify.get('/', {
     onRequest: [authenticate],
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const dmChannels = await db.dmChannels.findByUserId(request.user!.id);
       return dmChannels;
     },
@@ -214,7 +214,7 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
     onRequest: [authenticate],
     handler: async (request, reply) => {
       const { userId } = request.params as { userId: string };
-      const { limit, before, after } = request.query as { limit?: string; before?: string; after?: string };
+      const { limit, before, after: _after } = request.query as { limit?: string; before?: string; after?: string };
       
       // Check if target user exists
       const targetUser = await db.users.findById(userId);
@@ -279,10 +279,10 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
 
       // Find or create DM channel
       let dm = await db.dmChannels.findByUsers(request.user!.id, userId);
-      let isNewChannel = false;
+      let _isNewChannel = false;
       if (!dm) {
         dm = await db.dmChannels.create(request.user!.id, userId);
-        isNewChannel = true;
+        _isNewChannel = true;
       }
 
       // Sanitize message content (strip HTML tags — defense-in-depth)
@@ -361,9 +361,9 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
   // Acknowledge messages (mark as received)
   fastify.post('/ack', {
     onRequest: [authenticate],
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const { message_ids } = request.body as { message_ids: string[] };
-      
+
       const now = new Date();
       for (const messageId of message_ids) {
         await db.messages.updateStatus(messageId, 'received', now);
@@ -378,7 +378,7 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
   // Get unread DMs
   fastify.get('/unread', {
     onRequest: [authenticate],
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       // Get all DM channels for user
       const dmChannels = await db.dmChannels.findByUserId(request.user!.id);
       

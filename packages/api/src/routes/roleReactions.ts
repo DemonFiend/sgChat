@@ -23,7 +23,6 @@ import {
   stripRolesForGroup,
   countNonRoleMessages,
   formatChannel,
-  buildMessageContent,
 } from '../services/roleReactions.js';
 
 async function requireManageRoles(request: any, reply: any, serverId: string) {

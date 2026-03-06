@@ -2,7 +2,7 @@ import { sql } from '../lib/db.js';
 import { db } from '../lib/db.js';
 import { nanoid } from 'nanoid';
 import { getDefaultPermissions } from './permissions.js';
-import { permissionToString, RoleTemplates, ALL_PERMISSIONS, TextPermissions } from '@sgchat/shared';
+import { permissionToString, RoleTemplates, TextPermissions } from '@sgchat/shared';
 import { emitEncrypted } from '../lib/socketEmit.js';
 import { createDefaultGroups } from './roleReactions.js';
 

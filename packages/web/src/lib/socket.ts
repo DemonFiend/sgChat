@@ -1,7 +1,7 @@
 import { io, Socket } from 'socket.io-client';
 import { create } from 'zustand';
 import { authStore } from '@/stores/auth';
-import { isEncryptedPayload } from '@sgchat/shared';
+import { isEncryptedPayload, isVersionCompatible } from '@sgchat/shared';
 import {
   getCryptoSessionId,
   hasCryptoSession,
@@ -11,14 +11,21 @@ import {
 
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
 
+interface VersionMismatch {
+  serverVersion: string;
+  minClientVersion: string;
+}
+
 interface SocketState {
   connectionState: ConnectionState;
   reconnectAttempts: number;
+  versionMismatch: VersionMismatch | null;
 }
 
 export const useSocketStore = create<SocketState>(() => ({
   connectionState: 'disconnected',
   reconnectAttempts: 0,
+  versionMismatch: null,
 }));
 
 let socket: Socket | null = null;
@@ -31,7 +38,8 @@ let lastSequences: Record<string, number> = {};
 const pendingHandlers: Map<string, Set<(data: unknown) => void>> = new Map();
 
 // Maps original handler → wrapped handler for proper cleanup
-const handlerWrapperMap = new WeakMap<Function, Function>();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const handlerWrapperMap = new WeakMap<(...args: any[]) => any, (...args: any[]) => any>();
 
 const startHeartbeat = () => {
   stopHeartbeat();
@@ -84,10 +92,29 @@ function connect() {
     refreshRetryCount = 0;
   });
 
-  socket.on('gateway.hello', (data: { heartbeat_interval: number; session_id: string }) => {
+  socket.on('gateway.hello', (data: {
+    heartbeat_interval: number;
+    session_id: string;
+    server_version?: string;
+    protocol_version?: number;
+    min_client_version?: string;
+  }) => {
     heartbeatInterval = data.heartbeat_interval;
     gatewaySessionId = data.session_id;
     startHeartbeat();
+
+    // Check client-server version compatibility
+    if (data.min_client_version && data.server_version) {
+      const clientVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
+      if (!isVersionCompatible(clientVersion, data.min_client_version)) {
+        useSocketStore.setState({
+          versionMismatch: {
+            serverVersion: data.server_version,
+            minClientVersion: data.min_client_version,
+          },
+        });
+      }
+    }
   });
 
   socket.on('gateway.ready', (data: { sequences?: Record<string, number> }) => {
@@ -183,6 +210,7 @@ function disconnect() {
 }
 
 async function emit<T = unknown>(event: string, data?: unknown): Promise<T> {
+  // eslint-disable-next-line no-async-promise-executor
   return new Promise(async (resolve, reject) => {
     if (!socket?.connected) {
       reject(new Error('Socket not connected'));

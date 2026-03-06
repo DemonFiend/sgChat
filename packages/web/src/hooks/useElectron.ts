@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { isElectron, getElectronAPI, type ElectronAPI } from '@/lib/electron';
+import { getElectronAPI, type ElectronAPI } from '@/lib/electron';
 
 /** Returns Electron detection state and typed API access */
 export function useElectron(): {

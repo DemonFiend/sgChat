@@ -35,7 +35,7 @@ export const crashReportsRoutes: FastifyPluginAsync = async (fastify) => {
         return forbidden(reply, 'Admin only');
       }
 
-      const { limit, before, platform, version } = request.query as {
+      const { limit, before: _before, platform, version } = request.query as {
         limit?: string;
         before?: string;
         platform?: string;

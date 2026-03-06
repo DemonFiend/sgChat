@@ -33,6 +33,9 @@ RUN pnpm --filter @sgchat/web build
 # Build the API server
 RUN pnpm --filter @sgchat/api build
 
+# Copy migration SQL files to dist (tsc only compiles .ts files)
+RUN cp -r /app/packages/api/src/migrations /app/packages/api/dist/migrations
+
 # Verify web client was built
 RUN ls -la /app/packages/web/dist/index.html
 

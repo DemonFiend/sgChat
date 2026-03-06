@@ -514,13 +514,13 @@ class VoiceServiceClass {
   private persistUserVolumes(): void {
     try {
       localStorage.setItem(USER_VOLUMES_STORAGE_KEY, JSON.stringify(Object.fromEntries(this.userVolumes)));
-    } catch {}
+    } catch { /* ignored */ }
   }
 
   private persistLocalMutes(): void {
     try {
       localStorage.setItem(LOCAL_MUTES_STORAGE_KEY, JSON.stringify([...this.localMutes]));
-    } catch {}
+    } catch { /* ignored */ }
   }
 
   private loadPerUserSettings(): void {
@@ -529,7 +529,7 @@ class VoiceServiceClass {
       if (volumes) this.userVolumes = new Map(Object.entries(JSON.parse(volumes)).map(([k, v]) => [k, Number(v)]));
       const mutes = localStorage.getItem(LOCAL_MUTES_STORAGE_KEY);
       if (mutes) this.localMutes = new Set(JSON.parse(mutes));
-    } catch {}
+    } catch { /* ignored */ }
   }
 
   /**
@@ -850,7 +850,7 @@ class VoiceServiceClass {
 
       // For now, select the first source — in practice, the Electron app
       // shows a picker and calls selectSource(id, audioMode) which triggers onAudioModeSelected
-      let selectedSourceId = sources[0].id;
+      const selectedSourceId = sources[0].id;
 
       // If Electron has a native picker, it handles source selection.
       // We just need to wait for the audio mode callback.
@@ -862,7 +862,7 @@ class VoiceServiceClass {
       }, 30000);
 
       // Listen for source selection from Electron picker
-      const origCleanupAudio = cleanupAudio;
+      const _origCleanupAudio = cleanupAudio;
       electronAPI.screenShare.onAudioModeSelected((mode) => {
         clearTimeout(timeout);
         resolve({ sourceId: selectedSourceId, audioMode: mode });
@@ -1171,8 +1171,8 @@ class VoiceServiceClass {
 
     // Get RTT/ping from room engine if available
     let ping: number | null = null;
-    let jitter: number | null = null;
-    let packetLoss: number | null = null;
+    const jitter: number | null = null;
+    const packetLoss: number | null = null;
 
     try {
       // Access the engine's publisher stats for detailed metrics

@@ -1,5 +1,4 @@
 import { sql } from '../lib/db.js';
-import { db } from '../lib/db.js';
 import { publishEvent } from '../lib/eventBus.js';
 
 // Default role groups with pre-created roles and emoji mappings

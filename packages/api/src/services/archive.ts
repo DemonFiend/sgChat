@@ -9,7 +9,7 @@ import { gzip, gunzip } from 'zlib';
 import { promisify } from 'util';
 import { db } from '../lib/db.js';
 import { storage } from '../lib/storage.js';
-import type { MessageSegment, ArchivedSegmentData, ArchivedMessage } from '@sgchat/shared';
+import type { ArchivedSegmentData, ArchivedMessage } from '@sgchat/shared';
 
 const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
@@ -388,7 +388,7 @@ export async function exportChannelMessages(
     compress = true,
   } = options;
 
-  let query = db.sql`
+  const query = db.sql`
     SELECT 
       m.id, m.content, m.created_at, m.edited_at, m.reply_to_id,
       m.attachments, m.system_event, m.segment_id,
@@ -517,7 +517,7 @@ export async function exportDMMessages(
     compress = true,
   } = options;
 
-  let query = db.sql`
+  const query = db.sql`
     SELECT 
       m.id, m.content, m.created_at, m.edited_at, m.reply_to_id,
       m.attachments, m.system_event, m.segment_id,

@@ -1,11 +1,10 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams } from 'react-router';
 import { clsx } from 'clsx';
 import { authStore } from '@/stores/auth';
 import { useVoiceStore } from '@/stores/voice';
 import { serverPopupStore } from '@/stores/serverPopup';
-import { canManageChannels } from '@/stores/permissions';
-import { ChannelList, type Channel, type Category, type ChannelType } from './ChannelList';
+import { ChannelList, type Channel, type Category } from './ChannelList';
 
 const MIN_WIDTH = 192;
 const MAX_WIDTH = 384;
@@ -32,10 +31,10 @@ interface ServerSidebarProps {
 }
 
 export function ServerSidebar({ server, channels, categories, onServerSettingsClick, onChannelSettingsClick, onCreateChannel }: ServerSidebarProps) {
-  const { channelId } = useParams<{ channelId?: string }>();
+  const { channelId: _channelId } = useParams<{ channelId?: string }>();
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
-  const voiceConnected = useVoiceStore((s) => s.connectionState === 'connected');
+  const _voiceConnected = useVoiceStore((s) => s.connectionState === 'connected');
 
   const substituteMotdVariables = (text: string): string => {
     const user = authStore.state().user;

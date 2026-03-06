@@ -512,7 +512,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         keyGenerator: (req) => req.ip,
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const { email } = forgotPasswordSchema.parse(request.body);
 
       // Always respond with success to prevent user enumeration

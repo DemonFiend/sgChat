@@ -81,7 +81,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
   // Get user's servers
   fastify.get('/', {
     onRequest: [authenticate],
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const servers = await db.servers.findByUserId(request.user!.id);
       return servers;
     },
@@ -93,7 +93,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
     config: {
       rateLimit: { max: 5, timeWindow: '1 hour' },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const body = createServerSchema.parse(request.body);
       const server = await createServer(request.user!.id, body.name, body.icon_url);
       return server;

@@ -8,7 +8,6 @@
  * - onSend: encrypts response body if the request was encrypted
  */
 
-import { FastifyPluginAsync } from 'fastify';
 import fp from 'fastify-plugin';
 import { redis } from '../lib/redis.js';
 import { isEncryptedPayload, CRYPTO_EXEMPT_ENDPOINTS, CRYPTO_IV_BYTES } from '@sgchat/shared';

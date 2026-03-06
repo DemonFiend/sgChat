@@ -16,6 +16,9 @@ import { redis, initRedis } from './lib/redis.js';
 import { initEventBus, shutdownEventBus } from './lib/eventBus.js';
 import { initStorage } from './lib/storage.js';
 import { bootstrapServer } from './lib/bootstrap.js';
+import { runMigrations } from './lib/migrator.js';
+import { APP_VERSION } from './lib/version.js';
+import { PROTOCOL_VERSION, MIN_CLIENT_VERSION } from '@sgchat/shared';
 import { rateLimitPlugin } from './plugins/rateLimit.js';
 import { errorHandler } from './plugins/errorHandler.js';
 import { authRoutes } from './routes/auth.js';
@@ -95,6 +98,7 @@ const serverStartTime = new Date().toISOString();
 async function start() {
   // Initialize database, redis, event bus, and storage
   await initDatabase();
+  await runMigrations();
   await initRedis();
   await initEventBus();
   await initStorage();
@@ -217,7 +221,7 @@ async function start() {
       return {
         status: 'ok',
         name: process.env.SERVER_NAME || 'sgChat Server',
-        version: '1.0.0',
+        version: APP_VERSION,
         commit: process.env.GIT_COMMIT || 'dev',
         timestamp: new Date().toISOString(),
       };
@@ -226,7 +230,9 @@ async function start() {
     // Version endpoint for deployment verification
     api.get('/version', async () => {
       return {
-        version: '1.0.0',
+        version: APP_VERSION,
+        protocol_version: PROTOCOL_VERSION,
+        min_client_version: MIN_CLIENT_VERSION,
         commit: process.env.GIT_COMMIT || 'dev',
         startedAt: serverStartTime,
         uptime: Math.floor(process.uptime()),
@@ -240,7 +246,7 @@ async function start() {
     return {
       status: 'ok',
       name: process.env.SERVER_NAME || 'sgChat Server',
-      version: '1.0.0',
+      version: APP_VERSION,
       commit: process.env.GIT_COMMIT || 'dev',
       timestamp: new Date().toISOString(),
     };

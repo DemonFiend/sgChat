@@ -187,12 +187,12 @@ export function UserContextMenu({
       try {
         await api.post(`/friends/${targetUser.id}`, {});
         setFriendStatus('pending_outgoing');
-      } catch {}
+      } catch { /* ignored */ }
     } else if (friendStatus === 'pending_incoming') {
       try {
         await api.post(`/friends/requests/${targetUser.id}/accept`, {});
         setFriendStatus('friends');
-      } catch {}
+      } catch { /* ignored */ }
     }
   }, [friendStatus, targetUser.id]);
 
@@ -210,7 +210,7 @@ export function UserContextMenu({
     if (!voiceContext) return;
     try {
       await voiceService.serverMuteMember(targetUser.id, voiceContext.channelId, !voiceContext.isMuted);
-    } catch {}
+    } catch { /* ignored */ }
     onClose();
   }, [targetUser.id, voiceContext, onClose]);
 
@@ -218,7 +218,7 @@ export function UserContextMenu({
     if (!voiceContext) return;
     try {
       await voiceService.serverDeafenMember(targetUser.id, voiceContext.channelId, !voiceContext.isDeafened);
-    } catch {}
+    } catch { /* ignored */ }
     onClose();
   }, [targetUser.id, voiceContext, onClose]);
 
@@ -226,7 +226,7 @@ export function UserContextMenu({
     if (!voiceContext) return;
     try {
       await voiceService.moveMember(targetUser.id, voiceContext.channelId, toChannelId);
-    } catch {}
+    } catch { /* ignored */ }
     onClose();
   }, [targetUser.id, voiceContext, onClose]);
 
@@ -234,7 +234,7 @@ export function UserContextMenu({
     if (!voiceContext) return;
     try {
       await voiceService.disconnectMember(targetUser.id, voiceContext.channelId);
-    } catch {}
+    } catch { /* ignored */ }
     onClose();
   }, [targetUser.id, voiceContext, onClose]);
 

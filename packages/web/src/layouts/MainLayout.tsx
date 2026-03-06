@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -36,6 +36,8 @@ import { FloatingUserPanel } from '@/components/layout/FloatingUserPanel';
 import { ServerWelcomePopup } from '@/components/ui/ServerWelcomePopup';
 import { UnclaimedServerBanner } from '@/components/ui/UnclaimedServerBanner';
 import { ClaimAdminModal } from '@/components/ui/ClaimAdminModal';
+import { UpgradeModal } from '@/components/ui/UpgradeModal';
+import { useSocketStore } from '@/lib/socket';
 import { StreamViewer } from '@/components/ui/StreamViewer';
 import { useStreamViewerStore } from '@/stores/streamViewer';
 import { SoundboardPanel } from '@/components/ui/SoundboardPanel';
@@ -1190,6 +1192,21 @@ export function MainLayout() {
           onClose={() => useStreamViewerStore.getState().leaveStream()}
         />
       )}
+
+      {/* Version Mismatch Modal */}
+      <VersionMismatchHandler />
     </div>
+  );
+}
+
+function VersionMismatchHandler() {
+  const versionMismatch = useSocketStore((s) => s.versionMismatch);
+  return (
+    <UpgradeModal
+      isOpen={versionMismatch !== null}
+      onDismiss={() => useSocketStore.setState({ versionMismatch: null })}
+      serverVersion={versionMismatch?.serverVersion ?? ''}
+      minClientVersion={versionMismatch?.minClientVersion ?? ''}
+    />
   );
 }

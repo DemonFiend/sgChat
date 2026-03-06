@@ -7,13 +7,12 @@
 
 import { db } from '../lib/db.js';
 import { archiveSegment, deleteArchivedSegment } from './archive.js';
-import { getArchivableSegments, getChannelStorageStats, getDMStorageStats, getServerStorageStats } from './segmentation.js';
+import { getArchivableSegments, getChannelStorageStats, getDMStorageStats } from './segmentation.js';
 import type { 
   ServerRetentionSettings, 
   ChannelRetentionSettings,
   DMRetentionSettings,
-  CleanupSummary,
-  StorageStats 
+  CleanupSummary
 } from '@sgchat/shared';
 
 // Default retention settings
@@ -178,7 +177,7 @@ export async function applyRetentionPolicy(
   cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
   
   // Get protected message IDs
-  const protectedIds = await getProtectedMessageIds(channelId, dmChannelId);
+  const _protectedIds = await getProtectedMessageIds(channelId, dmChannelId);
   
   // Find segments to process
   const archivableSegments = await getArchivableSegments(channelId, dmChannelId, retentionDays);

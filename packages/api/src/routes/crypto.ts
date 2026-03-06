@@ -11,7 +11,6 @@ import { redis } from '../lib/redis.js';
 import {
   CRYPTO_HKDF_INFO,
   CRYPTO_SESSION_TTL,
-  type CryptoExchangeRequest,
   type CryptoExchangeResponse,
 } from '@sgchat/shared';
 import { z } from 'zod';
