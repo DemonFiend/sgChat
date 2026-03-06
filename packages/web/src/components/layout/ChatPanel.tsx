@@ -53,6 +53,7 @@ export interface Message {
   reactions?: Reaction[];
   type?: 'system' | 'default';
   system_event?: SystemEvent;
+  pinned?: boolean;
 }
 
 export interface ChannelInfo {
@@ -86,6 +87,13 @@ interface ChatPanelProps {
   onReplyClick?: (message: Message) => void;
   isMemberListOpen?: boolean;
   onToggleMemberList?: () => void;
+  onPinMessage?: (messageId: string) => void;
+  onUnpinMessage?: (messageId: string) => void;
+  pinnedMessageIds?: Set<string>;
+  isPinnedPanelOpen?: boolean;
+  onTogglePinnedPanel?: () => void;
+  canManageMessages?: boolean;
+  onSearchOpen?: () => void;
 }
 
 export function ChatPanel({
@@ -94,6 +102,8 @@ export function ChatPanel({
   onTypingStart, onTypingStop, currentUserId, typingUsers,
   replyingTo, onCancelReply, onReplyClick,
   isMemberListOpen, onToggleMemberList,
+  onPinMessage, onUnpinMessage, pinnedMessageIds, isPinnedPanelOpen, onTogglePinnedPanel,
+  canManageMessages, onSearchOpen,
 }: ChatPanelProps) {
   const [messageInput, setMessageInput] = useState('');
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
@@ -378,6 +388,33 @@ export function ChatPanel({
 
         <div className="flex-1 min-w-0" />
 
+        {onSearchOpen && (
+          <button
+            onClick={onSearchOpen}
+            className="p-2 rounded text-text-muted hover:text-text-primary hover:bg-bg-modifier-hover transition-colors"
+            title="Search messages (Ctrl+F)"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </button>
+        )}
+
+        {onTogglePinnedPanel && (
+          <button
+            onClick={onTogglePinnedPanel}
+            className={clsx(
+              'p-2 rounded hover:bg-bg-modifier-hover transition-colors',
+              isPinnedPanelOpen ? 'text-text-primary' : 'text-text-muted'
+            )}
+            title={isPinnedPanelOpen ? 'Hide pinned messages' : 'Show pinned messages'}
+          >
+            <svg className="w-5 h-5" fill={isPinnedPanelOpen ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v3a2 2 0 01-1 1.73V14l1 1v1H5v-1l1-1V9.73A2 2 0 015 8V5zm7 14v3" />
+            </svg>
+          </button>
+        )}
+
         {onToggleMemberList && (
           <button
             onClick={onToggleMemberList}
@@ -462,6 +499,15 @@ export function ChatPanel({
                       onAuthorClick={onAuthorClick}
                       onAuthorContextMenu={onAuthorContextMenu}
                       onReplyClick={onReplyClick ? () => onReplyClick(message) : undefined}
+                      isPinned={pinnedMessageIds?.has(message.id)}
+                      canPin={canManageMessages}
+                      onPinClick={() => {
+                        if (pinnedMessageIds?.has(message.id)) {
+                          onUnpinMessage?.(message.id);
+                        } else {
+                          onPinMessage?.(message.id);
+                        }
+                      }}
                     />
                   </div>
                 );
@@ -706,6 +752,9 @@ interface MessageItemProps {
   onAuthorClick?: (author: MessageAuthor, rect: DOMRect) => void;
   onAuthorContextMenu?: (author: MessageAuthor, e: React.MouseEvent) => void;
   onReplyClick?: () => void;
+  isPinned?: boolean;
+  canPin?: boolean;
+  onPinClick?: () => void;
 }
 
 const MemoizedMessageItem = memo(MessageItem, (prev, next) => {
@@ -716,22 +765,30 @@ const MemoizedMessageItem = memo(MessageItem, (prev, next) => {
     prev.message.reactions === next.message.reactions &&
     prev.showAuthor === next.showAuthor &&
     prev.isEditing === next.isEditing &&
-    prev.editContent === next.editContent
+    prev.editContent === next.editContent &&
+    prev.isPinned === next.isPinned &&
+    prev.canPin === next.canPin
   );
 });
 
 function MessageActionToolbar({
   isOwnMessage,
+  isPinned,
+  canPin,
   onReactClick,
   onEditStart,
   onDeleteClick,
   onReplyClick,
+  onPinClick,
 }: {
   isOwnMessage: boolean;
+  isPinned?: boolean;
+  canPin?: boolean;
   onReactClick?: (anchor: HTMLElement) => void;
   onEditStart?: () => void;
   onDeleteClick?: () => void;
   onReplyClick?: () => void;
+  onPinClick?: () => void;
 }) {
   const btnClass = 'p-1 rounded hover:bg-bg-modifier-active text-text-muted hover:text-text-primary transition-colors';
   return (
@@ -750,6 +807,17 @@ function MessageActionToolbar({
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
       </button>
+      {canPin && (
+        <button
+          className={clsx(btnClass, isPinned && 'text-brand-primary')}
+          title={isPinned ? 'Unpin Message' : 'Pin Message'}
+          onClick={onPinClick}
+        >
+          <svg className="w-4 h-4" fill={isPinned ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v3a2 2 0 01-1 1.73V14l1 1v1H5v-1l1-1V9.73A2 2 0 015 8V5zm7 14v3" />
+          </svg>
+        </button>
+      )}
       {isOwnMessage && (
         <button className={btnClass} title="Edit" onClick={onEditStart}>
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -772,6 +840,7 @@ function MessageItem({
   message, showAuthor, formatTime, onReactionAdd, onReactionRemove, currentUserId,
   isEditing, editContent, onEditChange, onEditSave, onEditCancel, onEditStart,
   onDeleteClick, onReactClick, onAuthorClick, onAuthorContextMenu, onReplyClick,
+  isPinned, canPin, onPinClick,
 }: MessageItemProps) {
   const isSystem = message.type === 'system' || message.system_event != null;
   const author = message.author || { id: 'unknown', username: 'Unknown User', display_name: null, avatar_url: null };
@@ -936,10 +1005,13 @@ function MessageItem({
       <div className={clsx('px-4 py-1 hover:bg-bg-modifier-hover group relative', isEditing && 'bg-bg-modifier-hover')}>
         <MessageActionToolbar
           isOwnMessage={isOwnMessage}
+          isPinned={isPinned}
+          canPin={canPin}
           onReactClick={onReactClick}
           onEditStart={onEditStart}
           onDeleteClick={isOwnMessage ? onDeleteClick : undefined}
           onReplyClick={onReplyClick}
+          onPinClick={onPinClick}
         />
         <div className="flex gap-4">
           <div className="flex-shrink-0 pt-0.5">
@@ -956,6 +1028,13 @@ function MessageItem({
                 {displayName}
               </span>
               <span className="text-xs text-text-muted">{formatTime(message.created_at)}</span>
+              {isPinned && (
+                <span className="text-text-muted ml-1" title="Pinned message">
+                  <svg className="w-3 h-3 inline" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v3a2 2 0 01-1 1.73V14l1 1v1H5v-1l1-1V9.73A2 2 0 015 8V5zm7 14v3" />
+                  </svg>
+                </span>
+              )}
             </div>
             {renderContent()}
           </div>

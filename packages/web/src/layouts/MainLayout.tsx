@@ -44,8 +44,10 @@ import { SoundboardPanel } from '@/components/ui/SoundboardPanel';
 import { VoiceConnectedBar } from '@/components/ui/VoiceConnectedBar';
 import { CommandPalette, type CommandPaletteChannel, type CommandPaletteMember } from '@/components/ui/CommandPalette';
 import { useGlobalShortcuts } from '@/hooks/useElectron';
-import { canManageChannels } from '@/stores/permissions';
+import { canManageChannels, canManageMessages } from '@/stores/permissions';
 import { slideInRight, easeTransition } from '@/lib/motion';
+import { PinnedMessagesPanel, type PinnedMessage } from '@/components/ui/PinnedMessagesPanel';
+import { SearchModal } from '@/components/ui/SearchModal';
 import type { Channel, Category } from '@/components/layout/ChannelList';
 
 interface ServerData {
@@ -97,6 +99,14 @@ export function MainLayout() {
   const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
   const [isMemberListOpen, setIsMemberListOpen] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Pinned messages state
+  const [pinnedMessages, setPinnedMessages] = useState<PinnedMessage[]>([]);
+  const [pinnedMessageIds, setPinnedMessageIds] = useState<Set<string>>(new Set());
+  const [isPinnedPanelOpen, setIsPinnedPanelOpen] = useState(false);
+
+  // Search state
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   // Modal & popover state
   const [showServerSettings, setShowServerSettings] = useState(false);
@@ -271,6 +281,39 @@ export function MainLayout() {
     return () => clearTimeout(ackTimer);
   }, [channelId, channelsLoaded, navigate]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Fetch pinned messages when channel changes ───────────────
+  useEffect(() => {
+    if (!channelId) {
+      setPinnedMessages([]);
+      setPinnedMessageIds(new Set());
+      return;
+    }
+    api.get<PinnedMessage[]>(`/channels/${channelId}/pinned`)
+      .then((pins) => {
+        setPinnedMessages(pins);
+        setPinnedMessageIds(new Set(pins.map((p) => p.id)));
+      })
+      .catch(() => {
+        setPinnedMessages([]);
+        setPinnedMessageIds(new Set());
+      });
+  }, [channelId]);
+
+  // Pin/unpin handlers
+  const handlePinMessage = useCallback(async (messageId: string) => {
+    if (!channelId) return;
+    try {
+      await api.post(`/channels/${channelId}/messages/${messageId}/pin`);
+    } catch { /* socket event will update state */ }
+  }, [channelId]);
+
+  const handleUnpinMessage = useCallback(async (messageId: string) => {
+    if (!channelId) return;
+    try {
+      await api.delete(`/channels/${channelId}/messages/${messageId}/pin`);
+    } catch { /* socket event will update state */ }
+  }, [channelId]);
+
   // ── Wire up real-time message events (correct event names) ─────
   useEffect(() => {
     const handleNewMessage = (message: Message & { channel_id?: string }) => {
@@ -309,6 +352,42 @@ export function MainLayout() {
       setMessages((prev) => prev.filter((m) => m.id !== data.id));
     };
 
+    const handleMessagePin = (data: {
+      channel_id: string;
+      message: any;
+      pinned_by: string;
+    }) => {
+      if (data.channel_id !== channelId) return;
+      const msg = data.message;
+      setPinnedMessages((prev) => {
+        if (prev.some((p) => p.id === msg.id)) return prev;
+        return [{
+          id: msg.id,
+          content: msg.content,
+          author: msg.author || { id: '', username: 'Unknown', display_name: null, avatar_url: null },
+          created_at: msg.created_at,
+          edited_at: msg.edited_at || null,
+          attachments: msg.attachments || [],
+          pinned_at: new Date().toISOString(),
+          pinned_by: { id: data.pinned_by, username: '' },
+        }, ...prev];
+      });
+      setPinnedMessageIds((prev) => new Set([...prev, msg.id]));
+    };
+
+    const handleMessageUnpin = (data: {
+      channel_id: string;
+      message_id: string;
+    }) => {
+      if (data.channel_id !== channelId) return;
+      setPinnedMessages((prev) => prev.filter((p) => p.id !== data.message_id));
+      setPinnedMessageIds((prev) => {
+        const next = new Set(prev);
+        next.delete(data.message_id);
+        return next;
+      });
+    };
+
     // Listen for correct backend event names (dot separator for received events)
     socketService.on(
       'message.new',
@@ -321,6 +400,14 @@ export function MainLayout() {
     socketService.on(
       'message.delete',
       handleMessageDelete as (data: unknown) => void,
+    );
+    socketService.on(
+      'message.pin',
+      handleMessagePin as (data: unknown) => void,
+    );
+    socketService.on(
+      'message.unpin',
+      handleMessageUnpin as (data: unknown) => void,
     );
 
     return () => {
@@ -335,6 +422,14 @@ export function MainLayout() {
       socketService.off(
         'message.delete',
         handleMessageDelete as (data: unknown) => void,
+      );
+      socketService.off(
+        'message.pin',
+        handleMessagePin as (data: unknown) => void,
+      );
+      socketService.off(
+        'message.unpin',
+        handleMessageUnpin as (data: unknown) => void,
       );
     };
   }, [channelId]);
@@ -926,12 +1021,16 @@ export function MainLayout() {
     }, []),
   });
 
-  // Ctrl+K command palette shortcut
+  // Ctrl+K command palette, Ctrl+F search shortcut
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault();
         setShowCommandPalette((prev) => !prev);
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault();
+        setIsSearchOpen((prev) => !prev);
       }
     };
     document.addEventListener('keydown', handleGlobalKeyDown);
@@ -1060,11 +1159,40 @@ export function MainLayout() {
             onReplyClick={(message) => setReplyingTo(message)}
             isMemberListOpen={isMemberListOpen}
             onToggleMemberList={handleToggleMemberList}
+            onPinMessage={handlePinMessage}
+            onUnpinMessage={handleUnpinMessage}
+            pinnedMessageIds={pinnedMessageIds}
+            isPinnedPanelOpen={isPinnedPanelOpen}
+            onTogglePinnedPanel={() => setIsPinnedPanelOpen((v) => !v)}
+            canManageMessages={canManageMessages()}
+            onSearchOpen={() => setIsSearchOpen(true)}
           />
+
+          <AnimatePresence mode="wait">
+            {isPinnedPanelOpen && (
+              <motion.div
+                key="pinned"
+                variants={slideInRight}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={easeTransition}
+                className="h-full overflow-hidden flex-shrink-0"
+              >
+                <PinnedMessagesPanel
+                  channelName={currentChannel?.name || ''}
+                  pinnedMessages={pinnedMessages}
+                  onUnpin={handleUnpinMessage}
+                  canManageMessages={canManageMessages()}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <AnimatePresence mode="wait">
             {isMemberListOpen && (
               <motion.div
+                key="members"
                 variants={slideInRight}
                 initial="initial"
                 animate="animate"
@@ -1084,6 +1212,20 @@ export function MainLayout() {
         </div>
         </MentionProvider>
       </div>
+
+      {/* Search Modal */}
+      <SearchModal
+        isOpen={isSearchOpen}
+        onClose={() => setIsSearchOpen(false)}
+        channelId={channelId}
+        channelName={currentChannel?.name}
+        onNavigateToMessage={(chId, _msgId) => {
+          if (chId !== channelId) {
+            navigate(`/channels/${chId}`);
+          }
+          setIsSearchOpen(false);
+        }}
+      />
 
       {/* Server Settings Modal */}
       {currentServer && (

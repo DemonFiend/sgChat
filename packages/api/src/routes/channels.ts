@@ -961,6 +961,113 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // ============================================================
+  // MESSAGE SEARCH
+  // ============================================================
+
+  /**
+   * GET /channels/:id/messages/search - Search messages within a channel
+   */
+  fastify.get<{ Params: { id: string } }>('/:id/messages/search', {
+    onRequest: [authenticate],
+    config: {
+      rateLimit: { max: 10, timeWindow: '60 seconds' },
+    },
+    handler: async (request, reply) => {
+      const { id } = request.params;
+      const {
+        q,
+        author_id,
+        before,
+        after,
+        has_attachment,
+        pinned,
+        limit: limitStr,
+        offset: offsetStr,
+      } = request.query as {
+        q?: string;
+        author_id?: string;
+        before?: string;
+        after?: string;
+        has_attachment?: string;
+        pinned?: string;
+        limit?: string;
+        offset?: string;
+      };
+
+      if (!UUID_REGEX.test(id)) {
+        return badRequest(reply, 'Invalid channel ID');
+      }
+
+      if (!q || q.trim().length < 2) {
+        return badRequest(reply, 'Search query must be at least 2 characters');
+      }
+
+      const canAccess = await canAccessChannel(request.user!.id, id);
+      if (!canAccess) {
+        return forbidden(reply, 'Cannot access this channel');
+      }
+
+      const searchLimit = Math.min(parseInt(limitStr || '25', 10), 50);
+      const searchOffset = Math.max(parseInt(offsetStr || '0', 10), 0);
+      const query = q.trim();
+
+      const results = await db.sql`
+        SELECT
+          m.id, m.content, m.created_at, m.edited_at, m.channel_id,
+          m.attachments, m.author_id,
+          u.username, u.display_name, u.avatar_url,
+          ts_headline('english', m.content, plainto_tsquery('english', ${query}),
+            'StartSel=<mark>, StopSel=</mark>, MaxFragments=2, MaxWords=30, MinWords=15'
+          ) as highlighted_content,
+          ts_rank(m.search_vector, plainto_tsquery('english', ${query})) as rank
+        FROM messages m
+        LEFT JOIN users u ON m.author_id = u.id
+        ${pinned === 'true' ? db.sql`INNER JOIN pinned_messages pm ON pm.message_id = m.id AND pm.channel_id = m.channel_id` : db.sql``}
+        WHERE m.channel_id = ${id}
+          AND m.search_vector @@ plainto_tsquery('english', ${query})
+          ${author_id ? db.sql`AND m.author_id = ${author_id}` : db.sql``}
+          ${before ? db.sql`AND m.created_at < ${before}` : db.sql``}
+          ${after ? db.sql`AND m.created_at > ${after}` : db.sql``}
+          ${has_attachment === 'true' ? db.sql`AND jsonb_array_length(m.attachments) > 0` : db.sql``}
+        ORDER BY rank DESC, m.created_at DESC
+        LIMIT ${searchLimit} OFFSET ${searchOffset}
+      `;
+
+      const [countResult] = await db.sql`
+        SELECT COUNT(*)::int as count
+        FROM messages m
+        ${pinned === 'true' ? db.sql`INNER JOIN pinned_messages pm ON pm.message_id = m.id AND pm.channel_id = m.channel_id` : db.sql``}
+        WHERE m.channel_id = ${id}
+          AND m.search_vector @@ plainto_tsquery('english', ${query})
+          ${author_id ? db.sql`AND m.author_id = ${author_id}` : db.sql``}
+          ${before ? db.sql`AND m.created_at < ${before}` : db.sql``}
+          ${after ? db.sql`AND m.created_at > ${after}` : db.sql``}
+          ${has_attachment === 'true' ? db.sql`AND jsonb_array_length(m.attachments) > 0` : db.sql``}
+      `;
+
+      return {
+        results: results.map((r: any) => ({
+          id: r.id,
+          content: r.content,
+          highlighted_content: r.highlighted_content,
+          channel_id: r.channel_id,
+          created_at: r.created_at,
+          edited_at: r.edited_at,
+          attachments: r.attachments,
+          author: {
+            id: r.author_id,
+            username: r.username,
+            display_name: r.display_name || r.username,
+            avatar_url: r.avatar_url,
+          },
+        })),
+        total_count: countResult.count,
+        query: q,
+      };
+    },
+  });
+
+  // ============================================================
   // PINNED MESSAGES
   // ============================================================
 

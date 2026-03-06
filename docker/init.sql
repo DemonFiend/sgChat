@@ -177,7 +177,10 @@ CREATE TABLE messages (
   
   edited_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  
+
+  -- Full-text search
+  search_vector tsvector,
+
   -- Either channel or DM, not both
   CONSTRAINT message_target CHECK (
     (channel_id IS NOT NULL AND dm_channel_id IS NULL) OR
@@ -189,6 +192,19 @@ CREATE INDEX idx_messages_channel ON messages(channel_id, created_at DESC) WHERE
 CREATE INDEX idx_messages_dm ON messages(dm_channel_id, created_at DESC) WHERE dm_channel_id IS NOT NULL;
 CREATE INDEX idx_messages_author ON messages(author_id);
 CREATE INDEX idx_messages_pending ON messages(dm_channel_id, status) WHERE status = 'sent';
+CREATE INDEX idx_messages_search ON messages USING GIN(search_vector);
+
+-- Auto-update search vector on message insert/update
+CREATE OR REPLACE FUNCTION messages_search_vector_update() RETURNS trigger AS $$
+BEGIN
+  NEW.search_vector := to_tsvector('english', coalesce(NEW.content, ''));
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_messages_search_vector
+  BEFORE INSERT OR UPDATE OF content ON messages
+  FOR EACH ROW EXECUTE FUNCTION messages_search_vector_update();
 
 -- ============================================================
 -- MEMBERS (Server Membership)
@@ -1486,5 +1502,6 @@ INSERT INTO _migrations (name) VALUES
   ('006_temp_channels_category'),
   ('007_temp_channel_timeout'),
   ('008_role_reactions'),
-  ('009_desktop_parity')
+  ('009_desktop_parity'),
+  ('010_message_search')
 ON CONFLICT (name) DO NOTHING;

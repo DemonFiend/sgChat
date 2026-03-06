@@ -42,6 +42,7 @@ import { cryptoRoutes } from './routes/crypto.js';
 import { roleReactionRoutes } from './routes/roleReactions.js';
 import { releasesRoutes } from './routes/releases.js';
 import { crashReportsRoutes } from './routes/crashReports.js';
+import { searchRoutes } from './routes/search.js';
 import { cryptoPayloadPlugin } from './plugins/cryptoPayload.js';
 import { initSocketIO } from './socket/index.js';
 import { cleanupEmptyTempChannels } from './services/tempChannels.js';
@@ -216,6 +217,9 @@ async function start() {
     // Crypto key exchange (unauthenticated)
     await api.register(cryptoRoutes, { prefix: '/crypto' });
 
+    // Message search
+    await api.register(searchRoutes, { prefix: '/search' });
+
     // Health check with server info for client network discovery
     api.get('/health', async () => {
       return {
@@ -275,6 +279,7 @@ async function start() {
   await fastify.register(roleReactionRoutes, { prefix: '/servers' });
   await fastify.register(releasesRoutes);
   await fastify.register(crashReportsRoutes);
+  await fastify.register(searchRoutes, { prefix: '/search' });
 
   // ============================================================
   // Web Client - serve built SPA from packages/web/dist

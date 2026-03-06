@@ -1,166 +1,144 @@
-# sgChat - Self-hosted Voice Community Application.
+# sgChat - Self-hosted Voice Community Platform
 
 [![GitHub License](https://img.shields.io/github/license/DemonFiend/sgChat)](https://github.com/DemonFiend/sgChat/blob/main/LICENSE)
 [![GitHub Issues](https://img.shields.io/github/issues/DemonFiend/sgChat)](https://github.com/DemonFiend/sgChat/issues)
 [![GitHub Stars](https://img.shields.io/github/stars/DemonFiend/sgChat)](https://github.com/DemonFiend/sgChat/stargazers)
 
-A modern, self-hosted chat platform that combines the best features of Discord, Revolt, and Guilded with real-time messaging capabilities.
+A modern, self-hosted chat platform combining the best features of Discord, Revolt, and Guilded — real-time messaging, voice/video, and full server management from a single Docker container.
 
-## 🚀 Live Demo
+All features are experimental until the official V1.0.0 release. Please report bugs via the [issues section](https://github.com/DemonFiend/sgChat/issues).
 
-Demo is currently Down till all the core features are implemented.
-
-All Features are Experimental until the Official V1.0.0 Release. 
-
-Features may experience visual bugs or unexpected behaviour, please report this via the issues section. 
-
-## 🔧 Technologies Used
+## Tech Stack
 
 ### Backend
-- **Runtime**: Node.js 20+ with TypeScript
-- **API Framework**: Fastify + Socket.IO
-- **Database**: PostgreSQL 16
-- **Cache**: Redis 7
-- **Storage**: MinIO (S3-compatible)
-- **Voice/Video**: LiveKit
-- **Push Notifications**: ntfy
+- **Runtime**: Node.js 20+ with TypeScript (strict mode, ESM)
+- **API Framework**: Fastify 4 + Socket.IO 4
+- **Database**: PostgreSQL 16 (raw SQL via postgres.js, no ORM)
+- **Cache**: Redis 7 (sessions, presence, voice state)
+- **Storage**: MinIO (S3-compatible file storage)
+- **Voice/Video**: LiveKit SFU
+- **Push Notifications**: ntfy (self-hosted)
 
 ### Frontend
-- **Desktop Client**: Tauri 2.0 + SolidJS + TypeScript + Vite
-- **Mobile Client**: React Native (V2)
-- **Web Client**: SolidJS + TypeScript + Vite
-- **Admin Panel**: React-admin
-- **Styling**: Tailwind CSS + CSS Variables
-- **State Management**: SolidJS Signals + Custom Stores
+- **Web Client**: React 19 + TypeScript + Vite 6
+- **Desktop Client**: Electron integration (Midnight theme exclusive)
+- **Styling**: Tailwind CSS 4
+- **State Management**: Zustand
 
-## 📋 Features Implemented
+## Features
 
-### 💬 Messaging
-✅ Real-time text messaging with Socket.IO  
-✅ Message editing and deletion  
-✅ Message reactions (emoji)  
-✅ Message pinning  
-✅ Message replies with cross-segment reference handling  
-✅ File attachments with type/size validation  
-✅ Typing indicators  
-✅ Read receipts and unread message counts  
-✅ Giphy integration (trending/search)  
+### Messaging
+- Real-time text messaging with Socket.IO
+- Message editing, deletion, and replies (cross-segment reference handling)
+- Message reactions (emoji)
+- Message pinning with pinned messages panel
+- Message search with full-text search (PostgreSQL FTS), filters, and highlighted results
+- File attachments with type/size validation
+- Typing indicators and read receipts
+- Unread message counts
+- Giphy integration (trending/search)
+- Mention autocomplete (@users, #channels)
 
-### 📞 Voice & Video
-✅ Voice channels with LiveKit integration  
-✅ Video streaming (permission-based)  
-✅ Screen sharing (permission-based)  
-✅ DM voice calls  
-✅ Temporary voice channels (auto-cleanup when empty)  
-✅ Voice state tracking (mute, deafen, streaming)  
-✅ AFK channel auto-move  
-✅ Voice participant management (move, disconnect, mute)  
-✅ User limits and bitrate configuration  
+### Voice & Video
+- Voice channels with LiveKit integration
+- Video streaming and screen sharing (permission-based)
+- DM voice calls
+- Temporary voice channels (auto-cleanup when empty)
+- Voice state tracking (mute, deafen, streaming)
+- AFK channel with auto-move
+- Voice participant management (move, disconnect, mute)
+- User limits and bitrate configuration
+- Soundboard (per-server audio clips)
+- Custom join/leave voice sounds (per-user, per-server)
 
-### 📺 Live Streaming / Screen Share
-✅ Full-screen stream viewer overlay  
-✅ Host preview (see your own stream)  
-✅ Picture-in-Picture (PiP) mode via browser API  
-✅ Minimize to audio-only mode (listen while browsing)  
-✅ Stream audio controls (volume slider, mute)  
-✅ Live viewer count display  
-✅ Quality selection (720p, 1080p, Native)  
-✅ Browser fullscreen support  
+### Live Streaming / Screen Share
+- Full-screen stream viewer overlay
+- Host preview (see your own stream)
+- Picture-in-Picture (PiP) mode
+- Minimize to audio-only mode
+- Stream audio controls (volume slider, mute)
+- Live viewer count display
+- Quality selection (720p, 1080p, Native)
 
-### 💌 Direct Messages
-✅ DM channels with auto-creation on friendship  
-✅ Message status tracking (sent/received/read)  
-✅ DM voice calls  
-✅ Friend system (requests, accept/reject)  
-✅ User blocking  
+### Direct Messages
+- DM channels with auto-creation on friendship
+- Message status tracking (sent/received/read)
+- DM voice calls
+- Friend system (send/accept/reject requests)
+- User blocking
+- DM toast notifications
 
-### 🏠 Server Management
-✅ Server creation, update, and deletion  
-✅ Channel management with reordering  
-✅ Category management with permission overrides  
-✅ Role management with templates and bulk operations  
-✅ Granular role-based permissions system  
-✅ Channel permission overrides (role and user level)  
-✅ Member management (kick, ban, timeout)  
-✅ Invite system with expiration and max uses  
-✅ Server transfer ownership  
-✅ Welcome channel and announcement channels  
-✅ Server popup configuration (welcome messages)  
-✅ Audit logging for server actions  
+### Server Management
+- Server creation, update, and deletion
+- Channel management with drag-and-drop reordering
+- Category management with permission overrides
+- Role management with templates and bulk operations
+- Granular bitflag-based permissions (server, text, voice)
+- Channel permission overrides (role and user level)
+- Member management (kick, ban, timeout)
+- Invite system with expiration and max uses
+- Server ownership transfer
+- Welcome channel and announcement channels
+- Server popup configuration (welcome messages)
+- Role reactions (self-service role assignment via emoji)
+- Audit logging for server actions
 
-### 🔐 Security & Authentication
-✅ JWT access tokens + httpOnly refresh token cookies  
-✅ Password hashing with Argon2  
-✅ Password reset via email  
-✅ Credential encryption (AES-GCM for "Remember me")  
-✅ Rate limiting (per-endpoint)  
-✅ Admin claim code system  
-✅ Session management with token rotation  
+### Security & Authentication
+- JWT access tokens + httpOnly refresh token cookies
+- Password hashing with Argon2
+- Password reset via email
+- Full payload encryption (ECDH + AES-256-GCM)
+- Credential encryption (AES-GCM for "Remember me")
+- Rate limiting (per-endpoint)
+- Admin claim code system
+- Session management with token rotation
 
-### 🎨 User Experience
-✅ User status (online, idle, dnd, offline)  
-✅ Custom status with text, emoji, and expiration  
-✅ Themes (Dark, Light, OLED, Nord) with system preference detection  
-✅ Avatar management with history tracking  
-✅ Display names and profile customization  
-✅ Timezone support (public/private)  
-✅ User search by username  
-✅ Presence coalescing (throttled updates)  
+### User Experience
+- User status (online, idle, dnd, offline)
+- Custom status with text, emoji, and expiration
+- Rich presence / activity tracking
+- Themes (Dark, Light, OLED, Nord, Midnight) with system preference detection
+- Avatar management with history tracking
+- Display names, bios, and profile banners
+- Timezone support (public/private)
+- User search by username
+- Command palette (Ctrl+K)
+- Message search (Ctrl+F)
+- Presence coalescing (throttled updates)
 
-### 🏗️ Infrastructure
-✅ Message archiving to MinIO cold storage (gzip compressed)  
-✅ Message segmentation for efficient history management  
-✅ Retention policies (time-based and size-based)  
-✅ Message export (JSON/CSV with date range filtering)  
-✅ Storage statistics per channel/DM  
-✅ Event bus system (pub/sub for real-time events)  
-✅ SSE fallback gateway with sequence tracking  
-✅ Idempotency support (Idempotency-Key header)  
-✅ Redis caching (sessions, presence, voice state)  
-✅ Health checks  
-✅ Client-side message caching with ETag/hash-based sync  
-✅ Debounced ACK requests (reduces server load)  
+### Infrastructure
+- Auto-migrations on API startup (version-tracked)
+- Message archiving to MinIO cold storage (gzip compressed)
+- Message segmentation for efficient history management
+- Retention policies (time-based and size-based)
+- Message export (JSON/CSV with date range filtering)
+- Storage statistics per channel/DM
+- Event bus system (pub/sub for real-time events)
+- Gateway protocol with heartbeat and resume support (sequence-based gap detection)
+- SSE fallback gateway
+- Idempotency support (Idempotency-Key header)
+- Redis caching (sessions, presence, voice state)
+- Health checks and version endpoints
+- Client-side message caching with ETag/hash-based sync
+- Desktop crash reporting
 
-### 🔔 Notifications
-✅ Push notifications via ntfy  
-✅ Mention notifications  
-✅ Friend request notifications  
-✅ Reaction notifications  
-✅ Priority levels  
+### Notifications
+- Push notifications via ntfy
+- Mention notifications
+- Friend request notifications
+- Reaction notifications
+- Priority levels
 
-## 🔮 Planned Features (TODO List)
+## Planned Features
 
-### 💬 Messaging Improvements
-- [ ] Message search functionality with filters
-- [ ] Custom emoji support (server-specific)
-- [ ] Sticker packs
-- [ ] Message scheduling UI (backend supports queued_at)
-- [ ] Rich text editor (markdown rendering exists)
+- Custom emoji support (server-specific)
+- Sticker packs
+- Two-factor authentication (2FA/TOTP)
+- End-to-end encryption for voice/video calls
+- Language localization (i18n)
+- Mobile client (React Native)
 
-### 🔐 Security & Privacy
-- [ ] Two-factor authentication (2FA/TOTP)
-- [ ] Device tracking and session management UI
-- [ ] Message encryption at rest
-- [ ] End-to-end encryption for voice/video calls
-
-### 🎨 User Experience
-- [ ] Comprehensive keyboard shortcuts
-- [ ] Accessibility improvements (screen readers, ARIA labels)
-- [ ] Language localization (i18n)
-- [ ] Theme customization with live preview
-
-### 🏗️ Infrastructure & Performance
-- [ ] Load balancing and horizontal scaling
-- [ ] CDN integration for media files
-- [ ] Analytics dashboard for server metrics
-- [ ] Advanced database optimization
-
-### 🎤 Voice & Video Enhancements
-- [ ] Audio Check
-- [ ] Bringing in Video (Webcam) 
-- [ ] Virtual backgrounds and effects
-
-## ⚠️ Known Limitations
+## Known Limitations
 
 ### Screen Share Audio Capture (Browser Limitation)
 The `getDisplayMedia()` browser API has inherent limitations for audio capture:
@@ -171,16 +149,9 @@ The `getDisplayMedia()` browser API has inherent limitations for audio capture:
 | **Window** | No isolated app audio (system audio or nothing) |
 | **Entire Screen** | Captures all system audio |
 
-**Why can't I share audio from a specific app (Spotify, YouTube, etc.)?**
+Browsers intentionally do not expose per-application audio routing for privacy/security. For advanced use cases, the Electron desktop app provides better audio capture.
 
-Browsers intentionally do not expose per-application audio routing for privacy and security reasons. The `getDisplayMedia()` API cannot isolate audio streams from individual applications.
-
-**Workarounds:**
-- Share a **browser tab** if your content is web-based (captures that tab's audio only)
-- Use **system audio** and close other audio sources
-- For advanced use cases, a native desktop application or browser extension with elevated permissions would be required
-
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -190,21 +161,32 @@ Browsers intentionally do not expose per-application audio routing for privacy a
 
 ### Development
 
-```
+```bash
 # Install dependencies
 pnpm install
 
-# Start development servers
+# Start API dev server (port 3000)
 pnpm dev
 
-# Build all packages
+# Start web client dev server (port 5174)
+pnpm dev:web
+
+# Start both API and web dev servers
+pnpm dev:all
+
+# Build all packages (shared -> web -> api)
 pnpm build
+
+# Type check all packages
+pnpm typecheck
+
+# Lint all packages
+pnpm lint
 ```
 
 ### Production Deployment
 
-
-```
+```bash
 # Configure environment
 cp docker/.env.example docker/.env
 # Edit docker/.env with your settings
@@ -213,42 +195,59 @@ cp docker/.env.example docker/.env
 cd docker
 docker-compose up -d
 ```
+
 ### Project Structure
 
-
 ```
-sgchat/
+sgChat-Server/
 ├── packages/
-│   ├── shared/          # Shared types, validators, constants
-│   ├── api/             # Fastify server (main API)
-│   ├── client-core/     # Shared React components
-│   ├── client-desktop/  # Tauri desktop app
-│   ├── client-web/      # Web fallback client
-│   ├── client-mobile/   # React Native (V2) - Mobile client
-│   └── admin/           # React-admin dashboard for admins
-├── docker/              # Docker compose and configs
-├── themes/              # Bundled themes
-└── docs/                # Documentation
+│   ├── shared/          # Types, Zod validators, permissions, constants
+│   ├── api/             # Fastify backend + Socket.IO real-time
+│   │   └── src/
+│   │       ├── routes/      # REST API endpoints
+│   │       ├── socket/      # Socket.IO event handlers
+│   │       ├── services/    # Business logic (permissions, livekit, etc.)
+│   │       ├── lib/         # DB, Redis, storage, event bus
+│   │       ├── middleware/  # JWT auth middleware
+│   │       ├── migrations/  # Auto-applied SQL migrations
+│   │       └── plugins/     # Rate limiting, error handler
+│   └── web/             # React 19 frontend (served by API container)
+│       └── src/
+│           ├── layouts/     # MainLayout (app shell)
+│           ├── components/  # UI components (layout/, ui/, voice/)
+│           ├── stores/      # Zustand state management
+│           ├── api/         # API client wrapper
+│           └── lib/         # Socket service, voice service, utilities
+├── docker/
+│   ├── docker-compose.yml   # Full stack definition
+│   ├── Dockerfile.api       # Builds shared -> web -> api
+│   ├── Dockerfile.postgres  # PostgreSQL with pg_cron
+│   ├── init.sql             # Database schema (source of truth)
+│   └── livekit.yaml         # LiveKit configuration
+└── CLAUDE.md                # AI agent instructions
 ```
-### 🤝 Contributing
+
+### Docker Services
+
+| Service | Image | Port | Purpose |
+|---------|-------|------|---------|
+| api | sosiagaming/sgchat-api | 3040 | API + web client |
+| postgres | sosiagaming/sgchat-postgres | 3041 | Database |
+| redis | redis:7-alpine | 3042 | Cache, sessions |
+| minio | minio/minio | 3043 | File storage |
+| livekit | livekit/livekit-server | host | Voice/video SFU |
+| ntfy | binwiederhier/ntfy | 3048 | Push notifications |
+
+## Contributing
+
 Contributions are welcome! Please follow these steps:
 
-Fork the repository
-Create a feature branch (git checkout -b feature/AmazingFeature)
-Commit your changes (git commit -m 'Add some AmazingFeature')
-Push to the branch (git push origin feature/AmazingFeature)
-Open a Pull Request
-### 📄 License
-This project is licensed under the MIT License - see the LICENSE file for details.
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
-### 🙏 Acknowledgments
-Built with modern web technologies
-Real-time communication powered by Fastify and Socket.IO
-Self-hosted push notifications through ntfy
+## License
 
-### Proof of concept Photos: 
-Login: https://imgur.com/a/KkAJ8FL
-Friends/DMs: https://imgur.com/a/HQFJlbd
-Server: https://imgur.com/a/SGehJfG
-Server options: https://imgur.com/a/h1hMYsE
-Server permissions: https://imgur.com/a/z1mE8W1
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
