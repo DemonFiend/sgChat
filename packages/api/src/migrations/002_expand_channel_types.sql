@@ -5,6 +5,6 @@
 ALTER TABLE channels 
   DROP CONSTRAINT IF EXISTS channels_type_check;
 
-ALTER TABLE channels 
-  ADD CONSTRAINT channels_type_check 
-  CHECK (type IN ('text', 'voice', 'announcement', 'music'));
+ALTER TABLE channels
+  ADD CONSTRAINT channels_type_check
+  CHECK (type IN ('text', 'voice', 'announcement', 'music', 'temp_voice_generator', 'temp_voice'));
