@@ -4,8 +4,162 @@ import { clsx } from 'clsx';
 import { api } from '@/api';
 import { permissions } from '@/stores';
 import { ServerPopupConfigForm } from './ServerPopupConfigForm';
+import { RoleReactionsTab } from './RoleReactionsTab';
+import {
+  ServerPermissionMetadata,
+  TextPermissionMetadata,
+  VoicePermissionMetadata,
+  type PermissionMetadata,
+} from '@sgchat/shared';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
-type ServerSettingsTab = 'general' | 'roles' | 'members' | 'channels' | 'soundboard' | 'afk' | 'invites' | 'bans' | 'audit-log';
+// ── Permission groups built from shared metadata ─────────────────────
+
+interface PermGroupItem {
+  key: string;       // Named permission key (lowercase) matching NamedPermissions
+  label: string;
+  description: string;
+  dangerous?: boolean;
+}
+
+interface PermGroup {
+  name: string;
+  category: string;
+  permissions: PermGroupItem[];
+}
+
+// Maps UPPERCASE metadata keys → lowercase NamedPermissions keys
+const TEXT_PERM_KEY_MAP: Record<string, string> = {
+  VIEW_CHANNEL: 'view_channel',
+  SEND_MESSAGES: 'send_messages',
+  SEND_TTS_MESSAGES: 'send_tts_messages',
+  READ_MESSAGE_HISTORY: 'read_message_history',
+  EMBED_LINKS: 'embed_links',
+  ATTACH_FILES: 'attach_files',
+  USE_EXTERNAL_EMOJIS: 'use_external_emojis',
+  USE_EXTERNAL_STICKERS: 'use_external_stickers',
+  ADD_REACTIONS: 'add_reactions',
+  MENTION_EVERYONE: 'mention_everyone',
+  MENTION_ROLES: 'mention_roles',
+  MANAGE_MESSAGES: 'manage_messages',
+  DELETE_OWN_MESSAGES: 'delete_own_messages',
+  EDIT_OWN_MESSAGES: 'edit_own_messages',
+  CREATE_PUBLIC_THREADS: 'create_public_threads_text',
+  CREATE_PRIVATE_THREADS: 'create_private_threads_text',
+  SEND_MESSAGES_IN_THREADS: 'send_messages_in_threads',
+  MANAGE_THREADS: 'manage_threads_text',
+  USE_APPLICATION_COMMANDS: 'use_application_commands',
+  MANAGE_WEBHOOKS: 'manage_webhooks_text',
+  BYPASS_SLOWMODE: 'bypass_slowmode',
+};
+
+const VOICE_PERM_KEY_MAP: Record<string, string> = {
+  CONNECT: 'connect',
+  VIEW_CHANNEL: 'view_voice_channel',
+  SPEAK: 'speak',
+  VIDEO: 'video',
+  STREAM: 'stream',
+  USE_VOICE_ACTIVITY: 'use_voice_activity',
+  PRIORITY_SPEAKER: 'priority_speaker',
+  USE_SOUNDBOARD: 'use_soundboard',
+  USE_EXTERNAL_SOUNDS: 'use_external_sounds',
+  MUTE_MEMBERS: 'mute_members',
+  DEAFEN_MEMBERS: 'deafen_members',
+  MOVE_MEMBERS: 'move_members',
+  DISCONNECT_MEMBERS: 'disconnect_members',
+  REQUEST_TO_SPEAK: 'request_to_speak',
+  MANAGE_STAGE: 'manage_stage',
+  MANAGE_VOICE_CHANNEL: 'manage_voice_channel',
+  SET_VOICE_STATUS: 'set_voice_status',
+};
+
+function buildPermissionGroups(): PermGroup[] {
+  const groups: Record<string, PermGroupItem[]> = {
+    general: [],
+    membership: [],
+    text: [],
+    voice: [],
+    advanced: [],
+  };
+
+  // Server permissions (simple lowercase)
+  for (const [metaKey, meta] of Object.entries(ServerPermissionMetadata)) {
+    const namedKey = metaKey.toLowerCase();
+    (groups[meta.category] ?? groups.advanced).push({
+      key: namedKey,
+      label: meta.name,
+      description: meta.description,
+      dangerous: meta.dangerous,
+    });
+  }
+
+  // Text permissions
+  for (const [metaKey, meta] of Object.entries(TextPermissionMetadata)) {
+    const namedKey = TEXT_PERM_KEY_MAP[metaKey];
+    if (!namedKey) continue;
+    const cat = meta.category === 'advanced' ? 'advanced' : 'text';
+    (groups[cat] ?? groups.advanced).push({
+      key: namedKey,
+      label: meta.name,
+      description: meta.description,
+      dangerous: meta.dangerous,
+    });
+  }
+
+  // Voice permissions
+  for (const [metaKey, meta] of Object.entries(VoicePermissionMetadata)) {
+    const namedKey = VOICE_PERM_KEY_MAP[metaKey];
+    if (!namedKey) continue;
+    groups.voice.push({
+      key: namedKey,
+      label: meta.name,
+      description: meta.description,
+      dangerous: meta.dangerous,
+    });
+  }
+
+  return [
+    { name: 'General', category: 'general', permissions: groups.general },
+    { name: 'Membership', category: 'membership', permissions: groups.membership },
+    { name: 'Text Channels', category: 'text', permissions: groups.text },
+    { name: 'Voice Channels', category: 'voice', permissions: groups.voice },
+    { name: 'Advanced', category: 'advanced', permissions: groups.advanced },
+  ].filter((g) => g.permissions.length > 0);
+}
+
+const PERMISSION_GROUPS = buildPermissionGroups();
+
+// Dangerous permissions set (from metadata)
+const DANGEROUS_PERMS = new Set<string>();
+for (const [metaKey, meta] of Object.entries(ServerPermissionMetadata)) {
+  if (meta.dangerous) DANGEROUS_PERMS.add(metaKey.toLowerCase());
+}
+for (const [metaKey, meta] of Object.entries(TextPermissionMetadata)) {
+  if (meta.dangerous) DANGEROUS_PERMS.add(TEXT_PERM_KEY_MAP[metaKey]);
+}
+for (const [metaKey, meta] of Object.entries(VoicePermissionMetadata)) {
+  if (meta.dangerous) DANGEROUS_PERMS.add(VOICE_PERM_KEY_MAP[metaKey]);
+}
+
+// ── End permission groups ────────────────────────────────────────────
+
+type ServerSettingsTab = 'general' | 'roles' | 'role-reactions' | 'members' | 'channels' | 'soundboard' | 'afk' | 'invites' | 'bans' | 'audit-log';
 
 interface ServerSettings {
   motd: string;
@@ -65,6 +219,16 @@ const tabs: { id: ServerSettingsTab; label: string; icon: ReactNode; permission?
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+      </svg>
+    ),
+    permission: 'manage_roles',
+  },
+  {
+    id: 'role-reactions',
+    label: 'Role Reactions',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
       </svg>
     ),
     permission: 'manage_roles',
@@ -276,6 +440,9 @@ export function ServerSettingsModal({ isOpen, onClose, serverName, serverIcon, s
                   />
                 )}
                 {activeTab === 'roles' && <RolesTab />}
+                {activeTab === 'role-reactions' && (
+                  <RoleReactionsTab serverId={serverData?.id || ''} channels={channels} />
+                )}
                 {activeTab === 'members' && <MembersTab />}
                 {activeTab === 'channels' && (
                   <ChannelsTab serverData={serverData} onRefresh={fetchServerData} />
@@ -305,7 +472,16 @@ export function ServerSettingsModal({ isOpen, onClose, serverName, serverIcon, s
   );
 }
 
-// Roles Tab
+// ── Drag handle icon (shared by roles + channels) ────────────────────
+function DragHandleIcon({ className }: { className?: string }) {
+  return (
+    <svg className={clsx('w-3.5 h-3.5', className)} fill="currentColor" viewBox="0 0 20 20">
+      <path d="M7 2a2 2 0 10.001 4.001A2 2 0 007 2zm0 6a2 2 0 10.001 4.001A2 2 0 007 8zm0 6a2 2 0 10.001 4.001A2 2 0 007 14zm6-8a2 2 0 10-.001-4.001A2 2 0 0013 6zm0 2a2 2 0 10.001 4.001A2 2 0 0013 8zm0 6a2 2 0 10.001 4.001A2 2 0 0013 14z" />
+    </svg>
+  );
+}
+
+// ── Roles Tab ────────────────────────────────────────────────────────
 interface Role {
   id: string;
   name: string;
@@ -314,6 +490,64 @@ interface Role {
   permissions: Record<string, boolean>;
   member_count?: number;
   is_hoisted?: boolean;
+}
+
+function SortableRoleItem({
+  role,
+  isSelected,
+  onSelect,
+  isDragDisabled,
+}: {
+  role: Role;
+  isSelected: boolean;
+  onSelect: () => void;
+  isDragDisabled: boolean;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: role.id, disabled: isDragDisabled });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : undefined,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="flex items-center gap-1">
+      {!isDragDisabled && (
+        <button
+          className="flex-shrink-0 cursor-grab active:cursor-grabbing text-text-muted hover:text-text-primary p-0.5"
+          {...attributes}
+          {...listeners}
+        >
+          <DragHandleIcon />
+        </button>
+      )}
+      {isDragDisabled && <div className="w-[22px]" />}
+      <button
+        onClick={onSelect}
+        className={clsx(
+          'flex-1 flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm text-left transition-all',
+          isSelected
+            ? 'bg-bg-modifier-selected text-text-primary ring-1 ring-brand-primary/30'
+            : 'text-text-secondary hover:bg-bg-modifier-hover'
+        )}
+      >
+        <div
+          className="w-3 h-3 rounded-full flex-shrink-0 ring-1 ring-white/10"
+          style={{ background: role.color || '#99aab5' }}
+        />
+        <span className="truncate font-medium">{role.name}</span>
+      </button>
+    </div>
+  );
 }
 
 function RolesTab() {
@@ -343,54 +577,53 @@ function RolesTab() {
     '#607d8b', '#99aab5', '#ffffff', '#000000',
   ];
 
-  // Dangerous permission keys that get special styling
-  const DANGEROUS_PERMS = new Set(['administrator', 'ban_members', 'kick_members', 'manage_server']);
+  // DnD sensors for role reordering
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
-  const permissionGroups = [
-    {
-      name: 'General',
-      permissions: [
-        { key: 'administrator', label: 'Administrator', description: 'Full access to all server settings' },
-        { key: 'manage_server', label: 'Manage Server', description: 'Edit server settings' },
-        { key: 'manage_channels', label: 'Manage Channels', description: 'Create, edit, delete channels' },
-        { key: 'manage_roles', label: 'Manage Roles', description: 'Create, edit, delete roles' },
-        { key: 'view_audit_log', label: 'View Audit Log', description: 'View server audit log' },
-      ]
-    },
-    {
-      name: 'Membership',
-      permissions: [
-        { key: 'kick_members', label: 'Kick Members', description: 'Remove members from the server' },
-        { key: 'ban_members', label: 'Ban Members', description: 'Permanently ban members' },
-        { key: 'create_invites', label: 'Create Invites', description: 'Create invite links' },
-        { key: 'change_nickname', label: 'Change Nickname', description: 'Change own nickname' },
-        { key: 'manage_nicknames', label: 'Manage Nicknames', description: 'Change others\' nicknames' },
-      ]
-    },
-    {
-      name: 'Text Channels',
-      permissions: [
-        { key: 'send_messages', label: 'Send Messages', description: 'Send messages in text channels' },
-        { key: 'embed_links', label: 'Embed Links', description: 'Links will show previews' },
-        { key: 'attach_files', label: 'Attach Files', description: 'Upload files and images' },
-        { key: 'add_reactions', label: 'Add Reactions', description: 'Add reactions to messages' },
-        { key: 'mention_everyone', label: 'Mention Everyone', description: 'Use @everyone and @here' },
-        { key: 'manage_messages', label: 'Manage Messages', description: 'Delete others\' messages' },
-        { key: 'read_message_history', label: 'Read Message History', description: 'View older messages' },
-      ]
-    },
-    {
-      name: 'Voice Channels',
-      permissions: [
-        { key: 'connect', label: 'Connect', description: 'Join voice channels' },
-        { key: 'speak', label: 'Speak', description: 'Talk in voice channels' },
-        { key: 'video', label: 'Video', description: 'Share video' },
-        { key: 'mute_members', label: 'Mute Members', description: 'Mute others in voice' },
-        { key: 'deafen_members', label: 'Deafen Members', description: 'Deafen others in voice' },
-        { key: 'move_members', label: 'Move Members', description: 'Move members between channels' },
-      ]
-    },
-  ];
+  const handleRoleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = filteredRoles.findIndex((r) => r.id === active.id);
+    const newIndex = filteredRoles.findIndex((r) => r.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = arrayMove(filteredRoles, oldIndex, newIndex);
+
+    // Optimistically update local state with new positions
+    const withNewPositions = reordered.map((r, i) => ({
+      ...r,
+      position: reordered.length - i,
+    }));
+    setRoles(withNewPositions);
+
+    // Send to backend (exclude @everyone from reorder array)
+    const roleIds = reordered
+      .filter((r) => r.name !== '@everyone')
+      .map((r) => r.id);
+
+    try {
+      await api.patch('/roles/reorder', { role_ids: roleIds });
+    } catch (err: any) {
+      setError(err?.message || 'Failed to reorder roles');
+      fetchRoles(); // Revert on failure
+    }
+  };
+
+  // Collapsible permission group state
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['general']));
+
+  const toggleGroup = (category: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(category)) next.delete(category);
+      else next.add(category);
+      return next;
+    });
+  };
 
   // Track unsaved changes
   const hasUnsavedChanges = useMemo(() => {
@@ -543,25 +776,55 @@ function RolesTab() {
 
         {!isLoading && (
           <>
-            {/* Role list */}
-            <div className="flex-1 overflow-y-auto space-y-0.5 mb-3">
-              {filteredRoles.map((role) => (
-                <button
-                  key={role.id}
-                  onClick={() => selectRole(role)}
-                  className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm text-left transition-all ${selectedRole?.id === role.id
-                    ? 'bg-bg-modifier-selected text-text-primary ring-1 ring-brand-primary/30'
-                    : 'text-text-secondary hover:bg-bg-modifier-hover'
-                    }`}
+            {/* Role list with drag-to-reorder */}
+            {roleSearch ? (
+              /* When searching, disable DnD (partial list can't be reordered) */
+              <div className="flex-1 overflow-y-auto space-y-0.5 mb-3">
+                {filteredRoles.map((role) => (
+                  <div key={role.id} className="flex items-center gap-1">
+                    <div className="w-[22px]" />
+                    <button
+                      onClick={() => selectRole(role)}
+                      className={clsx(
+                        'flex-1 flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm text-left transition-all',
+                        selectedRole?.id === role.id
+                          ? 'bg-bg-modifier-selected text-text-primary ring-1 ring-brand-primary/30'
+                          : 'text-text-secondary hover:bg-bg-modifier-hover'
+                      )}
+                    >
+                      <div
+                        className="w-3 h-3 rounded-full flex-shrink-0 ring-1 ring-white/10"
+                        style={{ background: role.color || '#99aab5' }}
+                      />
+                      <span className="truncate font-medium">{role.name}</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleRoleDragEnd}
+              >
+                <SortableContext
+                  items={filteredRoles.map((r) => r.id)}
+                  strategy={verticalListSortingStrategy}
                 >
-                  <div
-                    className="w-3 h-3 rounded-full flex-shrink-0 ring-1 ring-white/10"
-                    style={{ background: role.color || '#99aab5' }}
-                  />
-                  <span className="truncate font-medium">{role.name}</span>
-                </button>
-              ))}
-            </div>
+                  <div className="flex-1 overflow-y-auto space-y-0.5 mb-3">
+                    {filteredRoles.map((role) => (
+                      <SortableRoleItem
+                        key={role.id}
+                        role={role}
+                        isSelected={selectedRole?.id === role.id}
+                        onSelect={() => selectRole(role)}
+                        isDragDisabled={role.name === '@everyone'}
+                      />
+                    ))}
+                  </div>
+                </SortableContext>
+              </DndContext>
+            )}
 
             {/* Create role input */}
             <div className="border-t border-border-subtle pt-3">
@@ -681,38 +944,69 @@ function RolesTab() {
             <div className="mb-4">
               <h3 className="text-xs font-semibold text-text-muted uppercase mb-3 tracking-wide">Permissions</h3>
 
-              {permissionGroups.map((group) => (
-                <div key={group.name} className="mb-3">
-                  <h4 className="text-xs font-semibold text-text-muted uppercase mb-1.5 px-1">{group.name}</h4>
-                  <div className="bg-bg-secondary rounded-lg border border-border-subtle divide-y divide-border-subtle overflow-hidden">
-                    {group.permissions.map((perm) => (
-                      <button
-                        key={perm.key}
-                        onClick={() => togglePermission(perm.key)}
-                        className={`flex items-center justify-between p-3 w-full text-left cursor-pointer transition-colors ${DANGEROUS_PERMS.has(perm.key) && editPermissions[perm.key]
-                          ? 'bg-danger/5 hover:bg-danger/10'
-                          : 'hover:bg-bg-modifier-hover'
-                          }`}
-                      >
-                        <div className="pr-4">
-                          <div className={`text-sm font-medium ${DANGEROUS_PERMS.has(perm.key) ? 'text-danger' : 'text-text-primary'}`}>
-                            {perm.label}
-                          </div>
-                          <div className="text-xs text-text-muted">{perm.description}</div>
-                        </div>
-                        {/* Toggle switch */}
-                        <div className={`relative w-11 h-6 rounded-full flex-shrink-0 transition-colors ${editPermissions[perm.key]
-                          ? DANGEROUS_PERMS.has(perm.key) ? 'bg-danger' : 'bg-brand-primary'
-                          : 'bg-bg-tertiary'
-                          }`}>
-                          <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${editPermissions[perm.key] ? 'translate-x-[22px]' : 'translate-x-0.5'
-                            }`} />
-                        </div>
-                      </button>
-                    ))}
+              {PERMISSION_GROUPS.map((group) => {
+                const isExpanded = expandedGroups.has(group.category);
+                const enabledCount = group.permissions.filter((p) => editPermissions[p.key]).length;
+
+                return (
+                  <div key={group.category} className="mb-3">
+                    {/* Collapsible header */}
+                    <button
+                      onClick={() => toggleGroup(group.category)}
+                      className="flex items-center justify-between w-full px-1 py-1.5 text-left group"
+                    >
+                      <div className="flex items-center gap-2">
+                        <svg
+                          className={clsx('w-3.5 h-3.5 text-text-muted transition-transform', isExpanded && 'rotate-90')}
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                        >
+                          <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                        </svg>
+                        <h4 className="text-xs font-semibold text-text-muted uppercase">{group.name}</h4>
+                      </div>
+                      <span className="text-xs text-text-muted">{enabledCount}/{group.permissions.length}</span>
+                    </button>
+
+                    {/* Collapsible body */}
+                    {isExpanded && (
+                      <div className="bg-bg-secondary rounded-lg border border-border-subtle divide-y divide-border-subtle overflow-hidden">
+                        {group.permissions.map((perm) => (
+                          <button
+                            key={perm.key}
+                            onClick={() => togglePermission(perm.key)}
+                            className={clsx(
+                              'flex items-center justify-between p-3 w-full text-left cursor-pointer transition-colors',
+                              DANGEROUS_PERMS.has(perm.key) && editPermissions[perm.key]
+                                ? 'bg-danger/5 hover:bg-danger/10'
+                                : 'hover:bg-bg-modifier-hover'
+                            )}
+                          >
+                            <div className="pr-4">
+                              <div className={clsx('text-sm font-medium', DANGEROUS_PERMS.has(perm.key) ? 'text-danger' : 'text-text-primary')}>
+                                {perm.label}
+                              </div>
+                              <div className="text-xs text-text-muted">{perm.description}</div>
+                            </div>
+                            {/* Toggle switch */}
+                            <div className={clsx(
+                              'relative w-11 h-6 rounded-full flex-shrink-0 transition-colors',
+                              editPermissions[perm.key]
+                                ? DANGEROUS_PERMS.has(perm.key) ? 'bg-danger' : 'bg-brand-primary'
+                                : 'bg-bg-tertiary'
+                            )}>
+                              <div className={clsx(
+                                'absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform',
+                                editPermissions[perm.key] ? 'translate-x-[22px]' : 'translate-x-0.5'
+                              )} />
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Delete Role Section */}
@@ -1129,6 +1423,111 @@ interface ChannelData {
   is_temp_channel?: boolean;
 }
 
+function SortableChannelItem({
+  channel,
+  icon,
+  onDelete,
+}: {
+  channel: ChannelData;
+  icon: ReactNode;
+  onDelete: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: channel.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : undefined,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center justify-between p-2 rounded hover:bg-bg-modifier-hover group"
+    >
+      <div className="flex items-center gap-2">
+        <button
+          className="flex-shrink-0 cursor-grab active:cursor-grabbing text-text-muted hover:text-text-primary p-0.5"
+          {...attributes}
+          {...listeners}
+        >
+          <DragHandleIcon />
+        </button>
+        {icon}
+        <span className="text-text-primary">{channel.name}</span>
+        <span className="text-xs text-text-muted capitalize">({channel.type.replace('_', ' ')})</span>
+      </div>
+      <button
+        onClick={onDelete}
+        className="opacity-0 group-hover:opacity-100 p-1 text-danger hover:bg-danger/20 rounded transition-all"
+      >
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+function SortableCategoryHeader({
+  category,
+  onDelete,
+}: {
+  category: ChannelCategory;
+  onDelete: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: category.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : undefined,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="flex items-center justify-between group">
+      <div className="flex items-center gap-1.5">
+        <button
+          className="flex-shrink-0 cursor-grab active:cursor-grabbing text-text-muted hover:text-text-primary p-0.5"
+          {...attributes}
+          {...listeners}
+        >
+          <DragHandleIcon />
+        </button>
+        <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-0">
+          {category.name}
+        </h3>
+      </div>
+      <button
+        onClick={onDelete}
+        className="opacity-0 group-hover:opacity-100 p-1 text-danger hover:bg-danger/20 rounded transition-all"
+        title="Delete category"
+      >
+        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
 function ChannelsTab({ serverData, onRefresh }: { serverData: ServerData | null; onRefresh: () => void }) {
   const [channels, setChannels] = useState<ChannelData[]>([]);
   const [categories, setCategories] = useState<ChannelCategory[]>([]);
@@ -1208,6 +1607,63 @@ function ChannelsTab({ serverData, onRefresh }: { serverData: ServerData | null;
     return channels
       .filter(c => c.category_id === categoryId)
       .sort((a, b) => a.position - b.position);
+  };
+
+  // DnD sensors for channel/category reordering
+  const channelSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleCategoryDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const sorted = [...categories].sort((a, b) => a.position - b.position);
+    const oldIndex = sorted.findIndex((c) => c.id === active.id);
+    const newIndex = sorted.findIndex((c) => c.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = arrayMove(sorted, oldIndex, newIndex);
+    const withPositions = reordered.map((c, i) => ({ ...c, position: i }));
+    setCategories(withPositions);
+
+    try {
+      await api.post('/categories/reorder', {
+        categories: withPositions.map((c) => ({ id: c.id, position: c.position })),
+      });
+    } catch (err: any) {
+      setError(err?.message || 'Failed to reorder categories');
+      fetchData();
+    }
+  };
+
+  const handleChannelDragEnd = (categoryId: string | null) => async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id || !serverData) return;
+
+    const categoryChannels = getChannelsByCategory(categoryId);
+    const oldIndex = categoryChannels.findIndex((c) => c.id === active.id);
+    const newIndex = categoryChannels.findIndex((c) => c.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = arrayMove(categoryChannels, oldIndex, newIndex);
+    const withPositions = reordered.map((c, i) => ({ ...c, position: i }));
+
+    // Optimistically update
+    setChannels((prev) => {
+      const otherChannels = prev.filter((c) => c.category_id !== categoryId);
+      return [...otherChannels, ...withPositions];
+    });
+
+    try {
+      await api.patch(`/channels/${serverData.id}/reorder`, {
+        channels: withPositions.map((c) => ({ id: c.id, position: c.position })),
+      });
+    } catch (err: any) {
+      setError(err?.message || 'Failed to reorder channels');
+      fetchData();
+    }
   };
 
   const handleCreateChannel = async () => {
@@ -1353,75 +1809,83 @@ function ChannelsTab({ serverData, onRefresh }: { serverData: ServerData | null;
 
       {!isLoading && !error && (
         <>
-          {/* Uncategorized channels */}
+          {/* Uncategorized channels (with DnD) */}
           {getChannelsByCategory(null).length > 0 && (
             <div className="mb-4">
               <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">
                 Uncategorized
               </h3>
-              <div className="space-y-1">
-                {getChannelsByCategory(null).map((channel) => (
-                  <div key={channel.id} className="flex items-center justify-between p-2 rounded hover:bg-bg-modifier-hover group">
-                    <div className="flex items-center gap-2">
-                      {getChannelIcon(channel.type)}
-                      <span className="text-text-primary">{channel.name}</span>
-                      <span className="text-xs text-text-muted capitalize">({channel.type})</span>
-                    </div>
-                    <button
-                      onClick={() => handleDeleteChannel(channel)}
-                      className="opacity-0 group-hover:opacity-100 p-1 text-danger hover:bg-danger/20 rounded transition-all"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
+              <DndContext
+                sensors={channelSensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleChannelDragEnd(null)}
+              >
+                <SortableContext
+                  items={getChannelsByCategory(null).map((c) => c.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <div className="space-y-1">
+                    {getChannelsByCategory(null).map((channel) => (
+                      <SortableChannelItem
+                        key={channel.id}
+                        channel={channel}
+                        icon={getChannelIcon(channel.type)}
+                        onDelete={() => handleDeleteChannel(channel)}
+                      />
+                    ))}
                   </div>
-                ))}
-              </div>
+                </SortableContext>
+              </DndContext>
             </div>
           )}
 
-          {/* Categories with channels */}
-          {[...categories].sort((a, b) => a.position - b.position).map((category) => (
-            <div key={category.id} className="mb-4">
-              <div className="flex items-center justify-between group">
-                <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">
-                  {category.name}
-                </h3>
-                <button
-                  onClick={() => handleDeleteCategory(category)}
-                  className="opacity-0 group-hover:opacity-100 p-1 text-danger hover:bg-danger/20 rounded transition-all"
-                  title="Delete category"
-                >
-                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-              <div className="space-y-1">
-                {getChannelsByCategory(category.id).map((channel) => (
-                  <div key={channel.id} className="flex items-center justify-between p-2 rounded hover:bg-bg-modifier-hover group">
-                    <div className="flex items-center gap-2">
-                      {getChannelIcon(channel.type)}
-                      <span className="text-text-primary">{channel.name}</span>
-                      <span className="text-xs text-text-muted capitalize">({channel.type})</span>
-                    </div>
-                    <button
-                      onClick={() => handleDeleteChannel(channel)}
-                      className="opacity-0 group-hover:opacity-100 p-1 text-danger hover:bg-danger/20 rounded transition-all"
+          {/* Categories with channels (both draggable) */}
+          <DndContext
+            sensors={channelSensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleCategoryDragEnd}
+          >
+            <SortableContext
+              items={[...categories].sort((a, b) => a.position - b.position).map((c) => c.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              {[...categories].sort((a, b) => a.position - b.position).map((category) => {
+                const categoryChannels = getChannelsByCategory(category.id);
+                return (
+                  <div key={category.id} className="mb-4">
+                    <SortableCategoryHeader
+                      category={category}
+                      onDelete={() => handleDeleteCategory(category)}
+                    />
+                    <DndContext
+                      sensors={channelSensors}
+                      collisionDetection={closestCenter}
+                      onDragEnd={handleChannelDragEnd(category.id)}
                     >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
+                      <SortableContext
+                        items={categoryChannels.map((c) => c.id)}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        <div className="space-y-1 mt-2">
+                          {categoryChannels.map((channel) => (
+                            <SortableChannelItem
+                              key={channel.id}
+                              channel={channel}
+                              icon={getChannelIcon(channel.type)}
+                              onDelete={() => handleDeleteChannel(channel)}
+                            />
+                          ))}
+                        </div>
+                      </SortableContext>
+                    </DndContext>
+                    {categoryChannels.length === 0 && (
+                      <p className="text-sm text-text-muted italic px-2 mt-2">No channels in this category</p>
+                    )}
                   </div>
-                ))}
-                {getChannelsByCategory(category.id).length === 0 && (
-                  <p className="text-sm text-text-muted italic px-2">No channels in this category</p>
-                )}
-              </div>
-            </div>
-          ))}
+                );
+              })}
+            </SortableContext>
+          </DndContext>
 
           {channels.length === 0 && categories.length === 0 && (
             <div className="text-center py-8">

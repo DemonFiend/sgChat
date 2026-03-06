@@ -7,6 +7,7 @@ import { TextPermissions, hasPermission } from '@sgchat/shared';
 import { notFound, forbidden } from '../utils/errors.js';
 import { handleCrossSegmentEdit, handleCrossSegmentDelete } from '../services/archive.js';
 import { onMessageDeleted } from '../services/segmentation.js';
+import { assignRoleFromReaction, removeRoleFromReaction } from '../services/roleReactions.js';
 
 export const messageRoutes: FastifyPluginAsync = async (fastify) => {
   // Edit message
@@ -204,6 +205,37 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
         },
       });
 
+      // Role reaction intercept: assign role if this is a role-reaction message
+      if (message.channel_id) {
+        const channel = await db.channels.findById(message.channel_id);
+        if (channel) {
+          const roleId = await assignRoleFromReaction(
+            request.user!.id, channel.server_id, emojiDecoded, id
+          );
+          if (roleId) {
+            // Broadcast role update so other clients see the change
+            const userRoles = await db.sql`
+              SELECT r.id, r.name, r.color, r.position
+              FROM member_roles mr
+              JOIN roles r ON mr.role_id = r.id
+              WHERE mr.member_user_id = ${request.user!.id}
+                AND mr.member_server_id = ${channel.server_id}
+              ORDER BY r.position DESC
+            `;
+            await publishEvent({
+              type: 'member.update',
+              resourceId: `server:${channel.server_id}`,
+              actorId: null,
+              payload: {
+                user_id: request.user!.id,
+                server_id: channel.server_id,
+                roles: userRoles,
+              },
+            });
+          }
+        }
+      }
+
       return { reactions };
     },
   });
@@ -255,6 +287,36 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
           reactions,
         },
       });
+
+      // Role reaction intercept: remove role if this is a role-reaction message
+      if (message.channel_id) {
+        const channel = await db.channels.findById(message.channel_id);
+        if (channel) {
+          const roleId = await removeRoleFromReaction(
+            request.user!.id, channel.server_id, emojiDecoded, id
+          );
+          if (roleId) {
+            const userRoles = await db.sql`
+              SELECT r.id, r.name, r.color, r.position
+              FROM member_roles mr
+              JOIN roles r ON mr.role_id = r.id
+              WHERE mr.member_user_id = ${request.user!.id}
+                AND mr.member_server_id = ${channel.server_id}
+              ORDER BY r.position DESC
+            `;
+            await publishEvent({
+              type: 'member.update',
+              resourceId: `server:${channel.server_id}`,
+              actorId: null,
+              payload: {
+                user_id: request.user!.id,
+                server_id: channel.server_id,
+                roles: userRoles,
+              },
+            });
+          }
+        }
+      }
 
       return { reactions };
     },

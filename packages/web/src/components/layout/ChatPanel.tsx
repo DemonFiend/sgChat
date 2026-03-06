@@ -76,6 +76,7 @@ interface ChatPanelProps {
   onEditMessage?: (messageId: string, newContent: string) => void;
   onDeleteMessage?: (messageId: string) => void;
   onAuthorClick?: (author: MessageAuthor, rect: DOMRect) => void;
+  onAuthorContextMenu?: (author: MessageAuthor, e: React.MouseEvent) => void;
   onTypingStart?: () => void;
   onTypingStop?: () => void;
   currentUserId?: string;
@@ -89,7 +90,7 @@ interface ChatPanelProps {
 
 export function ChatPanel({
   channel, messages, onSendMessage, onReactionAdd, onReactionRemove,
-  onEditMessage, onDeleteMessage, onAuthorClick,
+  onEditMessage, onDeleteMessage, onAuthorClick, onAuthorContextMenu,
   onTypingStart, onTypingStop, currentUserId, typingUsers,
   replyingTo, onCancelReply, onReplyClick,
   isMemberListOpen, onToggleMemberList,
@@ -459,6 +460,7 @@ export function ChatPanel({
                       onDeleteClick={onDeleteMessage ? () => onDeleteMessage(message.id) : undefined}
                       onReactClick={(anchor: HTMLElement) => setReactionPickerMsg({ id: message.id, anchor })}
                       onAuthorClick={onAuthorClick}
+                      onAuthorContextMenu={onAuthorContextMenu}
                       onReplyClick={onReplyClick ? () => onReplyClick(message) : undefined}
                     />
                   </div>
@@ -702,6 +704,7 @@ interface MessageItemProps {
   onDeleteClick?: () => void;
   onReactClick?: (anchor: HTMLElement) => void;
   onAuthorClick?: (author: MessageAuthor, rect: DOMRect) => void;
+  onAuthorContextMenu?: (author: MessageAuthor, e: React.MouseEvent) => void;
   onReplyClick?: () => void;
 }
 
@@ -768,7 +771,7 @@ function MessageActionToolbar({
 function MessageItem({
   message, showAuthor, formatTime, onReactionAdd, onReactionRemove, currentUserId,
   isEditing, editContent, onEditChange, onEditSave, onEditCancel, onEditStart,
-  onDeleteClick, onReactClick, onAuthorClick, onReplyClick,
+  onDeleteClick, onReactClick, onAuthorClick, onAuthorContextMenu, onReplyClick,
 }: MessageItemProps) {
   const isSystem = message.type === 'system' || message.system_event != null;
   const author = message.author || { id: 'unknown', username: 'Unknown User', display_name: null, avatar_url: null };
@@ -784,6 +787,13 @@ function MessageItem({
   const handleAuthorClick = (e: React.MouseEvent) => {
     if (onAuthorClick) {
       onAuthorClick(author, (e.currentTarget as HTMLElement).getBoundingClientRect());
+    }
+  };
+
+  const handleAuthorContextMenu = (e: React.MouseEvent) => {
+    if (onAuthorContextMenu) {
+      e.preventDefault();
+      onAuthorContextMenu(author, e);
     }
   };
 
@@ -850,6 +860,48 @@ function MessageItem({
   // System message
   if (isSystem) {
     const eventType = message.system_event?.type;
+
+    // Role reaction message — styled card with reactions
+    if (eventType === 'role_reaction') {
+      // Parse content: first line is **GroupName**, second is description, rest are emoji mappings
+      const lines = message.content.split('\n').filter((l: string) => l.trim());
+      const titleLine = lines[0]?.replace(/\*\*/g, '') || 'Role Reactions';
+      const descLine = lines.length > 1 && !lines[1].includes('—') ? lines[1] : null;
+      const mappingLines = lines.filter((l: string) => l.includes('—'));
+
+      return (
+        <div className="px-4 py-3 group relative">
+          <div className="border border-brand-primary/30 rounded-lg bg-bg-secondary/50 p-4 max-w-lg">
+            <div className="flex items-center gap-2 mb-2">
+              <svg className="w-5 h-5 text-brand-primary flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+              <h3 className="text-base font-semibold text-text-primary">{titleLine}</h3>
+            </div>
+            {descLine && (
+              <p className="text-sm text-text-muted mb-3">{descLine}</p>
+            )}
+            <div className="space-y-1">
+              {mappingLines.map((line: string, i: number) => {
+                const parts = line.trim().split('—').map((s: string) => s.trim());
+                return (
+                  <div key={i} className="flex items-center gap-2 text-sm">
+                    <span className="text-base w-6 text-center">{parts[0]}</span>
+                    <span className="text-text-muted">→</span>
+                    <span className="text-text-primary">{parts[1] || ''}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-xs text-text-muted mt-3 italic">
+              React below to assign yourself a role
+            </p>
+          </div>
+          {renderReactions()}
+        </div>
+      );
+    }
+
     return (
       <div className="px-4 py-2 flex items-center gap-3">
         <div className="flex-shrink-0 w-10 h-10 rounded-full bg-bg-tertiary flex items-center justify-center">
@@ -899,6 +951,7 @@ function MessageItem({
                 className="font-medium hover:underline cursor-pointer"
                 style={{ color: author.role_color || 'var(--color-text-primary)' }}
                 onClick={handleAuthorClick}
+                onContextMenu={handleAuthorContextMenu}
               >
                 {displayName}
               </span>

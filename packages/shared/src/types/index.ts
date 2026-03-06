@@ -16,7 +16,7 @@ export type MessageStatus = 'sending' | 'sent' | 'received' | 'failed';
 export type ChannelType = 'text' | 'voice' | 'announcement' | 'music' | 'temp_voice_generator' | 'temp_voice';
 
 // System event types
-export type SystemEventType = 'member_join' | 'member_leave' | 'member_online';
+export type SystemEventType = 'member_join' | 'member_leave' | 'member_online' | 'role_reaction';
 
 export interface User {
   id: UUID;
@@ -836,4 +836,34 @@ export interface ComprehensiveStorageStats {
     by_type: Record<string, number>;
   };
   total_size_bytes: number;
+}
+
+// ============================================================
+// Role Reactions
+// ============================================================
+
+export interface RoleReactionGroup {
+  id: string;
+  server_id: string;
+  channel_id: string;
+  message_id: string | null;
+  name: string;
+  description: string | null;
+  position: number;
+  enabled: boolean;
+  remove_roles_on_disable: boolean;
+  mappings: RoleReactionMapping[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RoleReactionMapping {
+  id: string;
+  group_id: string;
+  role_id: string;
+  role_name?: string;
+  role_color?: string | null;
+  emoji: string;
+  label: string | null;
+  position: number;
 }

@@ -223,3 +223,62 @@ export type TimeoutMemberInput = z.infer<typeof timeoutMemberSchema>;
 export type UpdateUserSettingsInput = z.infer<typeof updateUserSettingsSchema>;
 export type UpdatePopupConfigInput = z.infer<typeof updatePopupConfigSchema>;
 export type EventConfigInput = z.infer<typeof eventConfigSchema>;
+
+// ============================================================
+// Role Reaction validators
+// ============================================================
+
+export const createRoleReactionGroupSchema = z.object({
+  name: z.string().min(1).max(100),
+  description: z.string().max(500).nullable().optional(),
+  channel_id: z.string().uuid(),
+  position: z.number().min(0).optional(),
+  enabled: z.boolean().optional(),
+  remove_roles_on_disable: z.boolean().optional(),
+});
+
+export const updateRoleReactionGroupSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  description: z.string().max(500).nullable().optional(),
+  channel_id: z.string().uuid().optional(),
+  position: z.number().min(0).optional(),
+  remove_roles_on_disable: z.boolean().optional(),
+});
+
+export const toggleRoleReactionGroupSchema = z.object({
+  enabled: z.boolean(),
+  remove_roles: z.boolean().optional(),
+});
+
+export const createRoleReactionMappingSchema = z.object({
+  emoji: z.string().min(1).max(32),
+  role_id: z.string().uuid(),
+  label: z.string().max(100).nullable().optional(),
+});
+
+export const updateRoleReactionMappingSchema = z.object({
+  emoji: z.string().min(1).max(32).optional(),
+  role_id: z.string().uuid().optional(),
+  label: z.string().max(100).nullable().optional(),
+});
+
+export const reorderRoleReactionMappingsSchema = z.object({
+  mapping_ids: z.array(z.string().uuid()),
+});
+
+export const roleReactionSetupSchema = z.object({
+  channel_id: z.string().uuid(),
+});
+
+export const formatChannelSchema = z.object({
+  channel_id: z.string().uuid(),
+});
+
+export type CreateRoleReactionGroupInput = z.infer<typeof createRoleReactionGroupSchema>;
+export type UpdateRoleReactionGroupInput = z.infer<typeof updateRoleReactionGroupSchema>;
+export type ToggleRoleReactionGroupInput = z.infer<typeof toggleRoleReactionGroupSchema>;
+export type CreateRoleReactionMappingInput = z.infer<typeof createRoleReactionMappingSchema>;
+export type UpdateRoleReactionMappingInput = z.infer<typeof updateRoleReactionMappingSchema>;
+export type ReorderRoleReactionMappingsInput = z.infer<typeof reorderRoleReactionMappingsSchema>;
+export type RoleReactionSetupInput = z.infer<typeof roleReactionSetupSchema>;
+export type FormatChannelInput = z.infer<typeof formatChannelSchema>;
