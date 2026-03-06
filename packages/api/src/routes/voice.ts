@@ -47,9 +47,13 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
           return forbidden(reply, 'You don\'t have permission to create a temp channel');
         }
 
+        // Get user info for socket event + LiveKit name
+        const user = await db.users.findById(request.user!.id);
+
         // Join the generator channel itself (user will be auto-moved after 5s)
         const token = await generateLiveKitToken({
           identity: request.user!.id,
+          name: user.display_name || user.username || request.user!.username,
           room: `voice:${channel_id}`,
           canPublish: hasPermission(perms.voice, VoicePermissions.SPEAK),
           canPublishVideo: false,
@@ -61,9 +65,6 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
 
         // Schedule temp channel creation after 5 seconds
         scheduleTempChannelCreation(request.user!.id, channel_id, channel.server_id);
-
-        // Get user info for socket event
-        const user = await db.users.findById(request.user!.id);
 
         // Check for custom join sound
         const customJoinSound = await db.userVoiceSounds.findByUserServerType(request.user!.id, channel.server_id, 'join');
@@ -118,22 +119,23 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
       const isAfkChannel = channel.is_afk_channel === true;
       const canSpeak = hasPermission(perms.voice, VoicePermissions.SPEAK);
 
+      // Track voice state in Redis
+      await redis.joinVoiceChannel(request.user!.id, actualChannelId);
+
+      // Get user info for socket event + LiveKit name
+      const user = await db.users.findById(request.user!.id);
+
       // Generate LiveKit token with appropriate grants
       // AFK channel: no publish/subscribe — full silence, no audio in or out
       const token = await generateLiveKitToken({
         identity: request.user!.id,
+        name: user.display_name || user.username || request.user!.username,
         room: roomName,
         canPublish: isAfkChannel ? false : isStageChannel ? canSpeak : hasPermission(perms.voice, VoicePermissions.SPEAK),
         canPublishVideo: isAfkChannel ? false : hasPermission(perms.voice, VoicePermissions.VIDEO),
         canPublishScreen: isAfkChannel ? false : hasPermission(perms.voice, VoicePermissions.STREAM),
         canSubscribe: !isAfkChannel,
       });
-
-      // Track voice state in Redis
-      await redis.joinVoiceChannel(request.user!.id, actualChannelId);
-
-      // Get user info for socket event
-      const user = await db.users.findById(request.user!.id);
 
       // Check for custom join sound
       const customJoinSound = await db.userVoiceSounds.findByUserServerType(request.user!.id, channel.server_id, 'join');
@@ -192,9 +194,13 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
           return forbidden(reply, 'You don\'t have permission to create a temp channel');
         }
 
+        // Get user info for socket event + LiveKit name
+        const user = await db.users.findById(request.user!.id);
+
         // Join the generator channel itself (user will be auto-moved after 5s)
         const token = await generateLiveKitToken({
           identity: request.user!.id,
+          name: user.display_name || user.username || request.user!.username,
           room: `voice:${channelId}`,
           canPublish: hasPermission(perms.voice, VoicePermissions.SPEAK),
           canPublishVideo: false,
@@ -206,9 +212,6 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
 
         // Schedule temp channel creation after 5 seconds
         scheduleTempChannelCreation(request.user!.id, channelId, channel.server_id);
-
-        // Get user info for socket event
-        const user = await db.users.findById(request.user!.id);
 
         // Check for custom join sound
         const customJoinSound = await db.userVoiceSounds.findByUserServerType(request.user!.id, channel.server_id, 'join');
@@ -280,22 +283,23 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
       const isAfkChannel = channel.is_afk_channel === true;
       const canSpeak = hasPermission(perms.voice, VoicePermissions.SPEAK);
 
+      // Track voice state in Redis
+      await redis.joinVoiceChannel(request.user!.id, actualChannelId);
+
+      // Get user info for socket event + LiveKit name
+      const user = await db.users.findById(request.user!.id);
+
       // Generate LiveKit token with appropriate grants
       // AFK channel: no publish/subscribe — full silence, no audio in or out
       const token = await generateLiveKitToken({
         identity: request.user!.id,
+        name: user.display_name || user.username || request.user!.username,
         room: `voice:${actualChannelId}`,
         canPublish: isAfkChannel ? false : isStageChannel ? canSpeak : hasPermission(perms.voice, VoicePermissions.SPEAK),
         canPublishVideo: isAfkChannel ? false : hasPermission(perms.voice, VoicePermissions.VIDEO),
         canPublishScreen: isAfkChannel ? false : hasPermission(perms.voice, VoicePermissions.STREAM),
         canSubscribe: !isAfkChannel,
       });
-
-      // Track voice state in Redis
-      await redis.joinVoiceChannel(request.user!.id, actualChannelId);
-
-      // Get user info for socket event
-      const user = await db.users.findById(request.user!.id);
 
       // Check for custom join sound
       const customJoinSound = await db.userVoiceSounds.findByUserServerType(request.user!.id, channel.server_id, 'join');
@@ -372,6 +376,7 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
       // Generate token for AFK channel (will be muted automatically)
       const token = await generateLiveKitToken({
         identity: request.user!.id,
+        name: request.user!.username,
         room: `voice:${server.afk_channel_id}`,
         canPublish: false, // Muted in AFK
         canPublishVideo: false,

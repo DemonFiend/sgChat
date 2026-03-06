@@ -10,6 +10,7 @@ import {
 } from '@/contexts/MentionContext';
 import { useAuthStore } from '@/stores/auth';
 import { useServerPopupStore } from '@/stores/serverPopup';
+import { useServerConfigStore } from '@/stores/serverConfig';
 import { useVoiceStore } from '@/stores/voice';
 import { socketService } from '@/lib/socket';
 import { voiceService } from '@/lib/voiceService';
@@ -27,7 +28,8 @@ import { MemberList } from '@/components/layout/MemberList';
 import { TitleBar } from '@/components/ui/TitleBar';
 import { ServerSettingsModal } from '@/components/ui/ServerSettingsModal';
 import { ChannelSettingsModal } from '@/components/ui/ChannelSettingsModal';
-import { UserContextMenu, type ContextMenuItem } from '@/components/ui/UserContextMenu';
+import { UserContextMenu } from '@/components/ui/UserContextMenu';
+import { TimeoutModal } from '@/components/ui/TimeoutModal';
 import { UserProfilePopover } from '@/components/ui/UserProfilePopover';
 import { UserSettingsModal } from '@/components/ui/UserSettingsModal';
 import { FloatingUserPanel } from '@/components/layout/FloatingUserPanel';
@@ -108,8 +110,13 @@ export function MainLayout() {
     rect: DOMRect;
   } | null>(null);
   const [contextMenu, setContextMenu] = useState<{
-    member: MemberData;
+    targetUser: { id: string; username: string; display_name?: string | null };
     position: { x: number; y: number };
+  } | null>(null);
+  const [timeoutTarget, setTimeoutTarget] = useState<{
+    id: string;
+    username: string;
+    display_name?: string | null;
   } | null>(null);
   const [showUserSettings, setShowUserSettings] = useState(false);
   const [userTimezone, setUserTimezone] = useState<string | undefined>(undefined);
@@ -471,15 +478,43 @@ export function MainLayout() {
       handleVoiceLeave as (data: unknown) => void,
     );
 
+    const handleVoiceStateUpdate = (data: any) => {
+      // Update participant mute/deafen/stream state
+      if (data.channel_id && data.user_id) {
+        voiceState.updateParticipantState?.(data.channel_id, data.user_id, {
+          isMuted: data.is_muted,
+          isDeafened: data.is_deafened,
+          isStreaming: data.is_streaming,
+          isServerMuted: data.is_server_muted,
+          isServerDeafened: data.is_server_deafened,
+        });
+      }
+    };
+
+    const handleForceDisconnect = () => {
+      voiceService.leave();
+    };
+
+    const handleServerMute = (data: any) => {
+      voiceService.setServerMuted(data.muted);
+    };
+
+    const handleServerDeafen = (data: any) => {
+      voiceService.setServerDeafened(data.deafened);
+    };
+
+    socketService.on('voice.state_update', handleVoiceStateUpdate as (data: unknown) => void);
+    socketService.on('voice.force_disconnect', handleForceDisconnect as (data: unknown) => void);
+    socketService.on('voice.server_mute', handleServerMute as (data: unknown) => void);
+    socketService.on('voice.server_deafen', handleServerDeafen as (data: unknown) => void);
+
     return () => {
-      socketService.off(
-        'voice.join',
-        handleVoiceJoin as (data: unknown) => void,
-      );
-      socketService.off(
-        'voice.leave',
-        handleVoiceLeave as (data: unknown) => void,
-      );
+      socketService.off('voice.join', handleVoiceJoin as (data: unknown) => void);
+      socketService.off('voice.leave', handleVoiceLeave as (data: unknown) => void);
+      socketService.off('voice.state_update', handleVoiceStateUpdate as (data: unknown) => void);
+      socketService.off('voice.force_disconnect', handleForceDisconnect as (data: unknown) => void);
+      socketService.off('voice.server_mute', handleServerMute as (data: unknown) => void);
+      socketService.off('voice.server_deafen', handleServerDeafen as (data: unknown) => void);
     };
   }, []);
 
@@ -534,18 +569,137 @@ export function MainLayout() {
       setChannels((prev) => prev.filter((c) => c.id !== deletedId));
     };
 
+    const handlePopupConfigUpdate = (data: any) => {
+      if (data && data.serverId) {
+        useServerConfigStore.getState().applyRemoteUpdate(data);
+      }
+      // Also update currentServer state for fields visible in the main UI
+      setCurrentServer((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          ...(data.serverName !== undefined && { name: data.serverName }),
+          ...(data.serverIconUrl !== undefined && { icon_url: data.serverIconUrl }),
+          ...(data.description !== undefined && { description: data.description }),
+        };
+      });
+    };
+
     socketService.on('server.update', handleServerUpdate as (data: unknown) => void);
+    socketService.on('server.popup_config.update', handlePopupConfigUpdate as (data: unknown) => void);
     socketService.on('presence.update', handlePresenceUpdate as (data: unknown) => void);
+    const handleChannelsReorder = (data: any) => {
+      if (Array.isArray(data)) setChannels(data);
+    };
+
+    const handleChannelPermissionsChange = () => {
+      // Refetch channels to get updated permission overrides
+      api.get<Channel[] | { channels: Channel[]; categories?: Category[] }>('/channels').then((res) => {
+        if (Array.isArray(res)) setChannels(res);
+        else if (res?.channels) setChannels(res.channels);
+      }).catch(() => {});
+    };
+
+    const handleCategoryCreate = (data: any) => {
+      const cat = data.category || data;
+      setCategories((prev) => {
+        if (prev.some((c) => c.id === cat.id)) return prev;
+        return [...prev, cat];
+      });
+    };
+
+    const handleCategoryUpdate = (data: any) => {
+      const cat = data.category || data;
+      setCategories((prev) => prev.map((c) => (c.id === cat.id ? { ...c, ...cat } : c)));
+    };
+
+    const handleCategoryDelete = (data: any) => {
+      const deletedId = data.id || data.category_id;
+      setCategories((prev) => prev.filter((c) => c.id !== deletedId));
+    };
+
+    const handleRoleChange = () => {
+      // Refetch members to get updated role assignments
+      api.get<MemberData[] | { members: MemberData[] }>('/members').then((res) => {
+        if (Array.isArray(res)) setMembers(res);
+        else if (res?.members) setMembers(res.members);
+      }).catch(() => {});
+    };
+
+    const handleMemberRoleChange = (data: any) => {
+      // Refresh the specific member's roles
+      if (data.user_id) {
+        setMembers((prev) => prev.map((m) => {
+          if (m.id !== data.user_id) return m;
+          if (data.roles) return { ...m, roles: data.roles };
+          return m;
+        }));
+      }
+      // Also refetch for full consistency
+      handleRoleChange();
+    };
+
+    const handleServerDelete = () => {
+      window.location.href = '/';
+    };
+
+    const handleServerKicked = (data: any) => {
+      alert(data.reason ? `You were kicked: ${data.reason}` : 'You were kicked from this server.');
+      window.location.href = '/';
+    };
+
+    const handleServerBanned = (data: any) => {
+      alert(data.reason ? `You were banned: ${data.reason}` : 'You were banned from this server.');
+      window.location.href = '/';
+    };
+
     socketService.on('channel.create', handleChannelCreate as (data: unknown) => void);
     socketService.on('channel.update', handleChannelUpdate as (data: unknown) => void);
     socketService.on('channel.delete', handleChannelDelete as (data: unknown) => void);
+    socketService.on('channels.reorder', handleChannelsReorder as (data: unknown) => void);
+    socketService.on('channel.permissions.update', handleChannelPermissionsChange as (data: unknown) => void);
+    socketService.on('channel.permissions.delete', handleChannelPermissionsChange as (data: unknown) => void);
+    socketService.on('category.create', handleCategoryCreate as (data: unknown) => void);
+    socketService.on('category.update', handleCategoryUpdate as (data: unknown) => void);
+    socketService.on('category.delete', handleCategoryDelete as (data: unknown) => void);
+    socketService.on('category.permissions.update', handleChannelPermissionsChange as (data: unknown) => void);
+    socketService.on('category.permissions.delete', handleChannelPermissionsChange as (data: unknown) => void);
+    socketService.on('role.create', handleRoleChange as (data: unknown) => void);
+    socketService.on('role.update', handleRoleChange as (data: unknown) => void);
+    socketService.on('role.delete', handleRoleChange as (data: unknown) => void);
+    socketService.on('roles.reorder', handleRoleChange as (data: unknown) => void);
+    socketService.on('member.role.add', handleMemberRoleChange as (data: unknown) => void);
+    socketService.on('member.role.remove', handleMemberRoleChange as (data: unknown) => void);
+    socketService.on('member.roles.update', handleMemberRoleChange as (data: unknown) => void);
+    socketService.on('server.delete', handleServerDelete as (data: unknown) => void);
+    socketService.on('server.kicked', handleServerKicked as (data: unknown) => void);
+    socketService.on('server.banned', handleServerBanned as (data: unknown) => void);
 
     return () => {
       socketService.off('server.update', handleServerUpdate as (data: unknown) => void);
+      socketService.off('server.popup_config.update', handlePopupConfigUpdate as (data: unknown) => void);
       socketService.off('presence.update', handlePresenceUpdate as (data: unknown) => void);
       socketService.off('channel.create', handleChannelCreate as (data: unknown) => void);
       socketService.off('channel.update', handleChannelUpdate as (data: unknown) => void);
       socketService.off('channel.delete', handleChannelDelete as (data: unknown) => void);
+      socketService.off('channels.reorder', handleChannelsReorder as (data: unknown) => void);
+      socketService.off('channel.permissions.update', handleChannelPermissionsChange as (data: unknown) => void);
+      socketService.off('channel.permissions.delete', handleChannelPermissionsChange as (data: unknown) => void);
+      socketService.off('category.create', handleCategoryCreate as (data: unknown) => void);
+      socketService.off('category.update', handleCategoryUpdate as (data: unknown) => void);
+      socketService.off('category.delete', handleCategoryDelete as (data: unknown) => void);
+      socketService.off('category.permissions.update', handleChannelPermissionsChange as (data: unknown) => void);
+      socketService.off('category.permissions.delete', handleChannelPermissionsChange as (data: unknown) => void);
+      socketService.off('role.create', handleRoleChange as (data: unknown) => void);
+      socketService.off('role.update', handleRoleChange as (data: unknown) => void);
+      socketService.off('role.delete', handleRoleChange as (data: unknown) => void);
+      socketService.off('roles.reorder', handleRoleChange as (data: unknown) => void);
+      socketService.off('member.role.add', handleMemberRoleChange as (data: unknown) => void);
+      socketService.off('member.role.remove', handleMemberRoleChange as (data: unknown) => void);
+      socketService.off('member.roles.update', handleMemberRoleChange as (data: unknown) => void);
+      socketService.off('server.delete', handleServerDelete as (data: unknown) => void);
+      socketService.off('server.kicked', handleServerKicked as (data: unknown) => void);
+      socketService.off('server.banned', handleServerBanned as (data: unknown) => void);
     };
   }, [user?.id]);
 
@@ -632,7 +786,21 @@ export function MainLayout() {
   const handleMemberContextMenu = useCallback(
     (member: MemberData, e: React.MouseEvent) => {
       e.preventDefault();
-      setContextMenu({ member, position: { x: e.clientX, y: e.clientY } });
+      setContextMenu({
+        targetUser: { id: member.id, username: member.username, display_name: member.display_name },
+        position: { x: e.clientX, y: e.clientY },
+      });
+    },
+    [],
+  );
+
+  const handleAuthorContextMenu = useCallback(
+    (author: MessageAuthor, e: React.MouseEvent) => {
+      e.preventDefault();
+      setContextMenu({
+        targetUser: { id: author.id, username: author.username, display_name: author.display_name },
+        position: { x: e.clientX, y: e.clientY },
+      });
     },
     [],
   );
@@ -828,6 +996,7 @@ export function MainLayout() {
             onEditMessage={handleEditMessage}
             onDeleteMessage={handleDeleteMessage}
             onAuthorClick={handleAuthorClick}
+            onAuthorContextMenu={handleAuthorContextMenu}
             onTypingStart={handleTypingStart}
             onTypingStop={handleTypingStop}
             currentUserId={user?.id}
@@ -926,47 +1095,70 @@ export function MainLayout() {
       />
 
       {/* User Context Menu */}
-      {contextMenu && (
-        <UserContextMenu
+      {contextMenu && (() => {
+        const voiceState = useVoiceStore.getState();
+        // Find target user in voice participants (any channel)
+        let targetVoiceContext: { channelId: string; isMuted: boolean; isDeafened: boolean } | undefined;
+        for (const [chId, participants] of Object.entries(voiceState.participants)) {
+          const found = participants.find((p) => p.userId === contextMenu.targetUser.id);
+          if (found) {
+            targetVoiceContext = {
+              channelId: chId,
+              isMuted: found.isMuted,
+              isDeafened: found.isDeafened,
+            };
+            break;
+          }
+        }
+        // Get voice channels for "Move to" submenu
+        const voiceChannelList = channels
+          .filter((ch) => ch.type === 'voice' || ch.type === 'temp_voice' || ch.type === 'music')
+          .map((ch) => ({ id: ch.id, name: ch.name }));
+
+        return (
+          <UserContextMenu
+            isOpen={true}
+            onClose={() => setContextMenu(null)}
+            position={contextMenu.position}
+            targetUser={contextMenu.targetUser}
+            currentUserId={user?.id || ''}
+            serverId={currentServer?.id || ''}
+            serverOwnerId={currentServer?.owner_id}
+            voiceContext={targetVoiceContext}
+            voiceChannels={voiceChannelList}
+            currentUserInVoice={voiceConnected}
+            onOpenProfile={() => {
+              setProfilePopover({
+                member: {
+                  id: contextMenu.targetUser.id,
+                  username: contextMenu.targetUser.username,
+                  display_name: contextMenu.targetUser.display_name ?? null,
+                  avatar_url: null,
+                } as MessageAuthor,
+                rect: new DOMRect(
+                  contextMenu.position.x,
+                  contextMenu.position.y,
+                  0,
+                  0,
+                ),
+              });
+              setContextMenu(null);
+            }}
+            onTimeout={() => {
+              setTimeoutTarget(contextMenu.targetUser);
+              setContextMenu(null);
+            }}
+          />
+        );
+      })()}
+
+      {/* Timeout Modal */}
+      {timeoutTarget && currentServer && (
+        <TimeoutModal
           isOpen={true}
-          onClose={() => setContextMenu(null)}
-          position={contextMenu.position}
-          items={[
-            {
-              label: 'Profile',
-              onClick: () => {
-                setProfilePopover({
-                  member: contextMenu.member,
-                  rect: new DOMRect(
-                    contextMenu.position.x,
-                    contextMenu.position.y,
-                    0,
-                    0,
-                  ),
-                });
-                setContextMenu(null);
-              },
-            },
-            { label: 'Message', onClick: () => setContextMenu(null) },
-            ...(currentServer?.owner_id === user?.id &&
-            contextMenu.member.id !== user?.id
-              ? ([
-                  { label: '', separator: true, onClick: () => {} },
-                  {
-                    label: 'Kick',
-                    danger: true,
-                    onClick: () => {
-                      api
-                        .post(
-                          `/members/${contextMenu.member.id}/kick`,
-                        )
-                        .catch(() => {});
-                      setContextMenu(null);
-                    },
-                  },
-                ] as ContextMenuItem[])
-              : []),
-          ]}
+          onClose={() => setTimeoutTarget(null)}
+          targetUser={timeoutTarget}
+          serverId={currentServer.id}
         />
       )}
 

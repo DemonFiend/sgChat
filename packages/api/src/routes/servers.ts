@@ -27,12 +27,17 @@ import { emitEncrypted } from '../lib/socketEmit.js';
 
 const updateServerSchema = z.object({
   name: z.string().min(1).max(100).optional(),
+  description: z.string().max(500).nullable().optional(),
   icon_url: z.string().url().nullable().optional(),
+  banner_url: z.string().url().nullable().optional(),
+  motd: z.string().max(2000).nullable().optional(),
+  motd_enabled: z.boolean().optional(),
   announce_joins: z.boolean().optional(),
   announce_leaves: z.boolean().optional(),
   announce_online: z.boolean().optional(),
   afk_timeout: z.number().min(60).max(3600).optional(),
   afk_channel_id: z.string().uuid().nullable().optional(),
+  temp_channel_timeout: z.number().int().min(30).max(86400).optional(),
   welcome_channel_id: z.string().uuid().nullable().optional(),
 });
 
@@ -339,12 +344,17 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       // Build updates object
       const updates: Record<string, any> = {};
       if (body.name !== undefined) updates.name = body.name;
+      if ('description' in body) updates.description = body.description;
       if ('icon_url' in body) updates.icon_url = body.icon_url;
+      if ('banner_url' in body) updates.banner_url = body.banner_url;
+      if ('motd' in body) updates.motd = body.motd;
+      if (body.motd_enabled !== undefined) updates.motd_enabled = body.motd_enabled;
       if (body.announce_joins !== undefined) updates.announce_joins = body.announce_joins;
       if (body.announce_leaves !== undefined) updates.announce_leaves = body.announce_leaves;
       if (body.announce_online !== undefined) updates.announce_online = body.announce_online;
       if (body.afk_timeout !== undefined) updates.afk_timeout = body.afk_timeout;
       if ('afk_channel_id' in body) updates.afk_channel_id = body.afk_channel_id;
+      if (body.temp_channel_timeout !== undefined) updates.temp_channel_timeout = body.temp_channel_timeout;
       if ('welcome_channel_id' in body) updates.welcome_channel_id = body.welcome_channel_id;
 
       if (Object.keys(updates).length === 0) {

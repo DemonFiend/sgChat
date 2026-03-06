@@ -81,6 +81,41 @@ export function canBanMembers(): boolean {
 }
 
 /**
+ * Check if current user can timeout members
+ */
+export function canTimeoutMembers(): boolean {
+  return isAdmin() || hasPermission('timeout_members');
+}
+
+/**
+ * Check if current user can mute members in voice
+ */
+export function canMuteMembers(): boolean {
+  return isAdmin() || hasPermission('mute_members');
+}
+
+/**
+ * Check if current user can deafen members in voice
+ */
+export function canDeafenMembers(): boolean {
+  return isAdmin() || hasPermission('deafen_members');
+}
+
+/**
+ * Check if current user can move members between voice channels
+ */
+export function canMoveMembers(): boolean {
+  return isAdmin() || hasPermission('move_members');
+}
+
+/**
+ * Check if current user can disconnect members from voice
+ */
+export function canDisconnectMembers(): boolean {
+  return isAdmin() || hasPermission('disconnect_members');
+}
+
+/**
  * Check if current user can view audit log
  */
 export function canViewAuditLog(): boolean {

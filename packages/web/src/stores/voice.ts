@@ -13,6 +13,8 @@ export interface VoiceParticipant {
   isDeafened: boolean;
   isSpeaking: boolean;
   isStreaming?: boolean;
+  isServerMuted?: boolean;
+  isServerDeafened?: boolean;
 }
 
 export interface VoicePermissions {
@@ -79,7 +81,7 @@ interface VoiceActions {
   // Participant management
   addParticipant: (channelId: string, user: { id: string; username: string; display_name?: string | null; avatar_url?: string | null; is_streaming?: boolean }) => void;
   removeParticipant: (channelId: string, userId: string) => void;
-  updateParticipantState: (channelId: string, userId: string, updates: { isMuted?: boolean; isDeafened?: boolean; isSpeaking?: boolean; isStreaming?: boolean }) => void;
+  updateParticipantState: (channelId: string, userId: string, updates: { isMuted?: boolean; isDeafened?: boolean; isSpeaking?: boolean; isStreaming?: boolean; isServerMuted?: boolean; isServerDeafened?: boolean }) => void;
   setChannelParticipants: (channelId: string, participants: VoiceParticipant[]) => void;
   clearChannelParticipants: (channelId: string) => void;
 }
@@ -162,6 +164,8 @@ export const useVoiceStore = create<VoiceState & VoiceActions>((set, get) => ({
     if (updates.isDeafened !== undefined) filtered.isDeafened = updates.isDeafened;
     if (updates.isSpeaking !== undefined) filtered.isSpeaking = updates.isSpeaking;
     if (updates.isStreaming !== undefined) filtered.isStreaming = updates.isStreaming;
+    if (updates.isServerMuted !== undefined) filtered.isServerMuted = updates.isServerMuted;
+    if (updates.isServerDeafened !== undefined) filtered.isServerDeafened = updates.isServerDeafened;
     channelParticipants[index] = { ...channelParticipants[index], ...filtered };
     return { participants: { ...s.participants, [channelId]: channelParticipants } };
   }),
@@ -219,7 +223,7 @@ export const voiceStore = {
   setConnectionQuality: (quality: ConnectionQualityState) => useVoiceStore.getState().setConnectionQuality(quality),
   addParticipant: (channelId: string, user: { id: string; username: string; display_name?: string | null; avatar_url?: string | null; is_streaming?: boolean }) => useVoiceStore.getState().addParticipant(channelId, user),
   removeParticipant: (channelId: string, userId: string) => useVoiceStore.getState().removeParticipant(channelId, userId),
-  updateParticipantState: (channelId: string, userId: string, updates: { isMuted?: boolean; isDeafened?: boolean; isSpeaking?: boolean; isStreaming?: boolean }) => useVoiceStore.getState().updateParticipantState(channelId, userId, updates),
+  updateParticipantState: (channelId: string, userId: string, updates: { isMuted?: boolean; isDeafened?: boolean; isSpeaking?: boolean; isStreaming?: boolean; isServerMuted?: boolean; isServerDeafened?: boolean }) => useVoiceStore.getState().updateParticipantState(channelId, userId, updates),
   setChannelParticipants: (channelId: string, participants: VoiceParticipant[]) => useVoiceStore.getState().setChannelParticipants(channelId, participants),
   clearChannelParticipants: (channelId: string) => useVoiceStore.getState().clearChannelParticipants(channelId),
 };

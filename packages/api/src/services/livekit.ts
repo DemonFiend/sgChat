@@ -8,6 +8,7 @@ const LIVEKIT_PUBLIC_URL = process.env.LIVEKIT_PUBLIC_URL || LIVEKIT_URL;
 
 export interface LiveKitTokenOptions {
   identity: string;
+  name?: string;
   room: string;
   canPublish?: boolean;
   canPublishVideo?: boolean;
@@ -27,6 +28,7 @@ export interface LiveKitTokenOptions {
 export async function generateLiveKitToken(options: LiveKitTokenOptions): Promise<string> {
   const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
     identity: options.identity,
+    name: options.name,
   });
 
   at.addGrant({

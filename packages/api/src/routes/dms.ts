@@ -457,6 +457,7 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
       // Generate token with full permissions (DMs don't have role-based permissions)
       const token = await generateLiveKitToken({
         identity: request.user!.id,
+        name: request.user!.username,
         room: roomName,
         canPublish: true,
         canPublishVideo: true,

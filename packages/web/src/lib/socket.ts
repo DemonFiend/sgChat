@@ -26,6 +26,8 @@ let refreshRetryCount = 0;
 const MAX_REFRESH_RETRIES = 3;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let heartbeatInterval = 30000;
+let gatewaySessionId: string | null = null;
+let lastSequences: Record<string, number> = {};
 const pendingHandlers: Map<string, Set<(data: unknown) => void>> = new Map();
 
 // Maps original handler → wrapped handler for proper cleanup
@@ -84,7 +86,33 @@ function connect() {
 
   socket.on('gateway.hello', (data: { heartbeat_interval: number; session_id: string }) => {
     heartbeatInterval = data.heartbeat_interval;
+    gatewaySessionId = data.session_id;
     startHeartbeat();
+  });
+
+  socket.on('gateway.ready', (data: { sequences?: Record<string, number> }) => {
+    lastSequences = data.sequences || {};
+  });
+
+  socket.on('gateway.resumed', (data: { session_id?: string; missed_events?: any[]; sequences?: Record<string, number> }) => {
+    gatewaySessionId = data.session_id || gatewaySessionId;
+    lastSequences = data.sequences || lastSequences;
+    // Replay missed events as named events so existing handlers process them
+    if (Array.isArray(data.missed_events)) {
+      for (const envelope of data.missed_events) {
+        if (envelope.resource_id) {
+          lastSequences[envelope.resource_id] = envelope.sequence;
+        }
+        // Re-emit as named event for existing socketService.on() handlers
+        socket?.emit(envelope.type, envelope.payload);
+      }
+    }
+  });
+
+  socket.on('gateway.resume_failed', (data: { reason: string; message?: string }) => {
+    console.warn('[Socket] Gateway resume failed:', data.reason, data.message);
+    gatewaySessionId = null;
+    lastSequences = {};
   });
 
   socket.on('gateway.heartbeat_ack', () => {});
@@ -92,6 +120,17 @@ function connect() {
   socket.on('disconnect', async (reason) => {
     useSocketStore.setState({ connectionState: 'disconnected' });
     stopHeartbeat();
+
+    // Attempt session resume on reconnect (unless client-initiated disconnect)
+    if (reason !== 'io client disconnect' && gatewaySessionId) {
+      socket?.once('connect', () => {
+        socket?.emit('gateway.resume', {
+          session_id: gatewaySessionId,
+          last_sequences: lastSequences,
+        });
+      });
+    }
+
     if (reason === 'io server disconnect') {
       if (refreshRetryCount >= MAX_REFRESH_RETRIES) {
         socket?.disconnect();
@@ -138,6 +177,8 @@ function disconnect() {
   stopHeartbeat();
   socket?.disconnect();
   socket = null;
+  gatewaySessionId = null;
+  lastSequences = {};
   useSocketStore.setState({ connectionState: 'disconnected' });
 }
 

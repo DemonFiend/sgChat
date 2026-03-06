@@ -23,6 +23,7 @@ interface ServerConfigActions {
   updateConfig: (serverId: string, updates: UpdatePopupConfigInput) => Promise<boolean>;
   setConfig: (config: ServerPopupConfig) => void;
   updateField: <K extends keyof ServerPopupConfig>(field: K, value: ServerPopupConfig[K]) => void;
+  applyRemoteUpdate: (config: ServerPopupConfig) => void;
   reset: () => void;
   clear: () => void;
   clearError: () => void;
@@ -115,6 +116,10 @@ export const useServerConfigStore = create<ServerConfigState & ServerConfigActio
     get().setConfig(updated);
   },
 
+  applyRemoteUpdate: (config) => {
+    set({ config, isDirty: false });
+  },
+
   reset: () => set({ isDirty: false, error: null }),
   clear: () => set({
     config: null,
@@ -134,6 +139,7 @@ export const serverConfigStore = {
   fetchConfig: (serverId: string) => useServerConfigStore.getState().fetchConfig(serverId),
   updateConfig: (serverId: string, updates: UpdatePopupConfigInput) => useServerConfigStore.getState().updateConfig(serverId, updates),
   setConfig: (config: ServerPopupConfig) => useServerConfigStore.getState().setConfig(config),
+  applyRemoteUpdate: (config: ServerPopupConfig) => useServerConfigStore.getState().applyRemoteUpdate(config),
   updateField: <K extends keyof ServerPopupConfig>(field: K, value: ServerPopupConfig[K]) => useServerConfigStore.getState().updateField(field, value),
   reset: () => useServerConfigStore.getState().reset(),
   clear: () => useServerConfigStore.getState().clear(),

@@ -7,6 +7,7 @@ import { db } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
 import { sendPasswordResetEmail } from '../lib/email.js';
 import { handleMemberJoin } from '../services/server.js';
+import { emitEncrypted } from '../lib/socketEmit.js';
 import {
   registerSchema,
   loginSchema,
@@ -478,6 +479,9 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       const [updatedServer] = await db.sql`
         SELECT * FROM servers WHERE id = ${server.id}
       `;
+
+      // Broadcast ownership change to all connected clients
+      await emitEncrypted(fastify.io, `server:${server.id}`, 'server.update', updatedServer);
 
       return {
         message: 'Server ownership claimed successfully! You are now the administrator.',

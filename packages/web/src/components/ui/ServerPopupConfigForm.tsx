@@ -1,5 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { clsx } from 'clsx';
 import { useServerConfigStore } from '@/stores/serverConfig';
+import { api } from '@/api';
 import { Button } from './Button';
 import { Input } from './Input';
 import { RichTextarea } from './RichTextarea';
@@ -32,6 +34,12 @@ export function ServerPopupConfigForm({
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showSuccessToast, setShowSuccessToast] = useState(false);
 
+  // Icon upload state
+  const iconFileRef = useRef<HTMLInputElement>(null);
+  const [isUploadingIcon, setIsUploadingIcon] = useState(false);
+  const [iconDragOver, setIconDragOver] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
   const textChannels = channels.filter((c) => c.type === 'text');
 
   // Load config on mount
@@ -39,12 +47,15 @@ export function ServerPopupConfigForm({
     fetchConfig(serverId);
   }, [fetchConfig, serverId]);
 
-  // Sync local config with store
+  // Sync local config with store (initial load + remote updates when no local edits)
   useEffect(() => {
-    if (config && !localConfig) {
-      setLocalConfig({ ...config });
+    if (config) {
+      if (!localConfig || !hasUnsavedChanges) {
+        setLocalConfig({ ...config });
+      }
     }
-  }, [config, localConfig]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config]);
 
   // Warn before navigating away with unsaved changes
   useEffect(() => {
@@ -58,6 +69,48 @@ export function ServerPopupConfigForm({
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
   }, [hasUnsavedChanges]);
+
+  const handleIconFileSelect = useCallback(async (file: File) => {
+    setUploadError(null);
+
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      setUploadError('Invalid file type. Allowed: JPEG, PNG, GIF, WebP');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setUploadError('File too large. Maximum size: 5MB');
+      return;
+    }
+
+    setIsUploadingIcon(true);
+    try {
+      const result = await api.upload<{ url: string }>('/upload/image', file);
+      setLocalConfig((current) => {
+        if (!current) return current;
+        return { ...current, serverIconUrl: result.url };
+      });
+      setHasUnsavedChanges(true);
+    } catch (err: any) {
+      setUploadError(err.message || 'Failed to upload icon');
+    } finally {
+      setIsUploadingIcon(false);
+    }
+  }, []);
+
+  const handleIconDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIconDragOver(false);
+    const file = e.dataTransfer?.files?.[0];
+    if (file) handleIconFileSelect(file);
+  }, [handleIconFileSelect]);
+
+  const handleIconInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleIconFileSelect(file);
+    e.target.value = '';
+  }, [handleIconFileSelect]);
 
   const handleFieldChange = useCallback(
     <K extends keyof ServerPopupConfig>(field: K, value: ServerPopupConfig[K]) => {
@@ -150,14 +203,26 @@ export function ServerPopupConfigForm({
         <>
           {/* Basic Information */}
           <div className="flex gap-6 mb-8">
-            {/* Server Icon */}
+            {/* Server Icon with upload */}
             <div className="flex flex-col items-center">
-              <div className="w-24 h-24 rounded-full bg-brand-primary flex items-center justify-center text-white text-3xl font-bold mb-3">
+              <div
+                className={clsx(
+                  'relative w-24 h-24 rounded-full bg-brand-primary flex items-center justify-center text-white text-3xl font-bold mb-3 cursor-pointer group',
+                  iconDragOver && 'ring-4 ring-brand-primary ring-offset-2 ring-offset-bg-primary'
+                )}
+                onClick={() => iconFileRef.current?.click()}
+                onDrop={handleIconDrop}
+                onDragOver={(e) => { e.preventDefault(); setIconDragOver(true); }}
+                onDragLeave={(e) => { e.preventDefault(); setIconDragOver(false); }}
+              >
                 {localConfig.serverIconUrl ? (
                   <img
                     src={localConfig.serverIconUrl}
                     alt={localConfig.serverName}
-                    className="w-full h-full rounded-full object-cover"
+                    className={clsx(
+                      'w-full h-full rounded-full object-cover transition-opacity',
+                      (isUploadingIcon || iconDragOver) && 'opacity-50'
+                    )}
                     onError={(e) => {
                       (e.target as HTMLImageElement).style.display = 'none';
                     }}
@@ -165,8 +230,35 @@ export function ServerPopupConfigForm({
                 ) : (
                   (localConfig.serverName || 'S').charAt(0).toUpperCase()
                 )}
+
+                {/* Hover / upload overlay */}
+                <div className={clsx(
+                  'absolute inset-0 rounded-full bg-black/50 flex items-center justify-center transition-opacity',
+                  (isUploadingIcon || iconDragOver) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                )}>
+                  {isUploadingIcon ? (
+                    <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  )}
+                </div>
+
+                <input
+                  ref={iconFileRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/gif,image/webp"
+                  className="hidden"
+                  onChange={handleIconInputChange}
+                />
               </div>
-              <p className="text-xs text-text-muted mt-1">Min. 128x128</p>
+              <p className="text-xs text-text-muted mt-1">Click or drag to upload</p>
+              <p className="text-xs text-text-muted">Min. 128x128</p>
+              {uploadError && (
+                <p className="text-xs text-danger mt-1">{uploadError}</p>
+              )}
             </div>
 
             {/* Basic Info */}
@@ -210,6 +302,7 @@ export function ServerPopupConfigForm({
                 <label className="block text-xs font-bold uppercase text-text-muted mb-2">
                   Server Icon URL
                 </label>
+                <p className="text-xs text-text-muted mb-2">Or enter a URL directly</p>
                 <Input
                   type="url"
                   value={localConfig.serverIconUrl || ''}
