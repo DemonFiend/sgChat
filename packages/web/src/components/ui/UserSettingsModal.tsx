@@ -1073,21 +1073,60 @@ function AppearanceTab() {
 function NotificationsTab() {
   const [desktopNotifications, setDesktopNotifications] = useState(true);
   const [sounds, setSounds] = useState(true);
+  const [mentionOnly, setMentionOnly] = useState(false);
+  const [flashTaskbar, setFlashTaskbar] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+
+  // Load saved notification settings
+  useEffect(() => {
+    (async () => {
+      try {
+        const settings = await api.get<any>('/users/me/settings');
+        if (settings) {
+          setDesktopNotifications(settings.desktop_notifications ?? true);
+          setSounds(settings.notification_sounds ?? true);
+          setMentionOnly(settings.mention_only_notifications ?? false);
+          setFlashTaskbar(settings.flash_taskbar ?? true);
+        }
+      } catch {
+        // Use defaults
+      } finally {
+        setLoaded(true);
+      }
+    })();
+  }, []);
+
+  const saveSettings = useCallback(async (updates: Record<string, any>) => {
+    try {
+      await api.patch('/users/me/settings', updates);
+    } catch (err) {
+      console.error('Failed to save notification settings:', err);
+    }
+  }, []);
+
+  const toggleSetting = useCallback(
+    (currentValue: boolean, setter: (v: boolean) => void, settingKey: string) => {
+      const newValue = !currentValue;
+      setter(newValue);
+      if (loaded) saveSettings({ [settingKey]: newValue });
+    },
+    [loaded, saveSettings],
+  );
 
   return (
     <div>
       <h2 className="text-xl font-bold text-text-primary mb-5">Notifications</h2>
 
-      <div className="space-y-6">
+      <div className="space-y-4">
         <div className="flex items-center justify-between p-4 bg-bg-secondary rounded-lg">
           <div>
             <div className="text-text-primary font-medium">Enable Desktop Notifications</div>
             <div className="text-sm text-text-muted">Receive notifications even when sgChat is not focused</div>
           </div>
           <button
-            onClick={() => setDesktopNotifications(!desktopNotifications)}
+            onClick={() => toggleSetting(desktopNotifications, setDesktopNotifications, 'desktop_notifications')}
             className={clsx(
-              'relative w-11 h-6 rounded-full transition-colors',
+              'relative w-11 h-6 rounded-full transition-colors flex-shrink-0',
               desktopNotifications ? 'bg-success' : 'bg-bg-tertiary'
             )}
           >
@@ -1106,9 +1145,9 @@ function NotificationsTab() {
             <div className="text-sm text-text-muted">Play sounds for messages and notifications</div>
           </div>
           <button
-            onClick={() => setSounds(!sounds)}
+            onClick={() => toggleSetting(sounds, setSounds, 'notification_sounds')}
             className={clsx(
-              'relative w-11 h-6 rounded-full transition-colors',
+              'relative w-11 h-6 rounded-full transition-colors flex-shrink-0',
               sounds ? 'bg-success' : 'bg-bg-tertiary'
             )}
           >
@@ -1116,6 +1155,48 @@ function NotificationsTab() {
               className={clsx(
                 'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
                 sounds ? 'left-6' : 'left-1'
+              )}
+            />
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between p-4 bg-bg-secondary rounded-lg">
+          <div>
+            <div className="text-text-primary font-medium">Mentions Only</div>
+            <div className="text-sm text-text-muted">Only notify for messages that mention you directly</div>
+          </div>
+          <button
+            onClick={() => toggleSetting(mentionOnly, setMentionOnly, 'mention_only_notifications')}
+            className={clsx(
+              'relative w-11 h-6 rounded-full transition-colors flex-shrink-0',
+              mentionOnly ? 'bg-success' : 'bg-bg-tertiary'
+            )}
+          >
+            <div
+              className={clsx(
+                'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
+                mentionOnly ? 'left-6' : 'left-1'
+              )}
+            />
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between p-4 bg-bg-secondary rounded-lg">
+          <div>
+            <div className="text-text-primary font-medium">Flash Taskbar</div>
+            <div className="text-sm text-text-muted">Flash the taskbar icon when you receive a notification</div>
+          </div>
+          <button
+            onClick={() => toggleSetting(flashTaskbar, setFlashTaskbar, 'flash_taskbar')}
+            className={clsx(
+              'relative w-11 h-6 rounded-full transition-colors flex-shrink-0',
+              flashTaskbar ? 'bg-success' : 'bg-bg-tertiary'
+            )}
+          >
+            <div
+              className={clsx(
+                'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
+                flashTaskbar ? 'left-6' : 'left-1'
               )}
             />
           </button>

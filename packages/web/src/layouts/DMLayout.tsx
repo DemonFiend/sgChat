@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router';
 import { api } from '@/api';
 import { ServerList } from '@/components/layout/ServerList';
 import { DMPage } from '@/components/layout/DMPage';
 import { TitleBar } from '@/components/ui/TitleBar';
 import { UserSettingsModal } from '@/components/ui/UserSettingsModal';
+import { CommandPalette } from '@/components/ui/CommandPalette';
 import { FloatingUserPanel } from '@/components/layout/FloatingUserPanel';
 
 interface ServerData {
@@ -13,8 +15,10 @@ interface ServerData {
 }
 
 export function DMLayout() {
+  const navigate = useNavigate();
   const [servers, setServers] = useState<ServerData[]>([]);
   const [showUserSettings, setShowUserSettings] = useState(false);
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [userTimezone, setUserTimezone] = useState<string | undefined>(undefined);
 
@@ -35,6 +39,27 @@ export function DMLayout() {
       if (settings?.timezone) setUserTimezone(settings.timezone);
     }).catch(() => {});
   }, []);
+
+  // Ctrl+K command palette shortcut
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setShowCommandPalette((prev) => !prev);
+      }
+    };
+    document.addEventListener('keydown', handleGlobalKeyDown);
+    return () => document.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
+
+  const paletteActions = useMemo(() => [
+    { id: 'settings', label: 'User Settings', sublabel: 'Open your settings', icon: 'settings' as const, action: () => setShowUserSettings(true) },
+    { id: 'server', label: 'Back to Server', sublabel: 'Navigate to the server channels', icon: 'dm' as const, action: () => navigate('/channels') },
+  ], [navigate]);
+
+  const handleNavigateChannel = useCallback((id: string) => {
+    navigate(`/channels/${id}`);
+  }, [navigate]);
 
   return (
     <div className="flex flex-col h-screen bg-bg-primary text-text-primary overflow-hidden">
@@ -61,6 +86,18 @@ export function DMLayout() {
         onSettingsClick={() => setShowUserSettings(true)}
         onDMClick={() => {}}
         userTimezone={userTimezone}
+      />
+
+      {/* Command Palette (Ctrl+K) */}
+      <CommandPalette
+        isOpen={showCommandPalette}
+        onClose={() => setShowCommandPalette(false)}
+        channels={[]}
+        members={[]}
+        onNavigateChannel={handleNavigateChannel}
+        onJoinVoice={() => {}}
+        onUserClick={() => {}}
+        quickActions={paletteActions}
       />
 
       <UserSettingsModal

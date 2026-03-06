@@ -42,6 +42,7 @@ import { StreamViewer } from '@/components/ui/StreamViewer';
 import { useStreamViewerStore } from '@/stores/streamViewer';
 import { SoundboardPanel } from '@/components/ui/SoundboardPanel';
 import { VoiceConnectedBar } from '@/components/ui/VoiceConnectedBar';
+import { CommandPalette, type CommandPaletteChannel, type CommandPaletteMember } from '@/components/ui/CommandPalette';
 import { useGlobalShortcuts } from '@/hooks/useElectron';
 import { canManageChannels } from '@/stores/permissions';
 import { slideInRight, easeTransition } from '@/lib/motion';
@@ -121,6 +122,7 @@ export function MainLayout() {
     display_name?: string | null;
   } | null>(null);
   const [showUserSettings, setShowUserSettings] = useState(false);
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [userTimezone, setUserTimezone] = useState<string | undefined>(undefined);
   const [showClaimAdmin, setShowClaimAdmin] = useState(false);
 
@@ -924,6 +926,56 @@ export function MainLayout() {
     }, []),
   });
 
+  // Ctrl+K command palette shortcut
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setShowCommandPalette((prev) => !prev);
+      }
+    };
+    document.addEventListener('keydown', handleGlobalKeyDown);
+    return () => document.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
+
+  // Command palette data
+  const paletteChannels = useMemo<CommandPaletteChannel[]>(
+    () => channels.map((c) => ({ id: c.id, name: c.name, type: c.type as 'text' | 'voice' | 'stage', category_id: c.category_id })),
+    [channels],
+  );
+  const paletteMembers = useMemo<CommandPaletteMember[]>(
+    () => members.map((m) => ({ id: m.id, username: m.username, display_name: m.display_name, avatar_url: m.avatar_url, status: m.status, role_color: m.role_color })),
+    [members],
+  );
+  const paletteActions = useMemo(() => [
+    { id: 'settings', label: 'User Settings', sublabel: 'Open your settings', icon: 'settings' as const, action: () => setShowUserSettings(true) },
+    { id: 'toggle-mute', label: 'Toggle Mute', sublabel: 'Mute or unmute your microphone', icon: 'mute' as const, action: () => { const s = useVoiceStore.getState(); s.setMuted(!s.localState.isMuted); } },
+    { id: 'toggle-deafen', label: 'Toggle Deafen', sublabel: 'Deafen or undeafen audio', icon: 'deafen' as const, action: () => { const s = useVoiceStore.getState(); s.setDeafened(!s.localState.isDeafened); } },
+    { id: 'dms', label: 'Direct Messages', sublabel: 'Open your DMs', icon: 'dm' as const, action: () => navigate('/channels/@me') },
+    ...(voiceConnected ? [{ id: 'disconnect-voice', label: 'Disconnect Voice', sublabel: 'Leave the current voice channel', icon: 'disconnect' as const, action: () => voiceService.leave() }] : []),
+  ], [navigate, voiceConnected]);
+
+  const handlePaletteJoinVoice = useCallback((channelId: string, channelName: string) => {
+    voiceService.join(channelId, channelName);
+  }, []);
+
+  const handlePaletteUserClick = useCallback(
+    (member: CommandPaletteMember, rect: DOMRect) => {
+      setProfilePopover({
+        member: {
+          id: member.id,
+          username: member.username,
+          display_name: member.display_name,
+          avatar_url: member.avatar_url,
+          status: member.status || 'offline',
+          role_color: member.role_color,
+        } as MemberData,
+        rect,
+      });
+    },
+    [],
+  );
+
   return (
     <div className="flex flex-col h-screen bg-bg-primary text-text-primary overflow-hidden">
       {/* Electron title bar — renders nothing in browser */}
@@ -1088,6 +1140,18 @@ export function MainLayout() {
         onDMClick={() => navigate('/channels/@me')}
         serverTimezone={currentServer?.timezone}
         userTimezone={userTimezone}
+      />
+
+      {/* Command Palette (Ctrl+K) */}
+      <CommandPalette
+        isOpen={showCommandPalette}
+        onClose={() => setShowCommandPalette(false)}
+        channels={paletteChannels}
+        members={paletteMembers}
+        onNavigateChannel={(id) => navigate(`/channels/${id}`)}
+        onJoinVoice={handlePaletteJoinVoice}
+        onUserClick={handlePaletteUserClick}
+        quickActions={paletteActions}
       />
 
       {/* User Settings Modal */}

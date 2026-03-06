@@ -1,4 +1,4 @@
-import { useState, useEffect, memo } from 'react';
+import { useState, useEffect, useMemo, memo } from 'react';
 import { clsx } from 'clsx';
 import { Avatar } from '@/components/ui/Avatar';
 
@@ -99,31 +99,102 @@ export function MemberList({ groups, ownerId, onMemberClick, onMemberContextMenu
       </div>
 
       <div className="p-2" role="listbox" aria-label="Members">
-        {groups.map((group) => {
-          if (group.members.length === 0) return null;
-          return (
-            <div key={group.name} className="mb-4" role="group" aria-label={`${group.name} — ${group.members.length}`}>
-              <h3
-                className="px-2 mb-1 text-xs font-semibold uppercase tracking-wide"
-                style={{ color: group.color || 'var(--color-text-muted)' }}
-              >
-                {group.name} — {group.members.length}
-              </h3>
-
-              {group.members.map((member) => (
-                <MemberItem
-                  key={member.id}
-                  member={member}
-                  isOwner={ownerId === member.id}
-                  onMemberClick={onMemberClick}
-                  onMemberContextMenu={onMemberContextMenu}
-                />
-              ))}
-            </div>
-          );
-        })}
+        {/* Member Search */}
+        <MemberSearch groups={groups} ownerId={ownerId} onMemberClick={onMemberClick} onMemberContextMenu={onMemberContextMenu} />
       </div>
     </aside>
+  );
+}
+
+// ── Member Search ─────────────────────────────────────────
+function MemberSearch({
+  groups,
+  ownerId,
+  onMemberClick,
+  onMemberContextMenu,
+}: {
+  groups: MemberGroup[];
+  ownerId?: string;
+  onMemberClick?: (member: Member, rect: DOMRect) => void;
+  onMemberContextMenu?: (member: Member, e: React.MouseEvent) => void;
+}) {
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredGroups = useMemo(() => {
+    if (!searchQuery.trim()) return groups;
+    const q = searchQuery.toLowerCase();
+    return groups
+      .map((group) => ({
+        ...group,
+        members: group.members.filter(
+          (m) =>
+            m.username.toLowerCase().includes(q) ||
+            (m.display_name && m.display_name.toLowerCase().includes(q)),
+        ),
+      }))
+      .filter((g) => g.members.length > 0);
+  }, [groups, searchQuery]);
+
+  return (
+    <>
+      <div className="relative mb-2">
+        <svg
+          className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted pointer-events-none"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search members"
+          className="w-full bg-bg-tertiary text-text-primary text-xs placeholder:text-text-muted rounded px-2 py-1.5 pl-8 outline-none focus:ring-1 focus:ring-accent/50 transition-shadow"
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary"
+          >
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
+      </div>
+
+      {filteredGroups.map((group) => {
+        if (group.members.length === 0) return null;
+        return (
+          <div key={group.name} className="mb-4" role="group" aria-label={`${group.name} — ${group.members.length}`}>
+            <h3
+              className="px-2 mb-1 text-xs font-semibold uppercase tracking-wide"
+              style={{ color: group.color || 'var(--color-text-muted)' }}
+            >
+              {group.name} — {group.members.length}
+            </h3>
+
+            {group.members.map((member) => (
+              <MemberItem
+                key={member.id}
+                member={member}
+                isOwner={ownerId === member.id}
+                onMemberClick={onMemberClick}
+                onMemberContextMenu={onMemberContextMenu}
+              />
+            ))}
+          </div>
+        );
+      })}
+
+      {searchQuery && filteredGroups.length === 0 && (
+        <div className="px-2 py-4 text-center text-text-muted text-xs">
+          No members found
+        </div>
+      )}
+    </>
   );
 }
 
