@@ -1,4 +1,5 @@
-import { useState, memo } from 'react';
+import { useState, useEffect, useRef, useCallback, memo } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useParams } from 'react-router';
 import { motion } from 'framer-motion';
 import { clsx } from 'clsx';
@@ -6,6 +7,8 @@ import { UnreadIndicator } from '@/components/ui/UnreadIndicator';
 import { useVoiceStore } from '@/stores/voice';
 import { voiceService } from '@/lib/voiceService';
 import { InlineParticipants } from '@/components/ui/VoiceParticipantsList';
+import { toastStore } from '@/stores/toastNotifications';
+import { api } from '@/api';
 
 export type ChannelType = 'text' | 'voice' | 'music' | 'announcement' | 'temp_voice_generator' | 'temp_voice';
 
@@ -287,6 +290,15 @@ const ChannelItem = memo(function ChannelItem({ channel, isActive, serverId: _se
   const voice = isVoiceType(channel.type);
   const currentVoiceChannelId = useVoiceStore((s) => s.currentChannelId);
   const isInThisVoice = voice && currentVoiceChannelId === channel.id;
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+
+  const isTextLike = channel.type === 'text' || channel.type === 'announcement';
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setCtxMenu({ x: e.clientX, y: e.clientY });
+  }, []);
 
   if (voice) {
     return (
@@ -294,6 +306,7 @@ const ChannelItem = memo(function ChannelItem({ channel, isActive, serverId: _se
         <motion.div whileHover={{ x: 2 }} transition={{ duration: 0.1 }}>
           <div
             onClick={() => voiceService.join(channel.id, channel.name)}
+            onContextMenu={handleContextMenu}
             className={clsx(
               'group/channel relative flex items-center gap-1.5 px-2 py-1.5 mb-0.5 rounded text-sm transition-colors cursor-pointer',
               isInThisVoice
@@ -320,44 +333,236 @@ const ChannelItem = memo(function ChannelItem({ channel, isActive, serverId: _se
           </div>
         </motion.div>
         <InlineParticipants channelId={channel.id} />
+        {ctxMenu && (
+          <ChannelContextMenu
+            position={ctxMenu}
+            channelId={channel.id}
+            onClose={() => setCtxMenu(null)}
+          />
+        )}
       </div>
     );
   }
 
   return (
-    <motion.div whileHover={{ x: 2 }} transition={{ duration: 0.1 }} role="treeitem">
-      <Link
-        to={`/channels/${channel.id}`}
-        className={clsx(
-          'group/channel relative flex items-center gap-1.5 px-2 py-1.5 mb-0.5 rounded text-sm transition-colors',
-          isActive
-            ? 'bg-bg-modifier-selected text-text-primary'
-            : hasUnread
-              ? 'text-text-primary font-medium hover:bg-bg-modifier-hover'
-              : 'text-text-muted hover:bg-bg-modifier-hover hover:text-text-secondary',
-        )}
-      >
-        {hasUnread && !isActive && (
-          <span className="absolute -left-1 w-1 h-2 bg-text-primary rounded-r" />
-        )}
+    <>
+      <motion.div whileHover={{ x: 2 }} transition={{ duration: 0.1 }} role="treeitem">
+        <Link
+          to={`/channels/${channel.id}`}
+          onContextMenu={handleContextMenu}
+          className={clsx(
+            'group/channel relative flex items-center gap-1.5 px-2 py-1.5 mb-0.5 rounded text-sm transition-colors',
+            isActive
+              ? 'bg-bg-modifier-selected text-text-primary'
+              : hasUnread
+                ? 'text-text-primary font-medium hover:bg-bg-modifier-hover'
+                : 'text-text-muted hover:bg-bg-modifier-hover hover:text-text-secondary',
+          )}
+        >
+          {hasUnread && !isActive && (
+            <span className="absolute -left-1 w-1 h-2 bg-text-primary rounded-r" />
+          )}
 
-        {channelIcon(channel.type)}
-        <span className="truncate flex-1">{channel.name}</span>
+          {channelIcon(channel.type)}
+          <span className="truncate flex-1">{channel.name}</span>
 
-        {onSettingsClick && (
-          <button
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSettingsClick(channel); }}
-            className="opacity-0 group-hover/channel:opacity-100 p-0.5 rounded hover:bg-bg-modifier-active text-text-muted hover:text-text-primary transition-all"
-            title="Edit Channel"
-          >
-            {settingsIcon}
-          </button>
-        )}
+          {onSettingsClick && (
+            <button
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSettingsClick(channel); }}
+              className="opacity-0 group-hover/channel:opacity-100 p-0.5 rounded hover:bg-bg-modifier-active text-text-muted hover:text-text-primary transition-all"
+              title="Edit Channel"
+            >
+              {settingsIcon}
+            </button>
+          )}
 
-        {hasUnread && !isActive && (
-          <UnreadIndicator count={channel.unread_count} hasMentions={channel.has_mentions} />
-        )}
-      </Link>
-    </motion.div>
+          {hasUnread && !isActive && (
+            <UnreadIndicator count={channel.unread_count} hasMentions={channel.has_mentions} />
+          )}
+        </Link>
+      </motion.div>
+
+      {ctxMenu && (
+        <ChannelNotificationMenu
+          channelId={channel.id}
+          position={ctxMenu}
+          onClose={() => setCtxMenu(null)}
+          onOpenSettings={onSettingsClick ? () => { setCtxMenu(null); onSettingsClick(channel); } : undefined}
+        />
+      )}
+    </>
   );
 });
+
+// ── Channel Notification Context Menu (right-click, text channels only) ──
+
+type NotificationLevel = 'all' | 'mentions' | 'none' | 'default';
+
+interface ChannelNotifState {
+  level: NotificationLevel;
+  suppress_everyone: boolean;
+  suppress_roles: boolean;
+}
+
+const LEVEL_OPTIONS: { value: NotificationLevel; label: string; icon: string }[] = [
+  { value: 'default', label: 'Default', icon: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9' },
+  { value: 'all', label: 'All Messages', icon: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9' },
+  { value: 'mentions', label: 'Mentions Only', icon: 'M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207' },
+  { value: 'none', label: 'Nothing', icon: 'M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2' },
+];
+
+function ChannelNotificationMenu({
+  channelId,
+  position,
+  onClose,
+  onOpenSettings,
+}: {
+  channelId: string;
+  position: { x: number; y: number };
+  onClose: () => void;
+  onOpenSettings?: () => void;
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [settings, setSettings] = useState<ChannelNotifState>({
+    level: 'default',
+    suppress_everyone: false,
+    suppress_roles: false,
+  });
+
+  // Fetch current settings
+  useEffect(() => {
+    api
+      .get<ChannelNotifState>(`/channels/${channelId}/notification-settings`)
+      .then(setSettings)
+      .catch(() => {});
+  }, [channelId]);
+
+  // Click-outside to close
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) onClose();
+    };
+    // Delay to avoid the same right-click closing immediately
+    const id = requestAnimationFrame(() => document.addEventListener('mousedown', handler));
+    const escHandler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', escHandler);
+    return () => {
+      cancelAnimationFrame(id);
+      document.removeEventListener('mousedown', handler);
+      document.removeEventListener('keydown', escHandler);
+    };
+  }, [onClose]);
+
+  const save = useCallback(
+    async (updates: Partial<ChannelNotifState>) => {
+      const next = { ...settings, ...updates };
+      setSettings(next);
+      try {
+        await api.patch(`/channels/${channelId}/notification-settings`, next);
+      } catch {
+        toastStore.addToast({ title: 'Error', message: 'Failed to save notification settings', type: 'system' });
+      }
+    },
+    [channelId, settings],
+  );
+
+  // Clamp menu to viewport
+  const style: React.CSSProperties = {
+    position: 'fixed',
+    top: Math.min(position.y, window.innerHeight - 340),
+    left: Math.min(position.x, window.innerWidth - 220),
+    zIndex: 200,
+  };
+
+  return createPortal(
+    <div ref={menuRef} style={style} className="w-[200px] py-1.5 bg-bg-tertiary rounded-lg shadow-high border border-border">
+      {/* Header */}
+      <div className="px-3 py-1.5 text-xs font-semibold text-text-muted uppercase tracking-wide">
+        Notification Settings
+      </div>
+
+      {/* Level options */}
+      {LEVEL_OPTIONS.map((opt) => (
+        <button
+          key={opt.value}
+          onClick={() => save({ level: opt.value })}
+          className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-text-secondary hover:bg-bg-modifier-hover hover:text-text-primary transition-colors"
+        >
+          <svg className="w-4 h-4 text-text-muted flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={opt.icon} />
+          </svg>
+          <span className="flex-1 text-left">{opt.label}</span>
+          {settings.level === opt.value && (
+            <svg className="w-4 h-4 text-success flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+            </svg>
+          )}
+        </button>
+      ))}
+
+      {/* Divider */}
+      <div className="h-px bg-border mx-2 my-1" />
+
+      {/* Suppress toggles */}
+      <button
+        onClick={() => save({ suppress_everyone: !settings.suppress_everyone })}
+        className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-text-secondary hover:bg-bg-modifier-hover hover:text-text-primary transition-colors"
+      >
+        {settings.suppress_everyone ? (
+          <svg className="w-4 h-4 text-success flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+          </svg>
+        ) : (
+          <span className="w-4 h-4 flex-shrink-0" />
+        )}
+        <span>Suppress @everyone</span>
+      </button>
+      <button
+        onClick={() => save({ suppress_roles: !settings.suppress_roles })}
+        className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-text-secondary hover:bg-bg-modifier-hover hover:text-text-primary transition-colors"
+      >
+        {settings.suppress_roles ? (
+          <svg className="w-4 h-4 text-success flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+          </svg>
+        ) : (
+          <span className="w-4 h-4 flex-shrink-0" />
+        )}
+        <span>Suppress @role</span>
+      </button>
+
+      {/* Channel Settings shortcut */}
+      {onOpenSettings && (
+        <>
+          <div className="h-px bg-border mx-2 my-1" />
+          <button
+            onClick={onOpenSettings}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-text-secondary hover:bg-bg-modifier-hover hover:text-text-primary transition-colors"
+          >
+            <svg className="w-4 h-4 text-text-muted flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <span>Channel Settings</span>
+          </button>
+        </>
+      )}
+
+      {/* Copy Channel ID */}
+      <div className="h-px bg-border mx-2 my-1" />
+      <button
+        onClick={() => {
+          navigator.clipboard.writeText(channelId);
+          toastStore.addToast({ type: 'system', title: 'Copied!', message: 'Channel ID copied to clipboard' });
+          onClose();
+        }}
+        className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-text-secondary hover:bg-bg-modifier-hover hover:text-text-primary transition-colors"
+      >
+        <svg className="w-4 h-4 text-text-muted flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+        </svg>
+        <span>Copy Channel ID</span>
+      </button>
+    </div>,
+    document.body,
+  );
+}
