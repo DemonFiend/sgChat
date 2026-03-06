@@ -311,9 +311,10 @@ export async function stripRolesForGroup(groupId: string): Promise<number> {
  */
 export async function createDefaultGroups(
   serverId: string,
-  channelId: string
+  channelId: string,
+  externalTx?: any
 ) {
-  return sql.begin(async (tx: any) => {
+  const doWork = async (tx: any) => {
     const createdGroups = [];
 
     for (const groupDef of DEFAULT_ROLE_GROUPS) {
@@ -377,7 +378,10 @@ export async function createDefaultGroups(
     }
 
     return createdGroups;
-  });
+  };
+
+  if (externalTx) return doWork(externalTx);
+  return sql.begin(doWork);
 }
 
 /**

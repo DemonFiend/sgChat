@@ -4,6 +4,7 @@ import { nanoid } from 'nanoid';
 import { getDefaultPermissions } from './permissions.js';
 import { permissionToString, RoleTemplates, ALL_PERMISSIONS, TextPermissions } from '@sgchat/shared';
 import { emitEncrypted } from '../lib/socketEmit.js';
+import { createDefaultGroups } from './roleReactions.js';
 
 /**
  * Create a new server with default channels, categories, and roles
@@ -363,6 +364,9 @@ export async function createServer(
       INSERT INTO member_roles (member_user_id, member_server_id, role_id)
       VALUES (${ownerId}, ${server.id}, ${adminRole.id})
     `;
+
+    // 21. Set up default role reactions in #roles channel
+    await createDefaultGroups(server.id, rolesChannel.id, tx);
 
     // Return server with channels, categories, and roles
     return {
