@@ -19,6 +19,7 @@ import { markTempChannelEmpty } from '../services/tempChannels.js';
 import { sanitizeContent, sanitizeMessage } from '../utils/sanitize.js';
 import { encryptPayload, decryptPayload } from '../plugins/cryptoPayload.js';
 import { APP_VERSION } from '../lib/version.js';
+import { parseCommand, executeCommand } from '../services/commands.js';
 
 // ── Constants ──────────────────────────────────────────────────
 /** Heartbeat interval sent to client in gateway.hello (ms) */
@@ -387,6 +388,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       content: string;
       reply_to_id?: string;
       idempotency_key?: string;
+      is_tts?: boolean;
     }) => {
       try {
         if (isRateLimited(socket, userId, 'message:send')) return;
@@ -425,12 +427,46 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
           return;
         }
 
+        // ── Slash command processing ──────────────────────────
+        const parsed = parseCommand(data.content);
+        if (parsed) {
+          if (!hasPermission(perms.text, TextPermissions.USE_APPLICATION_COMMANDS)) {
+            socketEmit(socket, 'error', { message: 'Missing USE_APPLICATION_COMMANDS permission' });
+            return;
+          }
+
+          const cmdResult = await executeCommand(
+            parsed.name,
+            parsed.args,
+            userId,
+            data.channel_id,
+            channel.server_id,
+          );
+
+          if (cmdResult) {
+            if (cmdResult.ephemeral) {
+              socketEmit(socket, 'command.response', {
+                ephemeral: true,
+                content: cmdResult.ephemeralText || '',
+              });
+              return;
+            }
+            if (cmdResult.content !== undefined) {
+              data.content = cmdResult.content;
+            }
+          }
+        }
+
+        // Check TTS permission if message is TTS
+        const isTts = data.is_tts && hasPermission(perms.text, TextPermissions.SEND_TTS_MESSAGES);
+
         const message = await db.messages.create({
           channel_id: data.channel_id,
           author_id: userId,
           content: data.content,
           reply_to_id: data.reply_to_id,
           status: 'sent',
+          is_tts: isTts,
         });
 
         const author = await db.users.findById(userId);
@@ -450,6 +486,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
           attachments: message.attachments || [],
           reactions: [],
           reply_to_id: message.reply_to_id,
+          is_tts: message.is_tts || false,
         };
 
         // Publish through the event bus (envelope + durable stream + pub/sub)
@@ -883,6 +920,9 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         await redis.leaveVoiceChannel(userId);
 
         if (channel) {
+          // Look up custom leave sound for the leaving user
+          const leaveSound = await db.userVoiceSounds.findByUserServerType(userId, channel.server_id, 'leave');
+
           await publishEvent({
             type: 'voice.leave',
             actorId: userId,
@@ -890,6 +930,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
             payload: {
               channel_id: channelId,
               user_id: userId,
+              custom_sound_url: leaveSound?.sound_url || null,
             },
           });
 
@@ -906,6 +947,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
                 payload: {
                   channel_id: clientChannelId,
                   user_id: userId,
+                  custom_sound_url: leaveSound?.sound_url || null,
                 },
               });
             }
@@ -958,9 +1000,10 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
             is_muted: data.muted ?? currentState?.is_muted ?? false,
             is_deafened: data.deafened ?? currentState?.is_deafened ?? false,
             // Only include is_streaming if it was explicitly changed, otherwise use current state
-            is_streaming: data.screen_sharing !== undefined 
-              ? data.screen_sharing 
+            is_streaming: data.screen_sharing !== undefined
+              ? data.screen_sharing
               : currentState?.is_streaming ?? false,
+            voice_status: currentState?.voice_status ?? undefined,
           },
         });
       } catch (err) {
@@ -1220,6 +1263,9 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         await redis.leaveVoiceChannel(userId);
         
         if (voiceChannel) {
+          // Look up custom leave sound for the disconnecting user
+          const leaveSound = await db.userVoiceSounds.findByUserServerType(userId, voiceChannel.server_id, 'leave');
+
           await publishEvent({
             type: 'voice.leave',
             actorId: userId,
@@ -1227,6 +1273,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
             payload: {
               channel_id: voiceChannelId,
               user_id: userId,
+              custom_sound_url: leaveSound?.sound_url || null,
             },
           });
 

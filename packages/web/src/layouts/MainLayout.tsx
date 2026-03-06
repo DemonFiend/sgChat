@@ -12,6 +12,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useServerPopupStore } from '@/stores/serverPopup';
 import { useServerConfigStore } from '@/stores/serverConfig';
 import { useVoiceStore } from '@/stores/voice';
+import { SYSTEM_USER_ID } from '@sgchat/shared';
 import { socketService } from '@/lib/socket';
 import { voiceService } from '@/lib/voiceService';
 import { api } from '@/api';
@@ -47,6 +48,7 @@ import { useGlobalShortcuts } from '@/hooks/useElectron';
 import { canManageChannels, canManageMessages } from '@/stores/permissions';
 import { slideInRight, easeTransition } from '@/lib/motion';
 import { PinnedMessagesPanel, type PinnedMessage } from '@/components/ui/PinnedMessagesPanel';
+import { ThreadPanel, type ThreadInfo } from '@/components/ui/ThreadPanel';
 import { SearchModal } from '@/components/ui/SearchModal';
 import type { Channel, Category } from '@/components/layout/ChannelList';
 
@@ -104,6 +106,10 @@ export function MainLayout() {
   const [pinnedMessages, setPinnedMessages] = useState<PinnedMessage[]>([]);
   const [pinnedMessageIds, setPinnedMessageIds] = useState<Set<string>>(new Set());
   const [isPinnedPanelOpen, setIsPinnedPanelOpen] = useState(false);
+
+  // Thread state
+  const [activeThread, setActiveThread] = useState<ThreadInfo | null>(null);
+  const [threadMessageIds, setThreadMessageIds] = useState<Set<string>>(new Set());
 
   // Search state
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -314,6 +320,55 @@ export function MainLayout() {
     } catch { /* socket event will update state */ }
   }, [channelId]);
 
+  // Thread handlers
+  const handleCreateThread = useCallback(async (message: Message) => {
+    if (!channelId) return;
+    try {
+      const threadName = message.content.slice(0, 50) || 'New Thread';
+      const thread = await api.post<ThreadInfo>('/api/threads', {
+        name: threadName,
+        channel_id: channelId,
+        parent_message_id: message.id,
+      });
+      setActiveThread(thread);
+      setThreadMessageIds((prev) => new Set([...prev, message.id]));
+    } catch (err) {
+      console.error('Failed to create thread:', err);
+    }
+  }, [channelId]);
+
+  const handleOpenThread = useCallback(async (messageId: string) => {
+    try {
+      if (!channelId) return;
+      const res = await api.get<{ threads: ThreadInfo[] }>(`/api/channels/${channelId}/threads`);
+      const thread = res.threads.find((t: ThreadInfo) => t.parent_message_id === messageId);
+      if (thread) {
+        setActiveThread(thread);
+      }
+    } catch (err) {
+      console.error('Failed to open thread:', err);
+    }
+  }, [channelId]);
+
+  // Load thread message IDs when channel changes
+  useEffect(() => {
+    if (!channelId) return;
+    setActiveThread(null);
+    const loadThreads = async () => {
+      try {
+        const res = await api.get<{ threads: ThreadInfo[] }>(`/api/channels/${channelId}/threads`);
+        const ids = new Set<string>();
+        for (const t of res.threads) {
+          if (t.parent_message_id) ids.add(t.parent_message_id);
+        }
+        setThreadMessageIds(ids);
+      } catch {
+        setThreadMessageIds(new Set());
+      }
+    };
+    loadThreads();
+  }, [channelId]);
+
   // ── Wire up real-time message events (correct event names) ─────
   useEffect(() => {
     const handleNewMessage = (message: Message & { channel_id?: string }) => {
@@ -332,6 +387,15 @@ export function MainLayout() {
       setTypingUsers((prev) =>
         prev.filter((u) => u.id !== message.author.id),
       );
+
+      // TTS: speak message aloud if is_tts flag is set
+      if ((message as any).is_tts && 'speechSynthesis' in window) {
+        const displayName = message.author?.display_name || message.author?.username || 'Someone';
+        const utterance = new SpeechSynthesisUtterance(`${displayName} says: ${message.content}`);
+        utterance.rate = 1;
+        utterance.pitch = 1;
+        speechSynthesis.speak(utterance);
+      }
     };
 
     const handleMessageUpdate = (data: {
@@ -586,6 +650,7 @@ export function MainLayout() {
           isStreaming: data.is_streaming,
           isServerMuted: data.is_server_muted,
           isServerDeafened: data.is_server_deafened,
+          voiceStatus: data.voice_status,
         });
       }
     };
@@ -806,11 +871,17 @@ export function MainLayout() {
   const handleSendMessage = useCallback(
     (content: string) => {
       if (!currentChannel) return;
+
+      // Check for /tts command prefix
+      const isTts = content.startsWith('/tts ');
+      const messageContent = isTts ? content.slice(5) : content;
+
       // Backend expects 'message:send' (colon separator)
       socketService.emit('message:send', {
         channel_id: currentChannel.id,
-        content,
+        content: messageContent,
         ...(replyingTo?.id ? { reply_to_id: replyingTo.id } : {}),
+        ...(isTts ? { is_tts: true } : {}),
       });
       setReplyingTo(null);
     },
@@ -910,12 +981,13 @@ export function MainLayout() {
 
   // Group members for MemberList — hoisted roles get their own sections
   const memberGroups = useMemo(() => {
-    const online = members.filter((m) => m.status !== 'offline');
-    const offline = members.filter((m) => m.status === 'offline');
+    const visible = members.filter((m) => m.id !== SYSTEM_USER_ID);
+    const online = visible.filter((m) => m.status !== 'offline');
+    const offline = visible.filter((m) => m.status === 'offline');
 
     // Collect hoisted roles from all members, keyed by id
     const hoistedMap = new Map<string, { name: string; color: string | null; position: number }>();
-    for (const m of members) {
+    for (const m of visible) {
       for (const r of m.roles ?? []) {
         if (r.is_hoisted && !hoistedMap.has(r.id)) {
           hoistedMap.set(r.id, { name: r.name, color: r.color, position: r.position });
@@ -961,6 +1033,7 @@ export function MainLayout() {
   const mentionContextValue = useMemo<MentionContextValue>(() => {
     const membersMap = new Map<string, MentionMember>();
     for (const m of members) {
+      if (m.id === SYSTEM_USER_ID) continue;
       membersMap.set(m.id, {
         username: m.username,
         display_name: m.display_name,
@@ -1166,7 +1239,33 @@ export function MainLayout() {
             onTogglePinnedPanel={() => setIsPinnedPanelOpen((v) => !v)}
             canManageMessages={canManageMessages()}
             onSearchOpen={() => setIsSearchOpen(true)}
+            onClearMessages={() => setMessages([])}
+            serverId={currentServer?.id}
+            onCreateThread={handleCreateThread}
+            threadMessageIds={threadMessageIds}
+            onOpenThread={handleOpenThread}
           />
+
+          <AnimatePresence mode="wait">
+            {activeThread && (
+              <motion.div
+                key="thread"
+                variants={slideInRight}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={easeTransition}
+                className="h-full overflow-hidden flex-shrink-0"
+              >
+                <ThreadPanel
+                  thread={activeThread}
+                  currentUserId={user?.id}
+                  onClose={() => setActiveThread(null)}
+                  canManageThreads={canManageMessages()}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <AnimatePresence mode="wait">
             {isPinnedPanelOpen && (

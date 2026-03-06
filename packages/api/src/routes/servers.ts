@@ -785,6 +785,34 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
     },
   });
 
+  // Get warnings for a member
+  fastify.get('/:id/members/:userId/warnings', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id, userId } = request.params as { id: string; userId: string };
+
+      const server = await db.servers.findById(id);
+      if (!server) {
+        return notFound(reply, 'Server');
+      }
+
+      const perms = await calculatePermissions(request.user!.id, id);
+      if (!hasPermission(perms.server, ServerPermissions.MODERATE_MEMBERS)) {
+        return forbidden(reply, 'Missing MODERATE_MEMBERS permission');
+      }
+
+      const warnings = await db.sql`
+        SELECT w.id, w.reason, w.created_at, u.username as moderator_username, u.avatar_url as moderator_avatar_url
+        FROM warnings w
+        LEFT JOIN users u ON w.moderator_id = u.id
+        WHERE w.server_id = ${id} AND w.user_id = ${userId}
+        ORDER BY w.created_at DESC
+      `;
+
+      return { warnings };
+    },
+  });
+
   // Get bans list
   fastify.get('/:id/bans', {
     onRequest: [authenticate],

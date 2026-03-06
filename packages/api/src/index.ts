@@ -43,6 +43,9 @@ import { roleReactionRoutes } from './routes/roleReactions.js';
 import { releasesRoutes } from './routes/releases.js';
 import { crashReportsRoutes } from './routes/crashReports.js';
 import { searchRoutes } from './routes/search.js';
+import { webhookRoutes } from './routes/webhooks.js';
+import { stickerRoutes } from './routes/stickers.js';
+import { threadRoutes } from './routes/threads.js';
 import { cryptoPayloadPlugin } from './plugins/cryptoPayload.js';
 import { initSocketIO } from './socket/index.js';
 import { cleanupEmptyTempChannels } from './services/tempChannels.js';
@@ -208,6 +211,9 @@ async function start() {
     // Role reaction routes
     await api.register(roleReactionRoutes, { prefix: '/servers' });
 
+    // Sticker routes
+    await api.register(stickerRoutes, { prefix: '/servers' });
+
     // Releases (update check)
     await api.register(releasesRoutes);
 
@@ -219,6 +225,12 @@ async function start() {
 
     // Message search
     await api.register(searchRoutes, { prefix: '/search' });
+
+    // Webhooks
+    await api.register(webhookRoutes, { prefix: '/webhooks' });
+
+    // Threads
+    await api.register(threadRoutes);
 
     // Health check with server info for client network discovery
     api.get('/health', async () => {
@@ -277,9 +289,12 @@ async function start() {
   await fastify.register(giphyRoutes, { prefix: '/giphy' });
   await fastify.register(soundboardRoutes, { prefix: '/servers' });
   await fastify.register(roleReactionRoutes, { prefix: '/servers' });
+  await fastify.register(stickerRoutes, { prefix: '/servers' });
   await fastify.register(releasesRoutes);
   await fastify.register(crashReportsRoutes);
   await fastify.register(searchRoutes, { prefix: '/search' });
+  await fastify.register(webhookRoutes, { prefix: '/webhooks' });
+  await fastify.register(threadRoutes);
 
   // ============================================================
   // Web Client - serve built SPA from packages/web/dist

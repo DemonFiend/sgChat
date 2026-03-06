@@ -41,6 +41,7 @@ export { AvatarPicker } from './AvatarPicker';
 export { ServerWelcomePopup } from './ServerWelcomePopup';
 export { ServerPopupConfigForm } from './ServerPopupConfigForm';
 export { SoundboardPanel } from './SoundboardPanel';
+export { StickerPicker } from './StickerPicker';
 export { RoleReactionsTab } from './RoleReactionsTab';
 export { UserProfilePopover } from './UserProfilePopover';
 export { TitleBar } from './TitleBar';

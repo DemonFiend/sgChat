@@ -71,7 +71,12 @@ function VoiceParticipantItem({ participant, channelId, channelName, compact, on
           isSpeaking={participant.isSpeaking}
           size="sm"
         />
-        <span className="truncate">{displayName}</span>
+        <div className="min-w-0 flex-1">
+          <span className="truncate block">{displayName}</span>
+          {participant.voiceStatus && (
+            <span className="truncate block text-[10px] opacity-70">{participant.voiceStatus}</span>
+          )}
+        </div>
         {participant.isStreaming && (
           <span className="ml-auto flex items-center gap-1 text-purple-400" title="Streaming">
             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -115,7 +120,12 @@ function VoiceParticipantItem({ participant, channelId, channelName, compact, on
         )}
       </div>
 
-      <span className="flex-1 text-sm text-text-secondary truncate">{displayName}</span>
+      <div className="flex-1 min-w-0">
+        <span className="text-sm text-text-secondary truncate block">{displayName}</span>
+        {participant.voiceStatus && (
+          <span className="text-xs text-text-muted truncate block">{participant.voiceStatus}</span>
+        )}
+      </div>
 
       {participant.isStreaming ? (
         <button
@@ -202,9 +212,14 @@ export function InlineParticipants({ channelId, channelName, maxShow = 5, onUser
               size="sm"
             />
           )}
-          <span className="truncate">
-            {participant.displayName || participant.username}
-          </span>
+          <div className="min-w-0 flex-1">
+            <span className="truncate block">
+              {participant.displayName || participant.username}
+            </span>
+            {participant.voiceStatus && (
+              <span className="truncate block text-[10px] opacity-60">{participant.voiceStatus}</span>
+            )}
+          </div>
           {participant.isStreaming && (
             <button
               onClick={(e) => handleWatchStream(participant, e)}

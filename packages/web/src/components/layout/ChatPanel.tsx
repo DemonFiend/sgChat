@@ -5,6 +5,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { MessageContent } from '@/components/ui/MessageContent';
 import { ReactionPicker } from '@/components/ui/ReactionPicker';
 import { GifPicker } from '@/components/ui/GifPicker';
+import { StickerPicker } from '@/components/ui/StickerPicker';
 import {
   MentionAutocomplete,
   buildAtItems,
@@ -19,6 +20,8 @@ import {
   parseTimeInput,
   type MentionMapping,
 } from '@/lib/mentionUtils';
+import { CommandAutocomplete } from '@/components/ui/CommandAutocomplete';
+import type { SlashCommand } from '@sgchat/shared';
 import { api } from '@/api';
 
 export interface MessageAuthor {
@@ -94,6 +97,11 @@ interface ChatPanelProps {
   onTogglePinnedPanel?: () => void;
   canManageMessages?: boolean;
   onSearchOpen?: () => void;
+  onClearMessages?: () => void;
+  onCreateThread?: (message: Message) => void;
+  threadMessageIds?: Set<string>;
+  onOpenThread?: (messageId: string) => void;
+  serverId?: string;
 }
 
 export function ChatPanel({
@@ -103,7 +111,9 @@ export function ChatPanel({
   replyingTo, onCancelReply, onReplyClick,
   isMemberListOpen, onToggleMemberList,
   onPinMessage, onUnpinMessage, pinnedMessageIds, isPinnedPanelOpen, onTogglePinnedPanel,
-  canManageMessages, onSearchOpen,
+  canManageMessages, onSearchOpen, onClearMessages,
+  onCreateThread, threadMessageIds, onOpenThread,
+  serverId,
 }: ChatPanelProps) {
   const [messageInput, setMessageInput] = useState('');
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
@@ -111,12 +121,18 @@ export function ChatPanel({
   const [reactionPickerMsg, setReactionPickerMsg] = useState<{ id: string; anchor: HTMLElement } | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showGifPicker, setShowGifPicker] = useState(false);
+  const [showStickerPicker, setShowStickerPicker] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const emojiButtonRef = useRef<HTMLButtonElement>(null);
   const gifButtonRef = useRef<HTMLButtonElement>(null);
+  const stickerButtonRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTypingRef = useRef(false);
+
+  // Slash command autocomplete state
+  const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
+  const [commandTrigger, setCommandTrigger] = useState<string | null>(null);
 
   // Mention autocomplete state
   const [mentionTrigger, setMentionTrigger] = useState<{
@@ -153,6 +169,33 @@ export function ChatPanel({
     }));
     return buildChannelItems(channelArr);
   }, [mentionContext.channels]);
+
+  // Fetch slash commands once on mount
+  useEffect(() => {
+    let cancelled = false;
+    api.get<SlashCommand[]>('/api/channels/commands').then((cmds) => {
+      if (!cancelled) setSlashCommands(cmds);
+    }).catch(() => {
+      // Silently ignore — commands won't show autocomplete
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Detect slash command trigger: input starts with `/` and no spaces yet (or partial match)
+  const detectCommandTrigger = useCallback((text: string): string | null => {
+    if (!text.startsWith('/')) return null;
+    // Only trigger when the cursor is still in the first "word" (the command name)
+    const spaceIndex = text.indexOf(' ');
+    if (spaceIndex !== -1) return null; // User has typed a space, command name is done
+    return text.slice(1); // Return the query portion after /
+  }, []);
+
+  // Handle slash command selection from autocomplete
+  const handleCommandSelect = useCallback((cmd: SlashCommand) => {
+    setMessageInput(`/${cmd.name} `);
+    setCommandTrigger(null);
+    inputRef.current?.focus();
+  }, []);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
@@ -204,6 +247,15 @@ export function ChatPanel({
   const handleSend = useCallback(() => {
     const content = messageInput.trim();
     if (content && onSendMessage) {
+      // Handle /clear locally — never send to server
+      if (content === '/clear') {
+        onClearMessages?.();
+        setMessageInput('');
+        setCommandTrigger(null);
+        inputRef.current?.focus();
+        return;
+      }
+
       if (isTypingRef.current) {
         isTypingRef.current = false;
         onTypingStop?.();
@@ -220,10 +272,11 @@ export function ChatPanel({
       setMessageInput('');
       setMentionMappings([]);
       setMentionTrigger(null);
+      setCommandTrigger(null);
       setStimePrompt(false);
       inputRef.current?.focus();
     }
-  }, [messageInput, onSendMessage, onTypingStop, mentionMappings]);
+  }, [messageInput, onSendMessage, onTypingStop, mentionMappings, onClearMessages]);
 
   // Handle mention autocomplete selection
   const handleMentionSelect = useCallback((item: AutocompleteItem) => {
@@ -311,7 +364,13 @@ export function ChatPanel({
   }, [messageInput, mentionContext.serverTimezone]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    // Let autocomplete handle keys when open
+    // Let command autocomplete handle keys when open
+    if (commandTrigger !== null) {
+      const cmdHandler = (CommandAutocomplete as any)._handleKeyDown;
+      if (cmdHandler && cmdHandler(e)) return;
+    }
+
+    // Let mention autocomplete handle keys when open
     if (mentionTrigger) {
       const handler = (MentionAutocomplete as any)._handleKeyDown;
       if (handler && handler(e)) return;
@@ -328,7 +387,7 @@ export function ChatPanel({
       e.preventDefault();
       handleSend();
     }
-  }, [handleSend, mentionTrigger, stimePrompt]);
+  }, [handleSend, mentionTrigger, stimePrompt, commandTrigger]);
 
   const handleFileUpload = useCallback(() => {
     const input = document.createElement('input');
@@ -508,6 +567,9 @@ export function ChatPanel({
                           onPinMessage?.(message.id);
                         }
                       }}
+                      onCreateThread={onCreateThread ? () => onCreateThread(message) : undefined}
+                      hasThread={threadMessageIds?.has(message.id)}
+                      onOpenThread={onOpenThread ? () => onOpenThread(message.id) : undefined}
                     />
                   </div>
                 );
@@ -573,6 +635,18 @@ export function ChatPanel({
               </span>
             </div>
           )}
+
+          {/* Slash Command Autocomplete */}
+          <div className="relative">
+            {commandTrigger !== null && slashCommands.length > 0 && (
+              <CommandAutocomplete
+                query={commandTrigger}
+                commands={slashCommands}
+                onSelect={handleCommandSelect}
+                onClose={() => setCommandTrigger(null)}
+              />
+            )}
+          </div>
 
           {/* Mention Autocomplete */}
           <div className="relative">
@@ -652,8 +726,12 @@ export function ChatPanel({
                 setMessageInput(newValue);
                 handleTyping();
 
-                // Detect mention trigger
-                const trigger = detectTrigger(newValue, cursorPos);
+                // Detect slash command trigger
+                const cmdTrigger = detectCommandTrigger(newValue);
+                setCommandTrigger(cmdTrigger);
+
+                // Detect mention trigger (only if no command trigger)
+                const trigger = cmdTrigger === null ? detectTrigger(newValue, cursorPos) : null;
                 setMentionTrigger(trigger);
               }}
               onKeyDown={handleKeyDown}
@@ -694,6 +772,23 @@ export function ChatPanel({
               </svg>
             </button>
 
+            {/* Sticker picker button */}
+            {serverId && (
+              <button
+                ref={stickerButtonRef}
+                onClick={() => setShowStickerPicker(!showStickerPicker)}
+                className={clsx(
+                  'p-3 transition-colors',
+                  showStickerPicker ? 'text-brand-primary' : 'text-text-muted hover:text-text-primary',
+                )}
+                title="Send a sticker"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </button>
+            )}
+
             {/* Send button */}
             <button
               onClick={handleSend}
@@ -728,6 +823,20 @@ export function ChatPanel({
             }}
             anchorRef={gifButtonRef.current}
           />
+
+          {/* Sticker Picker Portal */}
+          {serverId && (
+            <StickerPicker
+              isOpen={showStickerPicker}
+              onClose={() => setShowStickerPicker(false)}
+              onSelect={(sticker) => {
+                onSendMessage?.(sticker.file_url);
+                setShowStickerPicker(false);
+              }}
+              anchorRef={stickerButtonRef.current}
+              serverId={serverId}
+            />
+          )}
         </div>
       )}
     </div>
@@ -755,6 +864,9 @@ interface MessageItemProps {
   isPinned?: boolean;
   canPin?: boolean;
   onPinClick?: () => void;
+  onCreateThread?: () => void;
+  hasThread?: boolean;
+  onOpenThread?: () => void;
 }
 
 const MemoizedMessageItem = memo(MessageItem, (prev, next) => {
@@ -767,7 +879,8 @@ const MemoizedMessageItem = memo(MessageItem, (prev, next) => {
     prev.isEditing === next.isEditing &&
     prev.editContent === next.editContent &&
     prev.isPinned === next.isPinned &&
-    prev.canPin === next.canPin
+    prev.canPin === next.canPin &&
+    prev.hasThread === next.hasThread
   );
 });
 
@@ -780,6 +893,7 @@ function MessageActionToolbar({
   onDeleteClick,
   onReplyClick,
   onPinClick,
+  onCreateThread,
 }: {
   isOwnMessage: boolean;
   isPinned?: boolean;
@@ -789,6 +903,7 @@ function MessageActionToolbar({
   onDeleteClick?: () => void;
   onReplyClick?: () => void;
   onPinClick?: () => void;
+  onCreateThread?: () => void;
 }) {
   const btnClass = 'p-1 rounded hover:bg-bg-modifier-active text-text-muted hover:text-text-primary transition-colors';
   return (
@@ -798,6 +913,13 @@ function MessageActionToolbar({
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
         </svg>
       </button>
+      {onCreateThread && (
+        <button className={btnClass} title="Create Thread" onClick={onCreateThread}>
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+          </svg>
+        </button>
+      )}
       <button
         className={btnClass}
         title="Add Reaction"
@@ -841,6 +963,7 @@ function MessageItem({
   isEditing, editContent, onEditChange, onEditSave, onEditCancel, onEditStart,
   onDeleteClick, onReactClick, onAuthorClick, onAuthorContextMenu, onReplyClick,
   isPinned, canPin, onPinClick,
+  onCreateThread, hasThread, onOpenThread,
 }: MessageItemProps) {
   const isSystem = message.type === 'system' || message.system_event != null;
   const author = message.author || { id: 'unknown', username: 'Unknown User', display_name: null, avatar_url: null };
@@ -916,6 +1039,9 @@ function MessageItem({
     return (
       <>
         <div className="text-text-primary">
+          {(message as any).is_tts && (
+            <span className="inline-flex items-center text-[10px] font-semibold text-accent-primary bg-accent-primary/10 rounded px-1 py-0.5 mr-1 align-middle" title="Text-to-Speech message">TTS</span>
+          )}
           <MessageContent content={message.content} />
           {message.edited_at && (
             <span className="text-[10px] text-text-muted ml-1" title={new Date(message.edited_at).toLocaleString()}>(edited)</span>
@@ -1012,6 +1138,7 @@ function MessageItem({
           onDeleteClick={isOwnMessage ? onDeleteClick : undefined}
           onReplyClick={onReplyClick}
           onPinClick={onPinClick}
+          onCreateThread={!hasThread ? onCreateThread : undefined}
         />
         <div className="flex gap-4">
           <div className="flex-shrink-0 pt-0.5">
@@ -1037,6 +1164,17 @@ function MessageItem({
               )}
             </div>
             {renderContent()}
+            {hasThread && (
+              <button
+                onClick={onOpenThread}
+                className="flex items-center gap-1.5 mt-1 text-xs text-brand-primary hover:underline cursor-pointer"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+                </svg>
+                View Thread
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -1052,6 +1190,7 @@ function MessageItem({
         onEditStart={onEditStart}
         onDeleteClick={isOwnMessage ? onDeleteClick : undefined}
         onReplyClick={onReplyClick}
+        onCreateThread={!hasThread ? onCreateThread : undefined}
       />
       <div className="flex gap-4">
         <div className="w-10 flex-shrink-0 flex items-start justify-end pt-0.5">
@@ -1061,6 +1200,17 @@ function MessageItem({
         </div>
         <div className="flex-1 min-w-0">
           {renderContent()}
+          {hasThread && (
+            <button
+              onClick={onOpenThread}
+              className="flex items-center gap-1.5 mt-1 text-xs text-brand-primary hover:underline cursor-pointer"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+              </svg>
+              View Thread
+            </button>
+          )}
         </div>
       </div>
     </div>

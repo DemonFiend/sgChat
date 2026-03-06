@@ -76,6 +76,9 @@ export function UserProfilePopover({
   const [showMovePicker, setShowMovePicker] = useState(false);
   const [confirmAction, setConfirmAction] = useState<'warn' | 'kick' | 'ban' | null>(null);
   const [modReason, setModReason] = useState('');
+  const [showWarnings, setShowWarnings] = useState(false);
+  const [warnings, setWarnings] = useState<{ id: string; reason: string | null; created_at: string; moderator_username: string | null }[]>([]);
+  const [loadingWarnings, setLoadingWarnings] = useState(false);
   const [bio, setBio] = useState<string | null>(null);
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
 
@@ -343,6 +346,19 @@ export function UserProfilePopover({
       setActionLoading(false);
     }
   }, [serverId, userId, modReason, onClose]);
+
+  const fetchWarnings = useCallback(async () => {
+    if (!serverId) return;
+    setLoadingWarnings(true);
+    try {
+      const data = await api.get<{ warnings: typeof warnings }>(`/servers/${serverId}/members/${userId}/warnings`);
+      setWarnings(data.warnings);
+    } catch (err: any) {
+      console.error('[UserProfilePopover] Failed to fetch warnings:', err);
+    } finally {
+      setLoadingWarnings(false);
+    }
+  }, [serverId, userId]);
 
   const showVoiceControls = isInVoice && !isCurrentUser && isConnected;
 
@@ -820,25 +836,60 @@ export function UserProfilePopover({
 
               {/* General mod actions (non-voice) */}
               {canWarnMembers && (
-                <button
-                  onClick={() => setConfirmAction('warn')}
-                  className="flex items-center gap-2 w-full px-2 py-1.5 text-sm text-yellow-500 rounded hover:bg-yellow-500/10 transition-colors"
-                >
-                  <svg
-                    className="w-4 h-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"
-                    />
-                  </svg>
-                  Warn
-                </button>
+                <>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => setConfirmAction('warn')}
+                      className="flex items-center gap-2 flex-1 px-2 py-1.5 text-sm text-yellow-500 rounded hover:bg-yellow-500/10 transition-colors"
+                    >
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="2"
+                          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"
+                        />
+                      </svg>
+                      Warn
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowWarnings(!showWarnings);
+                        if (!showWarnings && warnings.length === 0) fetchWarnings();
+                      }}
+                      className="px-2 py-1.5 text-xs text-text-muted rounded hover:bg-bg-modifier-hover transition-colors"
+                      title="View warning history"
+                    >
+                      History
+                    </button>
+                  </div>
+                  {showWarnings && (
+                    <div className="mt-1 bg-bg-secondary rounded-md p-2 max-h-40 overflow-y-auto">
+                      {loadingWarnings ? (
+                        <p className="text-xs text-text-muted text-center py-2">Loading...</p>
+                      ) : warnings.length === 0 ? (
+                        <p className="text-xs text-text-muted text-center py-2">No warnings</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {warnings.map((w) => (
+                            <div key={w.id} className="text-xs border-b border-border last:border-0 pb-1.5 last:pb-0">
+                              <div className="flex justify-between text-text-muted">
+                                <span>by {w.moderator_username || 'Unknown'}</span>
+                                <span>{new Date(w.created_at).toLocaleDateString()}</span>
+                              </div>
+                              {w.reason && <p className="text-text-secondary mt-0.5">{w.reason}</p>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
 
               {canKickMembers && (

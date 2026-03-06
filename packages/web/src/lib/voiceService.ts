@@ -35,6 +35,7 @@ interface VoiceParticipantResponse {
     is_muted: boolean;
     is_deafened: boolean;
     joined_at: string;
+    voice_status?: string;
   }>;
 }
 
@@ -314,6 +315,7 @@ class VoiceServiceClass {
             isMuted: p.is_muted,
             isDeafened: p.is_deafened,
             isSpeaking: false,
+            voiceStatus: p.voice_status,
           }));
           voiceStore.setChannelParticipants(targetChannelId, participants);
         }
@@ -696,6 +698,18 @@ class VoiceServiceClass {
       user_id: userId,
       channel_id: channelId,
       deafened,
+    });
+  }
+
+  /**
+   * Set voice status (custom text status shown under username in voice channel)
+   */
+  async setVoiceStatus(status: string): Promise<void> {
+    const channelId = voiceStore.currentChannelId();
+    if (!channelId) return;
+    await api.put('/voice/status', {
+      channel_id: channelId,
+      status,
     });
   }
 

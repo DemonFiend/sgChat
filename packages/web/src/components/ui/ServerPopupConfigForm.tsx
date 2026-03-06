@@ -6,7 +6,7 @@ import { Button } from './Button';
 import { Input } from './Input';
 import { RichTextarea } from './RichTextarea';
 import { SERVER_TIMEZONES } from '@/lib/timezones';
-import type { ServerPopupConfig } from '@sgchat/shared';
+import type { ServerPopupConfig, EventConfig } from '@sgchat/shared';
 
 interface ServerPopupConfigFormProps {
   serverId: string;
@@ -454,33 +454,209 @@ export function ServerPopupConfigForm({
             </div>
           </div>
 
-          {/* Events Section (Placeholder) */}
+          {/* Events Section */}
           <div className="mb-8">
-            <div className="flex items-center gap-2 mb-3">
+            <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-bold uppercase text-text-muted">Events</h3>
-              <span className="px-2 py-0.5 text-xs font-medium bg-bg-tertiary text-text-muted rounded">
-                Coming Soon
-              </span>
-            </div>
-            <div className="p-6 bg-bg-secondary border border-border-subtle rounded-lg text-center">
-              <svg
-                className="w-12 h-12 mx-auto text-text-muted mb-3"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+              <button
+                type="button"
+                onClick={() => {
+                  const newEvent: EventConfig = {
+                    id: crypto.randomUUID(),
+                    type: 'announcement',
+                    title: '',
+                    content: '',
+                    startDate: null,
+                    endDate: null,
+                    enabled: true,
+                  };
+                  handleFieldChange('events', [...(localConfig.events || []), newEvent]);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-brand-primary hover:bg-brand-primary/10 rounded transition-colors"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                />
-              </svg>
-              <p className="text-text-muted font-medium mb-1">Future Feature: Events</p>
-              <p className="text-sm text-text-muted">
-                Create announcements, polls, and scheduled events for your server
-              </p>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                </svg>
+                Add Event
+              </button>
             </div>
+
+            {(!localConfig.events || localConfig.events.length === 0) ? (
+              <div className="p-6 bg-bg-secondary border border-border-subtle rounded-lg text-center">
+                <svg
+                  className="w-12 h-12 mx-auto text-text-muted mb-3"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                  />
+                </svg>
+                <p className="text-text-muted font-medium mb-1">No Events</p>
+                <p className="text-sm text-text-muted">
+                  Create announcements, polls, and scheduled events for your server
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {localConfig.events.map((event, index) => (
+                  <div
+                    key={event.id}
+                    className="bg-bg-secondary border border-border-subtle rounded-lg p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3 mb-3">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <span
+                          className={clsx(
+                            'px-2 py-0.5 text-xs font-medium rounded flex-shrink-0',
+                            event.type === 'announcement' && 'bg-brand-primary/20 text-brand-primary',
+                            event.type === 'poll' && 'bg-warning/20 text-warning',
+                            event.type === 'scheduled' && 'bg-success/20 text-success',
+                          )}
+                        >
+                          {event.type.charAt(0).toUpperCase() + event.type.slice(1)}
+                        </span>
+                        <span className="text-sm font-medium text-text-primary truncate">
+                          {event.title || 'Untitled Event'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={event.enabled}
+                            onChange={(e) => {
+                              const updated = [...localConfig.events];
+                              updated[index] = { ...event, enabled: e.target.checked };
+                              handleFieldChange('events', updated);
+                            }}
+                            className="w-3.5 h-3.5 rounded border-border-subtle bg-bg-tertiary"
+                          />
+                          <span className="text-xs text-text-muted">Enabled</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = localConfig.events.filter((_, i) => i !== index);
+                            handleFieldChange('events', updated);
+                          }}
+                          className="p-1 text-text-muted hover:text-danger transition-colors"
+                          title="Delete event"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-bold uppercase text-text-muted mb-1">
+                            Title
+                          </label>
+                          <input
+                            type="text"
+                            value={event.title}
+                            onChange={(e) => {
+                              const updated = [...localConfig.events];
+                              updated[index] = { ...event, title: e.target.value };
+                              handleFieldChange('events', updated);
+                            }}
+                            placeholder="Event title"
+                            maxLength={100}
+                            className="w-full px-3 py-1.5 bg-bg-tertiary border border-border-subtle rounded text-sm text-text-primary focus:outline-none focus:border-brand-primary"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold uppercase text-text-muted mb-1">
+                            Type
+                          </label>
+                          <select
+                            value={event.type}
+                            onChange={(e) => {
+                              const updated = [...localConfig.events];
+                              updated[index] = {
+                                ...event,
+                                type: e.target.value as 'announcement' | 'poll' | 'scheduled',
+                              };
+                              handleFieldChange('events', updated);
+                            }}
+                            className="w-full px-3 py-1.5 bg-bg-tertiary border border-border-subtle rounded text-sm text-text-primary focus:outline-none focus:border-brand-primary"
+                          >
+                            <option value="announcement">Announcement</option>
+                            <option value="poll">Poll</option>
+                            <option value="scheduled">Scheduled</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold uppercase text-text-muted mb-1">
+                          Content
+                        </label>
+                        <textarea
+                          value={event.content}
+                          onChange={(e) => {
+                            const updated = [...localConfig.events];
+                            updated[index] = { ...event, content: e.target.value };
+                            handleFieldChange('events', updated);
+                          }}
+                          placeholder="Event description (supports markdown)"
+                          rows={3}
+                          maxLength={2000}
+                          className="w-full px-3 py-1.5 bg-bg-tertiary border border-border-subtle rounded text-sm text-text-primary focus:outline-none focus:border-brand-primary resize-none"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-bold uppercase text-text-muted mb-1">
+                            Start Date
+                          </label>
+                          <input
+                            type="datetime-local"
+                            value={event.startDate || ''}
+                            onChange={(e) => {
+                              const updated = [...localConfig.events];
+                              updated[index] = {
+                                ...event,
+                                startDate: e.target.value || null,
+                              };
+                              handleFieldChange('events', updated);
+                            }}
+                            className="w-full px-3 py-1.5 bg-bg-tertiary border border-border-subtle rounded text-sm text-text-primary focus:outline-none focus:border-brand-primary"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold uppercase text-text-muted mb-1">
+                            End Date
+                          </label>
+                          <input
+                            type="datetime-local"
+                            value={event.endDate || ''}
+                            onChange={(e) => {
+                              const updated = [...localConfig.events];
+                              updated[index] = {
+                                ...event,
+                                endDate: e.target.value || null,
+                              };
+                              handleFieldChange('events', updated);
+                            }}
+                            className="w-full px-3 py-1.5 bg-bg-tertiary border border-border-subtle rounded text-sm text-text-primary focus:outline-none focus:border-brand-primary"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Save Button */}

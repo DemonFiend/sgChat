@@ -462,7 +462,35 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
         await db.messages.updateStatus(messageId, 'received', now);
       }
 
-      // TODO: Notify sender via Socket.IO
+      // Notify senders via Socket.IO that their messages were received
+      if (message_ids.length > 0) {
+        const messages = await db.sql`
+          SELECT id, author_id, dm_channel_id FROM messages
+          WHERE id = ANY(${message_ids})
+            AND author_id != ${request.user!.id}
+        `;
+        // Group by sender to batch notifications
+        const bySender = new Map<string, { message_ids: string[]; dm_channel_id: string }>();
+        for (const msg of messages) {
+          if (!bySender.has(msg.author_id)) {
+            bySender.set(msg.author_id, { message_ids: [], dm_channel_id: msg.dm_channel_id });
+          }
+          bySender.get(msg.author_id)!.message_ids.push(msg.id);
+        }
+        for (const [senderId, data] of bySender) {
+          await publishEvent({
+            type: 'dm.message.ack',
+            actorId: request.user!.id,
+            resourceId: `user:${senderId}`,
+            payload: {
+              dm_channel_id: data.dm_channel_id,
+              message_ids: data.message_ids,
+              status: 'received',
+              received_at: now.toISOString(),
+            },
+          });
+        }
+      }
 
       return { acknowledged: message_ids.length };
     },

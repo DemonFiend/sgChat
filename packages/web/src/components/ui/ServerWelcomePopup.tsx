@@ -273,7 +273,7 @@ export function ServerWelcomePopup() {
                             )}
 
                             {/* Welcome Message Section */}
-                            <div className="px-6 pb-6">
+                            <div className="px-6 pb-4">
                                 <h3 className="text-xs font-bold uppercase text-text-muted mb-2 tracking-wide">
                                     Welcome!
                                 </h3>
@@ -295,6 +295,64 @@ export function ServerWelcomePopup() {
                                     </div>
                                 )}
                             </div>
+
+                            {/* Events Section */}
+                            {serverData.events && serverData.events.filter(e => e.enabled).length > 0 && (
+                                <div className="px-6 pb-6">
+                                    <h3 className="text-xs font-bold uppercase text-text-muted mb-2 tracking-wide">
+                                        Events
+                                    </h3>
+                                    <div className="space-y-2">
+                                        {serverData.events.filter(e => e.enabled).map((event) => (
+                                            <div
+                                                key={event.id}
+                                                className="bg-bg-tertiary/30 rounded p-3 border border-border-subtle"
+                                            >
+                                                <div className="flex items-center gap-2 mb-1.5">
+                                                    <span
+                                                        className={`px-1.5 py-0.5 text-xs font-medium rounded ${
+                                                            event.type === 'announcement'
+                                                                ? 'bg-brand-primary/20 text-brand-primary'
+                                                                : event.type === 'poll'
+                                                                  ? 'bg-warning/20 text-warning'
+                                                                  : 'bg-success/20 text-success'
+                                                        }`}
+                                                    >
+                                                        {event.type === 'announcement' ? 'Announcement' : event.type === 'poll' ? 'Poll' : 'Scheduled'}
+                                                    </span>
+                                                    <span className="text-sm font-semibold text-text-primary">
+                                                        {event.title}
+                                                    </span>
+                                                </div>
+                                                {event.content && (
+                                                    <div
+                                                        className="prose prose-sm max-w-none text-text-primary text-sm"
+                                                        dangerouslySetInnerHTML={{ __html: renderMarkdown(substituteVariables(event.content)) }}
+                                                    />
+                                                )}
+                                                {(event.startDate || event.endDate) && (
+                                                    <div className="flex items-center gap-1.5 mt-2 text-xs text-text-muted">
+                                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                        </svg>
+                                                        <span>
+                                                            {event.startDate && new Date(event.startDate).toLocaleString(undefined, {
+                                                                month: 'short', day: 'numeric', year: 'numeric',
+                                                                hour: '2-digit', minute: '2-digit',
+                                                            })}
+                                                            {event.startDate && event.endDate && ' — '}
+                                                            {event.endDate && new Date(event.endDate).toLocaleString(undefined, {
+                                                                month: 'short', day: 'numeric', year: 'numeric',
+                                                                hour: '2-digit', minute: '2-digit',
+                                                            })}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </>
                 )}

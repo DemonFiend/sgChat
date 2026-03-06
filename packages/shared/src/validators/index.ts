@@ -80,6 +80,24 @@ export const sendMessageSchema = z.object({
   })).optional(),
   reply_to_id: z.string().uuid().optional(),
   queued_at: z.string().datetime().optional(),
+  is_tts: z.boolean().optional(),
+  thread_id: z.string().uuid().optional(),
+  sticker_ids: z.array(z.string().uuid()).max(3).optional(),
+});
+
+// Thread validators
+export const createThreadSchema = z.object({
+  name: z.string().min(1).max(100),
+  channel_id: z.string().uuid(),
+  parent_message_id: z.string().uuid().optional(),
+  is_private: z.boolean().optional(),
+  initial_message: z.string().min(1).max(2000).optional(),
+});
+
+export const updateThreadSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  is_archived: z.boolean().optional(),
+  is_locked: z.boolean().optional(),
 });
 
 // Status validators (must match DB CHECK constraint)
@@ -207,6 +225,15 @@ export const updatePopupConfigSchema = z.object({
   events: z.array(eventConfigSchema).optional(),
 });
 
+// Webhook validators
+export const createWebhookSchema = z.object({
+  channel_id: z.string().uuid(),
+  name: z.string().min(1).max(80),
+  avatar_url: z.string().url().nullable().optional(),
+});
+
+export type CreateWebhookInput = z.infer<typeof createWebhookSchema>;
+
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type CreateServerInput = z.infer<typeof createServerSchema>;
@@ -223,6 +250,8 @@ export type TimeoutMemberInput = z.infer<typeof timeoutMemberSchema>;
 export type UpdateUserSettingsInput = z.infer<typeof updateUserSettingsSchema>;
 export type UpdatePopupConfigInput = z.infer<typeof updatePopupConfigSchema>;
 export type EventConfigInput = z.infer<typeof eventConfigSchema>;
+export type CreateThreadInput = z.infer<typeof createThreadSchema>;
+export type UpdateThreadInput = z.infer<typeof updateThreadSchema>;
 
 // ============================================================
 // Role Reaction validators

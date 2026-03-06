@@ -5,13 +5,14 @@ import { redis } from '../lib/redis.js';
 import { publishEvent } from '../lib/eventBus.js';
 import { calculatePermissions } from '../services/permissions.js';
 import { generateLiveKitToken, getLiveKitUrl } from '../services/livekit.js';
-import { VoicePermissions, hasPermission, RATE_LIMITS } from '@sgchat/shared';
+import { VoicePermissions, ServerPermissions, hasPermission, RATE_LIMITS } from '@sgchat/shared';
 import { notFound, forbidden, badRequest } from '../utils/errors.js';
 import {
   markTempChannelEmpty,
   markTempChannelOccupied,
 } from '../services/tempChannels.js';
 import { scheduleTempChannelCreation, cancelPendingCreation } from '../services/tempChannelTimers.js';
+import { getDefaultServer } from './server.js';
 
 export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
   // Get voice token for a channel (GET endpoint as specified in SERVER_HANDOFF.md)
@@ -685,6 +686,70 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
     },
   });
 
+  // Set voice status (custom text status)
+  fastify.put('/status', {
+    onRequest: [authenticate],
+    config: {
+      rateLimit: {
+        max: RATE_LIMITS.VOICE_JOIN.max,
+        timeWindow: `${RATE_LIMITS.VOICE_JOIN.window} seconds`,
+      },
+    },
+    handler: async (request, reply) => {
+      const { channel_id, status } = request.body as {
+        channel_id: string;
+        status: string;
+      };
+
+      if (!channel_id) {
+        return badRequest(reply, 'channel_id is required');
+      }
+
+      if (typeof status !== 'string') {
+        return badRequest(reply, 'status must be a string');
+      }
+
+      const trimmedStatus = status.trim();
+      if (trimmedStatus.length > 128) {
+        return badRequest(reply, 'Status must be 128 characters or less');
+      }
+
+      const channel = await db.channels.findById(channel_id);
+      if (!channel) {
+        return notFound(reply, 'Channel');
+      }
+
+      // Check SET_VOICE_STATUS permission
+      const perms = await calculatePermissions(request.user!.id, channel.server_id, channel_id);
+      if (!hasPermission(perms.voice, VoicePermissions.SET_VOICE_STATUS)) {
+        return forbidden(reply, 'Missing SET_VOICE_STATUS permission');
+      }
+
+      // Verify user is in the voice channel
+      const userChannel = await redis.getUserVoiceChannel(request.user!.id);
+      if (userChannel !== channel_id) {
+        return badRequest(reply, 'You must be in this voice channel to set a status');
+      }
+
+      // Update Redis voice state
+      await redis.updateVoiceState(channel_id, request.user!.id, { voice_status: trimmedStatus });
+
+      // Broadcast state update to server room
+      await publishEvent({
+        type: 'voice.state_update',
+        actorId: request.user!.id,
+        resourceId: `server:${channel.server_id}`,
+        payload: {
+          channel_id,
+          user_id: request.user!.id,
+          voice_status: trimmedStatus,
+        },
+      });
+
+      return { message: 'Voice status updated' };
+    },
+  });
+
   // Get temp channel settings (admin)
   fastify.get('/temp-settings', {
     onRequest: [authenticate],
@@ -698,10 +763,18 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
   // Update temp channel settings (admin)
   fastify.patch('/temp-settings', {
     onRequest: [authenticate],
-    handler: async (request, _reply) => {
+    handler: async (request, reply) => {
       const updates = request.body as any;
 
-      // TODO: Check admin permissions
+      const server = await getDefaultServer();
+      if (server) {
+        const perms = await calculatePermissions(request.user!.id, server.id);
+        const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) ||
+                        server.owner_id === request.user!.id;
+        if (!isAdmin) {
+          return forbidden(reply, 'Administrator permission required');
+        }
+      }
 
       const { updateTempChannelSettings } = await import('../services/tempChannels.js');
       const settings = await updateTempChannelSettings(updates);
@@ -712,8 +785,16 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
   // Manually cleanup empty temp channels (admin)
   fastify.post('/cleanup-temp-channels', {
     onRequest: [authenticate],
-    handler: async (_request, _reply) => {
-      // TODO: Check admin permissions
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (server) {
+        const perms = await calculatePermissions(request.user!.id, server.id);
+        const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) ||
+                        server.owner_id === request.user!.id;
+        if (!isAdmin) {
+          return forbidden(reply, 'Administrator permission required');
+        }
+      }
 
       const { cleanupEmptyTempChannels } = await import('../services/tempChannels.js');
       const result = await cleanupEmptyTempChannels();
@@ -767,6 +848,7 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
           is_deafened: voiceState.is_deafened || false,
           is_streaming: voiceState.is_streaming || false,
           joined_at: voiceState.joined_at,
+          voice_status: voiceState.voice_status || undefined,
         } : null,
       };
     },
@@ -793,6 +875,7 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
         is_muted: boolean;
         is_deafened: boolean;
         is_streaming?: boolean;
+        voice_status?: string;
       }>> = {};
 
       // Fetch participants for each channel
@@ -812,6 +895,7 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
               is_muted: voiceState?.is_muted || false,
               is_deafened: voiceState?.is_deafened || false,
               is_streaming: voiceState?.is_streaming || false,
+              voice_status: voiceState?.voice_status || undefined,
             };
           }));
           

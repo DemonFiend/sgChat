@@ -9,6 +9,7 @@ import { processMentions } from '../services/mentions.js';
 import { ServerPermissions, TextPermissions, hasPermission, sendMessageSchema, channelNotificationSettingsSchema } from '@sgchat/shared';
 import { notFound, forbidden, badRequest } from '../utils/errors.js';
 import { sanitizeMessage } from '../utils/sanitize.js';
+import { parseCommand, executeCommand, getBuiltinCommands } from '../services/commands.js';
 import { z } from 'zod';
 import {
   getChannelStorageStats,
@@ -55,6 +56,14 @@ const reorderChannelsSchema = z.object({
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const channelRoutes: FastifyPluginAsync = async (fastify) => {
+  // Get available slash commands (for autocomplete)
+  fastify.get('/commands', {
+    onRequest: [authenticate],
+    handler: async () => {
+      return getBuiltinCommands();
+    },
+  });
+
   // Get channel by ID
   fastify.get('/:id', {
     onRequest: [authenticate],
@@ -224,6 +233,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
         reply_to_id: m.reply_to_id,
         reactions: reactionsMap.get(m.id) || [],
         system_event: m.system_event || null,
+        is_tts: m.is_tts || false,
       }));
 
       // Compute channel hash based on last message ID and count for cache validation
@@ -289,6 +299,40 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       // Sanitize message content (strip HTML tags — defense-in-depth)
       body.content = sanitizeMessage(body.content);
 
+      // ── Slash command processing ──────────────────────────
+      const parsed = parseCommand(body.content);
+      if (parsed) {
+        // Check USE_APPLICATION_COMMANDS permission
+        if (!hasPermission(perms.text, TextPermissions.USE_APPLICATION_COMMANDS)) {
+          return forbidden(reply, 'Missing USE_APPLICATION_COMMANDS permission');
+        }
+
+        const cmdResult = await executeCommand(
+          parsed.name,
+          parsed.args,
+          request.user!.id,
+          id,
+          channel.server_id,
+        );
+
+        if (cmdResult) {
+          // Ephemeral commands: return response without creating a message
+          if (cmdResult.ephemeral) {
+            return { ephemeral: true, content: cmdResult.ephemeralText || '' };
+          }
+
+          // Text-replacement commands: swap the content and continue to message creation
+          if (cmdResult.content !== undefined) {
+            body.content = cmdResult.content;
+          }
+        }
+      }
+
+      // Check TTS permission if message is TTS
+      if (body.is_tts && !hasPermission(perms.text, TextPermissions.SEND_TTS_MESSAGES)) {
+        return forbidden(reply, 'Missing SEND_TTS_MESSAGES permission');
+      }
+
       const message = await db.messages.create({
         channel_id: id,
         author_id: request.user!.id,
@@ -296,6 +340,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
         attachments: body.attachments,
         reply_to_id: body.reply_to_id,
         queued_at: body.queued_at ? new Date(body.queued_at) : undefined,
+        is_tts: body.is_tts,
       });
 
       // Assign message to a segment for history management
@@ -311,8 +356,14 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       // Get author info for response
       const author = await db.users.findById(request.user!.id);
 
+      // Look up stickers if provided
+      let stickers: any[] = [];
+      if (body.sticker_ids && body.sticker_ids.length > 0) {
+        stickers = await db.stickers.findByIds(body.sticker_ids);
+      }
+
       // Format response with full author object
-      const formattedMessage = {
+      const formattedMessage: Record<string, any> = {
         id: message.id,
         channel_id: id,
         content: message.content,
@@ -327,6 +378,8 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
         attachments: message.attachments || [],
         reactions: [],
         reply_to_id: message.reply_to_id || null,
+        is_tts: message.is_tts || false,
+        ...(stickers.length > 0 ? { stickers } : {}),
       };
 
       // ── A1: Publish through event bus (envelope + durable stream + pub/sub)
@@ -696,6 +749,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
           is_muted: voiceState?.is_muted || false,
           is_deafened: voiceState?.is_deafened || false,
           joined_at: voiceState?.joined_at || new Date().toISOString(),
+          voice_status: voiceState?.voice_status || undefined,
         };
       }));
 

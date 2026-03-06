@@ -10,6 +10,8 @@ import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { onEvent, resyncEvents, getSequence, getSequences } from '../lib/eventBus.js';
+import { calculatePermissions } from '../services/permissions.js';
+import { TextPermissions, hasPermission } from '@sgchat/shared';
 import type { EventEnvelope } from '@sgchat/shared';
 
 export const gatewayRoutes: FastifyPluginAsync = async (fastify) => {
@@ -109,7 +111,34 @@ export const gatewayRoutes: FastifyPluginAsync = async (fastify) => {
       });
     }
 
-    // TODO: A13 — verify the user has permission to read this resource
+    // Verify the user has permission to read this resource
+    const userId = request.user!.id;
+    const [resourceType, resourceId] = resource_id.split(':');
+
+    if (resourceType === 'user') {
+      if (resourceId !== userId) {
+        return reply.status(403).send({ statusCode: 403, error: 'Forbidden', message: 'Cannot resync another user\'s events' });
+      }
+    } else if (resourceType === 'server') {
+      const [member] = await db.sql`SELECT 1 FROM members WHERE server_id = ${resourceId} AND user_id = ${userId}`;
+      if (!member) {
+        return reply.status(403).send({ statusCode: 403, error: 'Forbidden', message: 'Not a member of this server' });
+      }
+    } else if (resourceType === 'channel') {
+      const channel = await db.channels.findById(resourceId);
+      if (!channel) {
+        return reply.status(404).send({ statusCode: 404, error: 'Not Found', message: 'Channel not found' });
+      }
+      const perms = await calculatePermissions(userId, channel.server_id, resourceId);
+      if (!hasPermission(perms.text, TextPermissions.READ_MESSAGE_HISTORY)) {
+        return reply.status(403).send({ statusCode: 403, error: 'Forbidden', message: 'No read access to this channel' });
+      }
+    } else if (resourceType === 'dm') {
+      const [dm] = await db.sql`SELECT 1 FROM dm_channel_members WHERE dm_channel_id = ${resourceId} AND user_id = ${userId}`;
+      if (!dm) {
+        return reply.status(403).send({ statusCode: 403, error: 'Forbidden', message: 'Not a participant of this DM' });
+      }
+    }
 
     const result = await resyncEvents({
       resourceId: resource_id,

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, ReactNode } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { clsx } from 'clsx';
 import { api } from '@/api';
@@ -159,7 +159,7 @@ for (const [metaKey, meta] of Object.entries(VoicePermissionMetadata)) {
 
 // ── End permission groups ────────────────────────────────────────────
 
-type ServerSettingsTab = 'general' | 'roles' | 'role-reactions' | 'members' | 'channels' | 'soundboard' | 'afk' | 'invites' | 'bans' | 'audit-log';
+type ServerSettingsTab = 'general' | 'roles' | 'role-reactions' | 'members' | 'channels' | 'soundboard' | 'stickers' | 'webhooks' | 'afk' | 'invites' | 'bans' | 'audit-log' | 'storage' | 'crash-reports' | 'releases' | 'retention';
 
 interface ServerSettings {
   motd: string;
@@ -264,6 +264,26 @@ const tabs: { id: ServerSettingsTab; label: string; icon: ReactNode; permission?
     permission: 'manage_server',
   },
   {
+    id: 'stickers',
+    label: 'Stickers',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+      </svg>
+    ),
+    permission: 'manage_stickers',
+  },
+  {
+    id: 'webhooks',
+    label: 'Webhooks',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+      </svg>
+    ),
+    permission: 'manage_webhooks',
+  },
+  {
     id: 'afk',
     label: 'AFK',
     icon: (
@@ -302,6 +322,46 @@ const tabs: { id: ServerSettingsTab; label: string; icon: ReactNode; permission?
       </svg>
     ),
     permission: 'view_audit_log',
+  },
+  {
+    id: 'storage',
+    label: 'Storage',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+      </svg>
+    ),
+    permission: 'manage_server',
+  },
+  {
+    id: 'retention',
+    label: 'Retention',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+    permission: 'manage_server',
+  },
+  {
+    id: 'crash-reports',
+    label: 'Crash Reports',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+      </svg>
+    ),
+    permission: 'manage_server',
+  },
+  {
+    id: 'releases',
+    label: 'Releases',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+      </svg>
+    ),
+    permission: 'manage_server',
   },
 ];
 
@@ -452,6 +512,12 @@ export function ServerSettingsModal({ isOpen, onClose, serverName, serverIcon: _
                 {activeTab === 'soundboard' && (
                   <SoundboardSettingsTab serverId={serverData?.id || ''} />
                 )}
+                {activeTab === 'stickers' && (
+                  <StickersTab serverId={serverData?.id || ''} />
+                )}
+                {activeTab === 'webhooks' && (
+                  <WebhooksTab serverId={serverData?.id || ''} channels={channels} />
+                )}
                 {activeTab === 'afk' && (
                   <AfkSettingsTab
                     serverId={serverData?.id || ''}
@@ -462,6 +528,10 @@ export function ServerSettingsModal({ isOpen, onClose, serverName, serverIcon: _
                   />
                 )}
                 {activeTab === 'audit-log' && <AuditLogTab />}
+                {activeTab === 'storage' && <StorageTab />}
+                {activeTab === 'retention' && <RetentionTab />}
+                {activeTab === 'crash-reports' && <CrashReportsTab />}
+                {activeTab === 'releases' && <ReleasesTab />}
               </>
             )}
           </div>
@@ -2852,6 +2922,210 @@ function SoundboardSettingsTab({ serverId }: SoundboardSettingsTabProps) {
   );
 }
 
+// Stickers Tab
+interface StickersTabProps {
+  serverId: string;
+}
+
+interface StickerItem {
+  id: string;
+  server_id: string;
+  name: string;
+  description: string | null;
+  file_url: string;
+  file_type: string;
+  uploaded_by: string | null;
+  uploader_username?: string;
+  created_at: string;
+}
+
+function StickersTab({ serverId }: StickersTabProps) {
+  const [stickers, setStickers] = useState<StickerItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const fetchStickers = async () => {
+    try {
+      setLoading(true);
+      const response = await api.get<{ stickers: StickerItem[] }>(`/servers/${serverId}/stickers`);
+      setStickers(response.stickers || []);
+    } catch (err) {
+      console.error('[Stickers] Failed to fetch stickers:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (serverId) fetchStickers();
+  }, [serverId]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+      const reader = new FileReader();
+      reader.onload = () => setPreview(reader.result as string);
+      reader.readAsDataURL(file);
+      if (!name) {
+        setName(file.name.replace(/\.[^/.]+$/, '').slice(0, 30));
+      }
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!selectedFile || !name || name.length < 2) return;
+    try {
+      setUploading(true);
+      await api.upload<StickerItem>(
+        `/servers/${serverId}/stickers`,
+        selectedFile,
+        'file',
+        { name, ...(description ? { description } : {}) },
+      );
+      setName('');
+      setDescription('');
+      setSelectedFile(null);
+      setPreview(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      await fetchStickers();
+      toastStore.addToast({ type: 'system', title: 'Success', message: 'Sticker uploaded!' });
+    } catch (err: any) {
+      toastStore.addToast({ type: 'system', title: 'Error', message: err?.message || 'Failed to upload sticker' });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDelete = async (stickerId: string) => {
+    if (!confirm('Delete this sticker?')) return;
+    try {
+      await api.delete(`/servers/${serverId}/stickers/${stickerId}`);
+      await fetchStickers();
+      toastStore.addToast({ type: 'system', title: 'Success', message: 'Sticker deleted' });
+    } catch (err: any) {
+      toastStore.addToast({ type: 'system', title: 'Error', message: err?.message || 'Failed to delete sticker' });
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-lg font-semibold text-text-primary mb-1">Stickers</h3>
+        <p className="text-sm text-text-secondary">Manage custom stickers for this server. Members can use these in messages.</p>
+      </div>
+
+      {/* Upload form */}
+      <div className="p-4 bg-bg-secondary rounded-lg space-y-3">
+        <h4 className="text-sm font-semibold text-text-primary">Upload Sticker</h4>
+
+        <div className="flex gap-4">
+          {/* Preview */}
+          <div
+            className="w-24 h-24 bg-bg-primary rounded-lg border-2 border-dashed border-border-primary flex items-center justify-center cursor-pointer hover:border-brand-primary transition-colors flex-shrink-0"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {preview ? (
+              <img src={preview} alt="Preview" className="w-full h-full object-contain rounded-lg" />
+            ) : (
+              <div className="text-center text-text-muted text-xs">
+                <svg className="w-6 h-6 mx-auto mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                </svg>
+                Click to select
+              </div>
+            )}
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/gif,image/webp"
+            className="hidden"
+            onChange={handleFileChange}
+          />
+
+          <div className="flex-1 space-y-2">
+            <input
+              type="text"
+              placeholder="Sticker name (2-30 chars)"
+              value={name}
+              onChange={(e) => setName(e.target.value.slice(0, 30))}
+              className="w-full px-3 py-1.5 bg-bg-primary border border-border-primary rounded text-sm text-text-primary"
+            />
+            <input
+              type="text"
+              placeholder="Description (optional, max 100)"
+              value={description}
+              onChange={(e) => setDescription(e.target.value.slice(0, 100))}
+              className="w-full px-3 py-1.5 bg-bg-primary border border-border-primary rounded text-sm text-text-primary"
+            />
+            <div className="flex items-center gap-2">
+              <button
+                className="px-3 py-1.5 bg-accent-primary hover:bg-accent-primary/80 text-white rounded text-sm font-medium disabled:opacity-50 transition-colors"
+                onClick={handleUpload}
+                disabled={uploading || !selectedFile || !name || name.length < 2}
+              >
+                {uploading ? 'Uploading...' : 'Upload'}
+              </button>
+              <span className="text-xs text-text-muted">PNG, GIF, or WebP. Max 512KB.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Sticker list */}
+      {loading ? (
+        <div className="text-text-muted">Loading...</div>
+      ) : stickers.length === 0 ? (
+        <div className="text-center py-8 text-text-muted">
+          <p>No stickers yet. Upload one above!</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-4 gap-3">
+          {stickers.map((sticker) => (
+            <div
+              key={sticker.id}
+              className="group relative bg-bg-secondary rounded-lg p-2 flex flex-col items-center"
+            >
+              <img
+                src={sticker.file_url}
+                alt={sticker.name}
+                className="w-20 h-20 object-contain"
+              />
+              <div className="mt-1 text-xs text-text-primary truncate w-full text-center" title={sticker.name}>
+                {sticker.name}
+              </div>
+              {sticker.description && (
+                <div className="text-xs text-text-muted truncate w-full text-center" title={sticker.description}>
+                  {sticker.description}
+                </div>
+              )}
+              <button
+                onClick={() => handleDelete(sticker.id)}
+                className="absolute top-1 right-1 p-1 bg-danger/80 hover:bg-danger text-white rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                title="Delete sticker"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="text-xs text-text-muted">
+        {stickers.length}/50 stickers used
+      </div>
+    </div>
+  );
+}
+
 // AFK Settings Tab
 interface AfkSettingsTabProps {
   serverId: string;
@@ -2968,6 +3242,705 @@ function AfkSettingsTab({ serverId: _serverId, afkTimeout: initialAfkTimeout, af
           <span className="text-sm text-green-400">Saved!</span>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Storage Tab ──────────────────────────────────────────────────────
+function StorageTab() {
+  const [data, setData] = useState<any>(null);
+  const [comprehensive, setComprehensive] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [storageData, compData] = await Promise.all([
+          api.get<any>('/server/storage'),
+          api.get<any>('/server/storage/comprehensive'),
+        ]);
+        setData(storageData);
+        setComprehensive(compData);
+      } catch (err) {
+        console.error('Failed to fetch storage data:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+  };
+
+  if (loading) return <div className="text-text-muted text-center py-8">Loading storage data...</div>;
+  if (!data) return <div className="text-danger text-center py-8">Failed to load storage data</div>;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-lg font-semibold text-text-primary mb-1">Storage Overview</h3>
+        <p className="text-sm text-text-muted">Server storage usage and health metrics.</p>
+      </div>
+
+      {data.alerts?.length > 0 && (
+        <div className="space-y-2">
+          {data.alerts.map((alert: any, i: number) => (
+            <div key={i} className={`p-3 rounded-md text-sm ${alert.level === 'critical' ? 'bg-danger/20 text-danger' : 'bg-yellow-500/20 text-yellow-400'}`}>
+              {alert.message || `${alert.channel_name}: ${alert.usage_percent}% used`}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="bg-bg-secondary rounded-lg p-4">
+          <div className="text-xs text-text-muted uppercase tracking-wide mb-1">Total Messages</div>
+          <div className="text-2xl font-bold text-text-primary">{data.stats?.total_messages?.toLocaleString() || 0}</div>
+        </div>
+        <div className="bg-bg-secondary rounded-lg p-4">
+          <div className="text-xs text-text-muted uppercase tracking-wide mb-1">Total Size</div>
+          <div className="text-2xl font-bold text-text-primary">{formatBytes(data.stats?.total_size_bytes || 0)}</div>
+        </div>
+        <div className="bg-bg-secondary rounded-lg p-4">
+          <div className="text-xs text-text-muted uppercase tracking-wide mb-1">Size Limit</div>
+          <div className="text-2xl font-bold text-text-primary">{formatBytes(data.settings?.default_size_limit_bytes || 0)}</div>
+        </div>
+        <div className="bg-bg-secondary rounded-lg p-4">
+          <div className="text-xs text-text-muted uppercase tracking-wide mb-1">Archive Health</div>
+          <div className="text-2xl font-bold text-text-primary">{data.archive?.status || 'OK'}</div>
+        </div>
+      </div>
+
+      {comprehensive?.channels && (
+        <div>
+          <h4 className="text-sm font-semibold text-text-primary mb-2">Per-Channel Breakdown</h4>
+          <div className="bg-bg-secondary rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="text-left px-3 py-2 text-text-muted font-medium">Channel</th>
+                  <th className="text-right px-3 py-2 text-text-muted font-medium">Messages</th>
+                  <th className="text-right px-3 py-2 text-text-muted font-medium">Size</th>
+                </tr>
+              </thead>
+              <tbody>
+                {comprehensive.channels.map((ch: any) => (
+                  <tr key={ch.channel_id} className="border-b border-border/50 last:border-0">
+                    <td className="px-3 py-2 text-text-primary">#{ch.channel_name || ch.channel_id}</td>
+                    <td className="px-3 py-2 text-right text-text-secondary">{ch.message_count?.toLocaleString() || 0}</td>
+                    <td className="px-3 py-2 text-right text-text-secondary">{formatBytes(ch.total_size_bytes || 0)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Retention Tab ────────────────────────────────────────────────────
+function RetentionTab() {
+  const [settings, setSettings] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [cleanupResult, setCleanupResult] = useState<any>(null);
+  const [cleaningUp, setCleaningUp] = useState(false);
+  const [logs, setLogs] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [retentionData, logsData] = await Promise.all([
+          api.get<any>('/server/settings/retention'),
+          api.get<any>('/server/cleanup/logs'),
+        ]);
+        setSettings(retentionData);
+        setLogs(logsData.logs || []);
+      } catch (err) {
+        console.error('Failed to fetch retention data:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const result = await api.patch<any>('/server/settings/retention', settings);
+      setSettings(result.settings);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      console.error('Failed to save retention settings:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCleanup = async (dryRun: boolean) => {
+    setCleaningUp(true);
+    try {
+      const result = await api.post<any>('/server/cleanup/run', { dry_run: dryRun });
+      setCleanupResult(result);
+    } catch (err) {
+      console.error('Failed to run cleanup:', err);
+    } finally {
+      setCleaningUp(false);
+    }
+  };
+
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+  };
+
+  if (loading) return <div className="text-text-muted text-center py-8">Loading retention settings...</div>;
+  if (!settings) return <div className="text-danger text-center py-8">Failed to load retention settings</div>;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-lg font-semibold text-text-primary mb-1">Message Retention</h3>
+        <p className="text-sm text-text-muted">Configure message retention policies and run cleanup operations.</p>
+      </div>
+
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-text-secondary mb-1">Default Channel Size Limit (MB)</label>
+          <input
+            type="number"
+            value={Math.round((settings.default_channel_size_limit_bytes || 0) / 1024 / 1024)}
+            onChange={(e) => setSettings({ ...settings, default_channel_size_limit_bytes: parseInt(e.target.value || '0') * 1024 * 1024 })}
+            className="w-full bg-bg-tertiary border border-bg-modifier-accent rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-primary"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">Warning Threshold (%)</label>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              value={settings.storage_warning_threshold_percent || 80}
+              onChange={(e) => setSettings({ ...settings, storage_warning_threshold_percent: parseInt(e.target.value || '80') })}
+              className="w-full bg-bg-tertiary border border-bg-modifier-accent rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-primary"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">Action Threshold (%)</label>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              value={settings.storage_action_threshold_percent || 95}
+              onChange={(e) => setSettings({ ...settings, storage_action_threshold_percent: parseInt(e.target.value || '95') })}
+              className="w-full bg-bg-tertiary border border-bg-modifier-accent rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-primary"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <button onClick={handleSave} disabled={saving} className="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white rounded-md text-sm font-medium transition-colors disabled:opacity-50">
+          {saving ? 'Saving...' : 'Save Settings'}
+        </button>
+        {saved && <span className="text-sm text-green-400">Saved!</span>}
+      </div>
+
+      <div className="border-t border-border pt-4">
+        <h4 className="text-sm font-semibold text-text-primary mb-2">Manual Cleanup</h4>
+        <p className="text-xs text-text-muted mb-3">Run cleanup to delete old messages exceeding channel size limits.</p>
+        <div className="flex gap-2">
+          <button onClick={() => handleCleanup(true)} disabled={cleaningUp} className="px-3 py-1.5 bg-bg-tertiary hover:bg-bg-modifier-hover text-text-secondary rounded-md text-sm transition-colors disabled:opacity-50">
+            {cleaningUp ? 'Running...' : 'Preview (Dry Run)'}
+          </button>
+          <button onClick={() => handleCleanup(false)} disabled={cleaningUp} className="px-3 py-1.5 bg-danger hover:bg-danger/80 text-white rounded-md text-sm transition-colors disabled:opacity-50">
+            Run Cleanup
+          </button>
+        </div>
+        {cleanupResult && (
+          <div className="mt-3 bg-bg-secondary rounded-md p-3 text-sm">
+            <p className="text-text-primary">{cleanupResult.dry_run ? 'Preview' : 'Cleanup complete'}: {cleanupResult.total_messages_deleted} messages, {formatBytes(cleanupResult.total_bytes_freed || 0)} freed</p>
+          </div>
+        )}
+      </div>
+
+      {logs.length > 0 && (
+        <div className="border-t border-border pt-4">
+          <h4 className="text-sm font-semibold text-text-primary mb-2">Cleanup History</h4>
+          <div className="space-y-2 max-h-60 overflow-y-auto">
+            {logs.map((log: any, i: number) => (
+              <div key={i} className="bg-bg-secondary rounded-md p-2 text-xs">
+                <div className="flex justify-between text-text-muted">
+                  <span>{log.messages_deleted || 0} messages deleted</span>
+                  <span>{new Date(log.created_at).toLocaleString()}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Crash Reports Tab ────────────────────────────────────────────────
+function CrashReportsTab() {
+  const [reports, setReports] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [platformFilter, setPlatformFilter] = useState('');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const fetchReports = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (platformFilter) params.set('platform', platformFilter);
+      const data = await api.get<any>(`/crash-reports?${params.toString()}`);
+      setReports(data.reports || []);
+    } catch (err) {
+      console.error('Failed to fetch crash reports:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [platformFilter]);
+
+  useEffect(() => { fetchReports(); }, [fetchReports]);
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-lg font-semibold text-text-primary mb-1">Crash Reports</h3>
+        <p className="text-sm text-text-muted">View crash reports submitted by desktop clients.</p>
+      </div>
+
+      <div className="flex gap-2">
+        {['', 'windows', 'mac', 'linux', 'web'].map((p) => (
+          <button
+            key={p}
+            onClick={() => setPlatformFilter(p)}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${platformFilter === p ? 'bg-brand-primary text-white' : 'bg-bg-tertiary text-text-secondary hover:bg-bg-modifier-hover'}`}
+          >
+            {p || 'All'}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="text-text-muted text-center py-8">Loading crash reports...</div>
+      ) : reports.length === 0 ? (
+        <div className="text-text-muted text-center py-8">No crash reports found.</div>
+      ) : (
+        <div className="space-y-2 max-h-[500px] overflow-y-auto">
+          {reports.map((r: any) => (
+            <div key={r.id} className="bg-bg-secondary rounded-lg p-3">
+              <div className="flex items-center justify-between cursor-pointer" onClick={() => setExpandedId(expandedId === r.id ? null : r.id)}>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-mono bg-bg-tertiary px-2 py-0.5 rounded text-text-muted">{r.platform}</span>
+                  <span className="text-xs text-text-muted">v{r.version}</span>
+                  <span className="text-sm text-text-primary truncate max-w-[300px]">{r.error_type || r.error_message || 'Unknown error'}</span>
+                </div>
+                <span className="text-xs text-text-muted">{new Date(r.created_at).toLocaleString()}</span>
+              </div>
+              {expandedId === r.id && (
+                <div className="mt-2 space-y-2">
+                  {r.error_message && <p className="text-sm text-text-secondary">{r.error_message}</p>}
+                  {r.stack_trace && (
+                    <pre className="text-xs bg-bg-tertiary rounded p-2 overflow-x-auto text-text-muted max-h-48 overflow-y-auto">{r.stack_trace}</pre>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Releases Tab ─────────────────────────────────────────────────────
+function ReleasesTab() {
+  const [releases, setReleases] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [formData, setFormData] = useState({ version: '', platform: 'windows', download_url: '', changelog: '', required: false });
+  const [submitting, setSubmitting] = useState(false);
+
+  const fetchReleases = useCallback(async () => {
+    try {
+      const data = await api.get<any>('/releases');
+      setReleases(data.releases || []);
+    } catch (err) {
+      console.error('Failed to fetch releases:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchReleases(); }, [fetchReleases]);
+
+  const handleCreate = async () => {
+    if (!formData.version || !formData.download_url) return;
+    setSubmitting(true);
+    try {
+      await api.post('/releases', formData);
+      setShowForm(false);
+      setFormData({ version: '', platform: 'windows', download_url: '', changelog: '', required: false });
+      await fetchReleases();
+    } catch (err) {
+      console.error('Failed to create release:', err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await api.delete(`/releases/${id}`);
+      setReleases(releases.filter((r) => r.id !== id));
+    } catch (err) {
+      console.error('Failed to delete release:', err);
+    }
+  };
+
+  if (loading) return <div className="text-text-muted text-center py-8">Loading releases...</div>;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold text-text-primary mb-1">Desktop Releases</h3>
+          <p className="text-sm text-text-muted">Manage desktop app release entries.</p>
+        </div>
+        <button onClick={() => setShowForm(!showForm)} className="px-3 py-1.5 bg-brand-primary hover:bg-brand-primary-hover text-white rounded-md text-sm font-medium transition-colors">
+          {showForm ? 'Cancel' : 'New Release'}
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="bg-bg-secondary rounded-lg p-4 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1">Version</label>
+              <input type="text" placeholder="1.2.3" value={formData.version} onChange={(e) => setFormData({ ...formData, version: e.target.value })}
+                className="w-full bg-bg-tertiary border border-bg-modifier-accent rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-primary" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1">Platform</label>
+              <select value={formData.platform} onChange={(e) => setFormData({ ...formData, platform: e.target.value })}
+                className="w-full bg-bg-tertiary border border-bg-modifier-accent rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-primary">
+                <option value="windows">Windows</option>
+                <option value="mac">Mac</option>
+                <option value="linux">Linux</option>
+                <option value="all">All</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-text-secondary mb-1">Download URL</label>
+            <input type="url" placeholder="https://..." value={formData.download_url} onChange={(e) => setFormData({ ...formData, download_url: e.target.value })}
+              className="w-full bg-bg-tertiary border border-bg-modifier-accent rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-primary" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-text-secondary mb-1">Changelog</label>
+            <textarea rows={3} placeholder="What's new..." value={formData.changelog} onChange={(e) => setFormData({ ...formData, changelog: e.target.value })}
+              className="w-full bg-bg-tertiary border border-bg-modifier-accent rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-primary resize-none" />
+          </div>
+          <div className="flex items-center gap-2">
+            <input type="checkbox" id="release-required" checked={formData.required} onChange={(e) => setFormData({ ...formData, required: e.target.checked })} className="rounded" />
+            <label htmlFor="release-required" className="text-sm text-text-secondary">Required update</label>
+          </div>
+          <button onClick={handleCreate} disabled={submitting || !formData.version || !formData.download_url}
+            className="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white rounded-md text-sm font-medium transition-colors disabled:opacity-50">
+            {submitting ? 'Creating...' : 'Create Release'}
+          </button>
+        </div>
+      )}
+
+      {releases.length === 0 ? (
+        <div className="text-text-muted text-center py-8">No releases yet.</div>
+      ) : (
+        <div className="space-y-2">
+          {releases.map((r: any) => (
+            <div key={r.id} className="bg-bg-secondary rounded-lg p-3 flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-text-primary">v{r.version}</span>
+                  <span className="text-xs bg-bg-tertiary px-2 py-0.5 rounded text-text-muted">{r.platform}</span>
+                  {r.required && <span className="text-xs bg-danger/20 text-danger px-2 py-0.5 rounded">Required</span>}
+                </div>
+                {r.changelog && <p className="text-xs text-text-muted mt-1 line-clamp-2">{r.changelog}</p>}
+                <span className="text-xs text-text-muted">{new Date(r.published_at).toLocaleDateString()}</span>
+              </div>
+              <button onClick={() => handleDelete(r.id)} className="p-1.5 text-text-muted hover:text-danger transition-colors" title="Delete release">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Webhooks Tab ──────────────────────────────────────────────
+
+interface WebhookData {
+  id: string;
+  server_id: string;
+  channel_id: string;
+  name: string;
+  avatar_url: string | null;
+  token: string;
+  created_by: string | null;
+  created_by_username: string | null;
+  channel_name: string | null;
+  created_at: string;
+}
+
+function WebhooksTab({ serverId, channels }: { serverId: string; channels: Channel[] }) {
+  const [webhooks, setWebhooks] = useState<WebhookData[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [copiedToken, setCopiedToken] = useState<string | null>(null);
+
+  // Create form state
+  const [newName, setNewName] = useState('');
+  const [newChannelId, setNewChannelId] = useState('');
+  const [actionInProgress, setActionInProgress] = useState(false);
+
+  const textChannels = useMemo(
+    () => channels.filter((c) => c.type === 'text' || c.type === 'announcement'),
+    [channels]
+  );
+
+  const fetchWebhooks = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await api.get<{ webhooks: WebhookData[] }>(`/webhooks?server_id=${serverId}`);
+      setWebhooks(data.webhooks || []);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to load webhooks');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (serverId) fetchWebhooks();
+  }, [serverId]);
+
+  const handleCreate = async () => {
+    if (!newName.trim() || !newChannelId) return;
+    setActionInProgress(true);
+    try {
+      await api.post('/webhooks', {
+        name: newName.trim(),
+        channel_id: newChannelId,
+      });
+      setNewName('');
+      setNewChannelId('');
+      setShowCreateForm(false);
+      await fetchWebhooks();
+    } catch (err: any) {
+      alert(err?.message || 'Failed to create webhook');
+    } finally {
+      setActionInProgress(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this webhook? Any services using it will stop working.')) return;
+    try {
+      await api.delete(`/webhooks/${id}`);
+      setWebhooks((prev) => prev.filter((w) => w.id !== id));
+    } catch (err: any) {
+      alert(err?.message || 'Failed to delete webhook');
+    }
+  };
+
+  const copyToken = async (webhook: WebhookData) => {
+    const url = `${window.location.origin}/api/webhooks/${webhook.id}/${webhook.token}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedToken(webhook.id);
+      setTimeout(() => setCopiedToken(null), 2000);
+    } catch {
+      // Fallback
+      const input = document.createElement('input');
+      input.value = url;
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand('copy');
+      document.body.removeChild(input);
+      setCopiedToken(webhook.id);
+      setTimeout(() => setCopiedToken(null), 2000);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-text-primary">Webhooks</h2>
+          <p className="text-sm text-text-muted mt-1">
+            Webhooks allow external services to send messages to your channels.
+          </p>
+        </div>
+        <button
+          onClick={() => setShowCreateForm(!showCreateForm)}
+          className="px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded text-sm font-medium transition-colors"
+        >
+          Create Webhook
+        </button>
+      </div>
+
+      {/* Create form */}
+      {showCreateForm && (
+        <div className="bg-bg-secondary rounded-lg p-4 space-y-4 border border-border-subtle">
+          <h3 className="text-sm font-semibold text-text-primary">New Webhook</h3>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Name</label>
+              <input
+                type="text"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="e.g. GitHub Notifications"
+                maxLength={80}
+                className="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Channel</label>
+              <select
+                value={newChannelId}
+                onChange={(e) => setNewChannelId(e.target.value)}
+                className="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-sm text-text-primary focus:outline-none focus:border-accent"
+              >
+                <option value="">Select a channel...</option>
+                {textChannels.map((ch) => (
+                  <option key={ch.id} value={ch.id}>
+                    #{ch.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button
+              onClick={() => {
+                setShowCreateForm(false);
+                setNewName('');
+                setNewChannelId('');
+              }}
+              className="px-3 py-1.5 text-sm text-text-muted hover:text-text-primary transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleCreate}
+              disabled={actionInProgress || !newName.trim() || !newChannelId}
+              className="px-4 py-1.5 bg-accent hover:bg-accent-hover disabled:opacity-50 text-white rounded text-sm font-medium transition-colors"
+            >
+              {actionInProgress ? 'Creating...' : 'Create'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Error */}
+      {error && (
+        <div className="bg-danger/10 text-danger text-sm p-3 rounded">{error}</div>
+      )}
+
+      {/* Loading */}
+      {isLoading ? (
+        <div className="flex items-center justify-center h-32">
+          <div className="text-text-muted text-sm">Loading webhooks...</div>
+        </div>
+      ) : webhooks.length === 0 ? (
+        <div className="text-center py-12 text-text-muted">
+          <svg className="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+          </svg>
+          <p className="text-sm">No webhooks yet</p>
+          <p className="text-xs mt-1">Create a webhook to let external services post messages.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {webhooks.map((wh) => (
+            <div
+              key={wh.id}
+              className="bg-bg-secondary rounded-lg p-4 border border-border-subtle"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-full bg-bg-tertiary flex items-center justify-center shrink-0">
+                    {wh.avatar_url ? (
+                      <img
+                        src={wh.avatar_url}
+                        alt={wh.name}
+                        className="w-10 h-10 rounded-full object-cover"
+                      />
+                    ) : (
+                      <svg className="w-5 h-5 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                      </svg>
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="text-sm font-semibold text-text-primary truncate">{wh.name}</h4>
+                    <p className="text-xs text-text-muted">
+                      #{wh.channel_name || 'unknown'}
+                      {wh.created_by_username && (
+                        <span> &middot; Created by {wh.created_by_username}</span>
+                      )}
+                      <span> &middot; {new Date(wh.created_at).toLocaleDateString()}</span>
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => copyToken(wh)}
+                    className="px-3 py-1.5 text-xs bg-bg-tertiary hover:bg-bg-modifier-hover text-text-muted hover:text-text-primary rounded transition-colors"
+                    title="Copy webhook URL"
+                  >
+                    {copiedToken === wh.id ? 'Copied!' : 'Copy URL'}
+                  </button>
+                  <button
+                    onClick={() => handleDelete(wh.id)}
+                    className="p-1.5 text-text-muted hover:text-danger transition-colors"
+                    title="Delete webhook"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

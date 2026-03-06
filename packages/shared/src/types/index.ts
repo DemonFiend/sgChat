@@ -126,6 +126,7 @@ export interface Message {
   received_at: Date | null;
   edited_at: Date | null;
   system_event: SystemEvent | null;
+  is_tts?: boolean;
   created_at: Date;
 }
 
@@ -143,6 +144,17 @@ export interface SystemEvent {
   user_id: UUID;
   username: string;
   timestamp: Date;
+}
+
+export interface Webhook {
+  id: string;
+  server_id: string;
+  channel_id: string;
+  name: string;
+  avatar_url: string | null;
+  token: string;
+  created_by: string | null;
+  created_at: string;
 }
 
 export interface DMChannel {
@@ -430,6 +442,7 @@ export type EventType =
   | 'dm.message.new'
   | 'dm.message.update'
   | 'dm.message.delete'
+  | 'dm.message.ack'
   // Presence
   | 'presence.update'
   // Status comments
@@ -474,6 +487,13 @@ export type EventType =
   | 'soundboard.play'
   | 'soundboard.added'
   | 'soundboard.removed'
+  // Threads
+  | 'thread.create'
+  | 'thread.update'
+  | 'thread.delete'
+  // Stickers
+  | 'sticker.added'
+  | 'sticker.removed'
   // DM typing
   | 'dm.typing.start'
   | 'dm.typing.stop'
@@ -910,6 +930,42 @@ export interface ChannelNotificationSettings {
 }
 
 // ============================================================
+// Slash Commands
+// ============================================================
+
+export interface SlashCommand {
+  name: string;
+  description: string;
+  options?: SlashCommandOption[];
+}
+
+export interface SlashCommandOption {
+  name: string;
+  description: string;
+  type: 'string' | 'integer' | 'boolean' | 'user' | 'channel';
+  required?: boolean;
+}
+
+// ============================================================
+// Threads
+// ============================================================
+
+export interface Thread {
+  id: string;
+  channel_id: string;
+  server_id: string;
+  parent_message_id: string | null;
+  name: string;
+  creator_id: string | null;
+  is_private: boolean;
+  is_archived: boolean;
+  is_locked: boolean;
+  message_count: number;
+  last_message_at: string | null;
+  created_at: string;
+}
+
+// ============================================================
 // Releases
 // ============================================================
 
@@ -921,4 +977,19 @@ export interface Release {
   changelog: string | null;
   required: boolean;
   published_at: string;
+}
+
+// ============================================================
+// Stickers
+// ============================================================
+
+export interface Sticker {
+  id: string;
+  server_id: string;
+  name: string;
+  description: string | null;
+  file_url: string;
+  file_type: string;
+  uploaded_by: string | null;
+  created_at: string;
 }

@@ -226,11 +226,12 @@ export const db = {
       queued_at?: Date;
       system_event?: any;
       status?: string;
+      is_tts?: boolean;
     }) {
       const [message] = await sql`
         INSERT INTO messages (
           channel_id, dm_channel_id, author_id, content, reply_to_id,
-          attachments, queued_at, system_event, status
+          attachments, queued_at, system_event, status, is_tts
         )
         VALUES (
           ${data.channel_id || null},
@@ -241,7 +242,8 @@ export const db = {
           ${JSON.stringify(data.attachments || [])},
           ${data.queued_at || null},
           ${data.system_event ? JSON.stringify(data.system_event) : null},
-          ${data.status || 'sent'}
+          ${data.status || 'sent'},
+          ${data.is_tts || false}
         )
         RETURNING *
       `;
@@ -889,6 +891,51 @@ export const db = {
         DELETE FROM user_voice_sounds
         WHERE user_id = ${userId} AND server_id = ${serverId} AND sound_type = ${soundType}
       `;
+    },
+  },
+
+  // Stickers
+  stickers: {
+    async findByServer(serverId: string) {
+      return sql`
+        SELECT s.*, u.username as uploader_username
+        FROM stickers s
+        LEFT JOIN users u ON s.uploaded_by = u.id
+        WHERE s.server_id = ${serverId}
+        ORDER BY s.created_at DESC
+      `;
+    },
+    async findById(id: string) {
+      const [sticker] = await sql`SELECT * FROM stickers WHERE id = ${id}`;
+      return sticker;
+    },
+    async findByIds(ids: string[]) {
+      if (ids.length === 0) return [];
+      return sql`SELECT * FROM stickers WHERE id = ANY(${ids})`;
+    },
+    async countByServer(serverId: string) {
+      const [result] = await sql`
+        SELECT COUNT(*)::int as count FROM stickers WHERE server_id = ${serverId}
+      `;
+      return result.count;
+    },
+    async create(data: {
+      server_id: string;
+      name: string;
+      description?: string | null;
+      file_url: string;
+      file_type: string;
+      uploaded_by: string;
+    }) {
+      const [sticker] = await sql`
+        INSERT INTO stickers (server_id, name, description, file_url, file_type, uploaded_by)
+        VALUES (${data.server_id}, ${data.name}, ${data.description || null}, ${data.file_url}, ${data.file_type}, ${data.uploaded_by})
+        RETURNING *
+      `;
+      return sticker;
+    },
+    async delete(id: string) {
+      await sql`DELETE FROM stickers WHERE id = ${id}`;
     },
   },
 

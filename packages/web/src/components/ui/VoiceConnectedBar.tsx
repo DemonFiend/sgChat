@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useVoiceStore } from '@/stores/voice';
 import { voiceService } from '@/lib/voiceService';
 import { ScreenShareButton, ScreenShareQualityIndicator } from './ScreenShareButton';
@@ -16,9 +16,29 @@ export function VoiceConnectedBar() {
   const currentChannelId = useVoiceStore((s) => s.currentChannelId);
   const error = useVoiceStore((s) => s.error);
   const [showParticipants, setShowParticipants] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState('');
+  const [isEditingStatus, setIsEditingStatus] = useState(false);
+  const statusInputRef = useRef<HTMLInputElement>(null);
 
   const isConnected = connectionState === 'connected';
   const isConnecting = connectionState === 'connecting';
+
+  const handleStatusSubmit = useCallback(() => {
+    const trimmed = voiceStatus.trim();
+    voiceService.setVoiceStatus(trimmed).catch((err) => {
+      console.warn('[VoiceConnectedBar] Failed to set voice status:', err);
+    });
+    setIsEditingStatus(false);
+  }, [voiceStatus]);
+
+  const handleStatusKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleStatusSubmit();
+    } else if (e.key === 'Escape') {
+      setIsEditingStatus(false);
+    }
+  }, [handleStatusSubmit]);
 
   if (!isConnected && !isConnecting) return null;
 
@@ -61,6 +81,35 @@ export function VoiceConnectedBar() {
           {currentChannelName || 'Voice Channel'}
         </span>
       </button>
+
+      {/* Voice Status */}
+      {isConnected && (
+        <div className="mb-2">
+          {isEditingStatus ? (
+            <div className="flex items-center gap-1">
+              <input
+                ref={statusInputRef}
+                type="text"
+                value={voiceStatus}
+                onChange={(e) => setVoiceStatus(e.target.value.slice(0, 128))}
+                onKeyDown={handleStatusKeyDown}
+                onBlur={handleStatusSubmit}
+                placeholder="Set a voice status..."
+                maxLength={128}
+                autoFocus
+                className="flex-1 text-xs bg-bg-secondary text-text-primary rounded px-2 py-1 border border-bg-modifier-accent focus:border-brand-primary focus:outline-none placeholder:text-text-muted"
+              />
+            </div>
+          ) : (
+            <button
+              onClick={() => setIsEditingStatus(true)}
+              className="text-xs text-text-muted hover:text-text-primary transition-colors w-full text-left px-1 py-0.5 rounded hover:bg-bg-modifier-hover"
+            >
+              {voiceStatus ? voiceStatus : 'Set a voice status...'}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Controls */}
       <div className="flex items-center gap-2">

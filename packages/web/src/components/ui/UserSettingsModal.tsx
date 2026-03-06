@@ -9,15 +9,16 @@ import { Avatar } from './Avatar';
 import { AvatarPicker } from './AvatarPicker';
 import { api } from '@/api';
 import { USER_TIMEZONES } from '@/lib/timezones';
+import { isElectron } from '@/lib/electron';
 
-type SettingsTab = 'account' | 'profile' | 'appearance' | 'notifications' | 'voice';
+type SettingsTab = 'account' | 'profile' | 'appearance' | 'notifications' | 'voice' | 'keybinds';
 
 interface UserSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-const tabs: { id: SettingsTab; label: string; icon: ReactNode }[] = [
+const tabs: { id: SettingsTab; label: string; icon: ReactNode; condition?: () => boolean }[] = [
   {
     id: 'account',
     label: 'My Account',
@@ -63,6 +64,17 @@ const tabs: { id: SettingsTab; label: string; icon: ReactNode }[] = [
       </svg>
     ),
   },
+  {
+    id: 'keybinds',
+    label: 'Keybinds',
+    condition: () => isElectron(),
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3C7.03 3 3 5.69 3 9v6c0 3.31 4.03 6 9 6s9-2.69 9-6V9c0-3.31-4.03-6-9-6z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 9h2m2 0h2m2 0h2M8 13h8M9 17h6" />
+      </svg>
+    ),
+  },
 ];
 
 export function UserSettingsModal({ isOpen, onClose }: UserSettingsModalProps) {
@@ -94,7 +106,7 @@ export function UserSettingsModal({ isOpen, onClose }: UserSettingsModalProps) {
                 User Settings
               </span>
             </div>
-            {tabs.map((tab) => (
+            {tabs.filter((tab) => !tab.condition || tab.condition()).map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
@@ -154,6 +166,9 @@ export function UserSettingsModal({ isOpen, onClose }: UserSettingsModalProps) {
             )}
             {activeTab === 'voice' && (
               <VoiceTab />
+            )}
+            {activeTab === 'keybinds' && (
+              <KeybindsTab />
             )}
           </div>
         </div>
@@ -1843,6 +1858,174 @@ function CustomVoiceSoundsSection() {
 
       <p className="text-[11px] text-text-muted">
         Accepted formats: MP3, WAV, OGG. Max 1MB, max 5 seconds.
+      </p>
+    </div>
+  );
+}
+
+// Keybinds Tab (Electron only)
+const KEYBIND_ACTIONS = [
+  { key: 'toggleMute', label: 'Toggle Microphone' },
+  { key: 'toggleDeafen', label: 'Toggle Deafen' },
+  { key: 'pushToTalk', label: 'Push to Talk' },
+  { key: 'toggleOverlay', label: 'Toggle Overlay' },
+] as const;
+
+function formatKeybind(e: React.KeyboardEvent): string {
+  const parts: string[] = [];
+  if (e.ctrlKey) parts.push('Ctrl');
+  if (e.altKey) parts.push('Alt');
+  if (e.shiftKey) parts.push('Shift');
+  if (e.metaKey) parts.push('Meta');
+
+  const key = e.key;
+  // Skip if only a modifier key was pressed
+  if (['Control', 'Alt', 'Shift', 'Meta'].includes(key)) return '';
+
+  // Normalize key display
+  const displayKey = key.length === 1 ? key.toUpperCase() : key;
+  parts.push(displayKey);
+
+  return parts.join('+');
+}
+
+function KeybindsTab() {
+  const [keybinds, setKeybinds] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [recordingAction, setRecordingAction] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await api.get<Record<string, string>>('/users/me/keybinds');
+        if (data) setKeybinds(data);
+      } catch (err) {
+        console.error('Failed to load keybinds:', err);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const handleKeyDown = useCallback(
+    (action: string) => (e: React.KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const combo = formatKeybind(e);
+      if (!combo) return;
+      setKeybinds((prev) => ({ ...prev, [action]: combo }));
+      setRecordingAction(null);
+    },
+    [],
+  );
+
+  const clearKeybind = useCallback((action: string) => {
+    setKeybinds((prev) => {
+      const next = { ...prev };
+      delete next[action];
+      return next;
+    });
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    setSaving(true);
+    setSaveSuccess(false);
+    setSaveError(null);
+    try {
+      await api.patch('/users/me/keybinds', keybinds);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (err) {
+      console.error('Failed to save keybinds:', err);
+      setSaveError('Failed to save keybinds.');
+    } finally {
+      setSaving(false);
+    }
+  }, [keybinds]);
+
+  if (loading) {
+    return (
+      <div>
+        <h2 className="text-xl font-bold text-text-primary mb-5">Keybinds</h2>
+        <p className="text-sm text-text-muted">Loading...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h2 className="text-xl font-bold text-text-primary mb-5">Keybinds</h2>
+
+      <div className="space-y-3">
+        {KEYBIND_ACTIONS.map(({ key, label }) => (
+          <div
+            key={key}
+            className="flex items-center justify-between p-3 bg-bg-secondary rounded-lg"
+          >
+            <div className="text-text-primary font-medium">{label}</div>
+            <div className="flex items-center gap-2">
+              {recordingAction === key ? (
+                <input
+                  autoFocus
+                  readOnly
+                  placeholder="Press a key combo..."
+                  className="w-48 px-3 py-1.5 bg-bg-tertiary border-2 border-brand-primary rounded text-sm text-text-primary text-center focus:outline-none animate-pulse"
+                  onKeyDown={handleKeyDown(key)}
+                  onBlur={() => setRecordingAction(null)}
+                />
+              ) : (
+                <button
+                  onClick={() => setRecordingAction(key)}
+                  className="w-48 px-3 py-1.5 bg-bg-tertiary border border-border-subtle rounded text-sm text-center hover:border-brand-primary transition-colors"
+                >
+                  <span className={keybinds[key] ? 'text-text-primary' : 'text-text-muted'}>
+                    {keybinds[key] || 'Not set'}
+                  </span>
+                </button>
+              )}
+              {keybinds[key] && (
+                <button
+                  onClick={() => clearKeybind(key)}
+                  className="p-1 text-text-muted hover:text-red-400 transition-colors"
+                  title="Clear keybind"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M6 18L18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-6 flex items-center gap-3">
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
+        >
+          {saving ? 'Saving...' : 'Save Keybinds'}
+        </button>
+        {saveSuccess && (
+          <span className="text-sm text-success">Keybinds saved!</span>
+        )}
+        {saveError && (
+          <span className="text-sm text-red-400">{saveError}</span>
+        )}
+      </div>
+
+      <p className="mt-4 text-xs text-text-muted">
+        Click a keybind field, then press a key combination to assign it. Keybinds work as global
+        shortcuts in the desktop app.
       </p>
     </div>
   );

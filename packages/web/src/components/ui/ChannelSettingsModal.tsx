@@ -243,16 +243,17 @@ export function ChannelSettingsModal({ isOpen, onClose, channel }: ChannelSettin
                     </div>
                   </div>
 
-                  {/* Region (placeholder for future feature) */}
+                  {/* Voice Region */}
                   <div>
                     <label className="block text-sm font-medium text-text-secondary mb-1">Region</label>
                     <select
-                      disabled
-                      className="w-full px-3 py-2 bg-bg-secondary border border-border rounded-lg text-text-muted text-sm cursor-not-allowed"
+                      value="automatic"
+                      className="w-full px-3 py-2 bg-bg-secondary border border-border rounded-lg text-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary"
+                      onChange={() => {}}
                     >
-                      <option>Automatic (Coming Soon)</option>
+                      <option value="automatic">Automatic</option>
                     </select>
-                    <p className="text-xs text-text-muted mt-1">Region selection will be available in a future update.</p>
+                    <p className="text-xs text-text-muted mt-1">Voice channels use the server&apos;s default region. Additional regions will be available when multi-region support is configured.</p>
                   </div>
                 </>
               )}
