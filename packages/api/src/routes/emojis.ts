@@ -444,6 +444,8 @@ export const emojiRoutes: FastifyPluginAsync = async (fastify) => {
       };
 
       const toProcess = validEntries.slice(0, available);
+      const usedInBatch = new Set<string>();
+      const packNamePrefix = pack.name.replace(/[^a-z0-9]/gi, '').slice(0, 6).toLowerCase();
 
       for (const entry of toProcess) {
         const filename = entry.entryName.split('/').pop() || entry.entryName;
@@ -458,17 +460,31 @@ export const emojiRoutes: FastifyPluginAsync = async (fastify) => {
 
           const processed = await processEmoji(buffer);
 
-          // Derive shortcode from filename
-          let shortcode = filename.replace(/\.[^/.]+$/, '').toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 32);
-          if (shortcode.length < 2) shortcode = `emoji_${nanoid(4)}`;
+          // Derive shortcode: strip numeric prefix, normalize
+          let shortcode = filename.replace(/\.[^/.]+$/, '');
+          shortcode = shortcode.replace(/^\d+[-_]/, ''); // strip leading "839220-"
+          shortcode = shortcode.toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 32);
 
-          // Check uniqueness
-          const existing = await db.emojis.findByShortcode(serverId, shortcode);
-          if (existing) {
+          // Short names get pack prefix (non-default packs)
+          if (shortcode.length < 2) {
+            shortcode = `${packNamePrefix}_${shortcode}`;
+            if (shortcode.length < 2) shortcode = `emoji_${nanoid(4)}`;
+          }
+
+          // Check uniqueness with sequential suffix
+          if (usedInBatch.has(shortcode) || await db.emojis.findByShortcode(serverId, shortcode)) {
             const original = shortcode;
-            shortcode = `${shortcode}_${nanoid(4)}`;
+            for (let i = 1; i < 100; i++) {
+              const candidate = `${shortcode}_${String(i).padStart(2, '0')}`;
+              if (!usedInBatch.has(candidate) && !await db.emojis.findByShortcode(serverId, candidate)) {
+                shortcode = candidate;
+                break;
+              }
+            }
+            if (shortcode === original) shortcode = `${shortcode}_${nanoid(4)}`;
             results.conflicts.push({ requested: original, assigned: shortcode });
           }
+          usedInBatch.add(shortcode);
 
           const ext = processed.content_type === 'image/gif' ? 'gif' : 'webp';
           const assetKey = `emojis/${serverId}/${nanoid(12)}.${ext}`;

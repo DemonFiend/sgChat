@@ -127,6 +127,41 @@ export function invalidateCache(): void {
 }
 
 /**
+ * Simplify a filename into a clean shortcode by stripping numeric prefixes.
+ * e.g., "839220-happycatemoji.png" → "happycatemoji"
+ *       "4731-verified-red.gif" → "verified_red"
+ *       "112626-26.png" → "26"
+ */
+function simplifyFilename(filename: string): string {
+  let name = filename.replace(/\.[^/.]+$/, ''); // strip extension
+  name = name.replace(/^\d+[-_]/, ''); // strip leading numeric prefix
+  name = name.toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 32);
+  return name;
+}
+
+/**
+ * Find a unique shortcode by appending sequential suffixes (_01, _02, etc.)
+ */
+async function resolveShortcode(
+  base: string,
+  serverId: string,
+  usedInBatch: Set<string>,
+): Promise<string> {
+  if (!usedInBatch.has(base)) {
+    const existing = await db.emojis.findByShortcode(serverId, base);
+    if (!existing) return base;
+  }
+  for (let i = 1; i < 100; i++) {
+    const candidate = `${base}_${String(i).padStart(2, '0')}`;
+    if (!usedInBatch.has(candidate)) {
+      const existing = await db.emojis.findByShortcode(serverId, candidate);
+      if (!existing) return candidate;
+    }
+  }
+  return `${base}_${nanoid(4)}`;
+}
+
+/**
  * Install a single default pack into a server.
  * Returns the result or null if already installed / not found.
  */
@@ -153,23 +188,27 @@ export async function installDefaultPack(
 
   let importedCount = 0;
   const errors: string[] = [];
+  const usedInBatch = new Set<string>();
 
   for (const { filename, filepath } of imageFiles) {
     try {
       const buffer = readPackImage(filepath);
       const processed = await processEmoji(buffer);
 
-      let shortcode = filename
-        .replace(/\.[^/.]+$/, '')
-        .toLowerCase()
-        .replace(/[^a-z0-9_]/g, '_')
-        .slice(0, 32);
-      if (shortcode.length < 2) shortcode = `emoji_${nanoid(4)}`;
+      let shortcode = simplifyFilename(filename);
 
-      const existingEmoji = await db.emojis.findByShortcode(serverId, shortcode);
-      if (existingEmoji) {
-        shortcode = `${shortcode}_${nanoid(4)}`;
+      // For default packs: short names (< 2 chars) get dual shortcodes
+      // e.g., "3" → primary ":03:", alias ":num_3:"
+      let aliasShortcode: string | null = null;
+      if (shortcode.length < 2) {
+        const padded = shortcode.padStart(2, '0');
+        const prefixed = `${packName.replace(/[^a-z0-9]/gi, '').slice(0, 3).toLowerCase()}_${shortcode}`;
+        shortcode = padded;
+        aliasShortcode = prefixed.length >= 2 ? prefixed : null;
       }
+
+      shortcode = await resolveShortcode(shortcode, serverId, usedInBatch);
+      usedInBatch.add(shortcode);
 
       const ext = processed.content_type === 'image/gif' ? 'gif' : 'webp';
       const assetKey = `emojis/${serverId}/${nanoid(12)}.${ext}`;
@@ -187,8 +226,26 @@ export async function installDefaultPack(
         asset_key: assetKey,
         created_by_user_id: userId,
       });
-
       importedCount++;
+
+      // Create alias shortcode for short names (same asset, different shortcode)
+      if (aliasShortcode) {
+        const resolvedAlias = await resolveShortcode(aliasShortcode, serverId, usedInBatch);
+        usedInBatch.add(resolvedAlias);
+        await db.emojis.create({
+          server_id: serverId,
+          pack_id: pack.id,
+          shortcode: resolvedAlias,
+          content_type: processed.content_type,
+          is_animated: processed.is_animated,
+          width: processed.width,
+          height: processed.height,
+          size_bytes: processed.size_bytes,
+          asset_key: assetKey,
+          created_by_user_id: userId,
+        });
+        importedCount++;
+      }
     } catch (err: any) {
       errors.push(`${filename}: ${err.message}`);
     }

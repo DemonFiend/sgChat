@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { clsx } from 'clsx';
 import { useEmojiManifestStore } from '@/stores/emojiManifest';
-import type { CustomEmoji } from '@sgchat/shared';
+import type { CustomEmoji, EmojiPack } from '@sgchat/shared';
 
 const EMOJI_CATEGORIES = [
   {
@@ -54,10 +54,31 @@ interface ReactionPickerProps {
   serverId?: string;
 }
 
-interface SidebarItem {
+interface SidebarCategory {
   id: string;
   label: string;
-  type: 'default-group' | 'custom-pack' | 'unicode';
+  items: { id: string; label: string }[];
+}
+
+function ChevronIcon({ expanded }: { expanded: boolean }) {
+  return (
+    <svg
+      className={clsx('w-3 h-3 flex-shrink-0 transition-transform', expanded && 'rotate-90')}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+    </svg>
+  );
+}
+
+function getCategoryFromPack(pack: EmojiPack): string {
+  if (pack.source === 'default' && pack.default_pack_key) {
+    return pack.default_pack_key.split('/')[0];
+  }
+  return 'Custom';
 }
 
 export function ReactionPicker({
@@ -69,7 +90,8 @@ export function ReactionPicker({
   serverId,
 }: ReactionPickerProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeSection, setActiveSection] = useState('');
+  const [activePackId, setActivePackId] = useState('');
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const inputRef = useRef<HTMLInputElement>(null);
 
   const manifest = useEmojiManifestStore((s) =>
@@ -79,35 +101,26 @@ export function ReactionPicker({
   const customEmojis = manifest?.emojis || [];
   const hasCustomPacks = packs.length > 0;
 
-  const defaultPacks = useMemo(() => packs.filter((p) => p.source === 'default'), [packs]);
-  const customPacksList = useMemo(() => packs.filter((p) => p.source === 'custom'), [packs]);
+  // Build hierarchical categories from packs
+  const categories = useMemo<SidebarCategory[]>(() => {
+    if (!hasCustomPacks) return [];
 
-  const defaultPackIds = useMemo(
-    () => new Set(defaultPacks.map((p) => p.id)),
-    [defaultPacks],
-  );
-  const defaultPackEmojis = useMemo(
-    () => customEmojis.filter((e) => defaultPackIds.has(e.pack_id)),
-    [customEmojis, defaultPackIds],
-  );
+    const catMap = new Map<string, SidebarCategory>();
 
-  const sidebarItems = useMemo<SidebarItem[]>(() => {
-    if (hasCustomPacks) {
-      const items: SidebarItem[] = [];
-      if (defaultPacks.length > 0) {
-        items.push({ id: 'default', label: 'Default', type: 'default-group' });
+    for (const pack of packs) {
+      const catName = getCategoryFromPack(pack);
+      if (!catMap.has(catName)) {
+        catMap.set(catName, { id: catName, label: catName, items: [] });
       }
-      for (const pack of customPacksList) {
-        items.push({ id: pack.id, label: pack.name, type: 'custom-pack' });
-      }
-      return items;
+      catMap.get(catName)!.items.push({ id: pack.id, label: pack.name });
     }
-    return EMOJI_CATEGORIES.map((cat) => ({
-      id: cat.name,
-      label: cat.name,
-      type: 'unicode' as const,
-    }));
-  }, [hasCustomPacks, defaultPacks, customPacksList]);
+
+    return Array.from(catMap.values());
+  }, [packs, hasCustomPacks]);
+
+  // Unicode fallback categories (when no custom packs)
+  const unicodeMode = !hasCustomPacks;
+  const [activeUnicodeCategory, setActiveUnicodeCategory] = useState(EMOJI_CATEGORIES[0]?.name || '');
 
   // Reset state when picker opens
   useEffect(() => {
@@ -117,13 +130,31 @@ export function ReactionPicker({
     }
   }, [isOpen]);
 
-  // Set activeSection to first sidebar item when items change or picker opens
+  // Initialize expanded categories and active pack when categories change
   useEffect(() => {
-    if (isOpen && sidebarItems.length > 0 && !sidebarItems.find((i) => i.id === activeSection)) {
-      setActiveSection(sidebarItems[0].id);
+    if (isOpen && categories.length > 0) {
+      setExpandedCategories(new Set(categories.map((c) => c.id)));
+      // Select first pack if current selection is invalid
+      const allPackIds = categories.flatMap((c) => c.items.map((i) => i.id));
+      if (!allPackIds.includes(activePackId) && allPackIds.length > 0) {
+        setActivePackId(allPackIds[0]);
+      }
     }
-  }, [isOpen, sidebarItems]);
+  }, [isOpen, categories]);
 
+  const toggleCategory = (catId: string) => {
+    setExpandedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(catId)) {
+        next.delete(catId);
+      } else {
+        next.add(catId);
+      }
+      return next;
+    });
+  };
+
+  // Displayed emojis based on selection
   const displayedEmojis = useMemo<{
     type: 'custom' | 'unicode';
     custom: CustomEmoji[];
@@ -149,21 +180,18 @@ export function ReactionPicker({
     }
 
     if (hasCustomPacks) {
-      if (activeSection === 'default') {
-        return { type: 'custom', custom: defaultPackEmojis, unicode: [], header: 'Default Emojis' };
-      }
-      const pack = customPacksList.find((p) => p.id === activeSection);
+      const pack = packs.find((p) => p.id === activePackId);
       return {
         type: 'custom',
-        custom: customEmojis.filter((e) => e.pack_id === activeSection),
+        custom: customEmojis.filter((e) => e.pack_id === activePackId),
         unicode: [],
         header: pack?.name || '',
       };
     }
 
-    const cat = EMOJI_CATEGORIES.find((c) => c.name === activeSection);
+    const cat = EMOJI_CATEGORIES.find((c) => c.name === activeUnicodeCategory);
     return { type: 'unicode', custom: [], unicode: cat?.emojis || [], header: cat?.name || '' };
-  }, [searchQuery, activeSection, hasCustomPacks, customEmojis, defaultPackEmojis, customPacksList]);
+  }, [searchQuery, activePackId, activeUnicodeCategory, hasCustomPacks, customEmojis, packs]);
 
   const handleEmojiClick = (emoji: string, customEmojiId?: string) => {
     onSelect(emoji, customEmojiId);
@@ -173,18 +201,15 @@ export function ReactionPicker({
   const getPositionStyle = (): React.CSSProperties => {
     if (anchorRef) {
       const rect = anchorRef.getBoundingClientRect();
-      const pickerWidth = 400;
+      const pickerWidth = 420;
       const pickerHeight = 420;
 
-      // Position above the anchor, right-aligned
       let right = Math.max(8, window.innerWidth - rect.right);
-      // Ensure picker doesn't go off left edge
       if (window.innerWidth - right - pickerWidth < 8) {
         right = window.innerWidth - pickerWidth - 8;
       }
 
       let bottom = window.innerHeight - rect.top + 8;
-      // If picker would go off top edge, position below instead
       if (bottom + pickerHeight > window.innerHeight - 8) {
         bottom = window.innerHeight - rect.bottom - 8;
       }
@@ -211,7 +236,7 @@ export function ReactionPicker({
       <div
         style={getPositionStyle()}
         onClick={(e) => e.stopPropagation()}
-        className="w-[400px] h-[420px] bg-bg-secondary rounded-lg shadow-xl border border-border-subtle flex flex-col overflow-hidden"
+        className="w-[420px] h-[420px] bg-bg-secondary rounded-lg shadow-xl border border-border-subtle flex flex-col overflow-hidden"
       >
         {/* Search */}
         <div className="p-2 border-b border-border-subtle flex-shrink-0">
@@ -229,25 +254,64 @@ export function ReactionPicker({
         {/* Body: sidebar + grid */}
         <div className="flex flex-1 min-h-0">
           {/* Sidebar */}
-          <div className="w-20 flex-shrink-0 border-r border-border-subtle overflow-y-auto scrollbar-thin">
-            {sidebarItems.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => {
-                  setActiveSection(item.id);
-                  setSearchQuery('');
-                }}
-                className={clsx(
-                  'w-full px-2 py-2 text-xs text-left truncate transition-colors',
-                  activeSection === item.id
-                    ? 'bg-bg-modifier-selected text-text-primary font-semibold'
-                    : 'text-text-muted hover:bg-bg-modifier-hover hover:text-text-primary',
-                )}
-                title={item.label}
-              >
-                {item.label}
-              </button>
-            ))}
+          <div className="w-28 flex-shrink-0 border-r border-border-subtle overflow-y-auto scrollbar-thin">
+            {unicodeMode ? (
+              // Unicode fallback: flat category list
+              EMOJI_CATEGORIES.map((cat) => (
+                <button
+                  key={cat.name}
+                  onClick={() => {
+                    setActiveUnicodeCategory(cat.name);
+                    setSearchQuery('');
+                  }}
+                  className={clsx(
+                    'w-full px-2 py-2 text-xs text-left truncate transition-colors',
+                    activeUnicodeCategory === cat.name
+                      ? 'bg-bg-modifier-selected text-text-primary font-semibold'
+                      : 'text-text-muted hover:bg-bg-modifier-hover hover:text-text-primary',
+                  )}
+                  title={cat.name}
+                >
+                  {cat.name}
+                </button>
+              ))
+            ) : (
+              // Custom packs: expandable categories
+              categories.map((cat) => (
+                <div key={cat.id}>
+                  {/* Category header */}
+                  <button
+                    onClick={() => toggleCategory(cat.id)}
+                    className="w-full px-2 py-1.5 text-[10px] font-bold uppercase text-text-muted hover:text-text-primary flex items-center gap-1 transition-colors"
+                    title={cat.label}
+                  >
+                    <ChevronIcon expanded={expandedCategories.has(cat.id)} />
+                    <span className="truncate">{cat.label}</span>
+                  </button>
+
+                  {/* Pack items */}
+                  {expandedCategories.has(cat.id) &&
+                    cat.items.map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          setActivePackId(item.id);
+                          setSearchQuery('');
+                        }}
+                        className={clsx(
+                          'w-full pl-5 pr-2 py-1.5 text-xs text-left truncate transition-colors',
+                          activePackId === item.id
+                            ? 'bg-bg-modifier-selected text-text-primary font-semibold'
+                            : 'text-text-muted hover:bg-bg-modifier-hover hover:text-text-primary',
+                        )}
+                        title={item.label}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                </div>
+              ))
+            )}
           </div>
 
           {/* Emoji grid area */}
