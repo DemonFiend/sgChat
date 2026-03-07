@@ -933,6 +933,7 @@ export function ChatPanel({
               inputRef.current?.focus();
             }}
             anchorRef={emojiButtonRef.current}
+            serverId={serverId}
           />
 
           {/* GIF Picker Portal */}
