@@ -169,41 +169,73 @@ export function ChatPanel({
     return emojiManifest.emojis.filter((e) => enabledPackIds.has(e.pack_id));
   }, [emojiManifest]);
 
-  // Build emoji overlay for the input — renders :shortcode: as inline images
-  const inputEmojiOverlay = useMemo(() => {
-    if (!messageInput.includes(':') || enabledEmojis.length === 0) return null;
-    const regex = /:([a-zA-Z0-9_]{2,32}):/g;
+  // Build combined overlay: emoji images + colored mention highlights
+  const inputOverlay = useMemo(() => {
+    if (!messageInput) return null;
+
+    // Collect all decorated ranges
+    const ranges: { start: number; end: number; type: 'emoji' | 'mention'; emoji?: typeof enabledEmojis[0] }[] = [];
+
+    // Emoji ranges
+    if (messageInput.includes(':') && enabledEmojis.length > 0) {
+      const regex = /:([a-zA-Z0-9_]{2,32}):/g;
+      let match: RegExpExecArray | null;
+      while ((match = regex.exec(messageInput)) !== null) {
+        const emoji = enabledEmojis.find((e) => e.shortcode === match![1]);
+        if (emoji) {
+          ranges.push({ start: match.index, end: match.index + match[0].length, type: 'emoji', emoji });
+        }
+      }
+    }
+
+    // Mention ranges from mentionMappings
+    for (const m of mentionMappings) {
+      const end = m.startIndex + m.displayText.length;
+      if (messageInput.slice(m.startIndex, end) === m.displayText) {
+        ranges.push({ start: m.startIndex, end, type: 'mention' });
+      }
+    }
+
+    if (ranges.length === 0) return null;
+
+    ranges.sort((a, b) => a.start - b.start);
+
     const parts: (string | React.JSX.Element)[] = [];
     let lastIdx = 0;
-    let match: RegExpExecArray | null;
-    let hasEmoji = false;
-    while ((match = regex.exec(messageInput)) !== null) {
-      const m = match;
-      const emoji = enabledEmojis.find((e) => e.shortcode === m[1]);
-      if (emoji) {
-        hasEmoji = true;
-        // Keep text before the shortcode (invisible, maintains spacing)
-        if (m.index > lastIdx) parts.push(messageInput.slice(lastIdx, m.index));
-        // Render the shortcode text invisibly with the emoji image overlaid
-        // This keeps character widths identical to the textarea underneath
+
+    for (const range of ranges) {
+      if (range.start < lastIdx) continue;
+      if (range.start > lastIdx) {
+        parts.push(messageInput.slice(lastIdx, range.start));
+      }
+      if (range.type === 'emoji' && range.emoji) {
         parts.push(
-          <span key={`inp-emoji-${m.index}`} className="relative">
-            <span className="invisible">{m[0]}</span>
+          <span key={`inp-emoji-${range.start}`} className="relative">
+            <span className="invisible">{messageInput.slice(range.start, range.end)}</span>
             <img
-              src={emoji.url || emoji.asset_key}
-              alt={`:${m[1]}:`}
+              src={range.emoji.url || range.emoji.asset_key}
+              alt={messageInput.slice(range.start, range.end)}
               className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
               style={{ width: '1.375em', height: '1.375em' }}
             />
           </span>
         );
-        lastIdx = m.index + m[0].length;
+      } else if (range.type === 'mention') {
+        parts.push(
+          <span key={`inp-mention-${range.start}`} className="text-brand-primary bg-brand-primary/15 rounded px-0.5">
+            {messageInput.slice(range.start, range.end)}
+          </span>
+        );
       }
+      lastIdx = range.end;
     }
-    if (!hasEmoji) return null;
-    if (lastIdx < messageInput.length) parts.push(messageInput.slice(lastIdx));
+
+    if (lastIdx < messageInput.length) {
+      parts.push(messageInput.slice(lastIdx));
+    }
+
     return parts;
-  }, [messageInput, enabledEmojis]);
+  }, [messageInput, enabledEmojis, mentionMappings]);
 
   // Build autocomplete item lists from MentionContext
   const atItems = useMemo(() => {
@@ -848,13 +880,13 @@ export function ChatPanel({
             {/* Text input with emoji overlay */}
             <div className="flex-1 relative">
               {/* Mirror overlay — renders emojis inline over transparent textarea text */}
-              {inputEmojiOverlay && (
+              {inputOverlay && (
                 <div
                   className="absolute inset-0 py-3 px-2 pointer-events-none whitespace-pre-wrap break-words overflow-hidden text-text-primary"
                   style={{ minHeight: '24px', fontSize: 'inherit', lineHeight: 'inherit', fontFamily: 'inherit' }}
                   aria-hidden="true"
                 >
-                  {inputEmojiOverlay}
+                  {inputOverlay}
                 </div>
               )}
               <textarea
@@ -888,7 +920,7 @@ export function ChatPanel({
                 className="flex-1 w-full bg-transparent py-3 px-2 placeholder:text-text-muted outline-none resize-none max-h-48 scrollbar-thin"
                 style={{
                   minHeight: '24px',
-                  color: inputEmojiOverlay ? 'transparent' : undefined,
+                  color: inputOverlay ? 'transparent' : undefined,
                   caretColor: 'var(--color-text-primary)',
                 }}
               />
