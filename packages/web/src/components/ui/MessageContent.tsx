@@ -24,7 +24,7 @@ export interface MessageContentProps {
 }
 
 interface ParsedSegment {
-  type: 'text' | 'image' | 'mention' | 'messageLink';
+  type: 'text' | 'image' | 'spoilerImage' | 'mention' | 'messageLink';
   value: string;
   mention?: ParsedMention;
   link?: ParsedMessageLink;
@@ -36,6 +36,12 @@ interface ParsedSegment {
  */
 function parseContentSegments(content: string): ParsedSegment[] {
   if (!content) return [];
+
+  // If entire content is a spoiler-wrapped image URL: ||url||
+  const spoilerMatch = content.trim().match(/^\|\|(.+?)\|\|$/s);
+  if (spoilerMatch && isImageUrl(spoilerMatch[1].trim())) {
+    return [{ type: 'spoilerImage', value: spoilerMatch[1].trim() }];
+  }
 
   // If entire content is a single image URL, render as image only
   if (isImageUrl(content)) {
@@ -142,6 +148,10 @@ export function MessageContent({ content, isOwnMessage, compact, serverId }: Mes
     <div className="message-content">
       {segments.map((segment, i) => {
         switch (segment.type) {
+          case 'spoilerImage':
+            return (
+              <SpoilerImageRenderer key={i} src={segment.value} isOwnMessage={isOwnMessage} compact={compact} />
+            );
           case 'image':
             return (
               <ImageRenderer key={i} src={segment.value} isOwnMessage={isOwnMessage} compact={compact} />
@@ -361,6 +371,59 @@ function StaticImageRenderer({ src, isOwnMessage, compact }: { src: string; isOw
       )}
 
       {imageError && <ImageErrorFallback src={src} isGif={false} compact={compact} />}
+    </div>
+  );
+}
+
+function SpoilerImageRenderer({ src, isOwnMessage, compact }: { src: string; isOwnMessage?: boolean; compact?: boolean }) {
+  const [revealed, setRevealed] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageError, setImageError] = useState(false);
+
+  const imageClasses = getImageClasses(compact, isOwnMessage);
+  const containerClasses = getContainerClasses(compact);
+
+  useEffect(() => {
+    setImageLoaded(false);
+    setImageError(false);
+    setRevealed(false);
+  }, [src]);
+
+  return (
+    <div className={containerClasses}>
+      {!imageLoaded && !imageError && (
+        <div
+          className={`${imageClasses} bg-bg-tertiary animate-pulse`}
+          style={{ width: compact ? '200px' : '300px', height: compact ? '150px' : '200px' }}
+          aria-label="Loading spoiler image..."
+        />
+      )}
+
+      {imageError && <ImageErrorFallback src={src} isGif={false} compact={compact} />}
+
+      {!imageError && (
+        <div
+          className={`relative cursor-pointer group ${imageLoaded ? 'block' : 'hidden'}`}
+          onClick={() => setRevealed((r) => !r)}
+        >
+          <img
+            src={src}
+            alt="Spoiler image"
+            className={`${imageClasses} object-contain bg-bg-tertiary transition-all duration-300 ${!revealed ? 'blur-[40px] brightness-50' : ''}`}
+            loading="lazy"
+            onLoad={() => { setImageLoaded(true); setImageError(false); }}
+            onError={() => { setImageLoaded(false); setImageError(true); }}
+          />
+
+          {!revealed && imageLoaded && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="px-4 py-2 rounded-lg bg-black/70 text-white font-bold text-sm uppercase tracking-wider">
+                SPOILER
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

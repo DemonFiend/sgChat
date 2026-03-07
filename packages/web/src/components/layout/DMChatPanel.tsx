@@ -54,6 +54,8 @@ export function DMChatPanel({
   const [showGifPicker, setShowGifPicker] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [pendingFile, setPendingFile] = useState<{ file: File; previewUrl: string } | null>(null);
+  const [pendingSpoiler, setPendingSpoiler] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const gifButtonRef = useRef<HTMLButtonElement>(null);
@@ -235,21 +237,48 @@ export function DMChatPanel({
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*,video/*,audio/*,.pdf,.txt,.zip';
-    input.onchange = async () => {
+    input.onchange = () => {
       const file = input.files?.[0];
       if (!file) return;
-      setIsUploading(true);
-      try {
-        const result = await api.upload<{ url: string }>('/upload', file);
-        onSendMessage(result.url);
-      } catch (err) {
-        console.error('File upload failed:', err);
-      } finally {
-        setIsUploading(false);
+      if (file.type.startsWith('image/')) {
+        const previewUrl = URL.createObjectURL(file);
+        setPendingFile({ file, previewUrl });
+        setPendingSpoiler(false);
+        return;
       }
+      setIsUploading(true);
+      api.upload<{ url: string }>('/upload', file)
+        .then((result) => onSendMessage(result.url))
+        .catch((err) => console.error('File upload failed:', err))
+        .finally(() => setIsUploading(false));
     };
     input.click();
   }, [onSendMessage]);
+
+  const handlePendingFileSend = useCallback(async () => {
+    if (!pendingFile) return;
+    setIsUploading(true);
+    try {
+      const result = await api.upload<{ url: string }>('/upload', pendingFile.file);
+      const content = pendingSpoiler ? `||${result.url}||` : result.url;
+      onSendMessage(content);
+    } catch (err) {
+      console.error('File upload failed:', err);
+    } finally {
+      URL.revokeObjectURL(pendingFile.previewUrl);
+      setPendingFile(null);
+      setPendingSpoiler(false);
+      setIsUploading(false);
+    }
+  }, [pendingFile, pendingSpoiler, onSendMessage]);
+
+  const handlePendingFileCancel = useCallback(() => {
+    if (pendingFile) {
+      URL.revokeObjectURL(pendingFile.previewUrl);
+    }
+    setPendingFile(null);
+    setPendingSpoiler(false);
+  }, [pendingFile]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (mentionTrigger) {
@@ -388,30 +417,55 @@ export function DMChatPanel({
         )}
 
         {/* Messages */}
-        {messages.map((message) => {
+        {messages.map((message, index) => {
           const isMe = message.sender_id === currentUserId;
           const senderName = isMe
             ? (currentUserDisplayName || 'You')
             : (friend.display_name || friend.username);
           const senderAvatar = isMe ? currentUserAvatar : friend.avatar_url;
+
+          // Group messages from same sender within 5 minutes
+          const prev = index > 0 ? messages[index - 1] : null;
+          const showAuthor = !prev
+            || prev.sender_id !== message.sender_id
+            || new Date(message.created_at).getTime() - new Date(prev.created_at).getTime() > 5 * 60 * 1000;
+
+          if (showAuthor) {
+            return (
+              <div key={message.id} className="flex pt-4 pb-0.5 justify-start">
+                <div className="flex-shrink-0 mr-2">
+                  <Avatar
+                    src={senderAvatar}
+                    alt={senderName}
+                    size="sm"
+                  />
+                </div>
+                <div className="max-w-[85%]">
+                  <div className="flex items-baseline gap-2 mb-0.5">
+                    <span className={`text-sm font-medium ${isMe ? 'text-brand-primary' : 'text-text-primary'}`}>
+                      {senderName}
+                    </span>
+                    <span className="text-[10px] text-text-muted">
+                      {formatTime(message.created_at)}
+                    </span>
+                  </div>
+                  <div className="text-text-primary">
+                    <MessageContent content={message.content} isOwnMessage={isMe} />
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          // Compact continuation message
           return (
-            <div key={message.id} className="flex mb-3 justify-start">
-              <div className="flex-shrink-0 mr-2">
-                <Avatar
-                  src={senderAvatar}
-                  alt={senderName}
-                  size="sm"
-                />
+            <div key={message.id} className="flex py-0.5 justify-start group">
+              <div className="w-8 flex-shrink-0 mr-2 flex items-start justify-end pt-0.5">
+                <span className="text-[10px] text-text-muted opacity-0 group-hover:opacity-100">
+                  {formatTime(message.created_at)}
+                </span>
               </div>
               <div className="max-w-[85%]">
-                <div className="flex items-baseline gap-2 mb-0.5">
-                  <span className={`text-sm font-medium ${isMe ? 'text-brand-primary' : 'text-text-primary'}`}>
-                    {senderName}
-                  </span>
-                  <span className="text-[10px] text-text-muted">
-                    {formatTime(message.created_at)}
-                  </span>
-                </div>
                 <div className="text-text-primary">
                   <MessageContent content={message.content} isOwnMessage={isMe} />
                 </div>
@@ -435,6 +489,45 @@ export function DMChatPanel({
               <span className="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
             </div>
             <span>{friend.display_name || friend.username} is typing...</span>
+          </div>
+        )}
+
+        {/* Pending File Preview */}
+        {pendingFile && (
+          <div className="flex items-center gap-3 mx-4 mt-2 px-3 py-2 bg-bg-tertiary rounded-lg border border-border-subtle">
+            <img
+              src={pendingFile.previewUrl}
+              alt="Upload preview"
+              className={`w-16 h-16 object-cover rounded ${pendingSpoiler ? 'blur-[20px] brightness-50' : ''}`}
+            />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-text-primary truncate">{pendingFile.file.name}</p>
+              <p className="text-xs text-text-muted">{(pendingFile.file.size / 1024).toFixed(1)} KB</p>
+              <label className="flex items-center gap-2 mt-1 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={pendingSpoiler}
+                  onChange={(e) => setPendingSpoiler(e.target.checked)}
+                  className="w-4 h-4 rounded border-border-subtle accent-brand-primary"
+                />
+                <span className="text-xs text-text-muted">Mark as spoiler</span>
+              </label>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                onClick={handlePendingFileCancel}
+                className="px-3 py-1.5 text-xs text-text-muted hover:text-text-primary transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handlePendingFileSend}
+                disabled={isUploading}
+                className="px-3 py-1.5 text-xs bg-brand-primary text-white rounded hover:bg-brand-primary/80 transition-colors disabled:opacity-50"
+              >
+                {isUploading ? 'Uploading...' : 'Upload'}
+              </button>
+            </div>
           </div>
         )}
 

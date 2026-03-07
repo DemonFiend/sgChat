@@ -132,6 +132,8 @@ export function ChatPanel({
   const [showGifPicker, setShowGifPicker] = useState(false);
   const [showStickerPicker, setShowStickerPicker] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [pendingFile, setPendingFile] = useState<{ file: File; previewUrl: string } | null>(null);
+  const [pendingSpoiler, setPendingSpoiler] = useState(false);
   const emojiButtonRef = useRef<HTMLButtonElement>(null);
   const gifButtonRef = useRef<HTMLButtonElement>(null);
   const stickerButtonRef = useRef<HTMLButtonElement>(null);
@@ -540,21 +542,50 @@ export function ChatPanel({
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*,video/*,audio/*,.pdf,.txt,.zip';
-    input.onchange = async () => {
+    input.onchange = () => {
       const file = input.files?.[0];
       if (!file) return;
-      setIsUploading(true);
-      try {
-        const result = await api.upload<{ url: string }>('/upload', file);
-        onSendMessage?.(result.url);
-      } catch (err) {
-        console.error('File upload failed:', err);
-      } finally {
-        setIsUploading(false);
+      // For image files, show preview with spoiler option
+      if (file.type.startsWith('image/')) {
+        const previewUrl = URL.createObjectURL(file);
+        setPendingFile({ file, previewUrl });
+        setPendingSpoiler(false);
+        return;
       }
+      // Non-image files: upload immediately
+      setIsUploading(true);
+      api.upload<{ url: string }>('/upload', file)
+        .then((result) => onSendMessage?.(result.url))
+        .catch((err) => console.error('File upload failed:', err))
+        .finally(() => setIsUploading(false));
     };
     input.click();
   }, [onSendMessage]);
+
+  const handlePendingFileSend = useCallback(async () => {
+    if (!pendingFile) return;
+    setIsUploading(true);
+    try {
+      const result = await api.upload<{ url: string }>('/upload', pendingFile.file);
+      const content = pendingSpoiler ? `||${result.url}||` : result.url;
+      onSendMessage?.(content);
+    } catch (err) {
+      console.error('File upload failed:', err);
+    } finally {
+      URL.revokeObjectURL(pendingFile.previewUrl);
+      setPendingFile(null);
+      setPendingSpoiler(false);
+      setIsUploading(false);
+    }
+  }, [pendingFile, pendingSpoiler, onSendMessage]);
+
+  const handlePendingFileCancel = useCallback(() => {
+    if (pendingFile) {
+      URL.revokeObjectURL(pendingFile.previewUrl);
+    }
+    setPendingFile(null);
+    setPendingSpoiler(false);
+  }, [pendingFile]);
 
   const formatTime = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -762,6 +793,48 @@ export function ChatPanel({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
+            </div>
+          )}
+
+          {/* Pending File Preview */}
+          {pendingFile && (
+            <div className="flex items-center gap-3 px-3 py-2 mb-1 bg-bg-tertiary rounded-lg border border-border-subtle">
+              <img
+                src={pendingFile.previewUrl}
+                alt="Upload preview"
+                className={clsx(
+                  'w-16 h-16 object-cover rounded',
+                  pendingSpoiler && 'blur-[20px] brightness-50',
+                )}
+              />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-text-primary truncate">{pendingFile.file.name}</p>
+                <p className="text-xs text-text-muted">{(pendingFile.file.size / 1024).toFixed(1)} KB</p>
+                <label className="flex items-center gap-2 mt-1 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={pendingSpoiler}
+                    onChange={(e) => setPendingSpoiler(e.target.checked)}
+                    className="w-4 h-4 rounded border-border-subtle accent-brand-primary"
+                  />
+                  <span className="text-xs text-text-muted">Mark as spoiler</span>
+                </label>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  onClick={handlePendingFileCancel}
+                  className="px-3 py-1.5 text-xs text-text-muted hover:text-text-primary transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handlePendingFileSend}
+                  disabled={isUploading}
+                  className="px-3 py-1.5 text-xs bg-brand-primary text-white rounded hover:bg-brand-primary/80 transition-colors disabled:opacity-50"
+                >
+                  {isUploading ? 'Uploading...' : 'Upload'}
+                </button>
+              </div>
             </div>
           )}
 
@@ -1299,7 +1372,7 @@ function MessageItem({
       const mappingLines = lines.slice(1);
 
       return (
-        <div className={clsx('px-4 py-1 hover:bg-bg-modifier-hover group relative')}>
+        <div className={clsx('px-4 pt-4 pb-1 hover:bg-bg-modifier-hover group relative')}>
           <div className="flex gap-4">
             <div className="flex-shrink-0 pt-0.5">
               <div className="w-10 h-10 rounded-full bg-brand-primary/20 flex items-center justify-center">
@@ -1358,10 +1431,10 @@ function MessageItem({
     );
   }
 
-  // Full message with avatar
+  // Full message with avatar (first in group — extra top margin for separation)
   if (showAuthor) {
     return (
-      <div className={clsx('px-4 py-1 hover:bg-bg-modifier-hover group relative', isEditing && 'bg-bg-modifier-hover')}>
+      <div className={clsx('px-4 pt-4 pb-1 hover:bg-bg-modifier-hover group relative', isEditing && 'bg-bg-modifier-hover')}>
         <MessageActionToolbar
           isOwnMessage={isOwnMessage}
           isPinned={isPinned}
