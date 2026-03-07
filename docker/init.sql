@@ -1595,11 +1595,15 @@ CREATE TABLE IF NOT EXISTS message_reactions (
   unicode_emoji TEXT,
   custom_emoji_id UUID REFERENCES emojis(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  PRIMARY KEY (message_id, user_id, reaction_type, COALESCE(unicode_emoji, ''), COALESCE(custom_emoji_id, '00000000-0000-0000-0000-000000000000')),
   CONSTRAINT chk_reaction_value CHECK (
     (reaction_type = 'unicode' AND unicode_emoji IS NOT NULL AND custom_emoji_id IS NULL) OR
     (reaction_type = 'custom' AND unicode_emoji IS NULL AND custom_emoji_id IS NOT NULL)
   )
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reactions_unique ON message_reactions(
+  message_id, user_id, reaction_type,
+  COALESCE(unicode_emoji, ''),
+  COALESCE(custom_emoji_id, '00000000-0000-0000-0000-000000000000'::uuid)
 );
 CREATE INDEX IF NOT EXISTS idx_reactions_message ON message_reactions(message_id);
 CREATE INDEX IF NOT EXISTS idx_reactions_custom_emoji ON message_reactions(custom_emoji_id) WHERE custom_emoji_id IS NOT NULL;

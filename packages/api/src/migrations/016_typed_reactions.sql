@@ -29,8 +29,12 @@ ALTER TABLE message_reactions ADD CONSTRAINT chk_reaction_value
 ALTER TABLE message_reactions DROP CONSTRAINT IF EXISTS message_reactions_pkey;
 ALTER TABLE message_reactions DROP COLUMN IF EXISTS emoji;
 
--- Add new PK
-ALTER TABLE message_reactions ADD PRIMARY KEY (message_id, user_id, reaction_type, COALESCE(unicode_emoji, ''), COALESCE(custom_emoji_id, '00000000-0000-0000-0000-000000000000'));
+-- Add unique constraint via index (PK can't use expressions)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reactions_unique ON message_reactions(
+  message_id, user_id, reaction_type,
+  COALESCE(unicode_emoji, ''),
+  COALESCE(custom_emoji_id, '00000000-0000-0000-0000-000000000000'::uuid)
+);
 
 -- Add indexes
 CREATE INDEX IF NOT EXISTS idx_reactions_custom_emoji ON message_reactions(custom_emoji_id) WHERE custom_emoji_id IS NOT NULL;
