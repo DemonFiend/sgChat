@@ -400,18 +400,26 @@ export function MainLayout() {
       }
     };
 
-    const handleMessageUpdate = (data: {
-      id: string;
-      content: string;
-      edited_at: string;
-    }) => {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === data.id
-            ? { ...m, content: data.content, edited_at: data.edited_at }
-            : m,
-        ),
-      );
+    const handleMessageUpdate = (data: any) => {
+      // Reaction update: has message_id + reactions array
+      if (data.message_id && data.reactions) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === data.message_id ? { ...m, reactions: data.reactions } : m,
+          ),
+        );
+        return;
+      }
+      // Message edit: has id + content
+      if (data.id && data.content !== undefined) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === data.id
+              ? { ...m, content: data.content, edited_at: data.edited_at }
+              : m,
+          ),
+        );
+      }
     };
 
     const handleMessageDelete = (data: { id: string }) => {

@@ -1,32 +1,48 @@
-import { useState, useMemo, useRef, useCallback } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { clsx } from 'clsx';
 import { useEmojiManifestStore } from '@/stores/emojiManifest';
-import type { CustomEmoji, EmojiPack } from '@sgchat/shared';
-
-const QUICK_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '😡', '🎉', '🔥', '👀', '💯'];
+import type { CustomEmoji } from '@sgchat/shared';
 
 const EMOJI_CATEGORIES = [
   {
     name: 'Smileys',
-    emojis: ['😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '😊', '😇', '🥰', '😍', '🤩', '😘', '😗', '😚', '😋', '😛', '😜', '🤪', '😝', '🤗', '🤭', '🤫', '🤔', '🤐', '🤨', '😐', '😑', '😶', '😏', '😒', '🙄', '😬', '😮‍💨', '🤥', '😌', '😔', '😪', '🤤', '😴', '😷']
+    emojis: [
+      '😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '😊', '😇', '🥰', '😍', '🤩',
+      '😘', '😗', '😚', '😋', '😛', '😜', '🤪', '😝', '🤗', '🤭', '🤫', '🤔', '🤐', '🤨',
+      '😐', '😑', '😶', '😏', '😒', '🙄', '😬', '😮‍💨', '🤥', '😌', '😔', '😪', '🤤', '😴', '😷',
+    ],
   },
   {
     name: 'Gestures',
-    emojis: ['👋', '🤚', '🖐️', '✋', '🖖', '👌', '🤌', '🤏', '✌️', '🤞', '🤟', '🤘', '🤙', '👈', '👉', '👆', '🖕', '👇', '☝️', '👍', '👎', '✊', '👊', '🤛', '🤜', '👏', '🙌', '👐', '🤲', '🤝', '🙏']
+    emojis: [
+      '👋', '🤚', '🖐️', '✋', '🖖', '👌', '🤌', '🤏', '✌️', '🤞', '🤟', '🤘', '🤙', '👈',
+      '👉', '👆', '🖕', '👇', '☝️', '👍', '👎', '✊', '👊', '🤛', '🤜', '👏', '🙌', '👐',
+      '🤲', '🤝', '🙏',
+    ],
   },
   {
     name: 'Hearts',
-    emojis: ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟']
+    emojis: [
+      '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❣️', '💕', '💞', '💓',
+      '💗', '💖', '💘', '💝', '💟',
+    ],
   },
   {
     name: 'Objects',
-    emojis: ['🎉', '🎊', '🎈', '🎁', '🏆', '🥇', '🥈', '🥉', '⭐', '🌟', '💫', '✨', '🔥', '💥', '💢', '💯', '💤', '💨', '💦', '🎵', '🎶', '🔔', '🔕', '📢', '📣']
+    emojis: [
+      '🎉', '🎊', '🎈', '🎁', '🏆', '🥇', '🥈', '🥉', '⭐', '🌟', '💫', '✨', '🔥', '💥',
+      '💢', '💯', '💤', '💨', '💦', '🎵', '🎶', '🔔', '🔕', '📢', '📣',
+    ],
   },
   {
     name: 'Animals',
-    emojis: ['🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯', '🦁', '🐮', '🐷', '🐸', '🐵', '🙈', '🙉', '🙊', '🐔', '🐧', '🐦', '🐤', '🦆', '🦅', '🦉', '🦇', '🐺', '🐗', '🐴', '🦄']
-  }
+    emojis: [
+      '🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯', '🦁', '🐮', '🐷', '🐸',
+      '🐵', '🙈', '🙉', '🙊', '🐔', '🐧', '🐦', '🐤', '🦆', '🦅', '🦉', '🦇', '🐺', '🐗',
+      '🐴', '🦄',
+    ],
+  },
 ];
 
 interface ReactionPickerProps {
@@ -38,118 +54,169 @@ interface ReactionPickerProps {
   serverId?: string;
 }
 
-const GRID_COLS = 8;
+interface SidebarItem {
+  id: string;
+  label: string;
+  type: 'default-group' | 'custom-pack' | 'unicode';
+}
 
-export function ReactionPicker({ isOpen, onClose, onSelect, anchorRef, position, serverId }: ReactionPickerProps) {
+export function ReactionPicker({
+  isOpen,
+  onClose,
+  onSelect,
+  anchorRef,
+  position,
+  serverId,
+}: ReactionPickerProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState(0);
-  const [focusedIndex, setFocusedIndex] = useState(-1);
-  const gridRef = useRef<HTMLDivElement>(null);
+  const [activeSection, setActiveSection] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  // Custom emoji packs from the manifest store (hooks must be called unconditionally)
-  const manifest = useEmojiManifestStore((s) => serverId ? s.manifests.get(serverId) : undefined);
+  const manifest = useEmojiManifestStore((s) =>
+    serverId ? s.manifests.get(serverId) : undefined,
+  );
   const packs = manifest?.packs || [];
   const customEmojis = manifest?.emojis || [];
-  console.log('[ReactionPicker] serverId:', serverId, 'manifest:', !!manifest, 'packs:', packs.length, 'emojis:', customEmojis.length);
+  const hasCustomPacks = packs.length > 0;
 
-  // Whether the active tab is a custom pack
-  const isCustomPackTab = activeCategory >= EMOJI_CATEGORIES.length;
-  const activePackIndex = isCustomPackTab ? activeCategory - EMOJI_CATEGORIES.length : -1;
-  const activePack = activePackIndex >= 0 ? packs[activePackIndex] : null;
+  const defaultPacks = useMemo(() => packs.filter((p) => p.source === 'default'), [packs]);
+  const customPacksList = useMemo(() => packs.filter((p) => p.source === 'custom'), [packs]);
 
-  // Emojis for the currently selected custom pack
-  const activePackEmojis = useMemo(() => {
-    if (!activePack) return [];
-    return customEmojis.filter((e) => e.pack_id === activePack.id);
-  }, [activePack, customEmojis]);
+  const defaultPackIds = useMemo(
+    () => new Set(defaultPacks.map((p) => p.id)),
+    [defaultPacks],
+  );
+  const defaultPackEmojis = useMemo(
+    () => customEmojis.filter((e) => defaultPackIds.has(e.pack_id)),
+    [customEmojis, defaultPackIds],
+  );
 
-  const filteredEmojis = useMemo(() => {
-    if (!searchQuery) return null;
-    return EMOJI_CATEGORIES.flatMap(cat => cat.emojis);
-  }, [searchQuery]);
+  const sidebarItems = useMemo<SidebarItem[]>(() => {
+    if (hasCustomPacks) {
+      const items: SidebarItem[] = [];
+      if (defaultPacks.length > 0) {
+        items.push({ id: 'default', label: 'Default', type: 'default-group' });
+      }
+      for (const pack of customPacksList) {
+        items.push({ id: pack.id, label: pack.name, type: 'custom-pack' });
+      }
+      return items;
+    }
+    return EMOJI_CATEGORIES.map((cat) => ({
+      id: cat.name,
+      label: cat.name,
+      type: 'unicode' as const,
+    }));
+  }, [hasCustomPacks, defaultPacks, customPacksList]);
 
-  // Custom emojis matching the search query (by shortcode)
-  const filteredCustomEmojis = useMemo(() => {
-    if (!searchQuery) return [];
-    const q = searchQuery.toLowerCase();
-    return customEmojis.filter((e) => e.shortcode.toLowerCase().includes(q));
-  }, [searchQuery, customEmojis]);
+  // Reset state when picker opens
+  useEffect(() => {
+    if (isOpen) {
+      setSearchQuery('');
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+  }, [isOpen]);
 
-  const currentEmojis = filteredEmojis || (isCustomPackTab ? [] : EMOJI_CATEGORIES[activeCategory]?.emojis || []);
+  // Set activeSection to first sidebar item when items change or picker opens
+  useEffect(() => {
+    if (isOpen && sidebarItems.length > 0 && !sidebarItems.find((i) => i.id === activeSection)) {
+      setActiveSection(sidebarItems[0].id);
+    }
+  }, [isOpen, sidebarItems]);
+
+  const displayedEmojis = useMemo<{
+    type: 'custom' | 'unicode';
+    custom: CustomEmoji[];
+    unicode: string[];
+    header: string;
+  }>(() => {
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      if (hasCustomPacks) {
+        return {
+          type: 'custom',
+          custom: customEmojis.filter((e) => e.shortcode.toLowerCase().includes(q)),
+          unicode: [],
+          header: 'Search Results',
+        };
+      }
+      return {
+        type: 'unicode',
+        custom: [],
+        unicode: EMOJI_CATEGORIES.flatMap((c) => c.emojis),
+        header: 'All Emojis',
+      };
+    }
+
+    if (hasCustomPacks) {
+      if (activeSection === 'default') {
+        return { type: 'custom', custom: defaultPackEmojis, unicode: [], header: 'Default Emojis' };
+      }
+      const pack = customPacksList.find((p) => p.id === activeSection);
+      return {
+        type: 'custom',
+        custom: customEmojis.filter((e) => e.pack_id === activeSection),
+        unicode: [],
+        header: pack?.name || '',
+      };
+    }
+
+    const cat = EMOJI_CATEGORIES.find((c) => c.name === activeSection);
+    return { type: 'unicode', custom: [], unicode: cat?.emojis || [], header: cat?.name || '' };
+  }, [searchQuery, activeSection, hasCustomPacks, customEmojis, defaultPackEmojis, customPacksList]);
 
   const handleEmojiClick = (emoji: string, customEmojiId?: string) => {
     onSelect(emoji, customEmojiId);
     onClose();
   };
 
-  // Items currently displayed in the grid (combined unicode + custom for keyboard nav)
-  const displayedCustomEmojis = searchQuery
-    ? filteredCustomEmojis
-    : isCustomPackTab
-      ? activePackEmojis
-      : [];
-  const totalGridItems = currentEmojis.length + displayedCustomEmojis.length;
-
-  const handleGridKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (totalGridItems === 0) return;
-
-    let next = focusedIndex;
-
-    switch (e.key) {
-      case 'ArrowRight': next = Math.min(focusedIndex + 1, totalGridItems - 1); break;
-      case 'ArrowLeft': next = Math.max(focusedIndex - 1, 0); break;
-      case 'ArrowDown': next = Math.min(focusedIndex + GRID_COLS, totalGridItems - 1); break;
-      case 'ArrowUp': next = Math.max(focusedIndex - GRID_COLS, 0); break;
-      case 'Enter':
-      case ' ':
-        if (focusedIndex >= 0 && focusedIndex < totalGridItems) {
-          e.preventDefault();
-          if (focusedIndex < currentEmojis.length) {
-            handleEmojiClick(currentEmojis[focusedIndex]);
-          } else {
-            const customIdx = focusedIndex - currentEmojis.length;
-            const ce = displayedCustomEmojis[customIdx];
-            if (ce) handleEmojiClick(`:${ce.shortcode}:`, ce.id);
-          }
-        }
-        return;
-      default: return;
-    }
-
-    e.preventDefault();
-    setFocusedIndex(next);
-
-    // Focus the button at the new index
-    const buttons = gridRef.current?.querySelectorAll<HTMLElement>('[role="option"]');
-    buttons?.[next]?.focus();
-  }, [focusedIndex, currentEmojis, displayedCustomEmojis, totalGridItems]);
-
-  const getPosition = () => {
-    if (position) {
-      return { top: `${position.y}px`, left: `${position.x}px` };
-    }
+  const getPositionStyle = (): React.CSSProperties => {
     if (anchorRef) {
       const rect = anchorRef.getBoundingClientRect();
+      const pickerWidth = 400;
+      const pickerHeight = 420;
+
+      // Position above the anchor, right-aligned
+      let right = Math.max(8, window.innerWidth - rect.right);
+      // Ensure picker doesn't go off left edge
+      if (window.innerWidth - right - pickerWidth < 8) {
+        right = window.innerWidth - pickerWidth - 8;
+      }
+
+      let bottom = window.innerHeight - rect.top + 8;
+      // If picker would go off top edge, position below instead
+      if (bottom + pickerHeight > window.innerHeight - 8) {
+        bottom = window.innerHeight - rect.bottom - 8;
+      }
+
+      return { position: 'fixed', bottom, right, zIndex: 60 };
+    }
+    if (position) {
       return {
-        top: `${rect.top - 340}px`,
-        left: `${Math.max(8, rect.left - 150)}px`
+        position: 'fixed',
+        bottom: Math.max(8, window.innerHeight - position.y),
+        right: Math.max(8, window.innerWidth - position.x),
+        zIndex: 60,
       };
     }
-    return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' };
+    return { position: 'fixed', bottom: 80, right: 20, zIndex: 60 };
   };
 
   if (!isOpen) return null;
 
+  const totalItems = displayedEmojis.custom.length + displayedEmojis.unicode.length;
+
   return createPortal(
     <div className="fixed inset-0 z-50" onClick={onClose}>
       <div
-        className="absolute bg-bg-secondary rounded-lg shadow-xl border border-border-subtle overflow-hidden w-80"
-        style={getPosition()}
+        style={getPositionStyle()}
         onClick={(e) => e.stopPropagation()}
+        className="w-[400px] h-[420px] bg-bg-secondary rounded-lg shadow-xl border border-border-subtle flex flex-col overflow-hidden"
       >
         {/* Search */}
-        <div className="p-2 border-b border-border-subtle">
+        <div className="p-2 border-b border-border-subtle flex-shrink-0">
           <input
+            ref={inputRef}
             type="text"
             name="search-emojis"
             placeholder="Search emojis..."
@@ -159,97 +226,62 @@ export function ReactionPicker({ isOpen, onClose, onSelect, anchorRef, position,
           />
         </div>
 
-        {/* Quick Access */}
-        <div className="p-2 border-b border-border-subtle">
-          <div className="text-xs font-semibold uppercase text-text-muted mb-1.5">Quick Reactions</div>
-          <div className="flex flex-wrap gap-1">
-            {QUICK_EMOJIS.map((emoji) => (
+        {/* Body: sidebar + grid */}
+        <div className="flex flex-1 min-h-0">
+          {/* Sidebar */}
+          <div className="w-20 flex-shrink-0 border-r border-border-subtle overflow-y-auto scrollbar-thin">
+            {sidebarItems.map((item) => (
               <button
-                key={emoji}
-                onClick={() => handleEmojiClick(emoji)}
-                className="w-8 h-8 flex items-center justify-center text-xl rounded hover:bg-bg-modifier-hover transition-colors"
+                key={item.id}
+                onClick={() => {
+                  setActiveSection(item.id);
+                  setSearchQuery('');
+                }}
+                className={clsx(
+                  'w-full px-2 py-2 text-xs text-left truncate transition-colors',
+                  activeSection === item.id
+                    ? 'bg-bg-modifier-selected text-text-primary font-semibold'
+                    : 'text-text-muted hover:bg-bg-modifier-hover hover:text-text-primary',
+                )}
+                title={item.label}
               >
-                {emoji}
+                {item.label}
               </button>
             ))}
           </div>
-        </div>
 
-        {/* Category Tabs */}
-        <div className="flex border-b border-border-subtle overflow-x-auto scrollbar-none">
-          {EMOJI_CATEGORIES.map((category, index) => (
-            <button
-              key={category.name}
-              onClick={() => { setActiveCategory(index); setFocusedIndex(-1); }}
-              className={clsx(
-                "px-3 py-2 text-xs font-medium whitespace-nowrap transition-colors",
-                activeCategory === index
-                  ? "text-brand-primary border-b-2 border-brand-primary"
-                  : "text-text-muted hover:text-text-primary"
-              )}
-            >
-              {category.name}
-            </button>
-          ))}
-          {packs.map((pack, index) => (
-            <button
-              key={`pack-${pack.id}`}
-              onClick={() => { setActiveCategory(EMOJI_CATEGORIES.length + index); setFocusedIndex(-1); }}
-              className={clsx(
-                "px-3 py-2 text-xs font-medium whitespace-nowrap transition-colors",
-                activeCategory === EMOJI_CATEGORIES.length + index
-                  ? "text-brand-primary border-b-2 border-brand-primary"
-                  : "text-text-muted hover:text-text-primary"
-              )}
-              title={pack.description || pack.name}
-            >
-              {pack.name}
-            </button>
-          ))}
-        </div>
+          {/* Emoji grid area */}
+          <div className="flex-1 overflow-y-auto p-2">
+            {/* Header */}
+            {!searchQuery && displayedEmojis.header && (
+              <div className="text-xs font-semibold text-text-muted uppercase mb-2 px-1">
+                {displayedEmojis.header}
+              </div>
+            )}
+            {searchQuery && (
+              <div className="text-xs font-semibold text-text-muted uppercase mb-2 px-1">
+                {totalItems} result{totalItems !== 1 ? 's' : ''}
+              </div>
+            )}
 
-        {/* Emoji Grid */}
-        <div
-          ref={gridRef}
-          className="h-48 overflow-y-auto p-2"
-          role="listbox"
-          aria-label="Emojis"
-          onKeyDown={handleGridKeyDown}
-        >
-          <div className="grid grid-cols-8 gap-1">
-            {/* Unicode emojis (from categories or search) */}
-            {currentEmojis.map((emoji, i) => (
-              <button
-                key={`${emoji}-${i}`}
-                role="option"
-                aria-selected={focusedIndex === i}
-                tabIndex={focusedIndex === i ? 0 : -1}
-                onClick={() => handleEmojiClick(emoji)}
-                onFocus={() => setFocusedIndex(i)}
-                className={clsx(
-                  "w-8 h-8 flex items-center justify-center text-xl rounded hover:bg-bg-modifier-hover transition-colors",
-                  focusedIndex === i && "bg-bg-modifier-hover ring-2 ring-brand-primary"
-                )}
-              >
-                {emoji}
-              </button>
-            ))}
-            {/* Custom emojis (from active pack or search) */}
-            {displayedCustomEmojis.map((ce, i) => {
-              const gridIndex = currentEmojis.length + i;
-              return (
+            {/* Grid */}
+            <div className="grid grid-cols-7 gap-1">
+              {displayedEmojis.unicode.map((emoji, i) => (
                 <button
-                  key={`custom-${ce.id}`}
-                  role="option"
-                  aria-selected={focusedIndex === gridIndex}
-                  tabIndex={focusedIndex === gridIndex ? 0 : -1}
+                  key={`${emoji}-${i}`}
+                  onClick={() => handleEmojiClick(emoji)}
+                  className="w-8 h-8 flex items-center justify-center text-xl rounded hover:bg-bg-modifier-hover transition-colors"
+                  title={emoji}
+                >
+                  {emoji}
+                </button>
+              ))}
+              {displayedEmojis.custom.map((ce) => (
+                <button
+                  key={ce.id}
                   onClick={() => handleEmojiClick(`:${ce.shortcode}:`, ce.id)}
-                  onFocus={() => setFocusedIndex(gridIndex)}
+                  className="w-8 h-8 flex items-center justify-center rounded hover:bg-bg-modifier-hover transition-colors"
                   title={`:${ce.shortcode}:`}
-                  className={clsx(
-                    "w-8 h-8 flex items-center justify-center rounded hover:bg-bg-modifier-hover transition-colors",
-                    focusedIndex === gridIndex && "bg-bg-modifier-hover ring-2 ring-brand-primary"
-                  )}
                 >
                   <img
                     src={ce.url || ce.asset_key}
@@ -258,24 +290,19 @@ export function ReactionPicker({ isOpen, onClose, onSelect, anchorRef, position,
                     loading="lazy"
                   />
                 </button>
-              );
-            })}
+              ))}
+            </div>
+
+            {/* Empty state */}
+            {totalItems === 0 && (
+              <div className="flex items-center justify-center h-32 text-text-muted text-sm">
+                {searchQuery ? 'No emojis found' : 'No emojis in this pack'}
+              </div>
+            )}
           </div>
-          {/* Empty state for custom pack tabs with no emojis */}
-          {isCustomPackTab && activePackEmojis.length === 0 && !searchQuery && (
-            <div className="flex items-center justify-center h-32 text-text-muted text-sm">
-              No emojis in this pack
-            </div>
-          )}
-          {/* Empty search state */}
-          {searchQuery && currentEmojis.length === 0 && displayedCustomEmojis.length === 0 && (
-            <div className="flex items-center justify-center h-32 text-text-muted text-sm">
-              No emojis found
-            </div>
-          )}
         </div>
       </div>
     </div>,
-    document.body
+    document.body,
   );
 }
