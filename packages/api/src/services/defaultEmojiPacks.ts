@@ -1,6 +1,10 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import type { DefaultPackCategory } from '@sgchat/shared';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const IMAGE_EXTENSIONS = ['.png', '.gif', '.jpg', '.jpeg', '.webp'];
 
