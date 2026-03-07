@@ -11,6 +11,7 @@ import {
   MOTDBadge,
   MessageLinkEmbed,
 } from './MentionBadges';
+import { renderCustomEmojis } from '@/lib/emojiRenderer';
 
 const GIF_AUTOPLAY_DURATION = 6000;
 
@@ -18,6 +19,7 @@ export interface MessageContentProps {
   content: string;
   isOwnMessage?: boolean;
   compact?: boolean;
+  serverId?: string;
 }
 
 interface ParsedSegment {
@@ -130,7 +132,7 @@ function MentionRenderer({ mention }: { mention: ParsedMention }) {
   }
 }
 
-export function MessageContent({ content, isOwnMessage, compact }: MessageContentProps) {
+export function MessageContent({ content, isOwnMessage, compact, serverId }: MessageContentProps) {
   const segments = useMemo(() => parseContentSegments(content), [content]);
 
   return (
@@ -149,7 +151,7 @@ export function MessageContent({ content, isOwnMessage, compact }: MessageConten
           default:
             return (
               <span key={i} className="break-words whitespace-pre-wrap">
-                {segment.value}
+                {renderCustomEmojis(segment.value, serverId)}
               </span>
             );
         }

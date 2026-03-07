@@ -939,6 +939,142 @@ export const db = {
     },
   },
 
+  // Emoji Packs
+  emojiPacks: {
+    async findByServer(serverId: string) {
+      return sql`
+        SELECT ep.*, u.username as creator_username
+        FROM emoji_packs ep
+        LEFT JOIN users u ON ep.created_by_user_id = u.id
+        WHERE ep.server_id = ${serverId}
+        ORDER BY ep.created_at ASC
+      `;
+    },
+    async findEnabledByServer(serverId: string) {
+      return sql`
+        SELECT * FROM emoji_packs
+        WHERE server_id = ${serverId} AND enabled = true
+        ORDER BY created_at ASC
+      `;
+    },
+    async findById(id: string) {
+      const [pack] = await sql`SELECT * FROM emoji_packs WHERE id = ${id}`;
+      return pack;
+    },
+    async countByServer(serverId: string) {
+      const [result] = await sql`
+        SELECT COUNT(*)::int as count FROM emoji_packs WHERE server_id = ${serverId}
+      `;
+      return result.count;
+    },
+    async create(data: {
+      server_id: string;
+      name: string;
+      description?: string | null;
+      created_by_user_id: string;
+    }) {
+      const [pack] = await sql`
+        INSERT INTO emoji_packs (server_id, name, description, created_by_user_id)
+        VALUES (${data.server_id}, ${data.name}, ${data.description || null}, ${data.created_by_user_id})
+        RETURNING *
+      `;
+      return pack;
+    },
+    async update(id: string, data: { name?: string; description?: string | null; enabled?: boolean }) {
+      const [pack] = await sql`
+        UPDATE emoji_packs
+        SET
+          name = COALESCE(${data.name ?? null}, name),
+          description = ${data.description !== undefined ? data.description : null},
+          enabled = COALESCE(${data.enabled ?? null}, enabled),
+          updated_at = NOW()
+        WHERE id = ${id}
+        RETURNING *
+      `;
+      return pack;
+    },
+    async delete(id: string) {
+      await sql`DELETE FROM emoji_packs WHERE id = ${id}`;
+    },
+  },
+
+  // Emojis
+  emojis: {
+    async findByPack(packId: string) {
+      return sql`
+        SELECT e.*, u.username as creator_username
+        FROM emojis e
+        LEFT JOIN users u ON e.created_by_user_id = u.id
+        WHERE e.pack_id = ${packId}
+        ORDER BY e.created_at ASC
+      `;
+    },
+    async findByServer(serverId: string) {
+      return sql`
+        SELECT e.*, u.username as creator_username
+        FROM emojis e
+        LEFT JOIN users u ON e.created_by_user_id = u.id
+        WHERE e.server_id = ${serverId}
+        ORDER BY e.created_at ASC
+      `;
+    },
+    async findEnabledByServer(serverId: string) {
+      return sql`
+        SELECT e.* FROM emojis e
+        JOIN emoji_packs ep ON e.pack_id = ep.id
+        WHERE e.server_id = ${serverId} AND ep.enabled = true
+        ORDER BY e.created_at ASC
+      `;
+    },
+    async findById(id: string) {
+      const [emoji] = await sql`SELECT * FROM emojis WHERE id = ${id}`;
+      return emoji;
+    },
+    async findByShortcode(serverId: string, shortcode: string) {
+      const [emoji] = await sql`
+        SELECT * FROM emojis WHERE server_id = ${serverId} AND shortcode = ${shortcode}
+      `;
+      return emoji;
+    },
+    async countByServer(serverId: string) {
+      const [result] = await sql`
+        SELECT COUNT(*)::int as count FROM emojis WHERE server_id = ${serverId}
+      `;
+      return result.count;
+    },
+    async create(data: {
+      server_id: string;
+      pack_id: string;
+      shortcode: string;
+      content_type: string;
+      is_animated: boolean;
+      width: number | null;
+      height: number | null;
+      size_bytes: number | null;
+      asset_key: string;
+      created_by_user_id: string;
+    }) {
+      const [emoji] = await sql`
+        INSERT INTO emojis (server_id, pack_id, shortcode, content_type, is_animated, width, height, size_bytes, asset_key, created_by_user_id)
+        VALUES (${data.server_id}, ${data.pack_id}, ${data.shortcode}, ${data.content_type}, ${data.is_animated}, ${data.width}, ${data.height}, ${data.size_bytes}, ${data.asset_key}, ${data.created_by_user_id})
+        RETURNING *
+      `;
+      return emoji;
+    },
+    async updateShortcode(id: string, shortcode: string) {
+      const [emoji] = await sql`
+        UPDATE emojis SET shortcode = ${shortcode}, updated_at = NOW() WHERE id = ${id} RETURNING *
+      `;
+      return emoji;
+    },
+    async delete(id: string) {
+      await sql`DELETE FROM emojis WHERE id = ${id}`;
+    },
+    async deleteByPack(packId: string) {
+      return sql`DELETE FROM emojis WHERE pack_id = ${packId} RETURNING asset_key`;
+    },
+  },
+
   // Helper to run transactions
   transaction: sql.begin,
 

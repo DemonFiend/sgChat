@@ -8,3 +8,4 @@ export { useToastStore, toastStore, type ToastNotification } from './toastNotifi
 export { useThemeStore, type Theme, themeNames } from './theme';
 export { messageCache } from './messageCache';
 export * as permissions from './permissions';
+export { useEmojiManifestStore, emojiManifestStore } from './emojiManifest';

@@ -12,6 +12,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useServerPopupStore } from '@/stores/serverPopup';
 import { useServerConfigStore } from '@/stores/serverConfig';
 import { useVoiceStore } from '@/stores/voice';
+import { emojiManifestStore } from '@/stores/emojiManifest';
 import { SYSTEM_USER_ID } from '@sgchat/shared';
 import { socketService } from '@/lib/socket';
 import { voiceService } from '@/lib/voiceService';
@@ -162,6 +163,7 @@ export function MainLayout() {
         setServers([server]);
         // Show server welcome popup (24h cooldown managed by the store)
         useServerPopupStore.getState().showPopup(server.id);
+        emojiManifestStore.getState().fetchManifest(server.id);
 
         // Fetch channels
         const channelsResponse = await api.get<
@@ -839,6 +841,15 @@ export function MainLayout() {
     socketService.on('server.kicked', handleServerKicked as (data: unknown) => void);
     socketService.on('server.banned', handleServerBanned as (data: unknown) => void);
 
+    // Emoji manifest refresh
+    const handleEmojiManifestUpdated = (data: any) => {
+      const sid = data?.serverId;
+      if (sid) {
+        emojiManifestStore.getState().fetchManifest(sid);
+      }
+    };
+    socketService.on('emoji.manifestUpdated', handleEmojiManifestUpdated as (data: unknown) => void);
+
     return () => {
       socketService.off('server.update', handleServerUpdate as (data: unknown) => void);
       socketService.off('server.popup_config.update', handlePopupConfigUpdate as (data: unknown) => void);
@@ -864,6 +875,7 @@ export function MainLayout() {
       socketService.off('server.delete', handleServerDelete as (data: unknown) => void);
       socketService.off('server.kicked', handleServerKicked as (data: unknown) => void);
       socketService.off('server.banned', handleServerBanned as (data: unknown) => void);
+      socketService.off('emoji.manifestUpdated', handleEmojiManifestUpdated as (data: unknown) => void);
     };
   }, [user?.id]);
 
@@ -899,25 +911,39 @@ export function MainLayout() {
   }, [currentChannel]);
 
   // Reactions use REST API, not socket events
+  const handleReactionClick = useCallback(
+    (messageId: string, reaction: any) => {
+      const isCustom = reaction.type === 'custom' || !!reaction.emojiId;
+      if (reaction.me) {
+        // Remove reaction
+        if (isCustom) {
+          api.delete(`/messages/${messageId}/reactions`, { reaction: { type: 'custom', emojiId: reaction.emojiId } })
+            .catch((err) => console.error('[MainLayout] Failed to remove reaction:', err));
+        } else {
+          api.delete(`/messages/${messageId}/reactions/${encodeURIComponent(reaction.emoji)}`)
+            .catch((err) => console.error('[MainLayout] Failed to remove reaction:', err));
+        }
+      } else {
+        // Add reaction
+        if (isCustom) {
+          api.post(`/messages/${messageId}/reactions`, { reaction: { type: 'custom', emojiId: reaction.emojiId } })
+            .catch((err) => console.error('[MainLayout] Failed to add reaction:', err));
+        } else {
+          api.put(`/messages/${messageId}/reactions/${encodeURIComponent(reaction.emoji)}`)
+            .catch((err) => console.error('[MainLayout] Failed to add reaction:', err));
+        }
+      }
+    },
+    [],
+  );
+
+  // Legacy wrappers for emoji picker and other callers that pass plain emoji strings
   const handleReactionAdd = useCallback(
     (messageId: string, emoji: string) => {
       api
         .put(`/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`)
         .catch((err) =>
           console.error('[MainLayout] Failed to add reaction:', err),
-        );
-    },
-    [],
-  );
-
-  const handleReactionRemove = useCallback(
-    (messageId: string, emoji: string) => {
-      api
-        .delete(
-          `/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`,
-        )
-        .catch((err) =>
-          console.error('[MainLayout] Failed to remove reaction:', err),
         );
     },
     [],
@@ -1218,7 +1244,7 @@ export function MainLayout() {
             messages={messages}
             onSendMessage={handleSendMessage}
             onReactionAdd={handleReactionAdd}
-            onReactionRemove={handleReactionRemove}
+            onReactionClick={handleReactionClick}
             onEditMessage={handleEditMessage}
             onDeleteMessage={handleDeleteMessage}
             onAuthorClick={handleAuthorClick}

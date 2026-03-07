@@ -159,7 +159,7 @@ for (const [metaKey, meta] of Object.entries(VoicePermissionMetadata)) {
 
 // ── End permission groups ────────────────────────────────────────────
 
-type ServerSettingsTab = 'general' | 'roles' | 'role-reactions' | 'members' | 'channels' | 'soundboard' | 'stickers' | 'webhooks' | 'afk' | 'invites' | 'bans' | 'audit-log' | 'storage' | 'crash-reports' | 'releases' | 'retention';
+type ServerSettingsTab = 'general' | 'roles' | 'role-reactions' | 'members' | 'channels' | 'soundboard' | 'stickers' | 'emoji-packs' | 'webhooks' | 'afk' | 'invites' | 'bans' | 'audit-log' | 'storage' | 'crash-reports' | 'releases' | 'retention';
 
 interface ServerSettings {
   motd: string;
@@ -272,6 +272,16 @@ const tabs: { id: ServerSettingsTab; label: string; icon: ReactNode; permission?
       </svg>
     ),
     permission: 'manage_stickers',
+  },
+  {
+    id: 'emoji-packs',
+    label: 'Emoji Packs',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+    permission: 'manage_emojis',
   },
   {
     id: 'webhooks',
@@ -514,6 +524,9 @@ export function ServerSettingsModal({ isOpen, onClose, serverName, serverIcon: _
                 )}
                 {activeTab === 'stickers' && (
                   <StickersTab serverId={serverData?.id || ''} />
+                )}
+                {activeTab === 'emoji-packs' && (
+                  <EmojiPacksTab serverId={serverData?.id || ''} />
                 )}
                 {activeTab === 'webhooks' && (
                   <WebhooksTab serverId={serverData?.id || ''} channels={channels} />
@@ -3694,6 +3707,318 @@ function ReleasesTab() {
             </div>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ── Emoji Packs Tab ────────────────────────────────────────────────
+interface EmojiPackItem {
+  id: string;
+  server_id: string;
+  name: string;
+  description: string | null;
+  enabled: boolean;
+  created_by_user_id: string | null;
+  creator_username?: string;
+  created_at: string;
+}
+
+interface EmojiItem {
+  id: string;
+  server_id: string;
+  pack_id: string;
+  shortcode: string;
+  content_type: string;
+  is_animated: boolean;
+  asset_key: string;
+  width: number | null;
+  height: number | null;
+  size_bytes: number | null;
+  creator_username?: string;
+  created_at: string;
+}
+
+function EmojiPacksTab({ serverId }: { serverId: string }) {
+  const [packs, setPacks] = useState<EmojiPackItem[]>([]);
+  const [selectedPackId, setSelectedPackId] = useState<string | null>(null);
+  const [packEmojis, setPackEmojis] = useState<EmojiItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newPackName, setNewPackName] = useState('');
+  const [newPackDescription, setNewPackDescription] = useState('');
+  const [uploading, setUploading] = useState(false);
+
+  // Fetch packs
+  useEffect(() => {
+    const fetchPacks = async () => {
+      try {
+        const response = await api.get<{ packs: EmojiPackItem[] }>(`/servers/${serverId}/emoji-packs`);
+        setPacks(response.packs || []);
+      } catch (err: any) {
+        console.error('[EmojiPacks] Failed to fetch:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchPacks();
+  }, [serverId]);
+
+  // Fetch emojis for selected pack
+  useEffect(() => {
+    if (!selectedPackId) { setPackEmojis([]); return; }
+    const fetchEmojis = async () => {
+      try {
+        const response = await api.get<{ emojis: EmojiItem[] }>(`/servers/${serverId}/emoji-packs/${selectedPackId}/emojis`);
+        // Fallback: if the endpoint doesn't exist yet, use manifest
+        setPackEmojis(response.emojis || []);
+      } catch {
+        // Use manifest data as fallback
+        try {
+          const manifest = await api.get<{ packs: any[]; emojis: EmojiItem[] }>(`/servers/${serverId}/emojis/manifest`);
+          setPackEmojis((manifest.emojis || []).filter((e: EmojiItem) => e.pack_id === selectedPackId));
+        } catch { setPackEmojis([]); }
+      }
+    };
+    fetchEmojis();
+  }, [serverId, selectedPackId]);
+
+  const handleCreatePack = async () => {
+    if (!newPackName.trim()) return;
+    try {
+      const pack = await api.post<EmojiPackItem>(`/servers/${serverId}/emoji-packs`, {
+        name: newPackName.trim(),
+        description: newPackDescription.trim() || undefined,
+      });
+      setPacks((prev) => [...prev, pack]);
+      setNewPackName('');
+      setNewPackDescription('');
+    } catch (err: any) {
+      toastStore.addToast({ type: 'system', title: 'Error', message: err?.message || 'Failed to create pack' });
+    }
+  };
+
+  const handleTogglePack = async (packId: string, enabled: boolean) => {
+    try {
+      await api.patch(`/servers/${serverId}/emoji-packs/${packId}`, { enabled });
+      setPacks((prev) => prev.map((p) => (p.id === packId ? { ...p, enabled } : p)));
+    } catch (err: any) {
+      toastStore.addToast({ type: 'system', title: 'Error', message: err?.message || 'Failed to update pack' });
+    }
+  };
+
+  const handleDeletePack = async (packId: string) => {
+    if (!confirm('Delete this emoji pack and all its emojis?')) return;
+    try {
+      await api.delete(`/servers/${serverId}/emoji-packs/${packId}`);
+      setPacks((prev) => prev.filter((p) => p.id !== packId));
+      if (selectedPackId === packId) setSelectedPackId(null);
+    } catch (err: any) {
+      toastStore.addToast({ type: 'system', title: 'Error', message: err?.message || 'Failed to delete pack' });
+    }
+  };
+
+  const handleUploadEmoji = async (file: File) => {
+    if (!selectedPackId) return;
+    setUploading(true);
+    try {
+      const buffer = await file.arrayBuffer();
+      const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+      const shortcode = file.name.replace(/\.[^/.]+$/, '').toLowerCase().replace(/[^a-z0-9_]/g, '_');
+      const result = await api.post<{ emoji: EmojiItem; conflict?: { requested: string; assigned: string } }>(
+        `/servers/${serverId}/emoji-packs/${selectedPackId}/emojis`,
+        {
+          _fileUpload: true,
+          data: base64,
+          filename: file.name,
+          mimetype: file.type || 'image/png',
+          fields: { shortcode },
+        },
+      );
+      setPackEmojis((prev) => [...prev, result.emoji]);
+      if (result.conflict) {
+        toastStore.addToast({ type: 'system', title: 'Shortcode conflict', message: `"${result.conflict.requested}" was renamed to "${result.conflict.assigned}"` });
+      }
+    } catch (err: any) {
+      toastStore.addToast({ type: 'system', title: 'Error', message: err?.message || 'Failed to upload emoji' });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDeleteEmoji = async (emojiId: string) => {
+    if (!confirm('Delete this emoji?')) return;
+    try {
+      await api.delete(`/servers/${serverId}/emojis/${emojiId}`);
+      setPackEmojis((prev) => prev.filter((e) => e.id !== emojiId));
+    } catch (err: any) {
+      toastStore.addToast({ type: 'system', title: 'Error', message: err?.message || 'Failed to delete emoji' });
+    }
+  };
+
+  const handleZipImport = async (file: File) => {
+    if (!selectedPackId) return;
+    setUploading(true);
+    try {
+      const buffer = await file.arrayBuffer();
+      const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+      const result = await api.post<{ importedCount: number; conflicts: any[]; errors: any[] }>(
+        `/servers/${serverId}/emoji-packs/${selectedPackId}/emojis/import-zip`,
+        {
+          _fileUpload: true,
+          data: base64,
+          filename: file.name,
+          mimetype: 'application/zip',
+          fields: {},
+        },
+      );
+      toastStore.addToast({
+        type: 'system',
+        title: 'Import complete',
+        message: `Imported ${result.importedCount} emojis${result.errors.length ? `, ${result.errors.length} errors` : ''}`,
+      });
+      // Refresh emojis
+      setSelectedPackId((id) => { setSelectedPackId(null); setTimeout(() => setSelectedPackId(id), 100); return id; });
+    } catch (err: any) {
+      toastStore.addToast({ type: 'system', title: 'Error', message: err?.message || 'Failed to import ZIP' });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  if (loading) {
+    return <div className="p-4 text-text-secondary">Loading emoji packs...</div>;
+  }
+
+  // Pack list view
+  if (!selectedPackId) {
+    return (
+      <div className="p-4 space-y-4">
+        <div>
+          <h3 className="text-lg font-semibold text-text-primary mb-2">Emoji Packs</h3>
+          <p className="text-sm text-text-secondary">Manage custom emoji packs for this server.</p>
+        </div>
+
+        {/* Create pack form */}
+        <div className="flex gap-2 items-end">
+          <div className="flex-1">
+            <label className="block text-xs text-text-secondary mb-1">Pack Name</label>
+            <input
+              value={newPackName}
+              onChange={(e) => setNewPackName(e.target.value)}
+              placeholder="My Emoji Pack"
+              maxLength={50}
+              className="w-full px-3 py-2 bg-bg-secondary border border-border-subtle rounded text-text-primary text-sm"
+            />
+          </div>
+          <div className="flex-1">
+            <label className="block text-xs text-text-secondary mb-1">Description (optional)</label>
+            <input
+              value={newPackDescription}
+              onChange={(e) => setNewPackDescription(e.target.value)}
+              placeholder="Pack description"
+              maxLength={200}
+              className="w-full px-3 py-2 bg-bg-secondary border border-border-subtle rounded text-text-primary text-sm"
+            />
+          </div>
+          <button
+            onClick={handleCreatePack}
+            disabled={!newPackName.trim()}
+            className="px-4 py-2 bg-brand-primary text-white rounded text-sm font-medium hover:bg-brand-primary-hover disabled:opacity-50"
+          >
+            Create
+          </button>
+        </div>
+
+        {/* Pack list */}
+        <div className="space-y-2">
+          {packs.length === 0 ? (
+            <p className="text-text-muted text-sm py-4 text-center">No emoji packs yet. Create one above!</p>
+          ) : (
+            packs.map((pack) => (
+              <div key={pack.id} className="flex items-center justify-between p-3 bg-bg-secondary rounded border border-border-subtle">
+                <div className="flex-1 cursor-pointer" onClick={() => setSelectedPackId(pack.id)}>
+                  <div className="font-medium text-text-primary">{pack.name}</div>
+                  {pack.description && <div className="text-xs text-text-secondary">{pack.description}</div>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-1 text-xs text-text-secondary">
+                    <input
+                      type="checkbox"
+                      checked={pack.enabled}
+                      onChange={(e) => handleTogglePack(pack.id, e.target.checked)}
+                      className="rounded"
+                    />
+                    Enabled
+                  </label>
+                  <button
+                    onClick={() => handleDeletePack(pack.id)}
+                    className="p-1 text-text-muted hover:text-status-error transition-colors"
+                    title="Delete pack"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Pack editor view (selected pack)
+  const selectedPack = packs.find((p) => p.id === selectedPackId);
+  return (
+    <div className="p-4 space-y-4">
+      <div className="flex items-center gap-2">
+        <button onClick={() => setSelectedPackId(null)} className="text-text-secondary hover:text-text-primary">
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <h3 className="text-lg font-semibold text-text-primary">{selectedPack?.name || 'Pack'}</h3>
+        <span className="text-xs text-text-muted">{packEmojis.length} emojis</span>
+      </div>
+
+      {/* Upload buttons */}
+      <div className="flex gap-2">
+        <label className={`px-3 py-1.5 bg-brand-primary text-white rounded text-sm cursor-pointer hover:bg-brand-primary-hover ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+          {uploading ? 'Uploading...' : 'Upload Emoji'}
+          <input type="file" accept="image/png,image/gif,image/webp,image/jpeg" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleUploadEmoji(e.target.files[0]); e.target.value = ''; }} disabled={uploading} />
+        </label>
+        <label className={`px-3 py-1.5 bg-bg-tertiary text-text-primary rounded text-sm cursor-pointer border border-border-subtle hover:bg-bg-modifier-hover ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+          Import ZIP
+          <input type="file" accept=".zip" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleZipImport(e.target.files[0]); e.target.value = ''; }} disabled={uploading} />
+        </label>
+      </div>
+
+      {/* Emoji grid */}
+      <div className="grid grid-cols-6 gap-2">
+        {packEmojis.map((emoji) => (
+          <div key={emoji.id} className="group relative flex flex-col items-center p-2 bg-bg-secondary rounded border border-border-subtle hover:border-brand-primary transition-colors">
+            <img
+              src={emoji.asset_key.startsWith('http') ? emoji.asset_key : `/api/files/${emoji.asset_key}`}
+              alt={`:${emoji.shortcode}:`}
+              className="w-10 h-10 object-contain"
+              loading="lazy"
+            />
+            <span className="text-xs text-text-secondary mt-1 truncate w-full text-center" title={`:${emoji.shortcode}:`}>:{emoji.shortcode}:</span>
+            <button
+              onClick={() => handleDeleteEmoji(emoji.id)}
+              className="absolute top-0.5 right-0.5 p-0.5 rounded bg-bg-primary/80 text-text-muted hover:text-status-error opacity-0 group-hover:opacity-100 transition-opacity"
+              title="Delete"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        ))}
+      </div>
+      {packEmojis.length === 0 && (
+        <p className="text-text-muted text-sm text-center py-4">No emojis in this pack yet. Upload one above!</p>
       )}
     </div>
   );

@@ -1,6 +1,8 @@
 import { useState, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { clsx } from 'clsx';
+import { useEmojiManifestStore } from '@/stores/emojiManifest';
+import type { CustomEmoji, EmojiPack } from '@sgchat/shared';
 
 const QUICK_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '😡', '🎉', '🔥', '👀', '💯'];
 
@@ -30,47 +32,87 @@ const EMOJI_CATEGORIES = [
 interface ReactionPickerProps {
   isOpen: boolean;
   onClose: () => void;
-  onSelect: (emoji: string) => void;
+  onSelect: (emoji: string, customEmojiId?: string) => void;
   anchorRef?: HTMLElement | null;
   position?: { x: number; y: number };
+  serverId?: string;
 }
 
 const GRID_COLS = 8;
 
-export function ReactionPicker({ isOpen, onClose, onSelect, anchorRef, position }: ReactionPickerProps) {
+export function ReactionPicker({ isOpen, onClose, onSelect, anchorRef, position, serverId }: ReactionPickerProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState(0);
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const gridRef = useRef<HTMLDivElement>(null);
+
+  // Custom emoji packs from the manifest store
+  const packs = serverId
+    ? useEmojiManifestStore((s) => s.manifests.get(serverId)?.packs) || []
+    : [];
+  const customEmojis = serverId
+    ? useEmojiManifestStore((s) => s.manifests.get(serverId)?.emojis) || []
+    : [];
+
+  // Whether the active tab is a custom pack
+  const isCustomPackTab = activeCategory >= EMOJI_CATEGORIES.length;
+  const activePackIndex = isCustomPackTab ? activeCategory - EMOJI_CATEGORIES.length : -1;
+  const activePack = activePackIndex >= 0 ? packs[activePackIndex] : null;
+
+  // Emojis for the currently selected custom pack
+  const activePackEmojis = useMemo(() => {
+    if (!activePack) return [];
+    return customEmojis.filter((e) => e.pack_id === activePack.id);
+  }, [activePack, customEmojis]);
 
   const filteredEmojis = useMemo(() => {
     if (!searchQuery) return null;
     return EMOJI_CATEGORIES.flatMap(cat => cat.emojis);
   }, [searchQuery]);
 
-  const currentEmojis = filteredEmojis || EMOJI_CATEGORIES[activeCategory]?.emojis || [];
+  // Custom emojis matching the search query (by shortcode)
+  const filteredCustomEmojis = useMemo(() => {
+    if (!searchQuery) return [];
+    const q = searchQuery.toLowerCase();
+    return customEmojis.filter((e) => e.shortcode.toLowerCase().includes(q));
+  }, [searchQuery, customEmojis]);
 
-  const handleEmojiClick = (emoji: string) => {
-    onSelect(emoji);
+  const currentEmojis = filteredEmojis || (isCustomPackTab ? [] : EMOJI_CATEGORIES[activeCategory]?.emojis || []);
+
+  const handleEmojiClick = (emoji: string, customEmojiId?: string) => {
+    onSelect(emoji, customEmojiId);
     onClose();
   };
 
+  // Items currently displayed in the grid (combined unicode + custom for keyboard nav)
+  const displayedCustomEmojis = searchQuery
+    ? filteredCustomEmojis
+    : isCustomPackTab
+      ? activePackEmojis
+      : [];
+  const totalGridItems = currentEmojis.length + displayedCustomEmojis.length;
+
   const handleGridKeyDown = useCallback((e: React.KeyboardEvent) => {
-    const total = currentEmojis.length;
-    if (total === 0) return;
+    if (totalGridItems === 0) return;
 
     let next = focusedIndex;
 
     switch (e.key) {
-      case 'ArrowRight': next = Math.min(focusedIndex + 1, total - 1); break;
+      case 'ArrowRight': next = Math.min(focusedIndex + 1, totalGridItems - 1); break;
       case 'ArrowLeft': next = Math.max(focusedIndex - 1, 0); break;
-      case 'ArrowDown': next = Math.min(focusedIndex + GRID_COLS, total - 1); break;
+      case 'ArrowDown': next = Math.min(focusedIndex + GRID_COLS, totalGridItems - 1); break;
       case 'ArrowUp': next = Math.max(focusedIndex - GRID_COLS, 0); break;
       case 'Enter':
       case ' ':
-        if (focusedIndex >= 0 && focusedIndex < total) {
+        if (focusedIndex >= 0 && focusedIndex < totalGridItems) {
           e.preventDefault();
-          handleEmojiClick(currentEmojis[focusedIndex]);
+          if (focusedIndex < currentEmojis.length) {
+            handleEmojiClick(currentEmojis[focusedIndex]);
+          } else {
+            const customIdx = focusedIndex - currentEmojis.length;
+            const ce = displayedCustomEmojis[customIdx];
+            if (ce) handleEmojiClick(`:${ce.shortcode}:`, ce.id);
+          }
         }
         return;
       default: return;
@@ -82,7 +124,7 @@ export function ReactionPicker({ isOpen, onClose, onSelect, anchorRef, position 
     // Focus the button at the new index
     const buttons = gridRef.current?.querySelectorAll<HTMLElement>('[role="option"]');
     buttons?.[next]?.focus();
-  }, [focusedIndex, currentEmojis]);
+  }, [focusedIndex, currentEmojis, displayedCustomEmojis, totalGridItems]);
 
   const getPosition = () => {
     if (position) {
@@ -139,7 +181,7 @@ export function ReactionPicker({ isOpen, onClose, onSelect, anchorRef, position 
           {EMOJI_CATEGORIES.map((category, index) => (
             <button
               key={category.name}
-              onClick={() => setActiveCategory(index)}
+              onClick={() => { setActiveCategory(index); setFocusedIndex(-1); }}
               className={clsx(
                 "px-3 py-2 text-xs font-medium whitespace-nowrap transition-colors",
                 activeCategory === index
@@ -148,6 +190,21 @@ export function ReactionPicker({ isOpen, onClose, onSelect, anchorRef, position 
               )}
             >
               {category.name}
+            </button>
+          ))}
+          {packs.map((pack, index) => (
+            <button
+              key={`pack-${pack.id}`}
+              onClick={() => { setActiveCategory(EMOJI_CATEGORIES.length + index); setFocusedIndex(-1); }}
+              className={clsx(
+                "px-3 py-2 text-xs font-medium whitespace-nowrap transition-colors",
+                activeCategory === EMOJI_CATEGORIES.length + index
+                  ? "text-brand-primary border-b-2 border-brand-primary"
+                  : "text-text-muted hover:text-text-primary"
+              )}
+              title={pack.description || pack.name}
+            >
+              {pack.name}
             </button>
           ))}
         </div>
@@ -161,6 +218,7 @@ export function ReactionPicker({ isOpen, onClose, onSelect, anchorRef, position 
           onKeyDown={handleGridKeyDown}
         >
           <div className="grid grid-cols-8 gap-1">
+            {/* Unicode emojis (from categories or search) */}
             {currentEmojis.map((emoji, i) => (
               <button
                 key={`${emoji}-${i}`}
@@ -177,7 +235,45 @@ export function ReactionPicker({ isOpen, onClose, onSelect, anchorRef, position 
                 {emoji}
               </button>
             ))}
+            {/* Custom emojis (from active pack or search) */}
+            {displayedCustomEmojis.map((ce, i) => {
+              const gridIndex = currentEmojis.length + i;
+              return (
+                <button
+                  key={`custom-${ce.id}`}
+                  role="option"
+                  aria-selected={focusedIndex === gridIndex}
+                  tabIndex={focusedIndex === gridIndex ? 0 : -1}
+                  onClick={() => handleEmojiClick(`:${ce.shortcode}:`, ce.id)}
+                  onFocus={() => setFocusedIndex(gridIndex)}
+                  title={`:${ce.shortcode}:`}
+                  className={clsx(
+                    "w-8 h-8 flex items-center justify-center rounded hover:bg-bg-modifier-hover transition-colors",
+                    focusedIndex === gridIndex && "bg-bg-modifier-hover ring-2 ring-brand-primary"
+                  )}
+                >
+                  <img
+                    src={ce.url || ce.asset_key}
+                    alt={`:${ce.shortcode}:`}
+                    className="w-6 h-6 object-contain"
+                    loading="lazy"
+                  />
+                </button>
+              );
+            })}
           </div>
+          {/* Empty state for custom pack tabs with no emojis */}
+          {isCustomPackTab && activePackEmojis.length === 0 && !searchQuery && (
+            <div className="flex items-center justify-center h-32 text-text-muted text-sm">
+              No emojis in this pack
+            </div>
+          )}
+          {/* Empty search state */}
+          {searchQuery && currentEmojis.length === 0 && displayedCustomEmojis.length === 0 && (
+            <div className="flex items-center justify-center h-32 text-text-muted text-sm">
+              No emojis found
+            </div>
+          )}
         </div>
       </div>
     </div>,

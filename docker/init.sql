@@ -615,19 +615,6 @@ CREATE INDEX IF NOT EXISTS idx_categories_server ON categories(server_id, positi
 -- Add category_id to channels
 ALTER TABLE channels ADD COLUMN IF NOT EXISTS category_id UUID REFERENCES categories(id) ON DELETE SET NULL;
 
--- ============================================================
--- MESSAGE REACTIONS
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS message_reactions (
-  message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  emoji TEXT NOT NULL CHECK (length(emoji) >= 1 AND length(emoji) <= 32),
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  PRIMARY KEY (message_id, user_id, emoji)
-);
-
-CREATE INDEX IF NOT EXISTS idx_reactions_message ON message_reactions(message_id);
 
 -- ============================================================
 -- CHANNEL READ STATE (for unread tracking)
@@ -1559,6 +1546,64 @@ CREATE TABLE IF NOT EXISTS stickers (
 CREATE INDEX IF NOT EXISTS idx_stickers_server ON stickers(server_id);
 
 -- ============================================================
+-- EMOJI PACKS & EMOJIS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS emoji_packs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  server_id UUID NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+  name TEXT NOT NULL CHECK (length(name) >= 1 AND length(name) <= 50),
+  description TEXT CHECK (length(description) <= 200),
+  enabled BOOLEAN DEFAULT true,
+  created_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_emoji_packs_server ON emoji_packs(server_id);
+CREATE INDEX IF NOT EXISTS idx_emoji_packs_server_enabled ON emoji_packs(server_id, enabled);
+
+CREATE TABLE IF NOT EXISTS emojis (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  server_id UUID NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+  pack_id UUID NOT NULL REFERENCES emoji_packs(id) ON DELETE CASCADE,
+  shortcode TEXT NOT NULL CHECK (length(shortcode) >= 2 AND length(shortcode) <= 32),
+  content_type TEXT NOT NULL,
+  is_animated BOOLEAN NOT NULL DEFAULT false,
+  width INTEGER,
+  height INTEGER,
+  size_bytes BIGINT,
+  asset_key TEXT NOT NULL,
+  created_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(server_id, shortcode)
+);
+
+CREATE INDEX IF NOT EXISTS idx_emojis_pack ON emojis(pack_id);
+CREATE INDEX IF NOT EXISTS idx_emojis_server_pack ON emojis(server_id, pack_id);
+
+-- ============================================================
+-- MESSAGE REACTIONS (typed: unicode + custom emoji)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS message_reactions (
+  message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  reaction_type TEXT NOT NULL CHECK (reaction_type IN ('unicode', 'custom')),
+  unicode_emoji TEXT,
+  custom_emoji_id UUID REFERENCES emojis(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (message_id, user_id, reaction_type, COALESCE(unicode_emoji, ''), COALESCE(custom_emoji_id, '00000000-0000-0000-0000-000000000000')),
+  CONSTRAINT chk_reaction_value CHECK (
+    (reaction_type = 'unicode' AND unicode_emoji IS NOT NULL AND custom_emoji_id IS NULL) OR
+    (reaction_type = 'custom' AND unicode_emoji IS NULL AND custom_emoji_id IS NOT NULL)
+  )
+);
+CREATE INDEX IF NOT EXISTS idx_reactions_message ON message_reactions(message_id);
+CREATE INDEX IF NOT EXISTS idx_reactions_custom_emoji ON message_reactions(custom_emoji_id) WHERE custom_emoji_id IS NOT NULL;
+
+-- ============================================================
 -- MIGRATION TRACKING
 -- ============================================================
 
@@ -1584,5 +1629,7 @@ INSERT INTO _migrations (name) VALUES
   ('012_webhooks'),
   ('014_threads'),
   ('012_tts'),
-  ('013_stickers')
+  ('013_stickers'),
+  ('015_emojis'),
+  ('016_typed_reactions')
 ON CONFLICT (name) DO NOTHING;

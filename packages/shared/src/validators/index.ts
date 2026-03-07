@@ -376,3 +376,49 @@ export const crashReportSchema = z.object({
 });
 
 export type CrashReportInput = z.infer<typeof crashReportSchema>;
+
+// ============================================================
+// Emoji validators
+// ============================================================
+
+export const emojiShortcodeSchema = z
+  .string()
+  .min(2, 'Shortcode must be at least 2 characters')
+  .max(32, 'Shortcode must be at most 32 characters')
+  .regex(/^[a-zA-Z0-9_]+$/, 'Shortcode can only contain letters, numbers, and underscores');
+
+export const createEmojiPackSchema = z.object({
+  name: z.string().min(1, 'Pack name is required').max(50, 'Pack name must be at most 50 characters'),
+  description: z.string().max(200).optional(),
+});
+
+export const updateEmojiPackSchema = z.object({
+  name: z.string().min(1).max(50).optional(),
+  description: z.string().max(200).nullable().optional(),
+  enabled: z.boolean().optional(),
+});
+
+export const updateEmojiSchema = z.object({
+  shortcode: emojiShortcodeSchema,
+});
+
+export const addTypedReactionSchema = z.object({
+  reaction: z.discriminatedUnion('type', [
+    z.object({ type: z.literal('unicode'), value: z.string().min(1).max(32) }),
+    z.object({ type: z.literal('custom'), emojiId: z.string().uuid() }),
+  ]),
+});
+
+export const emojiGgImportSchema = z.object({
+  packUrl: z.string().url().optional(),
+  packId: z.string().optional(),
+}).refine(data => data.packUrl || data.packId, { message: 'Either packUrl or packId is required' });
+
+export const zipImportSchema = z.object({
+  // ZIP file is sent via file upload, no additional body params required
+});
+
+export type CreateEmojiPackInput = z.infer<typeof createEmojiPackSchema>;
+export type UpdateEmojiPackInput = z.infer<typeof updateEmojiPackSchema>;
+export type UpdateEmojiInput = z.infer<typeof updateEmojiSchema>;
+export type AddTypedReactionInput = z.infer<typeof addTypedReactionSchema>;

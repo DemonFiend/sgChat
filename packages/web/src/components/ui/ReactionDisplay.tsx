@@ -1,7 +1,15 @@
 import { clsx } from 'clsx';
 
 export interface Reaction {
-  emoji: string;
+  // Legacy fields (backward compat)
+  emoji?: string;
+  // Typed reaction fields
+  type?: 'unicode' | 'custom';
+  emojiId?: string;
+  shortcode?: string;
+  url?: string;
+  is_animated?: boolean;
+  // Common fields
   count: number;
   users: string[];
   me: boolean;
@@ -9,7 +17,7 @@ export interface Reaction {
 
 interface ReactionDisplayProps {
   reactions: Reaction[];
-  onReactionClick: (emoji: string) => void;
+  onReactionClick: (reaction: Reaction) => void;
   onAddReaction?: () => void;
   currentUserId?: string;
 }
@@ -19,22 +27,42 @@ export function ReactionDisplay({ reactions, onReactionClick, onAddReaction }: R
 
   return (
     <div className="flex flex-wrap gap-1 mt-1">
-      {reactions.map((reaction) => (
-        <button
-          key={reaction.emoji}
-          onClick={() => onReactionClick(reaction.emoji)}
-          className={clsx(
-            "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition-colors",
-            reaction.me
-              ? "bg-brand-primary/20 border border-brand-primary/50 text-text-primary"
-              : "bg-bg-tertiary border border-border-subtle text-text-secondary hover:bg-bg-modifier-hover"
-          )}
-          title={`${reaction.users.length} ${reaction.users.length === 1 ? 'person' : 'people'} reacted`}
-        >
-          <span className="text-sm">{reaction.emoji}</span>
-          <span className="font-medium">{reaction.count}</span>
-        </button>
-      ))}
+      {reactions.map((reaction) => {
+        const isCustom = reaction.type === 'custom' || !!reaction.emojiId;
+        const key = isCustom
+          ? `custom:${reaction.emojiId}`
+          : `unicode:${reaction.emoji}`;
+
+        return (
+          <button
+            key={key}
+            onClick={() => onReactionClick(reaction)}
+            className={clsx(
+              "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition-colors",
+              reaction.me
+                ? "bg-brand-primary/20 border border-brand-primary/50 text-text-primary"
+                : "bg-bg-tertiary border border-border-subtle text-text-secondary hover:bg-bg-modifier-hover"
+            )}
+            title={`${reaction.users.length} ${reaction.users.length === 1 ? 'person' : 'people'} reacted${reaction.shortcode ? ` with :${reaction.shortcode}:` : ''}`}
+          >
+            {isCustom ? (
+              reaction.url ? (
+                <img
+                  src={reaction.url}
+                  alt={reaction.shortcode ? `:${reaction.shortcode}:` : 'emoji'}
+                  className="w-4 h-4 object-contain"
+                  loading="lazy"
+                />
+              ) : (
+                <span className="w-4 h-4 bg-bg-modifier-hover rounded flex items-center justify-center text-[10px]" title={reaction.shortcode ? `:${reaction.shortcode}: (deleted)` : 'Deleted emoji'}>?</span>
+              )
+            ) : (
+              <span className="text-sm">{reaction.emoji}</span>
+            )}
+            <span className="font-medium">{reaction.count}</span>
+          </button>
+        );
+      })}
 
       {onAddReaction && (
         <button

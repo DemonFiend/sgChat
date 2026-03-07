@@ -188,9 +188,11 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
 
       if (messageIds.length > 0) {
         const reactions = await db.sql`
-          SELECT 
+          SELECT
             mr.message_id,
-            mr.emoji,
+            mr.reaction_type as type,
+            mr.unicode_emoji as emoji,
+            mr.custom_emoji_id as "emojiId",
             mr.user_id,
             ${currentUserId} = mr.user_id as me
           FROM message_reactions mr
@@ -198,20 +200,30 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
           ORDER BY mr.created_at ASC
         `;
 
-        // Group reactions by message and emoji
+        // Group reactions by message and type
         for (const r of reactions) {
           if (!reactionsMap.has(r.message_id)) {
             reactionsMap.set(r.message_id, []);
           }
           const msgReactions = reactionsMap.get(r.message_id)!;
-          let emojiReaction = msgReactions.find(er => er.emoji === r.emoji);
-          if (!emojiReaction) {
-            emojiReaction = { emoji: r.emoji, count: 0, users: [], me: false };
-            msgReactions.push(emojiReaction);
+          let reactionAgg = msgReactions.find(er => {
+            if (er.type === 'unicode') return r.type === 'unicode' && er.emoji === r.emoji;
+            return r.type === 'custom' && er.emojiId === r.emojiId;
+          });
+          if (!reactionAgg) {
+            reactionAgg = {
+              type: r.type,
+              emoji: r.emoji || undefined,
+              emojiId: r.emojiId || undefined,
+              count: 0,
+              users: [],
+              me: false,
+            };
+            msgReactions.push(reactionAgg);
           }
-          emojiReaction.count++;
-          emojiReaction.users.push(r.user_id);
-          if (r.me) emojiReaction.me = true;
+          reactionAgg.count++;
+          reactionAgg.users.push(r.user_id);
+          if (r.me) reactionAgg.me = true;
         }
       }
 

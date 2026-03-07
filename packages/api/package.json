@@ -18,6 +18,7 @@
     "@fastify/rate-limit": "^9.1.0",
     "@fastify/static": "^7.0.0",
     "@sgchat/shared": "workspace:*",
+    "adm-zip": "^0.5.16",
     "argon2": "^0.31.2",
     "dotenv": "^16.3.1",
     "fastify": "^4.25.2",
@@ -37,6 +38,7 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
     "@types/node": "^20.11.5",
     "@types/nodemailer": "^7.0.9",
     "@types/sanitize-html": "^2.16.0",

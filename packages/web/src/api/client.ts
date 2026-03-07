@@ -290,8 +290,12 @@ export const api = {
     request<T>(endpoint, { method: 'PUT', body, baseUrl }),
   patch: <T>(endpoint: string, body?: unknown, baseUrl?: string) =>
     request<T>(endpoint, { method: 'PATCH', body, baseUrl }),
-  delete: <T>(endpoint: string, baseUrl?: string) =>
-    request<T>(endpoint, { method: 'DELETE', baseUrl }),
+  delete: <T>(endpoint: string, bodyOrBaseUrl?: unknown, baseUrl?: string) => {
+    if (typeof bodyOrBaseUrl === 'string') {
+      return request<T>(endpoint, { method: 'DELETE', baseUrl: bodyOrBaseUrl });
+    }
+    return request<T>(endpoint, { method: 'DELETE', body: bodyOrBaseUrl, baseUrl });
+  },
   upload: <T>(
     endpoint: string,
     file: File,

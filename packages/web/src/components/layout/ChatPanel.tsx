@@ -40,8 +40,14 @@ export interface SystemEvent {
 }
 
 export interface Reaction {
-  emoji: string;
+  emoji?: string;
+  type?: 'unicode' | 'custom';
+  emojiId?: string;
+  shortcode?: string;
+  url?: string;
+  is_animated?: boolean;
   count: number;
+  users?: string[];
   me: boolean;
 }
 
@@ -76,7 +82,7 @@ interface ChatPanelProps {
   messages: Message[];
   onSendMessage?: (content: string) => void;
   onReactionAdd?: (messageId: string, emoji: string) => void;
-  onReactionRemove?: (messageId: string, emoji: string) => void;
+  onReactionClick?: (messageId: string, reaction: any) => void;
   onEditMessage?: (messageId: string, newContent: string) => void;
   onDeleteMessage?: (messageId: string) => void;
   onAuthorClick?: (author: MessageAuthor, rect: DOMRect) => void;
@@ -105,7 +111,7 @@ interface ChatPanelProps {
 }
 
 export function ChatPanel({
-  channel, messages, onSendMessage, onReactionAdd, onReactionRemove,
+  channel, messages, onSendMessage, onReactionAdd, onReactionClick,
   onEditMessage, onDeleteMessage, onAuthorClick, onAuthorContextMenu,
   onTypingStart, onTypingStop, currentUserId, typingUsers,
   replyingTo, onCancelReply, onReplyClick,
@@ -538,9 +544,10 @@ export function ChatPanel({
                       message={message}
                       showAuthor={shouldShowAuthor(message, virtualRow.index)}
                       formatTime={formatTime}
+                      onReactionClick={onReactionClick ? (reaction: any) => onReactionClick(message.id, reaction) : undefined}
                       onReactionAdd={onReactionAdd ? (emoji: string) => onReactionAdd(message.id, emoji) : undefined}
-                      onReactionRemove={onReactionRemove ? (emoji: string) => onReactionRemove(message.id, emoji) : undefined}
                       currentUserId={currentUserId}
+                      serverId={serverId}
                       isEditing={isEditing}
                       editContent={isEditing ? editContent : ''}
                       onEditChange={setEditContent}
@@ -847,9 +854,10 @@ interface MessageItemProps {
   message: Message;
   showAuthor: boolean;
   formatTime: (date: string) => string;
+  onReactionClick?: (reaction: any) => void;
   onReactionAdd?: (emoji: string) => void;
-  onReactionRemove?: (emoji: string) => void;
   currentUserId?: string;
+  serverId?: string;
   isEditing?: boolean;
   editContent?: string;
   onEditChange?: (content: string) => void;
@@ -959,7 +967,7 @@ function MessageActionToolbar({
 }
 
 function MessageItem({
-  message, showAuthor, formatTime, onReactionAdd, onReactionRemove, currentUserId,
+  message, showAuthor, formatTime, onReactionClick, onReactionAdd, currentUserId, serverId,
   isEditing, editContent, onEditChange, onEditSave, onEditCancel, onEditStart,
   onDeleteClick, onReactClick, onAuthorClick, onAuthorContextMenu, onReplyClick,
   isPinned, canPin, onPinClick,
@@ -970,10 +978,16 @@ function MessageItem({
   const displayName = author.display_name || author.username;
   const isOwnMessage = currentUserId === author.id;
 
-  const handleReactionClick = (emoji: string) => {
-    const reaction = message.reactions?.find((r) => r.emoji === emoji);
-    if (reaction?.me) onReactionRemove?.(emoji);
-    else onReactionAdd?.(emoji);
+  const handleReactionClick = (reaction: any) => {
+    if (onReactionClick) {
+      onReactionClick(reaction);
+    } else {
+      // Legacy fallback using onReactionAdd
+      const emoji = reaction.emoji || reaction;
+      if (typeof emoji === 'string') {
+        onReactionAdd?.(emoji);
+      }
+    }
   };
 
   const handleAuthorClick = (e: React.MouseEvent) => {
@@ -998,21 +1012,40 @@ function MessageItem({
     if (!message.reactions || message.reactions.length === 0) return null;
     return (
       <div className="flex flex-wrap gap-1 mt-1">
-        {message.reactions.map((r) => (
-          <button
-            key={r.emoji}
-            onClick={() => handleReactionClick(r.emoji)}
-            className={clsx(
-              'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-colors',
-              r.me
-                ? 'bg-accent/20 border-accent text-accent'
-                : 'bg-bg-tertiary border-transparent text-text-muted hover:border-border'
-            )}
-          >
-            <span>{r.emoji}</span>
-            <span>{r.count}</span>
-          </button>
-        ))}
+        {message.reactions.map((r) => {
+          const isCustom = r.type === 'custom' || !!(r as any).emojiId;
+          const key = isCustom
+            ? `custom:${(r as any).emojiId}`
+            : `unicode:${r.emoji}`;
+          return (
+            <button
+              key={key}
+              onClick={() => handleReactionClick(r)}
+              className={clsx(
+                'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-colors',
+                r.me
+                  ? 'bg-accent/20 border-accent text-accent'
+                  : 'bg-bg-tertiary border-transparent text-text-muted hover:border-border'
+              )}
+            >
+              {isCustom ? (
+                (r as any).url ? (
+                  <img
+                    src={(r as any).url}
+                    alt={(r as any).shortcode ? `:${(r as any).shortcode}:` : 'emoji'}
+                    className="w-4 h-4 object-contain"
+                    loading="lazy"
+                  />
+                ) : (
+                  <span className="w-4 h-4 bg-bg-modifier-hover rounded flex items-center justify-center text-[10px]">?</span>
+                )
+              ) : (
+                <span>{r.emoji}</span>
+              )}
+              <span>{r.count}</span>
+            </button>
+          );
+        })}
       </div>
     );
   };
@@ -1042,7 +1075,7 @@ function MessageItem({
           {(message as any).is_tts && (
             <span className="inline-flex items-center text-[10px] font-semibold text-accent-primary bg-accent-primary/10 rounded px-1 py-0.5 mr-1 align-middle" title="Text-to-Speech message">TTS</span>
           )}
-          <MessageContent content={message.content} />
+          <MessageContent content={message.content} serverId={serverId} />
           {message.edited_at && (
             <span className="text-[10px] text-text-muted ml-1" title={new Date(message.edited_at).toLocaleString()}>(edited)</span>
           )}

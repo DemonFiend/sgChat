@@ -494,6 +494,11 @@ export type EventType =
   // Stickers
   | 'sticker.added'
   | 'sticker.removed'
+  // Emojis
+  | 'emoji.manifestUpdated'
+  | 'emoji.added'
+  | 'emoji.updated'
+  | 'emoji.removed'
   // DM typing
   | 'dm.typing.start'
   | 'dm.typing.stop'
@@ -992,4 +997,62 @@ export interface Sticker {
   file_type: string;
   uploaded_by: string | null;
   created_at: string;
+}
+
+// ============================================================
+// Custom Emojis & Emoji Packs
+// ============================================================
+
+export interface EmojiPack {
+  id: string;
+  server_id: string;
+  name: string;
+  description: string | null;
+  enabled: boolean;
+  created_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CustomEmoji {
+  id: string;
+  server_id: string;
+  pack_id: string;
+  shortcode: string;
+  content_type: string;
+  is_animated: boolean;
+  width: number | null;
+  height: number | null;
+  size_bytes: number | null;
+  asset_key: string;
+  url?: string; // Computed from asset_key, included in API responses
+  created_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EmojiManifest {
+  version: number;
+  packs: EmojiPack[];
+  emojis: CustomEmoji[];
+}
+
+export type ReactionType = 'unicode' | 'custom';
+
+export interface TypedReaction {
+  type: ReactionType;
+  value?: string; // For unicode
+  emojiId?: string; // For custom
+}
+
+export interface ReactionAggregate {
+  type: ReactionType;
+  emoji?: string; // Unicode emoji character
+  emojiId?: string; // Custom emoji ID
+  shortcode?: string; // Custom emoji shortcode
+  url?: string; // Custom emoji URL
+  is_animated?: boolean; // Custom emoji animation flag
+  count: number;
+  users: string[];
+  me: boolean;
 }

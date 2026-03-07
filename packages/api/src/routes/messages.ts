@@ -176,18 +176,22 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
 
       // Add reaction (upsert - ignore if already exists)
       await db.sql`
-        INSERT INTO message_reactions (message_id, user_id, emoji)
-        VALUES (${id}, ${request.user!.id}, ${emojiDecoded})
-        ON CONFLICT (message_id, user_id, emoji) DO NOTHING
+        INSERT INTO message_reactions (message_id, user_id, reaction_type, unicode_emoji)
+        VALUES (${id}, ${request.user!.id}, 'unicode', ${emojiDecoded})
+        ON CONFLICT (message_id, user_id, reaction_type, COALESCE(unicode_emoji, ''), COALESCE(custom_emoji_id, '00000000-0000-0000-0000-000000000000')) DO NOTHING
       `;
 
       // Get updated reaction counts
       const reactions = await db.sql`
-        SELECT emoji, COUNT(*)::int as count,
-               BOOL_OR(user_id = ${request.user!.id}) as me
+        SELECT
+          reaction_type as type,
+          unicode_emoji as emoji,
+          custom_emoji_id as "emojiId",
+          COUNT(*)::int as count,
+          BOOL_OR(user_id = ${request.user!.id}) as me
         FROM message_reactions
         WHERE message_id = ${id}
-        GROUP BY emoji
+        GROUP BY reaction_type, unicode_emoji, custom_emoji_id
       `;
 
       // A1: Publish reaction through event bus
@@ -261,16 +265,20 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
       // Remove reaction
       await db.sql`
         DELETE FROM message_reactions
-        WHERE message_id = ${id} AND user_id = ${request.user!.id} AND emoji = ${emojiDecoded}
+        WHERE message_id = ${id} AND user_id = ${request.user!.id} AND reaction_type = 'unicode' AND unicode_emoji = ${emojiDecoded}
       `;
 
       // Get updated reaction counts
       const reactions = await db.sql`
-        SELECT emoji, COUNT(*)::int as count,
-               BOOL_OR(user_id = ${request.user!.id}) as me
+        SELECT
+          reaction_type as type,
+          unicode_emoji as emoji,
+          custom_emoji_id as "emojiId",
+          COUNT(*)::int as count,
+          BOOL_OR(user_id = ${request.user!.id}) as me
         FROM message_reactions
         WHERE message_id = ${id}
-        GROUP BY emoji
+        GROUP BY reaction_type, unicode_emoji, custom_emoji_id
       `;
 
       // A1: Publish reaction removal through event bus
@@ -335,18 +343,197 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
         return notFound(reply, 'Message');
       }
 
-      // Get reactions grouped by emoji with user list
+      // Get reactions grouped by type with user list
       const reactions = await db.sql`
-        SELECT emoji, 
-               COUNT(*)::int as count,
-               BOOL_OR(user_id = ${request.user!.id}) as me,
-               ARRAY_AGG(user_id) as user_ids
+        SELECT
+          reaction_type as type,
+          unicode_emoji as emoji,
+          custom_emoji_id as "emojiId",
+          COUNT(*)::int as count,
+          BOOL_OR(user_id = ${request.user!.id}) as me,
+          ARRAY_AGG(user_id) as user_ids
         FROM message_reactions
         WHERE message_id = ${id}
-        GROUP BY emoji
+        GROUP BY reaction_type, unicode_emoji, custom_emoji_id
       `;
 
       return reactions;
+    },
+  });
+
+  /**
+   * POST /messages/:id/reactions - Add typed reaction
+   */
+  fastify.post<{ Params: { id: string } }>('/:id/reactions', {
+    onRequest: [authenticate],
+    config: {
+      rateLimit: { max: 30, timeWindow: '1 minute' },
+    },
+    handler: async (request, reply) => {
+      const { id } = request.params;
+      const body = request.body as { reaction: { type: string; value?: string; emojiId?: string } };
+
+      if (!body.reaction || !body.reaction.type) {
+        return reply.code(400).send({ error: 'Invalid reaction format' });
+      }
+
+      const { type, value, emojiId } = body.reaction;
+
+      const message = await db.messages.findById(id);
+      if (!message) return notFound(reply, 'Message');
+
+      // Check access
+      if (message.channel_id) {
+        const channel = await db.channels.findById(message.channel_id);
+        if (!channel) return notFound(reply, 'Channel');
+        const [membership] = await db.sql`
+          SELECT 1 FROM members WHERE user_id = ${request.user!.id} AND server_id = ${channel.server_id}
+        `;
+        if (!membership) return forbidden(reply, 'Not a member of this server');
+      }
+
+      if (type === 'unicode') {
+        if (!value || value.length > 32) return reply.code(400).send({ error: 'Invalid unicode emoji' });
+        await db.sql`
+          INSERT INTO message_reactions (message_id, user_id, reaction_type, unicode_emoji)
+          VALUES (${id}, ${request.user!.id}, 'unicode', ${value})
+          ON CONFLICT (message_id, user_id, reaction_type, COALESCE(unicode_emoji, ''), COALESCE(custom_emoji_id, '00000000-0000-0000-0000-000000000000')) DO NOTHING
+        `;
+      } else if (type === 'custom') {
+        if (!emojiId) return reply.code(400).send({ error: 'Missing emojiId' });
+        // Validate emoji exists and belongs to server
+        const emoji = await db.emojis.findById(emojiId);
+        if (!emoji) return reply.code(400).send({ error: 'Custom emoji not found' });
+        if (message.channel_id) {
+          const channel = await db.channels.findById(message.channel_id);
+          if (channel && emoji.server_id !== channel.server_id) {
+            return reply.code(400).send({ error: 'Emoji does not belong to this server' });
+          }
+        }
+        await db.sql`
+          INSERT INTO message_reactions (message_id, user_id, reaction_type, custom_emoji_id)
+          VALUES (${id}, ${request.user!.id}, 'custom', ${emojiId})
+          ON CONFLICT (message_id, user_id, reaction_type, COALESCE(unicode_emoji, ''), COALESCE(custom_emoji_id, '00000000-0000-0000-0000-000000000000')) DO NOTHING
+        `;
+      } else {
+        return reply.code(400).send({ error: 'Invalid reaction type' });
+      }
+
+      // Get updated reactions
+      const reactions = await db.sql`
+        SELECT
+          mr.reaction_type as type,
+          mr.unicode_emoji as emoji,
+          mr.custom_emoji_id as "emojiId",
+          COUNT(*)::int as count,
+          BOOL_OR(mr.user_id = ${request.user!.id}) as me
+        FROM message_reactions mr
+        WHERE mr.message_id = ${id}
+        GROUP BY mr.reaction_type, mr.unicode_emoji, mr.custom_emoji_id
+      `;
+
+      // Publish event
+      const resourceId = message.channel_id ? `channel:${message.channel_id}` : `dm:${message.dm_channel_id}`;
+      await publishEvent({
+        type: message.channel_id ? 'message.update' : 'dm.message.update',
+        actorId: request.user!.id,
+        resourceId,
+        payload: { message_id: id, action: 'add', reactions },
+      });
+
+      // Role reaction intercept for unicode
+      if (type === 'unicode' && value && message.channel_id) {
+        const channel = await db.channels.findById(message.channel_id);
+        if (channel) {
+          const roleId = await assignRoleFromReaction(request.user!.id, channel.server_id, value, id);
+          if (roleId) {
+            const userRoles = await db.sql`
+              SELECT r.id, r.name, r.color, r.position FROM member_roles mr JOIN roles r ON mr.role_id = r.id
+              WHERE mr.member_user_id = ${request.user!.id} AND mr.member_server_id = ${channel.server_id}
+              ORDER BY r.position DESC
+            `;
+            await publishEvent({
+              type: 'member.update', resourceId: `server:${channel.server_id}`, actorId: null,
+              payload: { user_id: request.user!.id, server_id: channel.server_id, roles: userRoles },
+            });
+          }
+        }
+      }
+
+      return { reactions };
+    },
+  });
+
+  /**
+   * DELETE /messages/:id/reactions - Remove typed reaction (body-based)
+   */
+  fastify.delete<{ Params: { id: string } }>('/:id/reactions', {
+    onRequest: [authenticate],
+    config: {
+      rateLimit: { max: 30, timeWindow: '1 minute' },
+    },
+    handler: async (request, reply) => {
+      const { id } = request.params;
+      const body = request.body as { reaction: { type: string; value?: string; emojiId?: string } };
+
+      if (!body?.reaction?.type) {
+        return reply.code(400).send({ error: 'Invalid reaction format' });
+      }
+
+      const { type, value, emojiId } = body.reaction;
+
+      const message = await db.messages.findById(id);
+      if (!message) return notFound(reply, 'Message');
+
+      if (type === 'unicode' && value) {
+        await db.sql`
+          DELETE FROM message_reactions
+          WHERE message_id = ${id} AND user_id = ${request.user!.id} AND reaction_type = 'unicode' AND unicode_emoji = ${value}
+        `;
+      } else if (type === 'custom' && emojiId) {
+        await db.sql`
+          DELETE FROM message_reactions
+          WHERE message_id = ${id} AND user_id = ${request.user!.id} AND reaction_type = 'custom' AND custom_emoji_id = ${emojiId}
+        `;
+      } else {
+        return reply.code(400).send({ error: 'Invalid reaction type' });
+      }
+
+      const reactions = await db.sql`
+        SELECT
+          mr.reaction_type as type, mr.unicode_emoji as emoji, mr.custom_emoji_id as "emojiId",
+          COUNT(*)::int as count, BOOL_OR(mr.user_id = ${request.user!.id}) as me
+        FROM message_reactions mr WHERE mr.message_id = ${id}
+        GROUP BY mr.reaction_type, mr.unicode_emoji, mr.custom_emoji_id
+      `;
+
+      const resourceId = message.channel_id ? `channel:${message.channel_id}` : `dm:${message.dm_channel_id}`;
+      await publishEvent({
+        type: message.channel_id ? 'message.update' : 'dm.message.update',
+        actorId: request.user!.id, resourceId,
+        payload: { message_id: id, action: 'remove', reactions },
+      });
+
+      // Role reaction intercept
+      if (type === 'unicode' && value && message.channel_id) {
+        const channel = await db.channels.findById(message.channel_id);
+        if (channel) {
+          const roleId = await removeRoleFromReaction(request.user!.id, channel.server_id, value, id);
+          if (roleId) {
+            const userRoles = await db.sql`
+              SELECT r.id, r.name, r.color, r.position FROM member_roles mr JOIN roles r ON mr.role_id = r.id
+              WHERE mr.member_user_id = ${request.user!.id} AND mr.member_server_id = ${channel.server_id}
+              ORDER BY r.position DESC
+            `;
+            await publishEvent({
+              type: 'member.update', resourceId: `server:${channel.server_id}`, actorId: null,
+              payload: { user_id: request.user!.id, server_id: channel.server_id, roles: userRoles },
+            });
+          }
+        }
+      }
+
+      return { reactions };
     },
   });
 

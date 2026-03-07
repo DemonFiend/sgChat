@@ -45,6 +45,7 @@ import { crashReportsRoutes } from './routes/crashReports.js';
 import { searchRoutes } from './routes/search.js';
 import { webhookRoutes } from './routes/webhooks.js';
 import { stickerRoutes } from './routes/stickers.js';
+import { emojiRoutes } from './routes/emojis.js';
 import { threadRoutes } from './routes/threads.js';
 import { cryptoPayloadPlugin } from './plugins/cryptoPayload.js';
 import { initSocketIO } from './socket/index.js';
@@ -214,6 +215,9 @@ async function start() {
     // Sticker routes
     await api.register(stickerRoutes, { prefix: '/servers' });
 
+    // Emoji routes
+    await api.register(emojiRoutes, { prefix: '/servers' });
+
     // Releases (update check)
     await api.register(releasesRoutes);
 
@@ -290,6 +294,7 @@ async function start() {
   await fastify.register(soundboardRoutes, { prefix: '/servers' });
   await fastify.register(roleReactionRoutes, { prefix: '/servers' });
   await fastify.register(stickerRoutes, { prefix: '/servers' });
+  await fastify.register(emojiRoutes, { prefix: '/servers' });
   await fastify.register(releasesRoutes);
   await fastify.register(crashReportsRoutes);
   await fastify.register(searchRoutes, { prefix: '/search' });
