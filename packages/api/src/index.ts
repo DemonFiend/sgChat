@@ -308,6 +308,22 @@ async function start() {
   if (webClientPath) {
     fastify.log.info(`📁 Serving web client from: ${webClientPath}`);
 
+    // If a browser navigation (Accept: text/html) hits a legacy API route and gets
+    // 401/403, serve the SPA instead of raw JSON. The SPA's ProtectedRoute will
+    // handle redirecting to /login. This fixes hard-refresh (Ctrl+Shift+R) showing
+    // a raw 401 JSON page when the browser URL matches a legacy route prefix.
+    fastify.addHook('onSend', async (request, reply, payload) => {
+      if (
+        (reply.statusCode === 401 || reply.statusCode === 403) &&
+        request.headers.accept?.includes('text/html') &&
+        !request.url.startsWith('/api/')
+      ) {
+        reply.code(200).type('text/html');
+        return reply.sendFile('index.html');
+      }
+      return payload;
+    });
+
     // Serve static assets (JS, CSS, images, etc.)
     await fastify.register(fastifyStatic, {
       root: webClientPath,
