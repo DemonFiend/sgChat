@@ -8,6 +8,31 @@ import { notFound, forbidden } from '../utils/errors.js';
 import { handleCrossSegmentEdit, handleCrossSegmentDelete } from '../services/archive.js';
 import { onMessageDeleted } from '../services/segmentation.js';
 import { assignRoleFromReaction, removeRoleFromReaction } from '../services/roleReactions.js';
+import { storage } from '../lib/storage.js';
+
+/**
+ * Enrich raw reaction rows with custom emoji url/shortcode/is_animated.
+ */
+async function enrichReactions(reactions: any[]): Promise<any[]> {
+  const customReactions = reactions.filter((r) => r.type === 'custom' && r.emojiId);
+  if (customReactions.length === 0) return reactions;
+
+  const emojiIds = [...new Set(customReactions.map((r) => r.emojiId))];
+  const emojis = await db.sql`SELECT id, shortcode, asset_key, is_animated FROM emojis WHERE id = ANY(${emojiIds})`;
+  const emojiMap = new Map(emojis.map((e: any) => [e.id, e]));
+
+  return reactions.map((r) => {
+    if (r.type !== 'custom' || !r.emojiId) return r;
+    const emoji = emojiMap.get(r.emojiId);
+    if (!emoji) return r;
+    return {
+      ...r,
+      shortcode: emoji.shortcode,
+      url: emoji.asset_key ? storage.getPublicUrl(emoji.asset_key) : undefined,
+      is_animated: emoji.is_animated,
+    };
+  });
+}
 
 export const messageRoutes: FastifyPluginAsync = async (fastify) => {
   // Edit message
@@ -182,7 +207,7 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Get updated reaction counts
-      const reactions = await db.sql`
+      const rawReactions = await db.sql`
         SELECT
           reaction_type as type,
           unicode_emoji as emoji,
@@ -193,6 +218,7 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
         WHERE message_id = ${id}
         GROUP BY reaction_type, unicode_emoji, custom_emoji_id
       `;
+      const reactions = await enrichReactions(rawReactions);
 
       // A1: Publish reaction through event bus
       const resourceId = message.channel_id ? `channel:${message.channel_id}` : `dm:${message.dm_channel_id}`;
@@ -269,7 +295,7 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Get updated reaction counts
-      const reactions = await db.sql`
+      const rawReactions2 = await db.sql`
         SELECT
           reaction_type as type,
           unicode_emoji as emoji,
@@ -280,6 +306,7 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
         WHERE message_id = ${id}
         GROUP BY reaction_type, unicode_emoji, custom_emoji_id
       `;
+      const reactions = await enrichReactions(rawReactions2);
 
       // A1: Publish reaction removal through event bus
       const resourceId = message.channel_id ? `channel:${message.channel_id}` : `dm:${message.dm_channel_id}`;
@@ -344,7 +371,7 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       // Get reactions grouped by type with user list
-      const reactions = await db.sql`
+      const rawReactions3 = await db.sql`
         SELECT
           reaction_type as type,
           unicode_emoji as emoji,
@@ -357,7 +384,7 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
         GROUP BY reaction_type, unicode_emoji, custom_emoji_id
       `;
 
-      return reactions;
+      return enrichReactions(rawReactions3);
     },
   });
 
@@ -420,7 +447,7 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       // Get updated reactions
-      const reactions = await db.sql`
+      const rawReactions4 = await db.sql`
         SELECT
           mr.reaction_type as type,
           mr.unicode_emoji as emoji,
@@ -431,6 +458,7 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
         WHERE mr.message_id = ${id}
         GROUP BY mr.reaction_type, mr.unicode_emoji, mr.custom_emoji_id
       `;
+      const reactions = await enrichReactions(rawReactions4);
 
       // Publish event
       const resourceId = message.channel_id ? `channel:${message.channel_id}` : `dm:${message.dm_channel_id}`;
@@ -499,13 +527,14 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: 'Invalid reaction type' });
       }
 
-      const reactions = await db.sql`
+      const rawReactions5 = await db.sql`
         SELECT
           mr.reaction_type as type, mr.unicode_emoji as emoji, mr.custom_emoji_id as "emojiId",
           COUNT(*)::int as count, BOOL_OR(mr.user_id = ${request.user!.id}) as me
         FROM message_reactions mr WHERE mr.message_id = ${id}
         GROUP BY mr.reaction_type, mr.unicode_emoji, mr.custom_emoji_id
       `;
+      const reactions = await enrichReactions(rawReactions5);
 
       const resourceId = message.channel_id ? `channel:${message.channel_id}` : `dm:${message.dm_channel_id}`;
       await publishEvent({

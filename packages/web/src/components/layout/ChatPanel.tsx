@@ -84,7 +84,7 @@ interface ChatPanelProps {
   channel: ChannelInfo | null;
   messages: Message[];
   onSendMessage?: (content: string) => void;
-  onReactionAdd?: (messageId: string, emoji: string) => void;
+  onReactionAdd?: (messageId: string, emoji: string, customEmojiId?: string) => void;
   onReactionClick?: (messageId: string, reaction: any) => void;
   onEditMessage?: (messageId: string, newContent: string) => void;
   onDeleteMessage?: (messageId: string) => void;
@@ -772,8 +772,8 @@ export function ChatPanel({
         <ReactionPicker
           isOpen={true}
           onClose={() => setReactionPickerMsg(null)}
-          onSelect={(emoji) => {
-            onReactionAdd?.(reactionPickerMsg.id, emoji);
+          onSelect={(emoji, customEmojiId) => {
+            onReactionAdd?.(reactionPickerMsg.id, emoji, customEmojiId);
             setReactionPickerMsg(null);
           }}
           anchorRef={reactionPickerMsg.anchor}

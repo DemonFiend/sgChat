@@ -8,6 +8,7 @@ import { createNotification } from './notifications.js';
 import { processMentions } from '../services/mentions.js';
 import { ServerPermissions, TextPermissions, hasPermission, sendMessageSchema, channelNotificationSettingsSchema } from '@sgchat/shared';
 import { notFound, forbidden, badRequest } from '../utils/errors.js';
+import { storage } from '../lib/storage.js';
 import { sanitizeMessage } from '../utils/sanitize.js';
 import { parseCommand, executeCommand, getBuiltinCommands } from '../services/commands.js';
 import { z } from 'zod';
@@ -224,6 +225,31 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
           reactionAgg.count++;
           reactionAgg.users.push(r.user_id);
           if (r.me) reactionAgg.me = true;
+        }
+
+        // Enrich custom emoji reactions with url/shortcode
+        const allCustomEmojiIds = new Set<string>();
+        for (const msgReactions of reactionsMap.values()) {
+          for (const r of msgReactions) {
+            if (r.type === 'custom' && r.emojiId) allCustomEmojiIds.add(r.emojiId);
+          }
+        }
+        if (allCustomEmojiIds.size > 0) {
+          const emojiIds = [...allCustomEmojiIds];
+          const emojiRows = await db.sql`SELECT id, shortcode, asset_key, is_animated FROM emojis WHERE id = ANY(${emojiIds})`;
+          const emojiMap = new Map(emojiRows.map((e: any) => [e.id, e]));
+          for (const msgReactions of reactionsMap.values()) {
+            for (const r of msgReactions) {
+              if (r.type === 'custom' && r.emojiId) {
+                const emoji = emojiMap.get(r.emojiId);
+                if (emoji) {
+                  r.shortcode = emoji.shortcode;
+                  r.url = emoji.asset_key ? storage.getPublicUrl(emoji.asset_key) : undefined;
+                  r.is_animated = emoji.is_animated;
+                }
+              }
+            }
+          }
         }
       }
 

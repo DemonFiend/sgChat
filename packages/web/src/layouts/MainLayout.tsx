@@ -961,14 +961,23 @@ export function MainLayout() {
     [],
   );
 
-  // Legacy wrappers for emoji picker and other callers that pass plain emoji strings
+  // Add reaction — supports both unicode emoji strings and custom emoji IDs
   const handleReactionAdd = useCallback(
-    (messageId: string, emoji: string) => {
-      api
-        .put(`/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`)
-        .catch((err) =>
-          console.error('[MainLayout] Failed to add reaction:', err),
-        );
+    (messageId: string, emoji: string, customEmojiId?: string) => {
+      if (customEmojiId) {
+        // Use typed reaction endpoint for custom emojis
+        api
+          .post(`/messages/${messageId}/reactions`, { reaction: { type: 'custom', emojiId: customEmojiId } })
+          .catch((err) =>
+            console.error('[MainLayout] Failed to add reaction:', err),
+          );
+      } else {
+        api
+          .put(`/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`)
+          .catch((err) =>
+            console.error('[MainLayout] Failed to add reaction:', err),
+          );
+      }
     },
     [],
   );
