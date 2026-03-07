@@ -93,7 +93,7 @@ export function EmojiAutocomplete({
           onMouseEnter={() => setSelectedIndex(i)}
         >
           <img
-            src={emoji.url || `/api/assets/${emoji.asset_key}`}
+            src={emoji.url || emoji.asset_key}
             alt={emoji.shortcode}
             className="w-5 h-5 object-contain flex-shrink-0"
             loading="lazy"

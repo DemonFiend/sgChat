@@ -208,6 +208,13 @@ export const storage = {
   },
 
   /**
+   * Get the public URL for a file by its storage key.
+   */
+  getPublicUrl(key: string): string {
+    return `${MINIO_PUBLIC_URL}/${MINIO_BUCKET}/${key}`;
+  },
+
+  /**
    * Get the public URL for an avatar slot.
    */
   getAvatarUrl(userId: string, slot: 'current' | 'previous'): string {

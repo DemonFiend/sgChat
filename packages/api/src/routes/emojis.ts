@@ -747,10 +747,16 @@ export const emojiRoutes: FastifyPluginAsync = async (fastify) => {
       reply.header('ETag', etag);
       reply.header('Cache-Control', 'private, must-revalidate');
 
+      // Compute public URLs for emoji assets
+      const emojisWithUrls = emojis.map((e: any) => ({
+        ...e,
+        url: e.asset_key ? storage.getPublicUrl(e.asset_key) : undefined,
+      }));
+
       return {
         version,
         packs,
-        emojis,
+        emojis: emojisWithUrls,
       };
     },
   });

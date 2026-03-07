@@ -3732,6 +3732,7 @@ interface EmojiItem {
   content_type: string;
   is_animated: boolean;
   asset_key: string;
+  url?: string;
   width: number | null;
   height: number | null;
   size_bytes: number | null;
@@ -4116,7 +4117,7 @@ function EmojiPacksTab({ serverId }: { serverId: string }) {
         {packEmojis.map((emoji) => (
           <div key={emoji.id} className="group relative flex flex-col items-center p-2 bg-bg-secondary rounded border border-border-subtle hover:border-brand-primary transition-colors">
             <img
-              src={emoji.asset_key.startsWith('http') ? emoji.asset_key : `/api/files/${emoji.asset_key}`}
+              src={emoji.url || emoji.asset_key}
               alt={`:${emoji.shortcode}:`}
               className="w-10 h-10 object-contain"
               loading="lazy"
