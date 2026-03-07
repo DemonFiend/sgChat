@@ -889,12 +889,16 @@ export function MainLayout() {
       const messageContent = isTts ? content.slice(5) : content;
 
       // Backend expects 'message:send' (colon separator)
-      socketService.emit('message:send', {
+      const emitPayload = {
         channel_id: currentChannel.id,
         content: messageContent,
         ...(replyingTo?.id ? { reply_to_id: replyingTo.id } : {}),
         ...(isTts ? { is_tts: true } : {}),
-      });
+      };
+      console.log('[MainLayout] Emitting message:send', emitPayload);
+      socketService.emit('message:send', emitPayload)
+        .then((res: unknown) => console.log('[MainLayout] message:send response:', res))
+        .catch((err: unknown) => console.error('[MainLayout] message:send FAILED:', err));
       setReplyingTo(null);
     },
     [currentChannel, replyingTo],
