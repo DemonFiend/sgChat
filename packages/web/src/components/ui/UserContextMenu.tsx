@@ -289,6 +289,7 @@ export function UserContextMenu({
             </p>
             <input
               type="text"
+              name="confirm-reason"
               value={confirmReason}
               onChange={(e) => setConfirmReason(e.target.value)}
               placeholder="Reason (optional)"
@@ -359,6 +360,7 @@ export function UserContextMenu({
                   </div>
                   <input
                     type="range"
+                    name="user-volume"
                     min={0}
                     max={200}
                     value={volume}

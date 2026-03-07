@@ -134,11 +134,13 @@ export function TransferOwnershipModal({ isOpen, onClose, members, currentOwnerI
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-text-muted mb-2">
+                <label className="block text-sm font-medium text-text-muted mb-2" htmlFor="transfer-confirm">
                   Type <span className="font-mono text-danger">TRANSFER</span> to confirm
                 </label>
                 <input
                   type="text"
+                  id="transfer-confirm"
+                  name="transfer-confirm"
                   value={confirmText}
                   onChange={(e) => setConfirmText(e.target.value)}
                   placeholder="TRANSFER"

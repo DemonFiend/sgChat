@@ -280,6 +280,7 @@ export function FloatingUserPanel({
                 <span className="text-lg">😊</span>
                 <input
                   type="text"
+                  name="custom-status"
                   value={customStatusText}
                   onChange={(e) => setCustomStatusText(e.target.value)}
                   placeholder="What's happening?"

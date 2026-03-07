@@ -148,6 +148,7 @@ function MemberSearch({
         </svg>
         <input
           type="text"
+          name="search-members"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search members"

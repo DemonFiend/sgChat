@@ -150,6 +150,7 @@ export function ReactionPicker({ isOpen, onClose, onSelect, anchorRef, position,
         <div className="p-2 border-b border-border-subtle">
           <input
             type="text"
+            name="search-emojis"
             placeholder="Search emojis..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}

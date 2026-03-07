@@ -90,6 +90,7 @@ export function VoiceConnectedBar() {
               <input
                 ref={statusInputRef}
                 type="text"
+                name="voice-status"
                 value={voiceStatus}
                 onChange={(e) => setVoiceStatus(e.target.value.slice(0, 128))}
                 onKeyDown={handleStatusKeyDown}

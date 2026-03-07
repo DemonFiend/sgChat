@@ -106,11 +106,13 @@ export function TimeoutModal({ isOpen, onClose, targetUser, serverId }: TimeoutM
 
         {/* Custom Duration */}
         <div>
-          <label className="text-xs font-medium text-text-muted uppercase tracking-wide">Custom Duration</label>
+          <label className="text-xs font-medium text-text-muted uppercase tracking-wide" htmlFor="timeout-duration">Custom Duration</label>
           <div className="flex gap-2 mt-1.5">
             <input
               type="text"
               inputMode="numeric"
+              id="timeout-duration"
+              name="timeout-duration"
               value={customValue}
               onChange={(e) => handleCustomChange(e.target.value)}
               placeholder="Amount"

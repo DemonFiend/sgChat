@@ -427,6 +427,7 @@ export function StreamViewer({
                 {/* Volume slider */}
                 <input
                   type="range"
+                  name="stream-volume"
                   min="0"
                   max="100"
                   value={volume}

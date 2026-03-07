@@ -166,6 +166,7 @@ export function DMSidebar({
             <div className="relative">
               <input
                 type="text"
+                name="search-dm-users"
                 placeholder="Search username..."
                 value={searchQuery}
                 onChange={(e) => handleSearchInput(e.target.value)}

@@ -135,6 +135,7 @@ export function DMModal({
               </svg>
               <input
                 type="text"
+                name="search-users"
                 placeholder="Search users..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -276,6 +277,7 @@ export function DMModal({
                 <div className="flex items-center gap-2 bg-bg-tertiary rounded-lg px-4 py-2">
                   <input
                     type="text"
+                    name="dm-message"
                     placeholder={`Message @${selectedUser.username}`}
                     value={messageInput}
                     onChange={(e) => setMessageInput(e.target.value)}

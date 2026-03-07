@@ -376,6 +376,7 @@ export function RoleReactionsTab({ serverId, channels }: Props) {
                 <div className="space-y-2">
                   <input
                     type="text"
+                    name="new-group-name"
                     value={newGroupName}
                     onChange={e => setNewGroupName(e.target.value)}
                     placeholder="Group name..."
@@ -458,11 +459,13 @@ export function RoleReactionsTab({ serverId, channels }: Props) {
 
                 <div className="space-y-4">
                   <div>
-                    <label className="text-xs font-semibold uppercase text-text-muted mb-1.5 tracking-wide block">
+                    <label className="text-xs font-semibold uppercase text-text-muted mb-1.5 tracking-wide block" htmlFor="edit-group-name">
                       Group Name
                     </label>
                     <input
                       type="text"
+                      id="edit-group-name"
+                      name="edit-group-name"
                       value={editName}
                       onChange={e => { setEditName(e.target.value); setHasUnsavedChanges(true); }}
                       className="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
@@ -583,9 +586,11 @@ export function RoleReactionsTab({ serverId, channels }: Props) {
                 {/* Add mapping form */}
                 <div className="flex items-end gap-2">
                   <div className="w-16">
-                    <label className="text-xs text-text-muted block mb-1">Emoji</label>
+                    <label className="text-xs text-text-muted block mb-1" htmlFor="mapping-emoji">Emoji</label>
                     <input
                       type="text"
+                      id="mapping-emoji"
+                      name="mapping-emoji"
                       value={newMappingEmoji}
                       onChange={e => setNewMappingEmoji(e.target.value)}
                       placeholder="🎮"
@@ -612,9 +617,11 @@ export function RoleReactionsTab({ serverId, channels }: Props) {
                     </select>
                   </div>
                   <div className="w-28">
-                    <label className="text-xs text-text-muted block mb-1">Label</label>
+                    <label className="text-xs text-text-muted block mb-1" htmlFor="mapping-label">Label</label>
                     <input
                       type="text"
+                      id="mapping-label"
+                      name="mapping-label"
                       value={newMappingLabel}
                       onChange={e => setNewMappingLabel(e.target.value)}
                       placeholder="Optional"

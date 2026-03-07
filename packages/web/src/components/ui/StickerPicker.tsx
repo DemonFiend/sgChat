@@ -96,6 +96,7 @@ export function StickerPicker({ isOpen, onClose, onSelect, anchorRef, serverId }
         <input
           ref={inputRef}
           type="text"
+          name="search-stickers"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search stickers..."

@@ -106,6 +106,7 @@ export function NetworkSelector({ onNetworkReady, showAutoLoginToggle, showSetDe
           <div className="relative flex-1">
             <input
               type="url"
+              name="server-url"
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onFocus={() => hasNetworks && setIsDropdownOpen(true)}
@@ -240,6 +241,7 @@ export function NetworkSelector({ onNetworkReady, showAutoLoginToggle, showSetDe
             <label className="flex items-center gap-2 cursor-pointer text-text-secondary hover:text-text-primary">
               <input
                 type="checkbox"
+                name="set-default-server"
                 checked={setAsDefault || !!currentNet?.isDefault}
                 onChange={(e) => {
                   setSetAsDefault(e.target.checked);
@@ -259,6 +261,7 @@ export function NetworkSelector({ onNetworkReady, showAutoLoginToggle, showSetDe
             <label className="flex items-center gap-2 cursor-pointer text-text-secondary hover:text-text-primary">
               <input
                 type="checkbox"
+                name="auto-login"
                 checked={autoLogin}
                 onChange={(e) => setAutoLogin(e.target.checked)}
                 className="w-4 h-4 rounded border-border bg-bg-tertiary accent-accent"

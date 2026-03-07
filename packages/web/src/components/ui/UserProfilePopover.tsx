@@ -581,6 +581,7 @@ export function UserProfilePopover({
               </svg>
               <input
                 type="range"
+                name="user-volume"
                 min={0}
                 max={200}
                 value={volume}
@@ -665,6 +666,7 @@ export function UserProfilePopover({
               </p>
               <input
                 type="text"
+                name="mod-action-reason"
                 placeholder="Reason (optional)"
                 value={modReason}
                 onChange={(e) => setModReason(e.target.value)}

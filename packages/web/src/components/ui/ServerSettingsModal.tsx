@@ -839,6 +839,7 @@ function RolesTab() {
             </svg>
             <input
               type="text"
+              name="search-roles"
               value={roleSearch}
               onChange={(e) => setRoleSearch(e.target.value)}
               placeholder="Search roles..."
@@ -914,6 +915,7 @@ function RolesTab() {
               <div className="flex gap-2">
                 <input
                   type="text"
+                  name="new-role-name"
                   value={newRoleName}
                   onChange={(e) => {
                     setNewRoleName(e.target.value);
@@ -974,9 +976,11 @@ function RolesTab() {
               <h3 className="text-xs font-semibold uppercase text-text-muted mb-4 tracking-wide">Role Settings</h3>
               <div className="flex gap-4">
                 <div className="flex-1">
-                  <label className="block text-xs font-semibold uppercase text-text-muted mb-1.5">Role Name</label>
+                  <label className="block text-xs font-semibold uppercase text-text-muted mb-1.5" htmlFor="edit-role-name">Role Name</label>
                   <input
                     type="text"
+                    id="edit-role-name"
+                    name="edit-role-name"
                     value={editName}
                     onChange={(e) => setEditName(e.target.value)}
                     className="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded-md text-text-primary focus:outline-none focus:border-brand-primary"
@@ -987,12 +991,14 @@ function RolesTab() {
                   <div className="flex items-center gap-2">
                     <input
                       type="color"
+                      name="role-color-picker"
                       value={editColor || '#99aab5'}
                       onChange={(e) => setEditColor(e.target.value)}
                       className="w-9 h-9 rounded-md cursor-pointer border border-border-subtle"
                     />
                     <input
                       type="text"
+                      name="role-color-hex"
                       value={editColor}
                       onChange={(e) => setEditColor(e.target.value)}
                       placeholder="#99aab5"
@@ -1319,6 +1325,7 @@ function MembersTab() {
       <div className="mb-4">
         <input
           type="text"
+          name="search-members"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search members..."
@@ -1418,6 +1425,7 @@ function MembersTab() {
                         >
                           <input
                             type="checkbox"
+                            name={`member-role-${role.id}`}
                             checked={editingRoles.includes(role.id)}
                             onChange={() => toggleRole(role.id)}
                             className="w-4 h-4 rounded border-border-subtle bg-bg-tertiary"
@@ -1999,9 +2007,11 @@ function ChannelsTab({ serverData, onRefresh }: { serverData: ServerData | null;
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-text-secondary mb-1">Channel Name</label>
+                <label className="block text-sm font-medium text-text-secondary mb-1" htmlFor="new-channel-name">Channel Name</label>
                 <input
                   type="text"
+                  id="new-channel-name"
+                  name="new-channel-name"
                   value={newChannelName}
                   onChange={(e) => setNewChannelName(e.target.value)}
                   placeholder="general"
@@ -2070,9 +2080,11 @@ function ChannelsTab({ serverData, onRefresh }: { serverData: ServerData | null;
             <h3 className="text-lg font-bold text-text-primary mb-4">Create Category</h3>
 
             <div>
-              <label className="block text-sm font-medium text-text-secondary mb-1">Category Name</label>
+              <label className="block text-sm font-medium text-text-secondary mb-1" htmlFor="new-category-name">Category Name</label>
               <input
                 type="text"
+                id="new-category-name"
+                name="new-category-name"
                 value={newCategoryName}
                 onChange={(e) => setNewCategoryName(e.target.value)}
                 placeholder="TEXT CHANNELS"
@@ -2109,6 +2121,7 @@ function ChannelsTab({ serverData, onRefresh }: { serverData: ServerData | null;
           <label className="flex items-center gap-3 cursor-pointer">
             <input
               type="checkbox"
+              name="announce-joins"
               checked={announceJoins}
               onChange={(e) => setAnnounceJoins(e.target.checked)}
               className="w-4 h-4 rounded border-border-subtle bg-bg-tertiary"
@@ -2118,6 +2131,7 @@ function ChannelsTab({ serverData, onRefresh }: { serverData: ServerData | null;
           <label className="flex items-center gap-3 cursor-pointer">
             <input
               type="checkbox"
+              name="announce-leaves"
               checked={announceLeaves}
               onChange={(e) => setAnnounceLeaves(e.target.checked)}
               className="w-4 h-4 rounded border-border-subtle bg-bg-tertiary"
@@ -2127,6 +2141,7 @@ function ChannelsTab({ serverData, onRefresh }: { serverData: ServerData | null;
           <label className="flex items-center gap-3 cursor-pointer">
             <input
               type="checkbox"
+              name="announce-online"
               checked={announceOnline}
               onChange={(e) => setAnnounceOnline(e.target.checked)}
               className="w-4 h-4 rounded border-border-subtle bg-bg-tertiary"
@@ -2210,11 +2225,13 @@ function TempChannelSettings() {
       ) : (
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-text-secondary mb-1">
+            <label className="block text-sm font-medium text-text-secondary mb-1" htmlFor="voice-timeout-minutes">
               Empty Channel Timeout (minutes)
             </label>
             <input
               type="number"
+              id="voice-timeout-minutes"
+              name="voice-timeout-minutes"
               min="1"
               max="60"
               value={timeoutMinutes}
@@ -2462,9 +2479,11 @@ function InvitesTab() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-text-secondary mb-1">Max Number of Uses</label>
+                <label className="block text-sm font-medium text-text-secondary mb-1" htmlFor="invite-max-uses">Max Number of Uses</label>
                 <input
                   type="number"
+                  id="invite-max-uses"
+                  name="invite-max-uses"
                   value={maxUses}
                   onChange={(e) => setMaxUses(e.target.value)}
                   placeholder="No limit"
@@ -2562,6 +2581,7 @@ function BansTab() {
       <div className="mb-4">
         <input
           type="text"
+          name="search-bans"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search bans by username..."
@@ -2861,6 +2881,7 @@ function SoundboardSettingsTab({ serverId }: SoundboardSettingsTabProps) {
             </div>
             <input
               type="checkbox"
+              name="soundboard-enabled"
               checked={config.enabled}
               onChange={(e) => setConfig(prev => ({ ...prev, enabled: e.target.checked }))}
               className="w-5 h-5 rounded"
@@ -2869,11 +2890,13 @@ function SoundboardSettingsTab({ serverId }: SoundboardSettingsTabProps) {
 
           {/* Max sounds per user */}
           <div className="p-3 bg-bg-secondary rounded-lg">
-            <label className="block text-sm font-medium text-text-primary mb-1">
+            <label className="block text-sm font-medium text-text-primary mb-1" htmlFor="max-sounds-per-user">
               Max Sounds Per User
             </label>
             <input
               type="number"
+              id="max-sounds-per-user"
+              name="max-sounds-per-user"
               min="1"
               max="10"
               value={config.max_sounds_per_user}
@@ -2885,11 +2908,13 @@ function SoundboardSettingsTab({ serverId }: SoundboardSettingsTabProps) {
 
           {/* Max duration */}
           <div className="p-3 bg-bg-secondary rounded-lg">
-            <label className="block text-sm font-medium text-text-primary mb-1">
+            <label className="block text-sm font-medium text-text-primary mb-1" htmlFor="max-sound-duration">
               Max Sound Duration (seconds)
             </label>
             <input
               type="number"
+              id="max-sound-duration"
+              name="max-sound-duration"
               min="1"
               max="10"
               value={config.max_sound_duration_seconds}
@@ -2901,11 +2926,13 @@ function SoundboardSettingsTab({ serverId }: SoundboardSettingsTabProps) {
 
           {/* Max file size */}
           <div className="p-3 bg-bg-secondary rounded-lg">
-            <label className="block text-sm font-medium text-text-primary mb-1">
+            <label className="block text-sm font-medium text-text-primary mb-1" htmlFor="max-sound-size">
               Max Sound File Size (MB)
             </label>
             <input
               type="number"
+              id="max-sound-size"
+              name="max-sound-size"
               min="0.1"
               max="10"
               step="0.1"
@@ -3057,6 +3084,7 @@ function StickersTab({ serverId }: StickersTabProps) {
           <input
             ref={fileInputRef}
             type="file"
+            name="sticker-file-upload"
             accept="image/png,image/gif,image/webp"
             className="hidden"
             onChange={handleFileChange}
@@ -3065,6 +3093,7 @@ function StickersTab({ serverId }: StickersTabProps) {
           <div className="flex-1 space-y-2">
             <input
               type="text"
+              name="sticker-name"
               placeholder="Sticker name (2-30 chars)"
               value={name}
               onChange={(e) => setName(e.target.value.slice(0, 30))}
@@ -3072,6 +3101,7 @@ function StickersTab({ serverId }: StickersTabProps) {
             />
             <input
               type="text"
+              name="sticker-description"
               placeholder="Description (optional, max 100)"
               value={description}
               onChange={(e) => setDescription(e.target.value.slice(0, 100))}
@@ -3433,9 +3463,11 @@ function RetentionTab() {
 
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-text-secondary mb-1">Default Channel Size Limit (MB)</label>
+          <label className="block text-sm font-medium text-text-secondary mb-1" htmlFor="channel-size-limit">Default Channel Size Limit (MB)</label>
           <input
             type="number"
+            id="channel-size-limit"
+            name="channel-size-limit"
             value={Math.round((settings.default_channel_size_limit_bytes || 0) / 1024 / 1024)}
             onChange={(e) => setSettings({ ...settings, default_channel_size_limit_bytes: parseInt(e.target.value || '0') * 1024 * 1024 })}
             className="w-full bg-bg-tertiary border border-bg-modifier-accent rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-primary"
@@ -3443,9 +3475,11 @@ function RetentionTab() {
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-text-secondary mb-1">Warning Threshold (%)</label>
+            <label className="block text-sm font-medium text-text-secondary mb-1" htmlFor="warning-threshold">Warning Threshold (%)</label>
             <input
               type="number"
+              id="warning-threshold"
+              name="warning-threshold"
               min="0"
               max="100"
               value={settings.storage_warning_threshold_percent || 80}
@@ -3454,9 +3488,11 @@ function RetentionTab() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-text-secondary mb-1">Action Threshold (%)</label>
+            <label className="block text-sm font-medium text-text-secondary mb-1" htmlFor="action-threshold">Action Threshold (%)</label>
             <input
               type="number"
+              id="action-threshold"
+              name="action-threshold"
               min="0"
               max="100"
               value={settings.storage_action_threshold_percent || 95}
@@ -3648,8 +3684,8 @@ function ReleasesTab() {
         <div className="bg-bg-secondary rounded-lg p-4 space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-text-secondary mb-1">Version</label>
-              <input type="text" placeholder="1.2.3" value={formData.version} onChange={(e) => setFormData({ ...formData, version: e.target.value })}
+              <label className="block text-xs font-medium text-text-secondary mb-1" htmlFor="release-version">Version</label>
+              <input type="text" id="release-version" name="release-version" placeholder="1.2.3" value={formData.version} onChange={(e) => setFormData({ ...formData, version: e.target.value })}
                 className="w-full bg-bg-tertiary border border-bg-modifier-accent rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-primary" />
             </div>
             <div>
@@ -3664,8 +3700,8 @@ function ReleasesTab() {
             </div>
           </div>
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1">Download URL</label>
-            <input type="url" placeholder="https://..." value={formData.download_url} onChange={(e) => setFormData({ ...formData, download_url: e.target.value })}
+            <label className="block text-xs font-medium text-text-secondary mb-1" htmlFor="release-download-url">Download URL</label>
+            <input type="url" id="release-download-url" name="release-download-url" placeholder="https://..." value={formData.download_url} onChange={(e) => setFormData({ ...formData, download_url: e.target.value })}
               className="w-full bg-bg-tertiary border border-bg-modifier-accent rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-primary" />
           </div>
           <div>
@@ -3674,7 +3710,7 @@ function ReleasesTab() {
               className="w-full bg-bg-tertiary border border-bg-modifier-accent rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-primary resize-none" />
           </div>
           <div className="flex items-center gap-2">
-            <input type="checkbox" id="release-required" checked={formData.required} onChange={(e) => setFormData({ ...formData, required: e.target.checked })} className="rounded" />
+            <input type="checkbox" id="release-required" name="release-required" checked={formData.required} onChange={(e) => setFormData({ ...formData, required: e.target.checked })} className="rounded" />
             <label htmlFor="release-required" className="text-sm text-text-secondary">Required update</label>
           </div>
           <button onClick={handleCreate} disabled={submitting || !formData.version || !formData.download_url}
@@ -3968,8 +4004,10 @@ function EmojiPacksTab({ serverId }: { serverId: string }) {
         {/* Create pack form */}
         <div className="flex gap-2 items-end">
           <div className="flex-1">
-            <label className="block text-xs text-text-secondary mb-1">Pack Name</label>
+            <label className="block text-xs text-text-secondary mb-1" htmlFor="emoji-pack-name">Pack Name</label>
             <input
+              id="emoji-pack-name"
+              name="emoji-pack-name"
               value={newPackName}
               onChange={(e) => setNewPackName(e.target.value)}
               placeholder="My Emoji Pack"
@@ -3978,8 +4016,10 @@ function EmojiPacksTab({ serverId }: { serverId: string }) {
             />
           </div>
           <div className="flex-1">
-            <label className="block text-xs text-text-secondary mb-1">Description (optional)</label>
+            <label className="block text-xs text-text-secondary mb-1" htmlFor="emoji-pack-description">Description (optional)</label>
             <input
+              id="emoji-pack-description"
+              name="emoji-pack-description"
               value={newPackDescription}
               onChange={(e) => setNewPackDescription(e.target.value)}
               placeholder="Pack description"
@@ -4011,6 +4051,7 @@ function EmojiPacksTab({ serverId }: { serverId: string }) {
                   <label className="flex items-center gap-1 text-xs text-text-secondary">
                     <input
                       type="checkbox"
+                      name={`emoji-pack-enabled-${pack.id}`}
                       checked={pack.enabled}
                       onChange={(e) => handleTogglePack(pack.id, e.target.checked)}
                       className="rounded"
@@ -4097,11 +4138,11 @@ function EmojiPacksTab({ serverId }: { serverId: string }) {
       <div className="flex gap-2">
         <label className={`px-3 py-1.5 bg-brand-primary text-white rounded text-sm cursor-pointer hover:bg-brand-primary-hover ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
           {uploading ? 'Uploading...' : 'Upload Emoji'}
-          <input type="file" accept="image/png,image/gif,image/webp,image/jpeg" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleUploadEmoji(e.target.files[0]); e.target.value = ''; }} disabled={uploading} />
+          <input type="file" name="emoji-upload" accept="image/png,image/gif,image/webp,image/jpeg" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleUploadEmoji(e.target.files[0]); e.target.value = ''; }} disabled={uploading} />
         </label>
         <label className={`px-3 py-1.5 bg-bg-tertiary text-text-primary rounded text-sm cursor-pointer border border-border-subtle hover:bg-bg-modifier-hover ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
           Import ZIP
-          <input type="file" accept=".zip" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleZipImport(e.target.files[0]); e.target.value = ''; }} disabled={uploading} />
+          <input type="file" name="emoji-zip-import" accept=".zip" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleZipImport(e.target.files[0]); e.target.value = ''; }} disabled={uploading} />
         </label>
       </div>
 
@@ -4255,9 +4296,11 @@ function WebhooksTab({ serverId, channels }: { serverId: string; channels: Chann
           <h3 className="text-sm font-semibold text-text-primary">New Webhook</h3>
           <div className="space-y-3">
             <div>
-              <label className="block text-xs font-medium text-text-muted mb-1">Name</label>
+              <label className="block text-xs font-medium text-text-muted mb-1" htmlFor="webhook-name">Name</label>
               <input
                 type="text"
+                id="webhook-name"
+                name="webhook-name"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 placeholder="e.g. GitHub Notifications"

@@ -249,6 +249,7 @@ export function ServerPopupConfigForm({
                 <input
                   ref={iconFileRef}
                   type="file"
+                  name="server-icon-upload"
                   accept="image/jpeg,image/png,image/gif,image/webp"
                   className="hidden"
                   onChange={handleIconInputChange}
@@ -264,11 +265,13 @@ export function ServerPopupConfigForm({
             {/* Basic Info */}
             <div className="flex-1 space-y-4">
               <div>
-                <label className="block text-xs font-bold uppercase text-text-muted mb-2">
+                <label className="block text-xs font-bold uppercase text-text-muted mb-2" htmlFor="popup-server-name">
                   Server Name
                 </label>
                 <input
                   type="text"
+                  id="popup-server-name"
+                  name="popup-server-name"
                   value={localConfig.serverName || ''}
                   onChange={(e) => handleFieldChange('serverName', e.target.value)}
                   maxLength={100}
@@ -352,6 +355,7 @@ export function ServerPopupConfigForm({
               <label className="flex items-center gap-3 mb-3 cursor-pointer">
                 <input
                   type="checkbox"
+                  name="motd-enabled"
                   checked={localConfig.motdEnabled ?? true}
                   onChange={(e) => handleFieldChange('motdEnabled', e.target.checked)}
                   className="w-4 h-4 rounded border-border-subtle bg-bg-tertiary"
@@ -528,6 +532,7 @@ export function ServerPopupConfigForm({
                         <label className="flex items-center gap-1.5 cursor-pointer">
                           <input
                             type="checkbox"
+                            name={`event-enabled-${index}`}
                             checked={event.enabled}
                             onChange={(e) => {
                               const updated = [...localConfig.events];
@@ -562,6 +567,7 @@ export function ServerPopupConfigForm({
                           </label>
                           <input
                             type="text"
+                            name={`event-title-${index}`}
                             value={event.title}
                             onChange={(e) => {
                               const updated = [...localConfig.events];
@@ -621,6 +627,7 @@ export function ServerPopupConfigForm({
                           </label>
                           <input
                             type="datetime-local"
+                            name={`event-start-date-${index}`}
                             value={event.startDate || ''}
                             onChange={(e) => {
                               const updated = [...localConfig.events];
@@ -639,6 +646,7 @@ export function ServerPopupConfigForm({
                           </label>
                           <input
                             type="datetime-local"
+                            name={`event-end-date-${index}`}
                             value={event.endDate || ''}
                             onChange={(e) => {
                               const updated = [...localConfig.events];

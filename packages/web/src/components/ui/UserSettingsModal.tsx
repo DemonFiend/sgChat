@@ -325,6 +325,7 @@ function AccountTab({ user, onClose, onSwitchTab }: { user: ReturnType<typeof au
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
+                      name="edit-username"
                       value={newUsername}
                       onChange={(e) => setNewUsername(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') handleSaveUsername(); if (e.key === 'Escape') setEditingUsername(false); }}
@@ -358,6 +359,7 @@ function AccountTab({ user, onClose, onSwitchTab }: { user: ReturnType<typeof au
                   <div className="space-y-2">
                     <input
                       type="email"
+                      name="new-email"
                       value={newEmail}
                       onChange={(e) => setNewEmail(e.target.value)}
                       placeholder="New email"
@@ -366,6 +368,7 @@ function AccountTab({ user, onClose, onSwitchTab }: { user: ReturnType<typeof au
                     />
                     <input
                       type="password"
+                      name="email-confirm-password"
                       value={emailPassword}
                       onChange={(e) => setEmailPassword(e.target.value)}
                       placeholder="Confirm with password"
@@ -403,6 +406,7 @@ function AccountTab({ user, onClose, onSwitchTab }: { user: ReturnType<typeof au
           <div className="bg-bg-secondary rounded-lg p-4 space-y-3 max-w-sm">
             <input
               type="password"
+              name="current-password"
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
               placeholder="Current password"
@@ -411,6 +415,7 @@ function AccountTab({ user, onClose, onSwitchTab }: { user: ReturnType<typeof au
             />
             <input
               type="password"
+              name="new-password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               placeholder="New password"
@@ -418,6 +423,7 @@ function AccountTab({ user, onClose, onSwitchTab }: { user: ReturnType<typeof au
             />
             <input
               type="password"
+              name="confirm-password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="Confirm new password"
@@ -703,11 +709,13 @@ function ProfileTab({ user }: { user: ReturnType<typeof authStore.getState>['use
         {/* Form */}
         <div className="flex-1 space-y-6">
           <div>
-            <label className="block text-xs font-bold uppercase text-text-muted mb-2">
+            <label className="block text-xs font-bold uppercase text-text-muted mb-2" htmlFor="profile-display-name">
               Display Name
             </label>
             <input
               type="text"
+              id="profile-display-name"
+              name="profile-display-name"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder={user?.username}
@@ -716,11 +724,13 @@ function ProfileTab({ user }: { user: ReturnType<typeof authStore.getState>['use
           </div>
 
           <div>
-            <label className="block text-xs font-bold uppercase text-text-muted mb-2">
+            <label className="block text-xs font-bold uppercase text-text-muted mb-2" htmlFor="profile-custom-status">
               Status
             </label>
             <input
               type="text"
+              id="profile-custom-status"
+              name="profile-custom-status"
               value={customStatus}
               onChange={(e) => setCustomStatus(e.target.value)}
               placeholder="What's on your mind?"
@@ -816,6 +826,7 @@ function ProfileTab({ user }: { user: ReturnType<typeof authStore.getState>['use
               <input
                 ref={bannerFileInputRef}
                 type="file"
+                name="banner-upload"
                 accept="image/jpeg,image/png,image/gif,image/webp"
                 className="hidden"
                 onChange={(e) => {
@@ -1470,11 +1481,13 @@ function VoiceTab() {
 
         {/* Input Volume */}
         <div>
-          <label className="block text-xs font-bold uppercase text-text-muted mb-2">
+          <label className="block text-xs font-bold uppercase text-text-muted mb-2" htmlFor="input-volume">
             Input Volume - {inputVolume}%
           </label>
           <input
             type="range"
+            id="input-volume"
+            name="input-volume"
             min="0"
             max="200"
             value={inputVolume}
@@ -1494,11 +1507,13 @@ function VoiceTab() {
 
         {/* Output Volume */}
         <div>
-          <label className="block text-xs font-bold uppercase text-text-muted mb-2">
+          <label className="block text-xs font-bold uppercase text-text-muted mb-2" htmlFor="output-volume">
             Output Volume - {outputVolume}%
           </label>
           <input
             type="range"
+            id="output-volume"
+            name="output-volume"
             min="0"
             max="200"
             value={outputVolume}
@@ -1509,11 +1524,13 @@ function VoiceTab() {
 
         {/* Input Sensitivity */}
         <div>
-          <label className="block text-xs font-bold uppercase text-text-muted mb-2">
+          <label className="block text-xs font-bold uppercase text-text-muted mb-2" htmlFor="input-sensitivity">
             Input Sensitivity - {inputSensitivity}%
           </label>
           <input
             type="range"
+            id="input-sensitivity"
+            name="input-sensitivity"
             min="0"
             max="100"
             value={inputSensitivity}
@@ -1971,6 +1988,7 @@ function KeybindsTab() {
                 <input
                   autoFocus
                   readOnly
+                  name="keybind-capture"
                   placeholder="Press a key combo..."
                   className="w-48 px-3 py-1.5 bg-bg-tertiary border-2 border-brand-primary rounded text-sm text-text-primary text-center focus:outline-none animate-pulse"
                   onKeyDown={handleKeyDown(key)}

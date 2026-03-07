@@ -176,6 +176,7 @@ export function SearchModal({
               <input
                 ref={inputRef}
                 type="text"
+                name="search-messages"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={
@@ -213,6 +214,7 @@ export function SearchModal({
               <label className="flex items-center gap-1 text-xs text-text-muted cursor-pointer">
                 <input
                   type="checkbox"
+                  name="has-attachment"
                   checked={hasAttachment}
                   onChange={(e) => setHasAttachment(e.target.checked)}
                   className="rounded border-border"

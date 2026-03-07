@@ -191,6 +191,7 @@ export function SoundboardPanel({ serverId }: SoundboardPanelProps) {
               </svg>
               <input
                 type="text"
+                name="search-sounds"
                 placeholder="Search sounds..."
                 className="w-full text-[11px] pl-6 pr-2 py-1 rounded bg-bg-tertiary text-text-primary placeholder-text-muted border border-transparent focus:border-accent-primary focus:outline-none"
                 value={searchQuery}
