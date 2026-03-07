@@ -17,6 +17,7 @@ CREATE TABLE users (
   password_hash TEXT NOT NULL,
   avatar_url TEXT,
   banner_url TEXT,
+  banner_file_size INTEGER,
   bio TEXT CHECK (length(bio) <= 500),
 
   -- Status
@@ -923,6 +924,34 @@ INSERT INTO instance_settings (key, value) VALUES (
 ) ON CONFLICT (key) DO NOTHING;
 
 -- ============================================================
+-- STORAGE LIMITS (per-category)
+-- ============================================================
+
+INSERT INTO instance_settings (key, value) VALUES (
+  'storage_limits',
+  '{
+    "channel_message_limit_bytes": null,
+    "channel_attachment_limit_bytes": null,
+    "dm_message_limit_bytes": null,
+    "dm_attachment_limit_bytes": null,
+    "emoji_storage_limit_bytes": null,
+    "sticker_storage_limit_bytes": null,
+    "profile_avatar_limit_bytes": null,
+    "profile_banner_limit_bytes": null,
+    "profile_sound_limit_bytes": null,
+    "upload_limit_per_user_bytes": null,
+    "archive_limit_bytes": null,
+    "export_retention_days": 90,
+    "crash_report_retention_days": 30,
+    "notification_retention_days": 30,
+    "trimming_log_retention_days": 90,
+    "auto_purge_enabled": false,
+    "auto_purge_threshold_percent": 90,
+    "auto_purge_target_percent": 75
+  }'::jsonb
+) ON CONFLICT (key) DO NOTHING;
+
+-- ============================================================
 -- TEMP VOICE CHANNEL SETTINGS
 -- ============================================================
 
@@ -977,11 +1006,11 @@ CREATE TABLE IF NOT EXISTS trimming_log (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   channel_id UUID REFERENCES channels(id) ON DELETE CASCADE,
   dm_channel_id UUID REFERENCES dm_channels(id) ON DELETE CASCADE,
-  action TEXT NOT NULL CHECK (action IN ('retention_cleanup', 'size_limit_enforced', 'segment_archived', 'segment_deleted', 'manual_cleanup')),
+  action TEXT NOT NULL CHECK (action IN ('retention_cleanup', 'size_limit_enforced', 'segment_archived', 'segment_deleted', 'manual_cleanup', 'storage_purge')),
   messages_affected INTEGER DEFAULT 0,
   bytes_freed BIGINT DEFAULT 0,
   segment_ids UUID[] DEFAULT '{}',
-  triggered_by TEXT CHECK (triggered_by IN ('scheduled', 'manual', 'size_limit')),
+  triggered_by TEXT CHECK (triggered_by IN ('scheduled', 'manual', 'size_limit', 'auto_purge')),
   details JSONB DEFAULT '{}',
   created_at TIMESTAMPTZ DEFAULT NOW(),
   
@@ -1543,6 +1572,7 @@ CREATE TABLE IF NOT EXISTS stickers (
   description TEXT CHECK (length(description) <= 100),
   file_url TEXT NOT NULL,
   file_type TEXT NOT NULL CHECK (file_type IN ('png', 'gif', 'webp', 'apng')),
+  file_size_bytes INTEGER,
   uploaded_by UUID REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -1642,5 +1672,8 @@ INSERT INTO _migrations (name) VALUES
   ('012_tts'),
   ('013_stickers'),
   ('015_emojis'),
-  ('016_typed_reactions')
+  ('016_typed_reactions'),
+  ('017_default_emoji_packs'),
+  ('018_emoji_packs_enabled'),
+  ('019_storage_limits')
 ON CONFLICT (name) DO NOTHING;

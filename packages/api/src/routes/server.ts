@@ -22,6 +22,14 @@ import {
   getTrimmingLogs,
 } from '../services/trimming.js';
 import { checkArchiveHealth } from '../services/archive.js';
+import {
+  getFullStorageDashboard,
+  getStorageLimits,
+  updateStorageLimits,
+  purgeByCategory,
+  runAutoPurge,
+  type PurgeCategory,
+} from '../services/storageAggregation.js';
 
 const updateServerSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -741,9 +749,10 @@ export const globalServerRoutes: FastifyPluginAsync = async (fastify) => {
         return forbidden(reply, 'Only administrators can view storage statistics');
       }
 
-      // Get all channels in this server
+      // Get text-bearing channels only (voice/stage/AFK don't store messages)
       const channels = await db.sql`
-        SELECT id, name FROM channels WHERE server_id = ${server.id}
+        SELECT id, name FROM channels
+        WHERE server_id = ${server.id} AND type IN ('text', 'announcement')
       `;
 
       const { getComprehensiveStorageStats } = await import('../services/trimming.js');
@@ -774,6 +783,174 @@ export const globalServerRoutes: FastifyPluginAsync = async (fastify) => {
         totals,
         channels: channelStats,
       };
+    },
+  });
+
+  // ============================================================
+  // STORAGE DASHBOARD ROUTES
+  // ============================================================
+
+  /**
+   * GET /server/storage/dashboard - Full storage dashboard with all categories
+   */
+  fastify.get('/storage/dashboard', {
+    onRequest: [authenticate],
+    config: {
+      rateLimit: { max: 12, timeWindow: '1 minute' },
+    },
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) ||
+                      server.owner_id === request.user!.id;
+
+      if (!isAdmin) {
+        return forbidden(reply, 'Only administrators can view storage dashboard');
+      }
+
+      return getFullStorageDashboard(server.id);
+    },
+  });
+
+  /**
+   * GET /server/storage/limits - Get current storage limits
+   */
+  fastify.get('/storage/limits', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) ||
+                      server.owner_id === request.user!.id;
+
+      if (!isAdmin) {
+        return forbidden(reply, 'Only administrators can view storage limits');
+      }
+
+      return getStorageLimits();
+    },
+  });
+
+  const storageLimitsUpdateSchema = z.object({
+    channel_message_limit_bytes: z.number().min(0).nullable().optional(),
+    channel_attachment_limit_bytes: z.number().min(0).nullable().optional(),
+    dm_message_limit_bytes: z.number().min(0).nullable().optional(),
+    dm_attachment_limit_bytes: z.number().min(0).nullable().optional(),
+    emoji_storage_limit_bytes: z.number().min(0).nullable().optional(),
+    sticker_storage_limit_bytes: z.number().min(0).nullable().optional(),
+    profile_avatar_limit_bytes: z.number().min(0).nullable().optional(),
+    profile_banner_limit_bytes: z.number().min(0).nullable().optional(),
+    profile_sound_limit_bytes: z.number().min(0).nullable().optional(),
+    upload_limit_per_user_bytes: z.number().min(0).nullable().optional(),
+    archive_limit_bytes: z.number().min(0).nullable().optional(),
+    export_retention_days: z.number().min(1).optional(),
+    crash_report_retention_days: z.number().min(1).optional(),
+    notification_retention_days: z.number().min(1).optional(),
+    trimming_log_retention_days: z.number().min(1).optional(),
+    auto_purge_enabled: z.boolean().optional(),
+    auto_purge_threshold_percent: z.number().min(1).max(100).optional(),
+    auto_purge_target_percent: z.number().min(1).max(100).optional(),
+  }).refine(
+    (data) => {
+      if (data.auto_purge_target_percent !== undefined && data.auto_purge_threshold_percent !== undefined) {
+        return data.auto_purge_target_percent < data.auto_purge_threshold_percent;
+      }
+      return true;
+    },
+    { message: 'auto_purge_target_percent must be less than auto_purge_threshold_percent' }
+  );
+
+  /**
+   * PATCH /server/storage/limits - Update storage limits
+   */
+  fastify.patch('/storage/limits', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) ||
+                      server.owner_id === request.user!.id;
+
+      if (!isAdmin) {
+        return forbidden(reply, 'Only administrators can update storage limits');
+      }
+
+      const parsed = storageLimitsUpdateSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return badRequest(reply, parsed.error.errors[0]?.message || 'Invalid input');
+      }
+
+      // Cross-validate against current values if only one of the pair is provided
+      if (parsed.data.auto_purge_target_percent !== undefined || parsed.data.auto_purge_threshold_percent !== undefined) {
+        const current = await getStorageLimits();
+        const targetPct = parsed.data.auto_purge_target_percent ?? current.auto_purge_target_percent;
+        const thresholdPct = parsed.data.auto_purge_threshold_percent ?? current.auto_purge_threshold_percent;
+        if (targetPct >= thresholdPct) {
+          return badRequest(reply, 'auto_purge_target_percent must be less than auto_purge_threshold_percent');
+        }
+      }
+
+      return updateStorageLimits(parsed.data);
+    },
+  });
+
+  const purgeCategoryEnum = z.enum([
+    'channels', 'dms', 'emojis', 'stickers', 'profiles',
+    'uploads', 'archives', 'exports',
+    'crash_reports', 'notifications', 'trimming_log',
+  ]);
+
+  const purgeSchema = z.object({
+    category: purgeCategoryEnum,
+    percent: z.number().min(1).max(100).optional(),
+    channel_id: z.string().uuid().optional(),
+    older_than_days: z.number().min(1).optional(),
+    dry_run: z.boolean().optional(),
+  });
+
+  /**
+   * POST /server/storage/purge - Purge storage by category
+   */
+  fastify.post('/storage/purge', {
+    onRequest: [authenticate],
+    config: {
+      rateLimit: { max: 5, timeWindow: '1 minute' },
+    },
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) ||
+                      server.owner_id === request.user!.id;
+
+      if (!isAdmin) {
+        return forbidden(reply, 'Only administrators can purge storage');
+      }
+
+      const parsed = purgeSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return badRequest(reply, parsed.error.errors[0]?.message || 'Invalid input');
+      }
+
+      return purgeByCategory(server.id, parsed.data as { category: PurgeCategory } & typeof parsed.data);
+    },
+  });
+
+  /**
+   * POST /server/storage/auto-purge/run - Manually trigger auto-purge cycle
+   */
+  fastify.post('/storage/auto-purge/run', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) ||
+                      server.owner_id === request.user!.id;
+
+      if (!isAdmin) {
+        return forbidden(reply, 'Only administrators can trigger auto-purge');
+      }
+
+      return runAutoPurge(server.id);
     },
   });
 };

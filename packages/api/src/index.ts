@@ -391,6 +391,20 @@ async function start() {
     }
   }, 30 * 1000);
 
+  // Start auto-purge scheduler (every hour)
+  const autoPurgeInterval = setInterval(async () => {
+    try {
+      const { getDefaultServer } = await import('./routes/server.js');
+      const { runAutoPurge } = await import('./services/storageAggregation.js');
+      const server = await getDefaultServer();
+      if (server) {
+        await runAutoPurge(server.id);
+      }
+    } catch (err) {
+      fastify.log.error({ err }, 'Auto-purge cycle failed');
+    }
+  }, 60 * 60 * 1000);
+
   // Graceful shutdown
   const gracefulShutdown = async (signal: string) => {
     fastify.log.info(`${signal} received, shutting down gracefully...`);
@@ -398,6 +412,7 @@ async function start() {
     // Stop cleanup intervals
     clearInterval(tempChannelCleanupInterval);
     clearInterval(afkCheckInterval);
+    clearInterval(autoPurgeInterval);
 
     await fastify.close();
     await shutdownEventBus();

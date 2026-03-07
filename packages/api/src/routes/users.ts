@@ -824,14 +824,27 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
         await storage.deleteFile(oldPath);
       }
 
+      // Check storage limit
+      const limitsRow = await db.sql`
+        SELECT value FROM instance_settings WHERE key = 'storage_limits'
+      `;
+      const storageLimits = limitsRow[0]?.value;
+      const bannerLimit = storageLimits?.profile_banner_limit_bytes;
+
       // Upload new banner
       const bannerFilename = `${userId}-banner-${nanoid(8)}.webp`;
       const storagePath = `banners/${bannerFilename}`;
       const processed = await processAvatarImage(buffer, 600, 80);
+
+      if (bannerLimit && processed.buffer.length > bannerLimit) {
+        return badRequest(reply, `Banner exceeds size limit of ${Math.round(bannerLimit / 1024 / 1024)}MB`);
+      }
+
       const bannerUrl = await storage.uploadFile(processed.buffer, storagePath, 'image/webp');
+      const bannerFileSize = processed.buffer.length;
 
       await db.sql`
-        UPDATE users SET banner_url = ${bannerUrl}, updated_at = NOW()
+        UPDATE users SET banner_url = ${bannerUrl}, banner_file_size = ${bannerFileSize}, updated_at = NOW()
         WHERE id = ${userId}
       `;
 
@@ -851,7 +864,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
       await storage.deleteFile(oldPath);
 
       await db.sql`
-        UPDATE users SET banner_url = NULL, updated_at = NOW()
+        UPDATE users SET banner_url = NULL, banner_file_size = NULL, updated_at = NOW()
         WHERE id = ${userId}
       `;
 

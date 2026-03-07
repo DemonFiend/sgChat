@@ -43,6 +43,7 @@ export async function initStorage() {
             `arn:aws:s3:::${MINIO_BUCKET}/attachments/*`,
             `arn:aws:s3:::${MINIO_BUCKET}/images/*`,
             `arn:aws:s3:::${MINIO_BUCKET}/emojis/*`,
+            `arn:aws:s3:::${MINIO_BUCKET}/banners/*`,
           ],
         },
       ],
@@ -363,5 +364,65 @@ export const storage = {
   ): string {
     const dateStr = segmentStart.toISOString().split('T')[0]; // YYYY-MM-DD
     return `${type}s/${targetId}/segment-${dateStr}-${segmentId}.json.gz`;
+  },
+
+  // ============================================================
+  // Storage dashboard helpers
+  // ============================================================
+
+  /**
+   * List all objects under a prefix in the main bucket.
+   */
+  async listObjectsByPrefix(
+    prefix: string
+  ): Promise<{ path: string; size: number; lastModified: Date }[]> {
+    const objects: { path: string; size: number; lastModified: Date }[] = [];
+
+    const stream = minioClient.listObjects(MINIO_BUCKET, prefix, true);
+
+    return new Promise((resolve, reject) => {
+      stream.on('data', (obj) => {
+        if (obj.name && obj.size !== undefined && obj.lastModified) {
+          objects.push({
+            path: obj.name,
+            size: obj.size,
+            lastModified: obj.lastModified,
+          });
+        }
+      });
+      stream.on('end', () => resolve(objects));
+      stream.on('error', reject);
+    });
+  },
+
+  /**
+   * Get total storage usage for uploads and images in the main bucket.
+   */
+  async getUploadStorageUsage(): Promise<number> {
+    const [uploads, images] = await Promise.all([
+      this.listObjectsByPrefix('uploads/'),
+      this.listObjectsByPrefix('images/'),
+    ]);
+    return [...uploads, ...images].reduce((sum, obj) => sum + obj.size, 0);
+  },
+
+  /**
+   * Get export storage stats from the main bucket.
+   */
+  async getExportStorageUsage(): Promise<{
+    total_bytes: number;
+    count: number;
+    oldest: string | null;
+  }> {
+    const objects = await this.listObjectsByPrefix('exports/');
+    if (objects.length === 0) {
+      return { total_bytes: 0, count: 0, oldest: null };
+    }
+    objects.sort((a, b) => a.lastModified.getTime() - b.lastModified.getTime());
+    return {
+      total_bytes: objects.reduce((sum, obj) => sum + obj.size, 0),
+      count: objects.length,
+      oldest: objects[0].lastModified.toISOString(),
+    };
   },
 };

@@ -6,6 +6,7 @@ import { permissions } from '@/stores';
 import { toastStore } from '@/stores/toastNotifications';
 import { ServerPopupConfigForm } from './ServerPopupConfigForm';
 import { RoleReactionsTab } from './RoleReactionsTab';
+import { StorageTab } from './StorageTab';
 import {
   ServerPermissionMetadata,
   TextPermissionMetadata,
@@ -159,7 +160,7 @@ for (const [metaKey, meta] of Object.entries(VoicePermissionMetadata)) {
 
 // ── End permission groups ────────────────────────────────────────────
 
-type ServerSettingsTab = 'general' | 'roles' | 'role-reactions' | 'members' | 'channels' | 'soundboard' | 'stickers' | 'emoji-packs' | 'webhooks' | 'afk' | 'invites' | 'bans' | 'audit-log' | 'storage' | 'crash-reports' | 'releases' | 'retention';
+type ServerSettingsTab = 'general' | 'roles' | 'role-reactions' | 'members' | 'channels' | 'soundboard' | 'stickers' | 'emoji-packs' | 'webhooks' | 'afk' | 'invites' | 'bans' | 'audit-log' | 'storage' | 'crash-reports' | 'releases';
 
 interface ServerSettings {
   motd: string;
@@ -339,16 +340,6 @@ const tabs: { id: ServerSettingsTab; label: string; icon: ReactNode; permission?
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
-      </svg>
-    ),
-    permission: 'manage_server',
-  },
-  {
-    id: 'retention',
-    label: 'Retention',
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
       </svg>
     ),
     permission: 'manage_server',
@@ -542,7 +533,6 @@ export function ServerSettingsModal({ isOpen, onClose, serverName, serverIcon: _
                 )}
                 {activeTab === 'audit-log' && <AuditLogTab />}
                 {activeTab === 'storage' && <StorageTab />}
-                {activeTab === 'retention' && <RetentionTab />}
                 {activeTab === 'crash-reports' && <CrashReportsTab />}
                 {activeTab === 'releases' && <ReleasesTab />}
               </>
@@ -3290,263 +3280,6 @@ function AfkSettingsTab({ serverId: _serverId, afkTimeout: initialAfkTimeout, af
 }
 
 // ── Storage Tab ──────────────────────────────────────────────────────
-function StorageTab() {
-  const [data, setData] = useState<any>(null);
-  const [comprehensive, setComprehensive] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [storageData, compData] = await Promise.all([
-          api.get<any>('/server/storage'),
-          api.get<any>('/server/storage/comprehensive'),
-        ]);
-        setData(storageData);
-        setComprehensive(compData);
-      } catch (err) {
-        console.error('Failed to fetch storage data:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, []);
-
-  const formatBytes = (bytes: number) => {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-  };
-
-  if (loading) return <div className="text-text-muted text-center py-8">Loading storage data...</div>;
-  if (!data) return <div className="text-danger text-center py-8">Failed to load storage data</div>;
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold text-text-primary mb-1">Storage Overview</h3>
-        <p className="text-sm text-text-muted">Server storage usage and health metrics.</p>
-      </div>
-
-      {data.alerts?.length > 0 && (
-        <div className="space-y-2">
-          {data.alerts.map((alert: any, i: number) => (
-            <div key={i} className={`p-3 rounded-md text-sm ${alert.level === 'critical' ? 'bg-danger/20 text-danger' : 'bg-yellow-500/20 text-yellow-400'}`}>
-              {alert.message || `${alert.channel_name}: ${alert.usage_percent}% used`}
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-bg-secondary rounded-lg p-4">
-          <div className="text-xs text-text-muted uppercase tracking-wide mb-1">Total Messages</div>
-          <div className="text-2xl font-bold text-text-primary">{data.stats?.total_messages?.toLocaleString() || 0}</div>
-        </div>
-        <div className="bg-bg-secondary rounded-lg p-4">
-          <div className="text-xs text-text-muted uppercase tracking-wide mb-1">Total Size</div>
-          <div className="text-2xl font-bold text-text-primary">{formatBytes(data.stats?.total_size_bytes || 0)}</div>
-        </div>
-        <div className="bg-bg-secondary rounded-lg p-4">
-          <div className="text-xs text-text-muted uppercase tracking-wide mb-1">Size Limit</div>
-          <div className="text-2xl font-bold text-text-primary">{formatBytes(data.settings?.default_size_limit_bytes || 0)}</div>
-        </div>
-        <div className="bg-bg-secondary rounded-lg p-4">
-          <div className="text-xs text-text-muted uppercase tracking-wide mb-1">Archive Health</div>
-          <div className="text-2xl font-bold text-text-primary">{data.archive?.status || 'OK'}</div>
-        </div>
-      </div>
-
-      {comprehensive?.channels && (
-        <div>
-          <h4 className="text-sm font-semibold text-text-primary mb-2">Per-Channel Breakdown</h4>
-          <div className="bg-bg-secondary rounded-lg overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left px-3 py-2 text-text-muted font-medium">Channel</th>
-                  <th className="text-right px-3 py-2 text-text-muted font-medium">Messages</th>
-                  <th className="text-right px-3 py-2 text-text-muted font-medium">Size</th>
-                </tr>
-              </thead>
-              <tbody>
-                {comprehensive.channels.map((ch: any) => (
-                  <tr key={ch.channel_id} className="border-b border-border/50 last:border-0">
-                    <td className="px-3 py-2 text-text-primary">#{ch.channel_name || ch.channel_id}</td>
-                    <td className="px-3 py-2 text-right text-text-secondary">{ch.message_count?.toLocaleString() || 0}</td>
-                    <td className="px-3 py-2 text-right text-text-secondary">{formatBytes(ch.total_size_bytes || 0)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Retention Tab ────────────────────────────────────────────────────
-function RetentionTab() {
-  const [settings, setSettings] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [cleanupResult, setCleanupResult] = useState<any>(null);
-  const [cleaningUp, setCleaningUp] = useState(false);
-  const [logs, setLogs] = useState<any[]>([]);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [retentionData, logsData] = await Promise.all([
-          api.get<any>('/server/settings/retention'),
-          api.get<any>('/server/cleanup/logs'),
-        ]);
-        setSettings(retentionData);
-        setLogs(logsData.logs || []);
-      } catch (err) {
-        console.error('Failed to fetch retention data:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, []);
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      const result = await api.patch<any>('/server/settings/retention', settings);
-      setSettings(result.settings);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
-    } catch (err) {
-      console.error('Failed to save retention settings:', err);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleCleanup = async (dryRun: boolean) => {
-    setCleaningUp(true);
-    try {
-      const result = await api.post<any>('/server/cleanup/run', { dry_run: dryRun });
-      setCleanupResult(result);
-    } catch (err) {
-      console.error('Failed to run cleanup:', err);
-    } finally {
-      setCleaningUp(false);
-    }
-  };
-
-  const formatBytes = (bytes: number) => {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-  };
-
-  if (loading) return <div className="text-text-muted text-center py-8">Loading retention settings...</div>;
-  if (!settings) return <div className="text-danger text-center py-8">Failed to load retention settings</div>;
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold text-text-primary mb-1">Message Retention</h3>
-        <p className="text-sm text-text-muted">Configure message retention policies and run cleanup operations.</p>
-      </div>
-
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-text-secondary mb-1" htmlFor="channel-size-limit">Default Channel Size Limit (MB)</label>
-          <input
-            type="number"
-            id="channel-size-limit"
-            name="channel-size-limit"
-            value={Math.round((settings.default_channel_size_limit_bytes || 0) / 1024 / 1024)}
-            onChange={(e) => setSettings({ ...settings, default_channel_size_limit_bytes: parseInt(e.target.value || '0') * 1024 * 1024 })}
-            className="w-full bg-bg-tertiary border border-bg-modifier-accent rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-primary"
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-text-secondary mb-1" htmlFor="warning-threshold">Warning Threshold (%)</label>
-            <input
-              type="number"
-              id="warning-threshold"
-              name="warning-threshold"
-              min="0"
-              max="100"
-              value={settings.storage_warning_threshold_percent || 80}
-              onChange={(e) => setSettings({ ...settings, storage_warning_threshold_percent: parseInt(e.target.value || '80') })}
-              className="w-full bg-bg-tertiary border border-bg-modifier-accent rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-primary"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-text-secondary mb-1" htmlFor="action-threshold">Action Threshold (%)</label>
-            <input
-              type="number"
-              id="action-threshold"
-              name="action-threshold"
-              min="0"
-              max="100"
-              value={settings.storage_action_threshold_percent || 95}
-              onChange={(e) => setSettings({ ...settings, storage_action_threshold_percent: parseInt(e.target.value || '95') })}
-              className="w-full bg-bg-tertiary border border-bg-modifier-accent rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-primary"
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-3">
-        <button onClick={handleSave} disabled={saving} className="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white rounded-md text-sm font-medium transition-colors disabled:opacity-50">
-          {saving ? 'Saving...' : 'Save Settings'}
-        </button>
-        {saved && <span className="text-sm text-green-400">Saved!</span>}
-      </div>
-
-      <div className="border-t border-border pt-4">
-        <h4 className="text-sm font-semibold text-text-primary mb-2">Manual Cleanup</h4>
-        <p className="text-xs text-text-muted mb-3">Run cleanup to delete old messages exceeding channel size limits.</p>
-        <div className="flex gap-2">
-          <button onClick={() => handleCleanup(true)} disabled={cleaningUp} className="px-3 py-1.5 bg-bg-tertiary hover:bg-bg-modifier-hover text-text-secondary rounded-md text-sm transition-colors disabled:opacity-50">
-            {cleaningUp ? 'Running...' : 'Preview (Dry Run)'}
-          </button>
-          <button onClick={() => handleCleanup(false)} disabled={cleaningUp} className="px-3 py-1.5 bg-danger hover:bg-danger/80 text-white rounded-md text-sm transition-colors disabled:opacity-50">
-            Run Cleanup
-          </button>
-        </div>
-        {cleanupResult && (
-          <div className="mt-3 bg-bg-secondary rounded-md p-3 text-sm">
-            <p className="text-text-primary">{cleanupResult.dry_run ? 'Preview' : 'Cleanup complete'}: {cleanupResult.total_messages_deleted} messages, {formatBytes(cleanupResult.total_bytes_freed || 0)} freed</p>
-          </div>
-        )}
-      </div>
-
-      {logs.length > 0 && (
-        <div className="border-t border-border pt-4">
-          <h4 className="text-sm font-semibold text-text-primary mb-2">Cleanup History</h4>
-          <div className="space-y-2 max-h-60 overflow-y-auto">
-            {logs.map((log: any, i: number) => (
-              <div key={i} className="bg-bg-secondary rounded-md p-2 text-xs">
-                <div className="flex justify-between text-text-muted">
-                  <span>{log.messages_deleted || 0} messages deleted</span>
-                  <span>{new Date(log.created_at).toLocaleString()}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ── Crash Reports Tab ────────────────────────────────────────────────
 function CrashReportsTab() {
   const [reports, setReports] = useState<any[]>([]);
