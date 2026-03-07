@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import type { CustomEmoji } from '@sgchat/shared';
 
 export interface EmojiAutocompleteProps {
@@ -24,7 +24,7 @@ export function EmojiAutocomplete({
 
   const visible = filtered.slice(0, 10);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setSelectedIndex(0);
   }, [query]);
 
@@ -51,8 +51,9 @@ export function EmojiAutocomplete({
       }
       if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault();
-        if (visible[selectedIndex]) {
-          onSelect(visible[selectedIndex]);
+        const idx = Math.min(selectedIndex, visible.length - 1);
+        if (visible[idx]) {
+          onSelect(visible[idx]);
         }
         return true;
       }
@@ -66,7 +67,7 @@ export function EmojiAutocomplete({
     [visible, selectedIndex, onSelect, onClose],
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     (EmojiAutocomplete as any)._handleKeyDown = handleKeyDown;
     return () => {
       (EmojiAutocomplete as any)._handleKeyDown = null;

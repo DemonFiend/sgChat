@@ -158,6 +158,8 @@ export function ChatPanel({
     triggerStart: number;
     query: string;
   } | null>(null);
+  const emojiTriggerRef = useRef(emojiTrigger);
+  emojiTriggerRef.current = emojiTrigger;
   const emojiManifest = useEmojiManifestStore((s) => serverId ? s.manifests.get(serverId) : undefined);
   const enabledEmojis = useMemo(() => {
     if (!emojiManifest) return [];
@@ -351,11 +353,13 @@ export function ChatPanel({
   // Handle emoji autocomplete selection
   const handleEmojiSelect = useCallback(
     (emoji: { shortcode: string }) => {
-      if (!emojiTrigger || !inputRef.current) return;
+      const trigger = emojiTriggerRef.current;
+      if (!trigger || !inputRef.current) return;
 
-      const before = messageInput.slice(0, emojiTrigger.triggerStart);
-      const after = messageInput.slice(
-        emojiTrigger.triggerStart + 1 + emojiTrigger.query.length,
+      const currentInput = inputRef.current.value;
+      const before = currentInput.slice(0, trigger.triggerStart);
+      const after = currentInput.slice(
+        trigger.triggerStart + 1 + trigger.query.length,
       );
       const insertText = `:${emoji.shortcode}: `;
       const newInput = before + insertText + after;
@@ -369,7 +373,7 @@ export function ChatPanel({
         inputRef.current?.focus();
       });
     },
-    [emojiTrigger, messageInput],
+    [],
   );
 
   // Handle @stime time input
