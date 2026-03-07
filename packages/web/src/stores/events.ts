@@ -61,8 +61,8 @@ export const useEventsStore = create<EventsState & EventsActions>((set, get) => 
     set({ isLoading: true, error: null });
     try {
       const endpoint = get().isHistory
-        ? `/api/servers/${serverId}/events/history?month=${month}`
-        : `/api/servers/${serverId}/events?month=${month}`;
+        ? `/servers/${serverId}/events/history?month=${month}`
+        : `/servers/${serverId}/events?month=${month}`;
       const data = await api.get<{ events: ServerEvent[] }>(endpoint);
       set({ events: data.events, isLoading: false });
     } catch (err) {
@@ -71,32 +71,32 @@ export const useEventsStore = create<EventsState & EventsActions>((set, get) => 
   },
 
   createEvent: async (serverId, data) => {
-    await api.post(`/api/servers/${serverId}/events`, data);
+    await api.post(`/servers/${serverId}/events`, data);
     const { currentMonth } = get();
     await get().fetchEvents(serverId, currentMonth);
   },
 
   updateEvent: async (serverId, eventId, data) => {
-    await api.patch(`/api/servers/${serverId}/events/${eventId}`, data);
+    await api.patch(`/servers/${serverId}/events/${eventId}`, data);
     const { currentMonth } = get();
     await get().fetchEvents(serverId, currentMonth);
   },
 
   cancelEvent: async (serverId, eventId) => {
-    await api.post(`/api/servers/${serverId}/events/${eventId}/cancel`);
+    await api.post(`/servers/${serverId}/events/${eventId}/cancel`);
     const { currentMonth } = get();
     await get().fetchEvents(serverId, currentMonth);
   },
 
   deleteEvent: async (serverId, eventId) => {
-    await api.delete(`/api/servers/${serverId}/events/${eventId}`);
+    await api.delete(`/servers/${serverId}/events/${eventId}`);
     const { currentMonth } = get();
     await get().fetchEvents(serverId, currentMonth);
   },
 
   rsvpEvent: async (serverId, eventId, status) => {
     const result = await api.put<{ my_status: string; counts: { interested: number; tentative: number; not_interested: number } }>(
-      `/api/servers/${serverId}/events/${eventId}/rsvp`,
+      `/servers/${serverId}/events/${eventId}/rsvp`,
       { status },
     );
     // Update local event state

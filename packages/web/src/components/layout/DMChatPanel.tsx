@@ -459,7 +459,7 @@ export function DMChatPanel({
 
           // Compact continuation message
           return (
-            <div key={message.id} className="flex py-0.5 justify-start group">
+            <div key={message.id} className="flex py-px justify-start group">
               <div className="w-8 flex-shrink-0 mr-2 flex items-start justify-end pt-0.5">
                 <span className="text-[10px] text-text-muted opacity-0 group-hover:opacity-100">
                   {formatTime(message.created_at)}
