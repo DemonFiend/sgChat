@@ -22,6 +22,7 @@ import {
 } from '@/lib/mentionUtils';
 import { CommandAutocomplete } from '@/components/ui/CommandAutocomplete';
 import type { SlashCommand } from '@sgchat/shared';
+import { MAX_MESSAGE_LENGTH } from '@sgchat/shared';
 import { api } from '@/api';
 
 export interface MessageAuthor {
@@ -252,7 +253,7 @@ export function ChatPanel({
 
   const handleSend = useCallback(() => {
     const content = messageInput.trim();
-    if (content && onSendMessage) {
+    if (content && onSendMessage && content.length <= MAX_MESSAGE_LENGTH) {
       // Handle /clear locally — never send to server
       if (content === '/clear') {
         onClearMessages?.();
@@ -394,6 +395,28 @@ export function ChatPanel({
       handleSend();
     }
   }, [handleSend, mentionTrigger, stimePrompt, commandTrigger]);
+
+  const isOverLimit = messageInput.length > MAX_MESSAGE_LENGTH;
+  const charCountVisible = messageInput.length > MAX_MESSAGE_LENGTH * 0.75;
+
+  const handleSendAsTextFile = useCallback(async () => {
+    const content = messageInput.trim();
+    if (!content) return;
+    setIsUploading(true);
+    try {
+      const blob = new Blob([content], { type: 'text/plain' });
+      const file = new File([blob], 'message.txt', { type: 'text/plain' });
+      const result = await api.upload<{ url: string }>('/upload', file);
+      onSendMessage?.(result.url);
+      setMessageInput('');
+      setMentionMappings([]);
+      inputRef.current?.focus();
+    } catch (err) {
+      console.error('Text file upload failed:', err);
+    } finally {
+      setIsUploading(false);
+    }
+  }, [messageInput, onSendMessage]);
 
   const handleFileUpload = useCallback(() => {
     const input = document.createElement('input');
@@ -796,10 +819,19 @@ export function ChatPanel({
               </button>
             )}
 
+            {/* Character counter */}
+            {charCountVisible && (
+              <span className={`px-2 text-xs font-mono select-none whitespace-nowrap ${
+                isOverLimit ? 'text-red-400' : messageInput.length > MAX_MESSAGE_LENGTH * 0.9 ? 'text-yellow-400' : 'text-text-muted'
+              }`}>
+                {messageInput.length}/{MAX_MESSAGE_LENGTH}
+              </span>
+            )}
+
             {/* Send button */}
             <button
               onClick={handleSend}
-              disabled={!messageInput.trim()}
+              disabled={!messageInput.trim() || isOverLimit}
               className="p-3 text-text-muted hover:text-brand-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -807,6 +839,20 @@ export function ChatPanel({
               </svg>
             </button>
           </div>
+
+          {/* Over-limit banner */}
+          {isOverLimit && (
+            <div className="flex items-center justify-between px-3 py-1.5 bg-red-500/10 border border-red-500/20 rounded text-xs text-red-400">
+              <span>Message too long ({messageInput.length}/{MAX_MESSAGE_LENGTH})</span>
+              <button
+                onClick={handleSendAsTextFile}
+                disabled={isUploading}
+                className="ml-2 underline hover:text-red-300 transition-colors disabled:opacity-50"
+              >
+                {isUploading ? 'Uploading...' : 'Send as .txt file'}
+              </button>
+            </div>
+          )}
 
           {/* Emoji Picker Portal */}
           <ReactionPicker

@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/MentionAutocomplete';
 import { useMentionContext } from '@/contexts/MentionContext';
 import { convertMentionsToWireFormat, shiftMappings, type MentionMapping } from '@/lib/mentionUtils';
+import { MAX_MESSAGE_LENGTH } from '@sgchat/shared';
 import { api } from '@/api';
 import type { Friend } from './DMSidebar';
 
@@ -186,9 +187,31 @@ export function DMChatPanel({
     });
   }, [mentionTrigger, messageInput, mentionMappings]);
 
+  const isOverLimit = messageInput.length > MAX_MESSAGE_LENGTH;
+  const charCountVisible = messageInput.length > MAX_MESSAGE_LENGTH * 0.75;
+
+  const handleSendAsTextFile = useCallback(async () => {
+    const content = messageInput.trim();
+    if (!content) return;
+    setIsUploading(true);
+    try {
+      const blob = new Blob([content], { type: 'text/plain' });
+      const file = new File([blob], 'message.txt', { type: 'text/plain' });
+      const result = await api.upload<{ url: string }>('/upload', file);
+      onSendMessage(result.url);
+      setMessageInput('');
+      setMentionMappings([]);
+      inputRef.current?.focus();
+    } catch (err) {
+      console.error('Text file upload failed:', err);
+    } finally {
+      setIsUploading(false);
+    }
+  }, [messageInput, onSendMessage]);
+
   const handleSend = () => {
     const content = messageInput.trim();
-    if (content) {
+    if (content && content.length <= MAX_MESSAGE_LENGTH) {
       if (isTypingRef.current) {
         isTypingRef.current = false;
         onTypingStop?.();
@@ -447,9 +470,17 @@ export function DMChatPanel({
               className="flex-1 bg-transparent py-3 px-4 text-text-primary placeholder:text-text-muted outline-none resize-none max-h-32 scrollbar-thin"
               style={{ minHeight: '24px' }}
             />
+            {/* Character counter */}
+            {charCountVisible && (
+              <span className={`px-2 text-xs font-mono select-none whitespace-nowrap ${
+                isOverLimit ? 'text-red-400' : messageInput.length > MAX_MESSAGE_LENGTH * 0.9 ? 'text-yellow-400' : 'text-text-muted'
+              }`}>
+                {messageInput.length}/{MAX_MESSAGE_LENGTH}
+              </span>
+            )}
             <button
               onClick={handleSend}
-              disabled={!messageInput.trim()}
+              disabled={!messageInput.trim() || isOverLimit}
               className="p-3 text-text-muted hover:text-brand-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -457,6 +488,20 @@ export function DMChatPanel({
               </svg>
             </button>
           </div>
+
+          {/* Over-limit banner */}
+          {isOverLimit && (
+            <div className="flex items-center justify-between px-3 py-1.5 bg-red-500/10 border border-red-500/20 rounded text-xs text-red-400">
+              <span>Message too long ({messageInput.length}/{MAX_MESSAGE_LENGTH})</span>
+              <button
+                onClick={handleSendAsTextFile}
+                disabled={isUploading}
+                className="ml-2 underline hover:text-red-300 transition-colors disabled:opacity-50"
+              >
+                {isUploading ? 'Uploading...' : 'Send as .txt file'}
+              </button>
+            </div>
+          )}
           </div>
 
           {/* Bottom Right Action Buttons */}
