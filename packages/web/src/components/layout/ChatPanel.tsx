@@ -1295,7 +1295,7 @@ function MessageItem({
     if (eventType === 'role_reaction') {
       // Parse content: first line is **GroupName**, rest are "Please React [emoji] to obtain @Role" lines
       const lines = message.content.split('\n').filter((l: string) => l.trim());
-      const titleLine = lines[0]?.replace(/\*\*/g, '') || 'Role Reactions';
+      const titleLine = lines[0] || 'Role Reactions';
       const mappingLines = lines.slice(1);
 
       return (
@@ -1313,7 +1313,9 @@ function MessageItem({
                 <span className="font-medium text-brand-primary">System</span>
                 <span className="text-xs text-text-muted">{formatTime(message.created_at)}</span>
               </div>
-              <h3 className="text-sm font-semibold text-text-primary mt-1">{titleLine}</h3>
+              <h3 className="text-sm font-semibold text-text-primary mt-1">
+                <MessageContent content={titleLine} serverId={serverId} compact />
+              </h3>
               <div className="space-y-0.5 mt-1 pl-2">
                 {mappingLines.map((line: string, i: number) => (
                   <p key={i} className="text-sm text-text-secondary">

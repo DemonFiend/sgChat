@@ -11,7 +11,7 @@ import {
   MOTDBadge,
   MessageLinkEmbed,
 } from './MentionBadges';
-import { renderCustomEmojis } from '@/lib/emojiRenderer';
+import { renderMarkdown } from '@/lib/markdownParser';
 import { useEmojiManifestStore } from '@/stores/emojiManifest';
 
 const GIF_AUTOPLAY_DURATION = 6000;
@@ -154,7 +154,7 @@ export function MessageContent({ content, isOwnMessage, compact, serverId }: Mes
           default:
             return (
               <span key={i} className="break-words whitespace-pre-wrap">
-                {emojiManifest ? renderCustomEmojis(segment.value, serverId) : segment.value}
+                {renderMarkdown(segment.value, serverId, !!emojiManifest)}
               </span>
             );
         }
