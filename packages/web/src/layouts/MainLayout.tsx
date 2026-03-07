@@ -342,7 +342,7 @@ export function MainLayout() {
   const handleOpenThread = useCallback(async (messageId: string) => {
     try {
       if (!channelId) return;
-      const res = await api.get<{ threads: ThreadInfo[] }>(`/api/channels/${channelId}/threads`);
+      const res = await api.get<{ threads: ThreadInfo[] }>(`/channels/${channelId}/threads`);
       const thread = res.threads.find((t: ThreadInfo) => t.parent_message_id === messageId);
       if (thread) {
         setActiveThread(thread);
@@ -358,7 +358,7 @@ export function MainLayout() {
     setActiveThread(null);
     const loadThreads = async () => {
       try {
-        const res = await api.get<{ threads: ThreadInfo[] }>(`/api/channels/${channelId}/threads`);
+        const res = await api.get<{ threads: ThreadInfo[] }>(`/channels/${channelId}/threads`);
         const ids = new Set<string>();
         for (const t of res.threads) {
           if (t.parent_message_id) ids.add(t.parent_message_id);

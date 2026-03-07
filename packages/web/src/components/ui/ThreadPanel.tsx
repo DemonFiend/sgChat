@@ -61,7 +61,7 @@ export function ThreadPanel({
     try {
       setLoading(true);
       const res = await api.get<{ messages: ThreadMessage[] }>(
-        `/api/threads/${thread.id}/messages`,
+        `/threads/${thread.id}/messages`,
       );
       setMessages(res.messages);
     } catch (err) {
@@ -86,7 +86,7 @@ export function ThreadPanel({
     setSending(true);
     try {
       const msg = await api.post<ThreadMessage>(
-        `/api/threads/${thread.id}/messages`,
+        `/threads/${thread.id}/messages`,
         { content },
       );
       setMessages((prev) => [...prev, msg]);
@@ -108,7 +108,7 @@ export function ThreadPanel({
 
   const handleArchive = async () => {
     try {
-      await api.patch(`/api/threads/${thread.id}`, {
+      await api.patch(`/threads/${thread.id}`, {
         is_archived: !thread.is_archived,
       });
     } catch (err) {
@@ -118,7 +118,7 @@ export function ThreadPanel({
 
   const handleLock = async () => {
     try {
-      await api.patch(`/api/threads/${thread.id}`, {
+      await api.patch(`/threads/${thread.id}`, {
         is_locked: !thread.is_locked,
       });
     } catch (err) {

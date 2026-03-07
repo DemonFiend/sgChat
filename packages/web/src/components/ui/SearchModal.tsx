@@ -84,11 +84,11 @@ export function SearchModal({
 
         let endpoint: string;
         if (dmChannelId) {
-          endpoint = `/api/dms/${dmChannelId}/messages/search?${params}`;
+          endpoint = `/dms/${dmChannelId}/messages/search?${params}`;
         } else if (searchScope === 'channel' && channelId) {
-          endpoint = `/api/channels/${channelId}/messages/search?${params}`;
+          endpoint = `/channels/${channelId}/messages/search?${params}`;
         } else {
-          endpoint = `/api/search/messages?${params}`;
+          endpoint = `/search/messages?${params}`;
         }
 
         const data = await api.get<SearchResponse>(endpoint);

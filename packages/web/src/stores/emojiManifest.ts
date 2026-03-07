@@ -30,7 +30,7 @@ export const useEmojiManifestStore = create<EmojiManifestState & EmojiManifestAc
       set({ loading: true, error: null });
       try {
         const data = await api.get<EmojiManifest>(
-          `/api/servers/${serverId}/emojis/manifest`,
+          `/servers/${serverId}/emojis/manifest`,
         );
         set((state) => {
           const manifests = new Map(state.manifests);

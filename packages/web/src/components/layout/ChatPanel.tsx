@@ -179,7 +179,7 @@ export function ChatPanel({
   // Fetch slash commands once on mount
   useEffect(() => {
     let cancelled = false;
-    api.get<SlashCommand[]>('/api/channels/commands').then((cmds) => {
+    api.get<SlashCommand[]>('/channels/commands').then((cmds) => {
       if (!cancelled) setSlashCommands(cmds);
     }).catch(() => {
       // Silently ignore — commands won't show autocomplete
