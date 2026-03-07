@@ -1207,41 +1207,35 @@ function MessageItem({
 
     // Role reaction message — styled card with reactions
     if (eventType === 'role_reaction') {
-      // Parse content: first line is **GroupName**, second is description, rest are emoji mappings
+      // Parse content: first line is **GroupName**, rest are "Please React [emoji] to obtain @Role" lines
       const lines = message.content.split('\n').filter((l: string) => l.trim());
       const titleLine = lines[0]?.replace(/\*\*/g, '') || 'Role Reactions';
-      const descLine = lines.length > 1 && !lines[1].includes('—') ? lines[1] : null;
-      const mappingLines = lines.filter((l: string) => l.includes('—'));
+      const mappingLines = lines.slice(1);
 
       return (
-        <div className="px-4 py-3 group relative">
-          <div className="border border-brand-primary/30 rounded-lg bg-bg-secondary/50 p-4 max-w-lg">
-            <div className="flex items-center gap-2 mb-2">
-              <svg className="w-5 h-5 text-brand-primary flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-              </svg>
-              <h3 className="text-base font-semibold text-text-primary">{titleLine}</h3>
+        <div className={clsx('px-4 py-1 hover:bg-bg-modifier-hover group relative')}>
+          <div className="flex gap-4">
+            <div className="flex-shrink-0 pt-0.5">
+              <div className="w-10 h-10 rounded-full bg-brand-primary/20 flex items-center justify-center">
+                <svg className="w-5 h-5 text-brand-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+              </div>
             </div>
-            {descLine && (
-              <p className="text-sm text-text-muted mb-3">{descLine}</p>
-            )}
-            <div className="space-y-1">
-              {mappingLines.map((line: string, i: number) => {
-                const parts = line.trim().split('—').map((s: string) => s.trim());
-                return (
-                  <div key={i} className="flex items-center gap-2 text-sm">
-                    <span className="text-base w-6 text-center">{parts[0]}</span>
-                    <span className="text-text-muted">→</span>
-                    <span className="text-text-primary">{parts[1] || ''}</span>
-                  </div>
-                );
-              })}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-baseline gap-2">
+                <span className="font-medium text-brand-primary">System</span>
+                <span className="text-xs text-text-muted">{formatTime(message.created_at)}</span>
+              </div>
+              <h3 className="text-sm font-semibold text-text-primary mt-1">{titleLine}</h3>
+              <div className="space-y-0.5 mt-1 pl-2">
+                {mappingLines.map((line: string, i: number) => (
+                  <p key={i} className="text-sm text-text-secondary">{line.trim()}</p>
+                ))}
+              </div>
+              {renderReactions()}
             </div>
-            <p className="text-xs text-text-muted mt-3 italic">
-              React below to assign yourself a role
-            </p>
           </div>
-          {renderReactions()}
         </div>
       );
     }

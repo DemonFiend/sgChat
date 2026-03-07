@@ -51,7 +51,7 @@ VALUES (
   'system@localhost',
   '!disabled',
   'System',
-  'online'
+  'offline'
 ) ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================

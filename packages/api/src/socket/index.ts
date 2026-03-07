@@ -470,7 +470,18 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         });
 
         const author = await db.users.findById(userId);
-        
+
+        // Get the user's highest-position role color for this server
+        const [roleColorRow] = await db.sql`
+          SELECT r.color FROM roles r
+          JOIN member_roles mr ON mr.role_id = r.id
+          WHERE mr.member_user_id = ${userId}
+            AND mr.member_server_id = ${channel.server_id}
+            AND r.color IS NOT NULL
+          ORDER BY r.position DESC
+          LIMIT 1
+        `;
+
         const formattedMessage = {
           id: message.id,
           channel_id: message.channel_id,
@@ -480,6 +491,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
             username: author.username,
             display_name: author.display_name || author.username,
             avatar_url: author.avatar_url,
+            role_color: roleColorRow?.color || null,
           },
           created_at: message.created_at,
           edited_at: message.edited_at,

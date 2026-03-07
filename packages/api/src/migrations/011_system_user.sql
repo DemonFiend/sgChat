@@ -9,7 +9,7 @@ VALUES (
   'system@localhost',
   '!disabled',
   'System',
-  'online'
+  'offline'
 ) ON CONFLICT (id) DO NOTHING;
 
 -- Add system user as member of all existing servers

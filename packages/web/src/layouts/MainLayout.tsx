@@ -549,6 +549,21 @@ export function MainLayout() {
       setMembers((prev) =>
         prev.map((m) => (m.id === data.id ? { ...m, ...data } : m)),
       );
+
+      // Update role_color on existing messages from this user
+      if (data.roles) {
+        const topColor =
+          [...data.roles]
+            .filter((r) => r.color)
+            .sort((a, b) => b.position - a.position)[0]?.color || null;
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.author?.id === data.id
+              ? { ...msg, author: { ...msg.author, role_color: topColor } }
+              : msg,
+          ),
+        );
+      }
     };
 
     const handleMemberJoin = (data: MemberData) => {
