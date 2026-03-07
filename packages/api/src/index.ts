@@ -314,6 +314,7 @@ async function start() {
     // a raw 401 JSON page when the browser URL matches a legacy route prefix.
     fastify.addHook('onSend', async (request, reply, payload) => {
       if (
+        !reply.sent &&
         (reply.statusCode === 401 || reply.statusCode === 403) &&
         request.headers.accept?.includes('text/html') &&
         !request.url.startsWith('/api/')
