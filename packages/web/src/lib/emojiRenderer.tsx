@@ -9,7 +9,12 @@ export function renderCustomEmojis(text: string, serverId?: string): (string | R
   if (!serverId || !text.includes(':')) return [text];
 
   const manifest = useEmojiManifestStore.getState().manifests.get(serverId);
-  if (!manifest || manifest.emojis.length === 0) return [text];
+  if (!manifest || manifest.emojis.length === 0) {
+    if (text.includes(':') && serverId) {
+      console.warn('[EmojiRenderer] No manifest for server', serverId, '| manifest:', !!manifest, '| emojis:', manifest?.emojis?.length);
+    }
+    return [text];
+  }
 
   const parts: (string | React.ReactElement)[] = [];
   const regex = /:([a-zA-Z0-9_]{2,32}):/g;
@@ -35,6 +40,7 @@ export function renderCustomEmojis(text: string, serverId?: string): (string | R
 
       // Add emoji image
       const url = emoji.url || emoji.asset_key;
+      console.log('[EmojiRenderer] Found emoji', shortcode, '| url:', url);
       parts.push(
         <img
           key={`emoji-${match.index}`}

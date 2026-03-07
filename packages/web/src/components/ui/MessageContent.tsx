@@ -12,6 +12,7 @@ import {
   MessageLinkEmbed,
 } from './MentionBadges';
 import { renderCustomEmojis } from '@/lib/emojiRenderer';
+import { useEmojiManifestStore } from '@/stores/emojiManifest';
 
 const GIF_AUTOPLAY_DURATION = 6000;
 
@@ -134,6 +135,9 @@ function MentionRenderer({ mention }: { mention: ParsedMention }) {
 
 export function MessageContent({ content, isOwnMessage, compact, serverId }: MessageContentProps) {
   const segments = useMemo(() => parseContentSegments(content), [content]);
+  // Subscribe to emoji manifest so we re-render when it loads
+  const emojiManifest = useEmojiManifestStore((s) => serverId ? s.manifests.get(serverId) : undefined);
+  void emojiManifest; // used implicitly by renderCustomEmojis via getState()
 
   return (
     <div className="message-content">
