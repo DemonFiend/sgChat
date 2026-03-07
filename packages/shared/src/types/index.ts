@@ -16,7 +16,7 @@ export type MessageStatus = 'sending' | 'sent' | 'received' | 'failed';
 export type ChannelType = 'text' | 'voice' | 'announcement' | 'music' | 'temp_voice_generator' | 'temp_voice';
 
 // System event types
-export type SystemEventType = 'member_join' | 'member_leave' | 'member_online' | 'role_reaction';
+export type SystemEventType = 'member_join' | 'member_leave' | 'member_online' | 'role_reaction' | 'event_start';
 
 export interface User {
   id: UUID;
@@ -254,7 +254,8 @@ export type NotificationType =
   | 'friend_request'
   | 'friend_accept'
   | 'dm_message'
-  | 'system';
+  | 'system'
+  | 'event_start';
 
 export type NotificationPriority = 'low' | 'normal' | 'high';
 
@@ -494,6 +495,8 @@ export type EventType =
   // Stickers
   | 'sticker.added'
   | 'sticker.removed'
+  // Server Events
+  | 'serverEvents.invalidate'
   // Emojis
   | 'emoji.manifestUpdated'
   | 'emoji.added'
@@ -1071,4 +1074,44 @@ export interface ReactionAggregate {
   count: number;
   users: string[];
   me: boolean;
+}
+
+// ============================================================
+// Server Events
+// ============================================================
+
+export type EventVisibility = 'public' | 'private';
+export type EventStatus = 'scheduled' | 'cancelled';
+export type RSVPStatus = 'interested' | 'tentative' | 'not_interested';
+
+export interface ServerEvent {
+  id: UUID;
+  server_id: UUID;
+  created_by: UUID;
+  title: string;
+  description: string | null;
+  start_time: string;
+  end_time: string;
+  announce_at_start: boolean;
+  announcement_channel_id: UUID | null;
+  visibility: EventVisibility;
+  status: EventStatus;
+  cancelled_at: string | null;
+  deleted_at: string | null;
+  created_at: string;
+  updated_at: string;
+  creator_username?: string;
+  creator_avatar_url?: string | null;
+  rsvp_counts?: { interested: number; tentative: number; not_interested: number };
+  my_rsvp?: RSVPStatus | null;
+  visible_role_ids?: string[];
+}
+
+export interface ServerEventRSVP {
+  event_id: UUID;
+  user_id: UUID;
+  status: RSVPStatus;
+  updated_at: string;
+  username?: string;
+  avatar_url?: string | null;
 }

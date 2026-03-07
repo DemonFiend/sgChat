@@ -47,10 +47,12 @@ import { webhookRoutes } from './routes/webhooks.js';
 import { stickerRoutes } from './routes/stickers.js';
 import { emojiRoutes } from './routes/emojis.js';
 import { threadRoutes } from './routes/threads.js';
+import { eventRoutes } from './routes/events.js';
 import { cryptoPayloadPlugin } from './plugins/cryptoPayload.js';
 import { initSocketIO } from './socket/index.js';
 import { cleanupEmptyTempChannels } from './services/tempChannels.js';
 import { checkAndMoveAfkUsers } from './services/afkService.js';
+import { checkAndAnnounceEvents } from './services/eventAnnouncements.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -218,6 +220,9 @@ async function start() {
     // Emoji routes
     await api.register(emojiRoutes, { prefix: '/servers' });
 
+    // Server events routes
+    await api.register(eventRoutes, { prefix: '/servers' });
+
     // Releases (update check)
     await api.register(releasesRoutes);
 
@@ -295,6 +300,7 @@ async function start() {
   await fastify.register(roleReactionRoutes, { prefix: '/servers' });
   await fastify.register(stickerRoutes, { prefix: '/servers' });
   await fastify.register(emojiRoutes, { prefix: '/servers' });
+  await fastify.register(eventRoutes, { prefix: '/servers' });
   await fastify.register(releasesRoutes);
   await fastify.register(crashReportsRoutes);
   await fastify.register(searchRoutes, { prefix: '/search' });
@@ -392,6 +398,15 @@ async function start() {
     }
   }, 30 * 1000);
 
+  // Start event announcement worker (every 30 seconds)
+  const eventAnnouncementInterval = setInterval(async () => {
+    try {
+      await checkAndAnnounceEvents();
+    } catch (err) {
+      fastify.log.error({ err }, 'Event announcement check failed');
+    }
+  }, 30 * 1000);
+
   // Start auto-purge scheduler (every hour)
   const autoPurgeInterval = setInterval(async () => {
     try {
@@ -414,6 +429,7 @@ async function start() {
     clearInterval(tempChannelCleanupInterval);
     clearInterval(afkCheckInterval);
     clearInterval(autoPurgeInterval);
+    clearInterval(eventAnnouncementInterval);
 
     await fastify.close();
     await shutdownEventBus();

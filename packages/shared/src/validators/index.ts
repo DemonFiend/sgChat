@@ -187,7 +187,7 @@ export const updateStatusCommentSchema = z.object({
 export const notificationTypeSchema = z.enum([
   'mention', 'reaction', 'role_change', 'invite',
   'announcement', 'friend_request', 'friend_accept',
-  'dm_message', 'system',
+  'dm_message', 'system', 'event_start',
 ]);
 
 export const notificationPrioritySchema = z.enum(['low', 'normal', 'high']);
@@ -422,3 +422,42 @@ export type CreateEmojiPackInput = z.infer<typeof createEmojiPackSchema>;
 export type UpdateEmojiPackInput = z.infer<typeof updateEmojiPackSchema>;
 export type UpdateEmojiInput = z.infer<typeof updateEmojiSchema>;
 export type AddTypedReactionInput = z.infer<typeof addTypedReactionSchema>;
+
+// ============================================================
+// Server Events validators
+// ============================================================
+
+export const createServerEventSchema = z.object({
+  title: z.string().min(1, 'Title is required').max(150, 'Title must be at most 150 characters'),
+  description: z.string().max(2000).nullable().optional(),
+  start_time: z.string().datetime(),
+  end_time: z.string().datetime().optional(),
+  announce_at_start: z.boolean().optional(),
+  announcement_channel_id: z.string().uuid().nullable().optional(),
+  visibility: z.enum(['public', 'private']).optional(),
+  role_ids: z.array(z.string().uuid()).optional(),
+});
+
+export const updateServerEventSchema = z.object({
+  title: z.string().min(1).max(150).optional(),
+  description: z.string().max(2000).nullable().optional(),
+  start_time: z.string().datetime().optional(),
+  end_time: z.string().datetime().optional(),
+  announce_at_start: z.boolean().optional(),
+  announcement_channel_id: z.string().uuid().nullable().optional(),
+  visibility: z.enum(['public', 'private']).optional(),
+  role_ids: z.array(z.string().uuid()).optional(),
+});
+
+export const rsvpSchema = z.object({
+  status: z.enum(['interested', 'tentative', 'not_interested']),
+});
+
+export const eventListQuerySchema = z.object({
+  month: z.string().regex(/^\d{4}-\d{2}$/, 'Month must be in YYYY-MM format'),
+});
+
+export type CreateServerEventInput = z.infer<typeof createServerEventSchema>;
+export type UpdateServerEventInput = z.infer<typeof updateServerEventSchema>;
+export type RSVPInput = z.infer<typeof rsvpSchema>;
+export type EventListQueryInput = z.infer<typeof eventListQuerySchema>;

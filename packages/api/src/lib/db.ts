@@ -1093,6 +1093,223 @@ export const db = {
     },
   },
 
+  // Server Events
+  serverEvents: {
+    async findByServerAndMonth(
+      serverId: string,
+      monthStart: string,
+      monthEnd: string,
+      userId: string,
+      userRoleIds: string[],
+    ) {
+      return sql`
+        WITH rsvp_counts AS (
+          SELECT event_id,
+            COUNT(*) FILTER (WHERE status = 'interested')::int AS interested,
+            COUNT(*) FILTER (WHERE status = 'tentative')::int AS tentative,
+            COUNT(*) FILTER (WHERE status = 'not_interested')::int AS not_interested
+          FROM server_event_rsvps
+          GROUP BY event_id
+        ),
+        my_rsvp AS (
+          SELECT event_id, status FROM server_event_rsvps WHERE user_id = ${userId}
+        ),
+        visible_roles AS (
+          SELECT event_id, array_agg(role_id::text) AS role_ids
+          FROM server_event_roles
+          GROUP BY event_id
+        )
+        SELECT
+          e.*,
+          u.username AS creator_username,
+          u.avatar_url AS creator_avatar_url,
+          COALESCE(rc.interested, 0) AS rsvp_interested,
+          COALESCE(rc.tentative, 0) AS rsvp_tentative,
+          COALESCE(rc.not_interested, 0) AS rsvp_not_interested,
+          mr.status AS my_rsvp,
+          vr.role_ids AS visible_role_ids
+        FROM server_events e
+        LEFT JOIN users u ON e.created_by = u.id
+        LEFT JOIN rsvp_counts rc ON rc.event_id = e.id
+        LEFT JOIN my_rsvp mr ON mr.event_id = e.id
+        LEFT JOIN visible_roles vr ON vr.event_id = e.id
+        WHERE e.server_id = ${serverId}
+          AND e.deleted_at IS NULL
+          AND e.start_time < ${monthEnd}::timestamptz
+          AND e.end_time > ${monthStart}::timestamptz
+          AND (
+            e.visibility = 'public'
+            OR e.created_by = ${userId}
+            OR EXISTS (
+              SELECT 1 FROM server_event_roles ser
+              WHERE ser.event_id = e.id AND ser.role_id = ANY(${userRoleIds}::uuid[])
+            )
+          )
+        ORDER BY e.start_time ASC
+      `;
+    },
+
+    async findById(id: string) {
+      const [event] = await sql`SELECT * FROM server_events WHERE id = ${id}`;
+      return event;
+    },
+
+    async findByIdWithDetails(id: string, userId: string) {
+      const [event] = await sql`
+        WITH rsvp_counts AS (
+          SELECT event_id,
+            COUNT(*) FILTER (WHERE status = 'interested')::int AS interested,
+            COUNT(*) FILTER (WHERE status = 'tentative')::int AS tentative,
+            COUNT(*) FILTER (WHERE status = 'not_interested')::int AS not_interested
+          FROM server_event_rsvps
+          WHERE event_id = ${id}
+          GROUP BY event_id
+        )
+        SELECT
+          e.*,
+          u.username AS creator_username,
+          u.avatar_url AS creator_avatar_url,
+          COALESCE(rc.interested, 0) AS rsvp_interested,
+          COALESCE(rc.tentative, 0) AS rsvp_tentative,
+          COALESCE(rc.not_interested, 0) AS rsvp_not_interested,
+          (SELECT status FROM server_event_rsvps WHERE event_id = ${id} AND user_id = ${userId}) AS my_rsvp
+        FROM server_events e
+        LEFT JOIN users u ON e.created_by = u.id
+        LEFT JOIN rsvp_counts rc ON rc.event_id = e.id
+        WHERE e.id = ${id}
+      `;
+      return event;
+    },
+
+    async create(data: {
+      server_id: string;
+      created_by: string;
+      title: string;
+      description?: string | null;
+      start_time: string;
+      end_time: string;
+      announce_at_start?: boolean;
+      announcement_channel_id?: string | null;
+      visibility?: string;
+    }) {
+      const [event] = await sql`
+        INSERT INTO server_events (
+          server_id, created_by, title, description,
+          start_time, end_time, announce_at_start,
+          announcement_channel_id, visibility
+        )
+        VALUES (
+          ${data.server_id}, ${data.created_by}, ${data.title},
+          ${data.description || null},
+          ${data.start_time}, ${data.end_time},
+          ${data.announce_at_start ?? true},
+          ${data.announcement_channel_id || null},
+          ${data.visibility || 'public'}
+        )
+        RETURNING *
+      `;
+      return event;
+    },
+
+    async update(id: string, data: Record<string, any>) {
+      data.updated_at = new Date();
+      const [event] = await sql`
+        UPDATE server_events SET ${sql(data)} WHERE id = ${id} RETURNING *
+      `;
+      return event;
+    },
+
+    async cancel(id: string) {
+      const [event] = await sql`
+        UPDATE server_events
+        SET status = 'cancelled', cancelled_at = NOW(), updated_at = NOW()
+        WHERE id = ${id}
+        RETURNING *
+      `;
+      return event;
+    },
+
+    async softDelete(id: string) {
+      const [event] = await sql`
+        UPDATE server_events
+        SET deleted_at = NOW(), updated_at = NOW()
+        WHERE id = ${id}
+        RETURNING *
+      `;
+      return event;
+    },
+
+    async upsertRSVP(eventId: string, userId: string, status: string) {
+      const [rsvp] = await sql`
+        INSERT INTO server_event_rsvps (event_id, user_id, status)
+        VALUES (${eventId}, ${userId}, ${status})
+        ON CONFLICT (event_id, user_id) DO UPDATE SET status = ${status}, updated_at = NOW()
+        RETURNING *
+      `;
+      return rsvp;
+    },
+
+    async getRSVPCounts(eventId: string) {
+      const [counts] = await sql`
+        SELECT
+          COUNT(*) FILTER (WHERE status = 'interested')::int AS interested,
+          COUNT(*) FILTER (WHERE status = 'tentative')::int AS tentative,
+          COUNT(*) FILTER (WHERE status = 'not_interested')::int AS not_interested
+        FROM server_event_rsvps
+        WHERE event_id = ${eventId}
+      `;
+      return counts;
+    },
+
+    async getUnannouncedEvents() {
+      return sql`
+        SELECT e.*, s.welcome_channel_id
+        FROM server_events e
+        JOIN servers s ON e.server_id = s.id
+        WHERE e.start_time <= NOW()
+          AND e.announce_at_start = true
+          AND e.status = 'scheduled'
+          AND e.deleted_at IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM server_event_announcements sea WHERE sea.event_id = e.id
+          )
+      `;
+    },
+
+    async recordAnnouncement(eventId: string, result: string, errorMessage?: string | null) {
+      await sql`
+        INSERT INTO server_event_announcements (event_id, result, error_message)
+        VALUES (${eventId}, ${result}, ${errorMessage || null})
+        ON CONFLICT (event_id) DO NOTHING
+      `;
+    },
+
+    async getInterestedUsers(eventId: string) {
+      return sql`
+        SELECT r.user_id, u.username
+        FROM server_event_rsvps r
+        JOIN users u ON r.user_id = u.id
+        WHERE r.event_id = ${eventId}
+          AND r.status IN ('interested', 'tentative')
+      `;
+    },
+
+    async setVisibleRoles(eventId: string, roleIds: string[]) {
+      await sql`DELETE FROM server_event_roles WHERE event_id = ${eventId}`;
+      if (roleIds.length > 0) {
+        const rows = roleIds.map((roleId) => ({ event_id: eventId, role_id: roleId }));
+        await sql`INSERT INTO server_event_roles ${sql(rows)}`;
+      }
+    },
+
+    async getVisibleRoleIds(eventId: string) {
+      const rows = await sql`
+        SELECT role_id::text FROM server_event_roles WHERE event_id = ${eventId}
+      `;
+      return rows.map((r: any) => r.role_id);
+    },
+  },
+
   // Helper to run transactions
   transaction: sql.begin,
 

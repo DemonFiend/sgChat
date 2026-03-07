@@ -1414,6 +1414,10 @@ function MessageItem({
             <svg className="w-5 h-5 text-danger" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7a4 4 0 11-8 0 4 4 0 018 0zM9 14a6 6 0 00-6 6v1h12v-1a6 6 0 00-6-6zM21 12h-6" />
             </svg>
+          ) : eventType === 'event_start' ? (
+            <svg className="w-5 h-5 text-brand-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
           ) : (
             <svg className="w-5 h-5 text-brand-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1489,7 +1493,7 @@ function MessageItem({
 
   // Compact message (continuation)
   return (
-    <div className={clsx('px-4 py-0.5 hover:bg-bg-modifier-hover group relative', isEditing && 'bg-bg-modifier-hover')}>
+    <div className={clsx('px-4 py-px hover:bg-bg-modifier-hover group relative', isEditing && 'bg-bg-modifier-hover')}>
       <MessageActionToolbar
         isOwnMessage={isOwnMessage}
         onReactClick={onReactClick}

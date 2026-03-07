@@ -25,12 +25,15 @@ interface ServerSidebarProps {
   channels: Channel[];
   categories: Category[];
   onServerSettingsClick?: () => void;
+  onGearClick?: (position: { x: number; y: number }) => void;
+  onEventsClick?: () => void;
   onChannelSettingsClick?: (channel: Channel) => void;
   onCreateChannel?: () => void;
   onLogout?: () => void;
+  showGearButton?: boolean;
 }
 
-export function ServerSidebar({ server, channels, categories, onServerSettingsClick, onChannelSettingsClick, onCreateChannel }: ServerSidebarProps) {
+export function ServerSidebar({ server, channels, categories, onServerSettingsClick, onGearClick, onEventsClick, onChannelSettingsClick, onCreateChannel, showGearButton }: ServerSidebarProps) {
   const { channelId: _channelId } = useParams<{ channelId?: string }>();
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
@@ -124,10 +127,30 @@ export function ServerSidebar({ server, channels, categories, onServerSettingsCl
           </div>
         </button>
 
-        {/* Server Settings Button */}
-        {onServerSettingsClick && (
+        {/* Events Button - visible to all members */}
+        {onEventsClick && (
           <button
-            onClick={onServerSettingsClick}
+            onClick={onEventsClick}
+            className="p-2 rounded hover:bg-bg-modifier-hover text-text-muted hover:text-text-primary transition-colors"
+            title="Events"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          </button>
+        )}
+
+        {/* Server Settings Gear Button - admin only */}
+        {(showGearButton || onServerSettingsClick) && (
+          <button
+            onClick={(e) => {
+              if (onGearClick) {
+                const rect = e.currentTarget.getBoundingClientRect();
+                onGearClick({ x: rect.left, y: rect.bottom + 4 });
+              } else if (onServerSettingsClick) {
+                onServerSettingsClick();
+              }
+            }}
             className="p-2 rounded hover:bg-bg-modifier-hover text-text-muted hover:text-text-primary transition-colors"
             title="Server Settings"
           >

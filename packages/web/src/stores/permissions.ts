@@ -177,3 +177,27 @@ export function hasAnyPermission(permissions: (keyof UserPermissions)[]): boolea
 export function hasAllPermissions(permissions: (keyof UserPermissions)[]): boolean {
   return permissions.every(p => hasPermission(p));
 }
+
+/**
+ * Check if current user can create events
+ */
+export function canCreateEvents(): boolean {
+  return isAdmin() || hasPermission('create_events') || hasPermission('manage_events');
+}
+
+/**
+ * Check if current user can manage events (edit/cancel/delete any)
+ */
+export function canManageEvents(): boolean {
+  return isAdmin() || hasPermission('manage_events');
+}
+
+/**
+ * Check if current user has any admin-level permission (for gear button visibility)
+ */
+export function hasAnyAdminPermission(serverOwnerId?: string | null): boolean {
+  return hasAdminAccess(serverOwnerId) || hasAnyPermission([
+    'manage_server', 'manage_channels', 'manage_roles', 'manage_events',
+    'kick_members', 'ban_members', 'view_audit_log',
+  ]);
+}

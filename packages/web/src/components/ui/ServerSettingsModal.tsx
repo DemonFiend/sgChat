@@ -201,6 +201,7 @@ interface ServerSettingsModalProps {
   serverIcon?: string | null;
   serverOwnerId?: string;
   onTransferOwnership?: () => void;
+  initialTab?: ServerSettingsTab;
 }
 
 const tabs: { id: ServerSettingsTab; label: string; icon: ReactNode; permission?: string }[] = [
@@ -366,8 +367,8 @@ const tabs: { id: ServerSettingsTab; label: string; icon: ReactNode; permission?
   },
 ];
 
-export function ServerSettingsModal({ isOpen, onClose, serverName, serverIcon: _serverIcon, serverOwnerId, onTransferOwnership }: ServerSettingsModalProps) {
-  const [activeTab, setActiveTab] = useState<ServerSettingsTab>('general');
+export function ServerSettingsModal({ isOpen, onClose, serverName, serverIcon: _serverIcon, serverOwnerId, onTransferOwnership, initialTab }: ServerSettingsModalProps) {
+  const [activeTab, setActiveTab] = useState<ServerSettingsTab>(initialTab || 'general');
   const [serverData, setServerData] = useState<ServerData | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -384,6 +385,15 @@ export function ServerSettingsModal({ isOpen, onClose, serverName, serverIcon: _
   };
 
   const visibleTabs = tabs.filter((tab) => hasPermission(tab.permission));
+
+  // Set initial tab when modal opens
+  useEffect(() => {
+    if (isOpen && initialTab) {
+      setActiveTab(initialTab);
+    } else if (isOpen) {
+      setActiveTab('general');
+    }
+  }, [isOpen, initialTab]);
 
   // Fetch server data when modal opens
   useEffect(() => {

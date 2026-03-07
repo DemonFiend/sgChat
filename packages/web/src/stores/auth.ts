@@ -56,6 +56,8 @@ export interface UserPermissions {
   disconnect_members: boolean;
   priority_speaker: boolean;
   use_voice_activity: boolean;
+  create_events: boolean;
+  manage_events: boolean;
 }
 
 export type AuthErrorReason = 'session_expired' | 'server_unreachable' | 'token_invalid';

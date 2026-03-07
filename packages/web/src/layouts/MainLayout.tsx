@@ -46,7 +46,10 @@ import { SoundboardPanel } from '@/components/ui/SoundboardPanel';
 import { VoiceConnectedBar } from '@/components/ui/VoiceConnectedBar';
 import { CommandPalette, type CommandPaletteChannel, type CommandPaletteMember } from '@/components/ui/CommandPalette';
 import { useGlobalShortcuts } from '@/hooks/useElectron';
-import { canManageChannels, canManageMessages } from '@/stores/permissions';
+import { canManageChannels, canManageMessages, hasAnyAdminPermission } from '@/stores/permissions';
+import { ServerGearMenu } from '@/components/ui/ServerGearMenu';
+import { EventsPanel } from '@/components/ui/EventsPanel';
+import { eventsStore } from '@/stores/events';
 import { slideInRight, easeTransition } from '@/lib/motion';
 import { PinnedMessagesPanel, type PinnedMessage } from '@/components/ui/PinnedMessagesPanel';
 import { ThreadPanel, type ThreadInfo } from '@/components/ui/ThreadPanel';
@@ -142,6 +145,11 @@ export function MainLayout() {
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [userTimezone, setUserTimezone] = useState<string | undefined>(undefined);
   const [showClaimAdmin, setShowClaimAdmin] = useState(false);
+
+  // Gear menu + Events panel state
+  const [gearMenuPosition, setGearMenuPosition] = useState<{ x: number; y: number } | null>(null);
+  const [showEventsPanel, setShowEventsPanel] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<string | undefined>(undefined);
 
   // Fetch user timezone from settings on mount
   useEffect(() => {
@@ -873,6 +881,11 @@ export function MainLayout() {
     };
     socketService.on('emoji.manifestUpdated', handleEmojiManifestUpdated as (data: unknown) => void);
 
+    const handleEventsInvalidate = () => {
+      eventsStore.invalidate();
+    };
+    socketService.on('serverEvents.invalidate', handleEventsInvalidate as (data: unknown) => void);
+
     return () => {
       socketService.off('server.update', handleServerUpdate as (data: unknown) => void);
       socketService.off('server.popup_config.update', handlePopupConfigUpdate as (data: unknown) => void);
@@ -899,6 +912,7 @@ export function MainLayout() {
       socketService.off('server.kicked', handleServerKicked as (data: unknown) => void);
       socketService.off('server.banned', handleServerBanned as (data: unknown) => void);
       socketService.off('emoji.manifestUpdated', handleEmojiManifestUpdated as (data: unknown) => void);
+      socketService.off('serverEvents.invalidate', handleEventsInvalidate as (data: unknown) => void);
     };
   }, [user?.id]);
 
@@ -1251,6 +1265,9 @@ export function MainLayout() {
             }
             channels={channels}
             categories={categories}
+            onGearClick={(pos) => setGearMenuPosition(pos)}
+            onEventsClick={() => setShowEventsPanel(true)}
+            showGearButton={hasAnyAdminPermission(currentServer?.owner_id)}
             onServerSettingsClick={() => setShowServerSettings(true)}
             onChannelSettingsClick={(channel) =>
               setSettingsChannel({
@@ -1269,9 +1286,18 @@ export function MainLayout() {
           <VoiceConnectedBar />
         </div>
 
-        {/* Chat Panel + Member List — wrapped with MentionProvider */}
+        {/* Chat Panel / Events Panel + Member List — wrapped with MentionProvider */}
         <MentionProvider value={mentionContextValue}>
         <div className="flex-1 flex h-full min-w-0">
+          {showEventsPanel && currentServer ? (
+            <EventsPanel
+              serverId={currentServer.id}
+              serverTimezone={currentServer.timezone}
+              channels={channels}
+              serverOwnerId={currentServer.owner_id}
+              onClose={() => setShowEventsPanel(false)}
+            />
+          ) : (
           <ChatPanel
             channel={currentChannel}
             messages={messages}
@@ -1304,6 +1330,7 @@ export function MainLayout() {
             threadMessageIds={threadMessageIds}
             onOpenThread={handleOpenThread}
           />
+          )}
 
           <AnimatePresence mode="wait">
             {activeThread && (
@@ -1385,14 +1412,33 @@ export function MainLayout() {
         }}
       />
 
+      {/* Server Gear Context Menu */}
+      {currentServer && (
+        <ServerGearMenu
+          isOpen={!!gearMenuPosition}
+          onClose={() => setGearMenuPosition(null)}
+          position={gearMenuPosition || { x: 0, y: 0 }}
+          serverOwnerId={currentServer.owner_id}
+          onOpenSettings={(tab) => {
+            setSettingsInitialTab(tab);
+            setShowServerSettings(true);
+            setGearMenuPosition(null);
+          }}
+        />
+      )}
+
       {/* Server Settings Modal */}
       {currentServer && (
         <ServerSettingsModal
           isOpen={showServerSettings}
-          onClose={() => setShowServerSettings(false)}
+          onClose={() => {
+            setShowServerSettings(false);
+            setSettingsInitialTab(undefined);
+          }}
           serverName={currentServer.name}
           serverIcon={currentServer.icon_url}
           serverOwnerId={currentServer.owner_id}
+          initialTab={settingsInitialTab as any}
         />
       )}
 
