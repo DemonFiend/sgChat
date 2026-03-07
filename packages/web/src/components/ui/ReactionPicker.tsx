@@ -46,13 +46,10 @@ export function ReactionPicker({ isOpen, onClose, onSelect, anchorRef, position,
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const gridRef = useRef<HTMLDivElement>(null);
 
-  // Custom emoji packs from the manifest store
-  const packs = serverId
-    ? useEmojiManifestStore((s) => s.manifests.get(serverId)?.packs) || []
-    : [];
-  const customEmojis = serverId
-    ? useEmojiManifestStore((s) => s.manifests.get(serverId)?.emojis) || []
-    : [];
+  // Custom emoji packs from the manifest store (hooks must be called unconditionally)
+  const manifest = useEmojiManifestStore((s) => serverId ? s.manifests.get(serverId) : undefined);
+  const packs = manifest?.packs || [];
+  const customEmojis = manifest?.emojis || [];
 
   // Whether the active tab is a custom pack
   const isCustomPackTab = activeCategory >= EMOJI_CATEGORIES.length;

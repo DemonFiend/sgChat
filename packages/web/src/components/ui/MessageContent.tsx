@@ -137,7 +137,6 @@ export function MessageContent({ content, isOwnMessage, compact, serverId }: Mes
   const segments = useMemo(() => parseContentSegments(content), [content]);
   // Subscribe to emoji manifest so we re-render when it loads
   const emojiManifest = useEmojiManifestStore((s) => serverId ? s.manifests.get(serverId) : undefined);
-  void emojiManifest; // used implicitly by renderCustomEmojis via getState()
 
   return (
     <div className="message-content">
@@ -155,7 +154,7 @@ export function MessageContent({ content, isOwnMessage, compact, serverId }: Mes
           default:
             return (
               <span key={i} className="break-words whitespace-pre-wrap">
-                {renderCustomEmojis(segment.value, serverId)}
+                {emojiManifest ? renderCustomEmojis(segment.value, serverId) : segment.value}
               </span>
             );
         }
