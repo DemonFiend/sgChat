@@ -3739,6 +3739,18 @@ interface EmojiItem {
   created_at: string;
 }
 
+interface DefaultPackCategoryData {
+  name: string;
+  packs: {
+    key: string;
+    category: string;
+    name: string;
+    emojiCount: number;
+    installed: boolean;
+    installedPackId?: string;
+  }[];
+}
+
 function EmojiPacksTab({ serverId }: { serverId: string }) {
   const [packs, setPacks] = useState<EmojiPackItem[]>([]);
   const [selectedPackId, setSelectedPackId] = useState<string | null>(null);
@@ -3747,6 +3759,8 @@ function EmojiPacksTab({ serverId }: { serverId: string }) {
   const [newPackName, setNewPackName] = useState('');
   const [newPackDescription, setNewPackDescription] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [defaultCategories, setDefaultCategories] = useState<DefaultPackCategoryData[]>([]);
+  const [installingKey, setInstallingKey] = useState<string | null>(null);
 
   // Fetch packs
   useEffect(() => {
@@ -3762,6 +3776,22 @@ function EmojiPacksTab({ serverId }: { serverId: string }) {
     };
     fetchPacks();
   }, [serverId]);
+
+  // Fetch default packs catalog
+  const fetchDefaults = useCallback(async () => {
+    try {
+      const response = await api.get<{ categories: DefaultPackCategoryData[] }>(
+        `/servers/${serverId}/emoji-packs/defaults`
+      );
+      setDefaultCategories(response.categories || []);
+    } catch {
+      // Default packs not available - that's fine
+    }
+  }, [serverId]);
+
+  useEffect(() => {
+    fetchDefaults();
+  }, [fetchDefaults]);
 
   // Fetch emojis for selected pack
   useEffect(() => {
@@ -3885,6 +3915,49 @@ function EmojiPacksTab({ serverId }: { serverId: string }) {
     }
   };
 
+  const handleInstallDefault = async (key: string) => {
+    setInstallingKey(key);
+    try {
+      const result = await api.post<{
+        pack: EmojiPackItem;
+        importedCount: number;
+        conflicts: any[];
+        errors: any[];
+      }>(`/servers/${serverId}/emoji-packs/install-default`, { key });
+      setPacks((prev) => [...prev, result.pack]);
+      toastStore.addToast({
+        type: 'system',
+        title: 'Pack installed',
+        message: `Installed ${result.importedCount} emojis${result.errors.length ? `, ${result.errors.length} errors` : ''}`,
+      });
+      fetchDefaults();
+    } catch (err: any) {
+      toastStore.addToast({
+        type: 'system',
+        title: 'Error',
+        message: err?.message || 'Failed to install pack',
+      });
+    } finally {
+      setInstallingKey(null);
+    }
+  };
+
+  const handleUninstallDefault = async (packId: string) => {
+    if (!confirm('Uninstall this default pack and remove all its emojis?')) return;
+    try {
+      await api.delete(`/servers/${serverId}/emoji-packs/${packId}`);
+      setPacks((prev) => prev.filter((p) => p.id !== packId));
+      if (selectedPackId === packId) setSelectedPackId(null);
+      fetchDefaults();
+    } catch (err: any) {
+      toastStore.addToast({
+        type: 'system',
+        title: 'Error',
+        message: err?.message || 'Failed to uninstall pack',
+      });
+    }
+  };
+
   if (loading) {
     return <div className="p-4 text-text-secondary">Loading emoji packs...</div>;
   }
@@ -3964,6 +4037,50 @@ function EmojiPacksTab({ serverId }: { serverId: string }) {
             ))
           )}
         </div>
+
+        {/* Default Packs Catalog */}
+        {defaultCategories.length > 0 && (
+          <div className="mt-6">
+            <h3 className="text-lg font-semibold text-text-primary mb-2">Default Packs</h3>
+            <p className="text-sm text-text-secondary mb-4">
+              Pre-loaded emoji packs you can install into your server.
+            </p>
+            {defaultCategories.map((category) => (
+              <div key={category.name} className="mb-4">
+                <h4 className="text-sm font-medium text-text-secondary mb-2">{category.name}</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  {category.packs.map((pack) => (
+                    <div
+                      key={pack.key}
+                      className="flex items-center justify-between p-3 bg-bg-secondary rounded border border-border-subtle"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-text-primary text-sm truncate">{pack.name}</div>
+                        <div className="text-xs text-text-muted">{pack.emojiCount} emojis</div>
+                      </div>
+                      {pack.installed ? (
+                        <button
+                          onClick={() => pack.installedPackId && handleUninstallDefault(pack.installedPackId)}
+                          className="ml-2 px-3 py-1 text-xs rounded border border-status-error/30 text-status-error hover:bg-status-error/10 transition-colors shrink-0"
+                        >
+                          Uninstall
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleInstallDefault(pack.key)}
+                          disabled={installingKey !== null}
+                          className="ml-2 px-3 py-1 text-xs rounded bg-brand-primary text-white hover:bg-brand-primary-hover disabled:opacity-50 transition-colors shrink-0"
+                        >
+                          {installingKey === pack.key ? 'Installing...' : 'Install'}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
