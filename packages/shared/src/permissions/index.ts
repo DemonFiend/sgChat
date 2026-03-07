@@ -422,6 +422,7 @@ export interface NamedPermissions {
   create_private_threads: boolean;
   view_server_members: boolean;
   moderate_members: boolean;
+  rsvp_events: boolean;
 
   // Text permissions
   view_channel: boolean;
@@ -511,6 +512,7 @@ export function toNamedPermissions(
     create_private_threads: isAdmin || (server & ServerPermissions.CREATE_PRIVATE_THREADS) !== 0n,
     view_server_members: isAdmin || (server & ServerPermissions.VIEW_SERVER_MEMBERS) !== 0n,
     moderate_members: isAdmin || (server & ServerPermissions.MODERATE_MEMBERS) !== 0n,
+    rsvp_events: isAdmin || (server & ServerPermissions.RSVP_EVENTS) !== 0n,
 
     // Text permissions
     view_channel: isAdmin || (text & TextPermissions.VIEW_CHANNEL) !== 0n,

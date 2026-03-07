@@ -173,6 +173,13 @@ export function MainLayout() {
         useServerPopupStore.getState().showPopup(server.id);
         emojiManifestStore.getState().fetchManifest(server.id);
 
+        // Fetch user permissions for this server
+        api.get<{ permissions: Record<string, boolean> }>(`/servers/${server.id}/permissions`).then((data) => {
+          if (data?.permissions) {
+            useAuthStore.getState().updateUser({ permissions: data.permissions as any });
+          }
+        }).catch(() => {});
+
         // Fetch channels
         const channelsResponse = await api.get<
           Channel[] | { channels: Channel[]; categories?: Category[] }
@@ -821,6 +828,14 @@ export function MainLayout() {
         if (Array.isArray(res)) setMembers(res);
         else if (res?.members) setMembers(res.members);
       }).catch(() => {});
+      // Refetch permissions (role changes may affect current user)
+      if (currentServer) {
+        api.get<{ permissions: Record<string, boolean> }>(`/servers/${currentServer.id}/permissions`).then((data) => {
+          if (data?.permissions) {
+            useAuthStore.getState().updateUser({ permissions: data.permissions as any });
+          }
+        }).catch(() => {});
+      }
     };
 
     const handleMemberRoleChange = (data: any) => {
