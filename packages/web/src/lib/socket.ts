@@ -4,8 +4,6 @@ import { authStore } from '@/stores/auth';
 import { isEncryptedPayload, isVersionCompatible } from '@sgchat/shared';
 import {
   getCryptoSessionId,
-  hasCryptoSession,
-  encryptForTransport,
   decryptFromTransport,
 } from '@/lib/transportCrypto';
 
@@ -210,23 +208,16 @@ function disconnect() {
 }
 
 async function emit<T = unknown>(event: string, data?: unknown): Promise<T> {
-  // eslint-disable-next-line no-async-promise-executor
-  return new Promise(async (resolve, reject) => {
+  return new Promise((resolve, reject) => {
     if (!socket?.connected) {
       reject(new Error('Socket not connected'));
       return;
     }
 
-    let payload = data;
-    if (data !== undefined && hasCryptoSession()) {
-      try {
-        payload = await encryptForTransport(JSON.stringify(data));
-      } catch {
-        // Fallback to unencrypted
-      }
-    }
-
-    socket.emit(event, payload, (response: T) => resolve(response));
+    // Send socket payloads unencrypted — the WebSocket transport (WSS) already
+    // provides encryption. Double-encrypting caused silent message drops when
+    // the server-side crypto session expired after redeploys.
+    socket.emit(event, data, (response: T) => resolve(response));
   });
 }
 

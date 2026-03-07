@@ -895,10 +895,7 @@ export function MainLayout() {
         ...(replyingTo?.id ? { reply_to_id: replyingTo.id } : {}),
         ...(isTts ? { is_tts: true } : {}),
       };
-      console.log('[MainLayout] Emitting message:send', emitPayload);
-      socketService.emit('message:send', emitPayload)
-        .then((res: unknown) => console.log('[MainLayout] message:send response:', res))
-        .catch((err: unknown) => console.error('[MainLayout] message:send FAILED:', err));
+      socketService.emit('message:send', emitPayload);
       setReplyingTo(null);
     },
     [currentChannel, replyingTo],
