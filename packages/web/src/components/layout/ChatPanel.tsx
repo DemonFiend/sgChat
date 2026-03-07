@@ -271,6 +271,7 @@ export function ChatPanel({
 
   const handleSend = useCallback(() => {
     const content = messageInput.trim();
+    console.log('[ChatPanel] handleSend called:', { content: content?.slice(0, 50), hasOnSend: !!onSendMessage, len: content?.length, max: MAX_MESSAGE_LENGTH });
     if (content && onSendMessage && content.length <= MAX_MESSAGE_LENGTH) {
       // Handle /clear locally — never send to server
       if (content === '/clear') {
@@ -440,6 +441,7 @@ export function ChatPanel({
       return;
     }
 
+    console.log('[ChatPanel] keyDown:', e.key, { cmd: commandTrigger !== null, mention: !!mentionTrigger, emoji: !!emojiTrigger, stime: stimePrompt });
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
