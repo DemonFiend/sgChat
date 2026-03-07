@@ -182,15 +182,20 @@ export function ChatPanel({
       const emoji = enabledEmojis.find((e) => e.shortcode === m[1]);
       if (emoji) {
         hasEmoji = true;
+        // Keep text before the shortcode (invisible, maintains spacing)
         if (m.index > lastIdx) parts.push(messageInput.slice(lastIdx, m.index));
+        // Render the shortcode text invisibly with the emoji image overlaid
+        // This keeps character widths identical to the textarea underneath
         parts.push(
-          <img
-            key={`inp-emoji-${m.index}`}
-            src={emoji.url || emoji.asset_key}
-            alt={`:${m[1]}:`}
-            className="inline-block align-text-bottom"
-            style={{ width: '1.375em', height: '1.375em' }}
-          />
+          <span key={`inp-emoji-${m.index}`} className="relative">
+            <span className="invisible">{m[0]}</span>
+            <img
+              src={emoji.url || emoji.asset_key}
+              alt={`:${m[1]}:`}
+              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+              style={{ width: '1.375em', height: '1.375em' }}
+            />
+          </span>
         );
         lastIdx = m.index + m[0].length;
       }
