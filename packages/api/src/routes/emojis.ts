@@ -617,35 +617,40 @@ export const emojiRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/:serverId/emoji-packs/defaults', {
     onRequest: [authenticate],
     handler: async (request, reply) => {
-      const { serverId } = request.params as { serverId: string };
-      const member = await db.members.findByUserAndServer(request.user!.id, serverId);
-      if (!member) return forbidden(reply, 'Not a server member');
-
-      const categories = scanDefaultPacks().map((cat) => ({
-        ...cat,
-        packs: cat.packs.map((p) => ({ ...p })),
-      }));
-
-      // Mark which packs are already installed
       try {
-        const installed = await db.emojiPacks.findDefaultsByServer(serverId);
-        const installedMap = new Map(installed.map((p: any) => [p.default_pack_key, p.id]));
+        const { serverId } = request.params as { serverId: string };
+        const member = await db.members.findByUserAndServer(request.user!.id, serverId);
+        if (!member) return forbidden(reply, 'Not a server member');
 
-        for (const cat of categories) {
-          for (const pack of cat.packs) {
-            const packId = installedMap.get(pack.key);
-            if (packId) {
-              pack.installed = true;
-              pack.installedPackId = packId;
+        const categories = scanDefaultPacks().map((cat) => ({
+          ...cat,
+          packs: cat.packs.map((p) => ({ ...p })),
+        }));
+
+        // Mark which packs are already installed
+        try {
+          const installed = await db.emojiPacks.findDefaultsByServer(serverId);
+          const installedMap = new Map(installed.map((p: any) => [p.default_pack_key, p.id]));
+
+          for (const cat of categories) {
+            for (const pack of cat.packs) {
+              const packId = installedMap.get(pack.key);
+              if (packId) {
+                pack.installed = true;
+                pack.installedPackId = packId;
+              }
             }
           }
+        } catch (err) {
+          // source column may not exist yet if migration hasn't been applied
+          console.error('[DefaultEmojiPacks] Error checking installed packs:', err);
         }
-      } catch (err) {
-        // source column may not exist yet if migration hasn't been applied
-        console.error('[DefaultEmojiPacks] Error checking installed packs:', err);
-      }
 
-      return { categories };
+        return { categories };
+      } catch (err) {
+        console.error('[DefaultEmojiPacks] Unhandled error in defaults route:', err);
+        return reply.code(500).send({ error: 'Internal server error', details: String(err) });
+      }
     },
   });
 
