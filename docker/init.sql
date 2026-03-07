@@ -1556,6 +1556,8 @@ CREATE TABLE IF NOT EXISTS emoji_packs (
   name TEXT NOT NULL CHECK (length(name) >= 1 AND length(name) <= 50),
   description TEXT CHECK (length(description) <= 200),
   enabled BOOLEAN DEFAULT true,
+  source TEXT DEFAULT 'custom' CHECK (source IN ('custom', 'default')),
+  default_pack_key TEXT DEFAULT NULL,
   created_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -1563,6 +1565,7 @@ CREATE TABLE IF NOT EXISTS emoji_packs (
 
 CREATE INDEX IF NOT EXISTS idx_emoji_packs_server ON emoji_packs(server_id);
 CREATE INDEX IF NOT EXISTS idx_emoji_packs_server_enabled ON emoji_packs(server_id, enabled);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_emoji_packs_default_key ON emoji_packs(server_id, default_pack_key) WHERE default_pack_key IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS emojis (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

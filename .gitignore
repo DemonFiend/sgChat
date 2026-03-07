@@ -41,6 +41,10 @@ tmp/
 temp/
 *.tmp
 
+# Archives (don't commit source archives)
+*.7z
+*.rar
+
 # Docker
 .dockerignore
 

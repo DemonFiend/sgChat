@@ -36,6 +36,9 @@ RUN pnpm --filter @sgchat/api build
 # Copy migration SQL files to dist (tsc only compiles .ts files)
 RUN cp -r /app/packages/api/src/migrations /app/packages/api/dist/migrations
 
+# Copy default emoji pack data if it exists
+RUN if [ -d /app/packages/api/data ]; then cp -r /app/packages/api/data /app/packages/api/dist/data; fi
+
 # Verify web client was built
 RUN ls -la /app/packages/web/dist/index.html
 

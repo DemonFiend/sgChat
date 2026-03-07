@@ -1009,9 +1009,25 @@ export interface EmojiPack {
   name: string;
   description: string | null;
   enabled: boolean;
+  source: 'custom' | 'default';
+  default_pack_key: string | null;
   created_by_user_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface DefaultPackCategory {
+  name: string;
+  packs: DefaultPackInfo[];
+}
+
+export interface DefaultPackInfo {
+  key: string;
+  category: string;
+  name: string;
+  emojiCount: number;
+  installed: boolean;
+  installedPackId?: string;
 }
 
 export interface CustomEmoji {

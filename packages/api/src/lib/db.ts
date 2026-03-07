@@ -972,10 +972,15 @@ export const db = {
       name: string;
       description?: string | null;
       created_by_user_id: string;
+      source?: 'custom' | 'default';
+      default_pack_key?: string | null;
     }) {
       const [pack] = await sql`
-        INSERT INTO emoji_packs (server_id, name, description, created_by_user_id)
-        VALUES (${data.server_id}, ${data.name}, ${data.description || null}, ${data.created_by_user_id})
+        INSERT INTO emoji_packs (server_id, name, description, created_by_user_id, source, default_pack_key)
+        VALUES (
+          ${data.server_id}, ${data.name}, ${data.description || null},
+          ${data.created_by_user_id}, ${data.source || 'custom'}, ${data.default_pack_key || null}
+        )
         RETURNING *
       `;
       return pack;
@@ -995,6 +1000,19 @@ export const db = {
     },
     async delete(id: string) {
       await sql`DELETE FROM emoji_packs WHERE id = ${id}`;
+    },
+    async findByDefaultKey(serverId: string, key: string) {
+      const [pack] = await sql`
+        SELECT * FROM emoji_packs
+        WHERE server_id = ${serverId} AND default_pack_key = ${key}
+      `;
+      return pack;
+    },
+    async findDefaultsByServer(serverId: string) {
+      return sql`
+        SELECT id, default_pack_key FROM emoji_packs
+        WHERE server_id = ${serverId} AND source = 'default'
+      `;
     },
   },
 
