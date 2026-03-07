@@ -6,6 +6,9 @@ import { useEmojiManifestStore } from '@/stores/emojiManifest';
  * Returns an array of React nodes (strings and img elements).
  */
 export function renderCustomEmojis(text: string, serverId?: string): (string | React.ReactElement)[] {
+  if (text.includes(':')) {
+    console.log('[EmojiRenderer] called with:', { text: text.slice(0, 80), serverId, hasColon: text.includes(':') });
+  }
   if (!serverId || !text.includes(':')) return [text];
 
   const manifest = useEmojiManifestStore.getState().manifests.get(serverId);
