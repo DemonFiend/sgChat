@@ -29,11 +29,12 @@ interface ServerSidebarProps {
   onEventsClick?: () => void;
   onChannelSettingsClick?: (channel: Channel) => void;
   onCreateChannel?: () => void;
+  onChannelDoubleClick?: (channelId: string) => void;
   onLogout?: () => void;
   showGearButton?: boolean;
 }
 
-export function ServerSidebar({ server, channels, categories, onServerSettingsClick, onGearClick, onEventsClick, onChannelSettingsClick, onCreateChannel, showGearButton }: ServerSidebarProps) {
+export function ServerSidebar({ server, channels, categories, onServerSettingsClick, onGearClick, onEventsClick, onChannelSettingsClick, onCreateChannel, onChannelDoubleClick, showGearButton }: ServerSidebarProps) {
   const { channelId: _channelId } = useParams<{ channelId?: string }>();
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
@@ -171,7 +172,7 @@ export function ServerSidebar({ server, channels, categories, onServerSettingsCl
       </div>
 
       {/* Channel List */}
-      <ChannelList channels={channels} categories={categories} serverId={server?.id || ''} onChannelSettingsClick={onChannelSettingsClick} onCreateChannel={onCreateChannel} />
+      <ChannelList channels={channels} categories={categories} serverId={server?.id || ''} onChannelSettingsClick={onChannelSettingsClick} onCreateChannel={onCreateChannel} onChannelDoubleClick={onChannelDoubleClick} />
     </div>
   );
 }

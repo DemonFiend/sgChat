@@ -38,6 +38,7 @@ interface ChannelListProps {
   serverId: string;
   onChannelSettingsClick?: (channel: Channel) => void;
   onCreateChannel?: () => void;
+  onChannelDoubleClick?: (channelId: string) => void;
 }
 
 const VOICE_TYPES: ChannelType[] = ['voice', 'temp_voice', 'temp_voice_generator', 'music'];
@@ -107,7 +108,7 @@ const collapseArrow = (collapsed: boolean) => (
   </svg>
 );
 
-export function ChannelList({ channels, categories, serverId, onChannelSettingsClick, onCreateChannel }: ChannelListProps) {
+export function ChannelList({ channels, categories, serverId, onChannelSettingsClick, onCreateChannel, onChannelDoubleClick }: ChannelListProps) {
   const { channelId } = useParams<{ channelId?: string }>();
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
 
@@ -171,6 +172,7 @@ export function ChannelList({ channels, categories, serverId, onChannelSettingsC
                       isActive={channelId === channel.id}
                       serverId={serverId}
                       onSettingsClick={onChannelSettingsClick}
+                      onDoubleClick={onChannelDoubleClick}
                     />
                   ))}
                 </div>
@@ -213,6 +215,7 @@ export function ChannelList({ channels, categories, serverId, onChannelSettingsC
                     isActive={channelId === channel.id}
                     serverId={serverId}
                     onSettingsClick={onChannelSettingsClick}
+                    onDoubleClick={onChannelDoubleClick}
                   />
                 ))}
               </div>
@@ -243,7 +246,7 @@ export function ChannelList({ channels, categories, serverId, onChannelSettingsC
               )}
             </div>
             {!collapsedSections.has('text') && textChannels.map((channel) => (
-              <ChannelItem key={channel.id} channel={channel} isActive={channelId === channel.id} serverId={serverId} onSettingsClick={onChannelSettingsClick} />
+              <ChannelItem key={channel.id} channel={channel} isActive={channelId === channel.id} serverId={serverId} onSettingsClick={onChannelSettingsClick} onDoubleClick={onChannelDoubleClick} />
             ))}
           </div>
 
@@ -269,7 +272,7 @@ export function ChannelList({ channels, categories, serverId, onChannelSettingsC
               )}
             </div>
             {!collapsedSections.has('voice') && voiceChannels.map((channel) => (
-              <ChannelItem key={channel.id} channel={channel} isActive={channelId === channel.id} serverId={serverId} onSettingsClick={onChannelSettingsClick} />
+              <ChannelItem key={channel.id} channel={channel} isActive={channelId === channel.id} serverId={serverId} onSettingsClick={onChannelSettingsClick} onDoubleClick={onChannelDoubleClick} />
             ))}
           </div>
         </>
@@ -359,9 +362,10 @@ interface ChannelItemProps {
   isActive: boolean;
   serverId: string;
   onSettingsClick?: (channel: Channel) => void;
+  onDoubleClick?: (channelId: string) => void;
 }
 
-const ChannelItem = memo(function ChannelItem({ channel, isActive, serverId: _serverId, onSettingsClick }: ChannelItemProps) {
+const ChannelItem = memo(function ChannelItem({ channel, isActive, serverId: _serverId, onSettingsClick, onDoubleClick: onDblClick }: ChannelItemProps) {
   const hasUnread = (channel.unread_count ?? 0) > 0;
   const voice = isVoiceType(channel.type);
   const currentVoiceChannelId = useVoiceStore((s) => s.currentChannelId);
@@ -424,6 +428,7 @@ const ChannelItem = memo(function ChannelItem({ channel, isActive, serverId: _se
         <Link
           to={`/channels/${channel.id}`}
           onContextMenu={handleContextMenu}
+          onDoubleClick={() => onDblClick?.(channel.id)}
           className={clsx(
             'group/channel relative flex items-center gap-1.5 px-2 py-1.5 mb-0.5 rounded text-sm transition-colors',
             isActive

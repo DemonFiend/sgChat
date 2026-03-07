@@ -1294,6 +1294,14 @@ export function MainLayout() {
               })
             }
             onCreateChannel={canManageChannels() ? () => setShowServerSettings(true) : undefined}
+            onChannelDoubleClick={(chId) => {
+              setShowEventsPanel(false);
+              setIsSearchOpen(false);
+              setShowServerSettings(false);
+              setSettingsChannel(null);
+              setShowCommandPalette(false);
+              navigate(`/channels/${chId}`);
+            }}
           />
           {voiceConnected && currentServer && (
             <SoundboardPanel serverId={currentServer.id} />
