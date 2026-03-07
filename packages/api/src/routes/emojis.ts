@@ -1,6 +1,6 @@
 import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/auth.js';
-import { db } from '../lib/db.js';
+import { db, sql } from '../lib/db.js';
 import { storage } from '../lib/storage.js';
 import { publishEvent } from '../lib/eventBus.js';
 import { calculatePermissions } from '../services/permissions.js';
@@ -35,7 +35,40 @@ export const emojiRoutes: FastifyPluginAsync = async (fastify) => {
         ? await db.emojiPacks.findByServer(serverId)
         : await db.emojiPacks.findEnabledByServer(serverId);
 
-      return { packs };
+      // Include master toggle state for admin UI
+      const [server] = await sql`SELECT emoji_packs_enabled FROM servers WHERE id = ${serverId}`;
+      return { packs, emoji_packs_enabled: server?.emoji_packs_enabled ?? true };
+    },
+  });
+
+  // PATCH /servers/:serverId/emoji-packs/settings - Toggle master emoji packs setting
+  fastify.patch('/:serverId/emoji-packs/settings', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { serverId } = request.params as { serverId: string };
+      const member = await db.members.findByUserAndServer(request.user!.id, serverId);
+      if (!member) return forbidden(reply, 'Not a server member');
+
+      const perms = await calculatePermissions(request.user!.id, serverId);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_EMOJIS)) {
+        return forbidden(reply, 'Missing MANAGE_EMOJIS permission');
+      }
+
+      const body = request.body as { emoji_packs_enabled?: boolean };
+      if (body?.emoji_packs_enabled === undefined || typeof body.emoji_packs_enabled !== 'boolean') {
+        return badRequest(reply, 'emoji_packs_enabled (boolean) is required');
+      }
+
+      await sql`UPDATE servers SET emoji_packs_enabled = ${body.emoji_packs_enabled} WHERE id = ${serverId}`;
+
+      await publishEvent({
+        type: 'emoji.manifestUpdated',
+        actorId: request.user!.id,
+        resourceId: `server:${serverId}`,
+        payload: { serverId },
+      });
+
+      return { emoji_packs_enabled: body.emoji_packs_enabled };
     },
   });
 
@@ -728,8 +761,12 @@ export const emojiRoutes: FastifyPluginAsync = async (fastify) => {
       const member = await db.members.findByUserAndServer(request.user!.id, serverId);
       if (!member) return forbidden(reply, 'Not a server member');
 
-      const packs = await db.emojiPacks.findEnabledByServer(serverId);
-      const emojis = await db.emojis.findEnabledByServer(serverId);
+      // Check master toggle
+      const [server] = await sql`SELECT emoji_packs_enabled FROM servers WHERE id = ${serverId}`;
+      const enabled = server?.emoji_packs_enabled ?? true;
+
+      const packs = enabled ? await db.emojiPacks.findEnabledByServer(serverId) : [];
+      const emojis = enabled ? await db.emojis.findEnabledByServer(serverId) : [];
 
       // Build version hash from pack/emoji count + latest updated_at
       const latestUpdate = [...packs, ...emojis]
@@ -737,8 +774,8 @@ export const emojiRoutes: FastifyPluginAsync = async (fastify) => {
         .reduce((max, t) => Math.max(max, t), 0);
       const version = latestUpdate || 0;
 
-      // ETag support
-      const etag = `"emoji-${serverId}-${version}"`;
+      // ETag support (include toggle state so toggling invalidates cache)
+      const etag = `"emoji-${serverId}-${version}-${enabled}"`;
       const ifNoneMatch = request.headers['if-none-match'];
       if (ifNoneMatch === etag) {
         return reply.code(304).send();

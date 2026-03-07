@@ -96,7 +96,10 @@ CREATE TABLE servers (
   announce_joins BOOLEAN DEFAULT true,
   announce_leaves BOOLEAN DEFAULT true,
   announce_online BOOLEAN DEFAULT false,
-  
+
+  -- Emoji packs master toggle
+  emoji_packs_enabled BOOLEAN DEFAULT true,
+
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

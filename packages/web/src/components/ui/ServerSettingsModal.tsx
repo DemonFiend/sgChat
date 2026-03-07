@@ -3798,13 +3798,15 @@ function EmojiPacksTab({ serverId }: { serverId: string }) {
   const [uploading, setUploading] = useState(false);
   const [defaultCategories, setDefaultCategories] = useState<DefaultPackCategoryData[]>([]);
   const [installingKey, setInstallingKey] = useState<string | null>(null);
+  const [emojiPacksEnabled, setEmojiPacksEnabled] = useState(true);
 
   // Fetch packs
   useEffect(() => {
     const fetchPacks = async () => {
       try {
-        const response = await api.get<{ packs: EmojiPackItem[] }>(`/servers/${serverId}/emoji-packs`);
+        const response = await api.get<{ packs: EmojiPackItem[]; emoji_packs_enabled?: boolean }>(`/servers/${serverId}/emoji-packs`);
         setPacks(response.packs || []);
+        setEmojiPacksEnabled(response.emoji_packs_enabled ?? true);
       } catch (err: any) {
         console.error('[EmojiPacks] Failed to fetch:', err);
       } finally {
@@ -3854,6 +3856,15 @@ function EmojiPacksTab({ serverId }: { serverId: string }) {
       setNewPackDescription('');
     } catch (err: any) {
       toastStore.addToast({ type: 'system', title: 'Error', message: err?.message || 'Failed to create pack' });
+    }
+  };
+
+  const handleToggleMaster = async (enabled: boolean) => {
+    try {
+      await api.patch(`/servers/${serverId}/emoji-packs/settings`, { emoji_packs_enabled: enabled });
+      setEmojiPacksEnabled(enabled);
+    } catch (err: any) {
+      toastStore.addToast({ type: 'system', title: 'Error', message: err?.message || 'Failed to update setting' });
     }
   };
 
@@ -4001,8 +4012,30 @@ function EmojiPacksTab({ serverId }: { serverId: string }) {
           <p className="text-sm text-text-secondary">Manage custom emoji packs for this server.</p>
         </div>
 
+        {/* Master toggle */}
+        <div className="flex items-center justify-between p-3 bg-bg-secondary rounded border border-border-subtle">
+          <div>
+            <div className="font-medium text-text-primary">Enable Custom Emoji Packs</div>
+            <div className="text-xs text-text-secondary">When disabled, only Unicode emojis are available for all members.</div>
+          </div>
+          <button
+            onClick={() => handleToggleMaster(!emojiPacksEnabled)}
+            className={clsx(
+              'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
+              emojiPacksEnabled ? 'bg-brand-primary' : 'bg-bg-tertiary'
+            )}
+          >
+            <span
+              className={clsx(
+                'inline-block h-4 w-4 rounded-full bg-white transition-transform',
+                emojiPacksEnabled ? 'translate-x-6' : 'translate-x-1'
+              )}
+            />
+          </button>
+        </div>
+
         {/* Create pack form */}
-        <div className="flex gap-2 items-end">
+        <div className={clsx("flex gap-2 items-end", !emojiPacksEnabled && "opacity-50 pointer-events-none")}>
           <div className="flex-1">
             <label className="block text-xs text-text-secondary mb-1" htmlFor="emoji-pack-name">Pack Name</label>
             <input
@@ -4037,7 +4070,7 @@ function EmojiPacksTab({ serverId }: { serverId: string }) {
         </div>
 
         {/* Pack list */}
-        <div className="space-y-2">
+        <div className={clsx("space-y-2", !emojiPacksEnabled && "opacity-50 pointer-events-none")}>
           {packs.length === 0 ? (
             <p className="text-text-muted text-sm py-4 text-center">No emoji packs yet. Create one above!</p>
           ) : (
@@ -4075,7 +4108,7 @@ function EmojiPacksTab({ serverId }: { serverId: string }) {
 
         {/* Default Packs Catalog */}
         {defaultCategories.length > 0 && (
-          <div className="mt-6">
+          <div className={clsx("mt-6", !emojiPacksEnabled && "opacity-50 pointer-events-none")}>
             <h3 className="text-lg font-semibold text-text-primary mb-2">Default Packs</h3>
             <p className="text-sm text-text-secondary mb-4">
               Pre-loaded emoji packs you can install into your server.
