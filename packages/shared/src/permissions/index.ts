@@ -60,7 +60,10 @@ export const ServerPermissions = {
   VIEW_SERVER_MEMBERS: 1n << 23n, // View member list (if restricted)
   MODERATE_MEMBERS: 1n << 24n, // Access to auto-moderation and member screening
 
-  // Reserved for future use (25-63)
+  // Events (continued)
+  RSVP_EVENTS: 1n << 25n, // RSVP to server events
+
+  // Reserved for future use (26-63)
 } as const;
 
 // ============================================================
@@ -221,7 +224,8 @@ export const DEFAULT_EVERYONE_PERMISSIONS = {
   server:
     ServerPermissions.CREATE_INVITES |
     ServerPermissions.CHANGE_NICKNAME |
-    ServerPermissions.VIEW_SERVER_MEMBERS,
+    ServerPermissions.VIEW_SERVER_MEMBERS |
+    ServerPermissions.RSVP_EVENTS,
   text:
     TextPermissions.VIEW_CHANNEL |
     TextPermissions.SEND_MESSAGES |
@@ -694,6 +698,11 @@ export const ServerPermissionMetadata: Record<keyof typeof ServerPermissions, Pe
       name: 'Moderate Members',
       description: 'Access auto-moderation and member screening',
       category: 'membership',
+    },
+    RSVP_EVENTS: {
+      name: 'RSVP to Events',
+      description: 'Allow members to RSVP to server events',
+      category: 'general',
     },
   };
 

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { ServerEvent } from '@sgchat/shared';
 import { useEventsStore } from '@/stores/events';
+import { api } from '@/api';
 
 interface ChannelOption {
   id: string;
@@ -58,6 +59,10 @@ export function EventCreateModal({
   const [visibility, setVisibility] = useState<'public' | 'private'>(
     editEvent?.visibility || 'public',
   );
+  const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>(
+    editEvent?.visible_role_ids || [],
+  );
+  const [roles, setRoles] = useState<{ id: string; name: string; color: string | null }[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -69,6 +74,16 @@ export function EventCreateModal({
       setEndTime(addHour(startTime));
     }
   }, [startTime, isEditing]);
+
+  // Fetch server roles when visibility is set to private
+  useEffect(() => {
+    if (visibility === 'private' && roles.length === 0) {
+      api
+        .get<{ id: string; name: string; color: string | null }[]>('/roles')
+        .then((data) => setRoles(data.filter((r) => r.name !== '@everyone')))
+        .catch(() => {});
+    }
+  }, [visibility, roles.length]);
 
   const textChannels = channels.filter(
     (c) => c.type === 'text' || c.type === 'announcement',
@@ -101,6 +116,7 @@ export function EventCreateModal({
         announce_at_start: announceAtStart,
         announcement_channel_id: announcementChannelId || null,
         visibility,
+        role_ids: visibility === 'private' ? selectedRoleIds : undefined,
       };
 
       if (isEditing) {
@@ -264,6 +280,44 @@ export function EventCreateModal({
                   </label>
                 </div>
               </div>
+
+              {/* Role selector for private events */}
+              {visibility === 'private' && roles.length > 0 && (
+                <div>
+                  <label className="block text-xs font-medium text-text-muted uppercase mb-1">
+                    Visible to Roles
+                  </label>
+                  <div className="max-h-32 overflow-y-auto space-y-1 bg-bg-tertiary border border-divider rounded p-2">
+                    {roles.map((role) => (
+                      <label key={role.id} className="flex items-center gap-2 cursor-pointer py-0.5">
+                        <input
+                          type="checkbox"
+                          checked={selectedRoleIds.includes(role.id)}
+                          onChange={(e) => {
+                            setSelectedRoleIds((prev) =>
+                              e.target.checked
+                                ? [...prev, role.id]
+                                : prev.filter((id) => id !== role.id),
+                            );
+                          }}
+                          className="w-3.5 h-3.5 rounded border-divider bg-bg-primary accent-brand-primary"
+                        />
+                        <span
+                          className="text-sm"
+                          style={{ color: role.color || 'var(--text-secondary)' }}
+                        >
+                          {role.name}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  {selectedRoleIds.length === 0 && (
+                    <p className="text-xs text-text-muted mt-1">
+                      No roles selected — only you and event managers will see this event.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Footer */}

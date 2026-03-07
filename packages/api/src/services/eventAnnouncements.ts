@@ -7,6 +7,10 @@ export async function checkAndAnnounceEvents() {
 
   for (const event of events) {
     try {
+      // Claim this event first to prevent duplicate announcements across workers
+      const claimed = await db.serverEvents.recordAnnouncement(event.id, 'success');
+      if (!claimed) continue; // Another worker already claimed it
+
       // Resolve announcement channel
       const channelId = event.announcement_channel_id || event.welcome_channel_id;
 
@@ -51,12 +55,9 @@ export async function checkAndAnnounceEvents() {
           priority: 'high',
         });
       }
-
-      // Record success (idempotent — ON CONFLICT DO NOTHING)
-      await db.serverEvents.recordAnnouncement(event.id, 'success');
     } catch (err) {
       console.error(`Failed to announce event ${event.id}:`, err);
-      await db.serverEvents.recordAnnouncement(
+      await db.serverEvents.updateAnnouncementResult(
         event.id,
         'failed',
         err instanceof Error ? err.message : 'Unknown error',

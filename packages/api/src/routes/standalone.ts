@@ -72,6 +72,7 @@ function namedPermissionsToBitfields(named: Record<string, boolean>): { server: 
     create_private_threads: ServerPermissions.CREATE_PRIVATE_THREADS,
     view_server_members: ServerPermissions.VIEW_SERVER_MEMBERS,
     moderate_members: ServerPermissions.MODERATE_MEMBERS,
+    rsvp_events: ServerPermissions.RSVP_EVENTS,
   };
 
   const textPermsMap: Record<string, bigint> = {

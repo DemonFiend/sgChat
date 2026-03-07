@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { ServerEvent, RSVPStatus } from '@sgchat/shared';
 import { useEventsStore } from '@/stores/events';
-import { canManageEvents, canCreateEvents } from '@/stores/permissions';
+import { canManageEvents, canCreateEvents, canRSVPEvents } from '@/stores/permissions';
 import { authStore } from '@/stores/auth';
 
 interface EventDetailsModalProps {
@@ -21,12 +21,16 @@ const RSVP_OPTIONS: { status: RSVPStatus; label: string; icon: string }[] = [
 ];
 
 export function EventDetailsModal({
-  event,
+  event: eventProp,
   serverId,
   serverTimezone,
   onClose,
   onEdit,
 }: EventDetailsModalProps) {
+  // Read live event from store so RSVP updates reflect immediately
+  const storeEvent = useEventsStore((s) => s.events.find((e) => e.id === eventProp.id));
+  const event = storeEvent ?? eventProp;
+
   const rsvpEvent = useEventsStore((s) => s.rsvpEvent);
   const cancelEvent = useEventsStore((s) => s.cancelEvent);
   const deleteEvent = useEventsStore((s) => s.deleteEvent);
@@ -156,7 +160,7 @@ export function EventDetailsModal({
           </div>
 
           {/* RSVP */}
-          {!isCancelled && (
+          {!isCancelled && canRSVPEvents() && (
             <div className="px-5 py-3 border-t border-divider">
               <div className="text-xs font-medium text-text-muted uppercase mb-2">RSVP</div>
               <div className="flex gap-2">

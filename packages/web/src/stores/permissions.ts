@@ -193,6 +193,13 @@ export function canManageEvents(): boolean {
 }
 
 /**
+ * Check if current user can RSVP to events
+ */
+export function canRSVPEvents(): boolean {
+  return isAdmin() || hasPermission('rsvp_events') || hasPermission('manage_events');
+}
+
+/**
  * Check if current user has any admin-level permission (for gear button visibility)
  */
 export function hasAnyAdminPermission(serverOwnerId?: string | null): boolean {

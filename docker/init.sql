@@ -802,9 +802,9 @@ ALTER TABLE audit_log ADD CONSTRAINT audit_log_action_check CHECK (action IN (
 
 -- Update default permissions to use new bitmask values
 -- Note: These values need to match the new permission bit positions
-UPDATE instance_settings 
+UPDATE instance_settings
 SET value = '{
-  "server": "6656",
+  "server": "33561088",
   "text": "16127",
   "voice": "255"
 }'::jsonb,
@@ -1723,5 +1723,6 @@ INSERT INTO _migrations (name) VALUES
   ('017_default_emoji_packs'),
   ('018_emoji_packs_enabled'),
   ('019_storage_limits'),
-  ('020_server_events')
+  ('020_server_events'),
+  ('021_rsvp_events_permission')
 ON CONFLICT (name) DO NOTHING;

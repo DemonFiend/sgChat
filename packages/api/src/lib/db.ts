@@ -1101,6 +1101,7 @@ export const db = {
       monthEnd: string,
       userId: string,
       userRoleIds: string[],
+      includeHistory = false,
     ) {
       return sql`
         WITH rsvp_counts AS (
@@ -1137,6 +1138,7 @@ export const db = {
           AND e.deleted_at IS NULL
           AND e.start_time < ${monthEnd}::timestamptz
           AND e.end_time > ${monthStart}::timestamptz
+          AND (${includeHistory} OR e.status = 'scheduled')
           AND (
             e.visibility = 'public'
             OR e.created_by = ${userId}
@@ -1277,10 +1279,20 @@ export const db = {
     },
 
     async recordAnnouncement(eventId: string, result: string, errorMessage?: string | null) {
-      await sql`
+      const rows = await sql`
         INSERT INTO server_event_announcements (event_id, result, error_message)
         VALUES (${eventId}, ${result}, ${errorMessage || null})
         ON CONFLICT (event_id) DO NOTHING
+        RETURNING event_id
+      `;
+      return rows.length > 0;
+    },
+
+    async updateAnnouncementResult(eventId: string, result: string, errorMessage?: string | null) {
+      await sql`
+        UPDATE server_event_announcements
+        SET result = ${result}, error_message = ${errorMessage || null}
+        WHERE event_id = ${eventId}
       `;
     },
 

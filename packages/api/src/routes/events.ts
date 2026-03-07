@@ -82,13 +82,14 @@ export const eventRoutes: FastifyPluginAsync = async (fastify) => {
       const { start, end } = formatMonth(query.month);
       const userRoleIds = await getUserRoleIds(request.user!.id, serverId);
 
-      // History includes cancelled, same query works (cancelled have status='cancelled', not deleted)
+      // History includes cancelled events, regular view does not
       const events = await db.serverEvents.findByServerAndMonth(
         serverId,
         start,
         end,
         request.user!.id,
         userRoleIds,
+        true,
       );
 
       return { events: events.map(formatEvent) };
@@ -215,6 +216,7 @@ export const eventRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       const updated = await db.serverEvents.update(eventId, updateData);
+      if (!updated) return notFound(reply, 'Event');
 
       // Update role visibility
       if (body.role_ids !== undefined) {
@@ -229,7 +231,7 @@ export const eventRoutes: FastifyPluginAsync = async (fastify) => {
         payload: { serverId, month },
       });
 
-      return updated;
+      return reply.send(updated);
     },
   });
 
@@ -254,6 +256,7 @@ export const eventRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       const cancelled = await db.serverEvents.cancel(eventId);
+      if (!cancelled) return notFound(reply, 'Event');
 
       const month = new Date(cancelled.start_time).toISOString().substring(0, 7);
       await publishEvent({
@@ -263,7 +266,7 @@ export const eventRoutes: FastifyPluginAsync = async (fastify) => {
         payload: { serverId, month },
       });
 
-      return cancelled;
+      return reply.send(cancelled);
     },
   });
 
@@ -317,13 +320,22 @@ export const eventRoutes: FastifyPluginAsync = async (fastify) => {
         return notFound(reply, 'Event');
       }
 
+      const perms = await calculatePermissions(request.user!.id, serverId);
+
+      // Check RSVP permission
+      if (
+        !hasPermission(perms.server, ServerPermissions.RSVP_EVENTS) &&
+        !hasPermission(perms.server, ServerPermissions.MANAGE_EVENTS)
+      ) {
+        return forbidden(reply, 'Missing RSVP_EVENTS permission');
+      }
+
       // Visibility check for private events
       if (event.visibility === 'private' && event.created_by !== request.user!.id) {
         const userRoleIds = await getUserRoleIds(request.user!.id, serverId);
         const eventRoleIds = await db.serverEvents.getVisibleRoleIds(eventId);
         const hasAccess = eventRoleIds.some((rid: string) => userRoleIds.includes(rid));
         if (!hasAccess) {
-          const perms = await calculatePermissions(request.user!.id, serverId);
           if (!hasPermission(perms.server, ServerPermissions.MANAGE_EVENTS)) {
             return notFound(reply, 'Event');
           }

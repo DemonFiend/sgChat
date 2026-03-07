@@ -454,7 +454,7 @@ export const rsvpSchema = z.object({
 });
 
 export const eventListQuerySchema = z.object({
-  month: z.string().regex(/^\d{4}-\d{2}$/, 'Month must be in YYYY-MM format'),
+  month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Month must be in YYYY-MM format (01-12)'),
 });
 
 export type CreateServerEventInput = z.infer<typeof createServerEventSchema>;
