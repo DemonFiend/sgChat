@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { clsx } from 'clsx';
 import { Avatar } from '@/components/ui/Avatar';
@@ -168,6 +168,37 @@ export function ChatPanel({
     );
     return emojiManifest.emojis.filter((e) => enabledPackIds.has(e.pack_id));
   }, [emojiManifest]);
+
+  // Build emoji overlay for the input — renders :shortcode: as inline images
+  const inputEmojiOverlay = useMemo(() => {
+    if (!messageInput.includes(':') || enabledEmojis.length === 0) return null;
+    const regex = /:([a-zA-Z0-9_]{2,32}):/g;
+    const parts: (string | React.JSX.Element)[] = [];
+    let lastIdx = 0;
+    let match: RegExpExecArray | null;
+    let hasEmoji = false;
+    while ((match = regex.exec(messageInput)) !== null) {
+      const m = match;
+      const emoji = enabledEmojis.find((e) => e.shortcode === m[1]);
+      if (emoji) {
+        hasEmoji = true;
+        if (m.index > lastIdx) parts.push(messageInput.slice(lastIdx, m.index));
+        parts.push(
+          <img
+            key={`inp-emoji-${m.index}`}
+            src={emoji.url || emoji.asset_key}
+            alt={`:${m[1]}:`}
+            className="inline-block align-text-bottom"
+            style={{ width: '1.375em', height: '1.375em' }}
+          />
+        );
+        lastIdx = m.index + m[0].length;
+      }
+    }
+    if (!hasEmoji) return null;
+    if (lastIdx < messageInput.length) parts.push(messageInput.slice(lastIdx));
+    return parts;
+  }, [messageInput, enabledEmojis]);
 
   // Build autocomplete item lists from MentionContext
   const atItems = useMemo(() => {
@@ -809,38 +840,54 @@ export function ChatPanel({
               )}
             </button>
 
-            {/* Text input */}
-            <textarea
-              ref={inputRef}
-              value={messageInput}
-              onChange={(e) => {
-                const newValue = e.target.value;
-                const cursorPos = e.target.selectionStart ?? newValue.length;
-                setMessageInput(newValue);
-                handleTyping();
+            {/* Text input with emoji overlay */}
+            <div className="flex-1 relative">
+              {/* Mirror overlay — renders emojis inline over transparent textarea text */}
+              {inputEmojiOverlay && (
+                <div
+                  className="absolute inset-0 py-3 px-2 pointer-events-none whitespace-pre-wrap break-words overflow-hidden text-text-primary"
+                  style={{ minHeight: '24px', fontSize: 'inherit', lineHeight: 'inherit', fontFamily: 'inherit' }}
+                  aria-hidden="true"
+                >
+                  {inputEmojiOverlay}
+                </div>
+              )}
+              <textarea
+                ref={inputRef}
+                value={messageInput}
+                onChange={(e) => {
+                  const newValue = e.target.value;
+                  const cursorPos = e.target.selectionStart ?? newValue.length;
+                  setMessageInput(newValue);
+                  handleTyping();
 
-                // Detect slash command trigger
-                const cmdTrigger = detectCommandTrigger(newValue);
-                setCommandTrigger(cmdTrigger);
+                  // Detect slash command trigger
+                  const cmdTrigger = detectCommandTrigger(newValue);
+                  setCommandTrigger(cmdTrigger);
 
-                // Detect mention trigger (only if no command trigger)
-                const trigger = cmdTrigger === null ? detectTrigger(newValue, cursorPos) : null;
-                setMentionTrigger(trigger);
+                  // Detect mention trigger (only if no command trigger)
+                  const trigger = cmdTrigger === null ? detectTrigger(newValue, cursorPos) : null;
+                  setMentionTrigger(trigger);
 
-                // Detect emoji trigger (only if no other triggers active)
-                const eTrigger =
-                  cmdTrigger === null && !trigger
-                    ? detectEmojiTrigger(newValue, cursorPos)
-                    : null;
-                setEmojiTrigger(eTrigger);
-              }}
-              onKeyDown={handleKeyDown}
-              placeholder={`Message #${channel.name || 'channel'}`}
-              aria-label={`Message ${channel.name || 'channel'}`}
-              rows={1}
-              className="flex-1 bg-transparent py-3 px-2 text-text-primary placeholder:text-text-muted outline-none resize-none max-h-48 scrollbar-thin"
-              style={{ minHeight: '24px' }}
-            />
+                  // Detect emoji trigger (only if no other triggers active)
+                  const eTrigger =
+                    cmdTrigger === null && !trigger
+                      ? detectEmojiTrigger(newValue, cursorPos)
+                      : null;
+                  setEmojiTrigger(eTrigger);
+                }}
+                onKeyDown={handleKeyDown}
+                placeholder={`Message #${channel.name || 'channel'}`}
+                aria-label={`Message ${channel.name || 'channel'}`}
+                rows={1}
+                className="flex-1 w-full bg-transparent py-3 px-2 placeholder:text-text-muted outline-none resize-none max-h-48 scrollbar-thin"
+                style={{
+                  minHeight: '24px',
+                  color: inputEmojiOverlay ? 'transparent' : undefined,
+                  caretColor: 'var(--color-text-primary)',
+                }}
+              />
+            </div>
 
             {/* Emoji picker button */}
             <button
