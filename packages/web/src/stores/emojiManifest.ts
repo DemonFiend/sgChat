@@ -29,9 +29,16 @@ export const useEmojiManifestStore = create<EmojiManifestState & EmojiManifestAc
     fetchManifest: async (serverId: string) => {
       set({ loading: true, error: null });
       try {
+        console.log('[EmojiManifest] Fetching manifest for server:', serverId);
         const data = await api.get<EmojiManifest>(
           `/servers/${serverId}/emojis/manifest`,
         );
+        console.log('[EmojiManifest] Response:', data, 'packs:', data?.packs?.length, 'emojis:', data?.emojis?.length);
+        if (!data) {
+          console.warn('[EmojiManifest] Got null/undefined response, skipping store update');
+          set({ loading: false });
+          return;
+        }
         set((state) => {
           const manifests = new Map(state.manifests);
           manifests.set(serverId, data);

@@ -50,6 +50,7 @@ export function ReactionPicker({ isOpen, onClose, onSelect, anchorRef, position,
   const manifest = useEmojiManifestStore((s) => serverId ? s.manifests.get(serverId) : undefined);
   const packs = manifest?.packs || [];
   const customEmojis = manifest?.emojis || [];
+  console.log('[ReactionPicker] serverId:', serverId, 'manifest:', !!manifest, 'packs:', packs.length, 'emojis:', customEmojis.length);
 
   // Whether the active tab is a custom pack
   const isCustomPackTab = activeCategory >= EMOJI_CATEGORIES.length;

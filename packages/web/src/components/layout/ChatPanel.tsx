@@ -746,6 +746,7 @@ export function ChatPanel({
             setReactionPickerMsg(null);
           }}
           anchorRef={reactionPickerMsg.anchor}
+          serverId={serverId}
         />
       )}
 
