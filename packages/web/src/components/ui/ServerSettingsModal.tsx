@@ -3794,21 +3794,14 @@ function EmojiPacksTab({ serverId }: { serverId: string }) {
     fetchDefaults();
   }, [fetchDefaults]);
 
-  // Fetch emojis for selected pack
+  // Fetch emojis for selected pack via manifest
   useEffect(() => {
     if (!selectedPackId) { setPackEmojis([]); return; }
     const fetchEmojis = async () => {
       try {
-        const response = await api.get<{ emojis: EmojiItem[] }>(`/servers/${serverId}/emoji-packs/${selectedPackId}/emojis`);
-        // Fallback: if the endpoint doesn't exist yet, use manifest
-        setPackEmojis(response.emojis || []);
-      } catch {
-        // Use manifest data as fallback
-        try {
-          const manifest = await api.get<{ packs: any[]; emojis: EmojiItem[] }>(`/servers/${serverId}/emojis/manifest`);
-          setPackEmojis((manifest.emojis || []).filter((e: EmojiItem) => e.pack_id === selectedPackId));
-        } catch { setPackEmojis([]); }
-      }
+        const manifest = await api.get<{ packs: any[]; emojis: EmojiItem[] }>(`/servers/${serverId}/emojis/manifest`);
+        setPackEmojis((manifest.emojis || []).filter((e: EmojiItem) => e.pack_id === selectedPackId));
+      } catch { setPackEmojis([]); }
     };
     fetchEmojis();
   }, [serverId, selectedPackId]);
