@@ -12,7 +12,7 @@ import { nanoid } from 'nanoid';
 import {
   scanDefaultPacks,
   getPackImageFiles,
-  readPackImage,
+  installDefaultPack,
 } from '../services/defaultEmojiPacks.js';
 
 const MAX_PACKS_PER_SERVER = 20;
@@ -673,104 +673,37 @@ export const emojiRoutes: FastifyPluginAsync = async (fastify) => {
         return badRequest(reply, 'Pack key is required');
       }
 
-      // Validate key format (category/packName) and prevent path traversal
       const key = body.key;
       if (key.includes('..') || key.startsWith('/') || key.split('/').length !== 2) {
         return badRequest(reply, 'Invalid pack key');
       }
 
-      // Check pack exists on disk
       const imageFiles = getPackImageFiles(key);
       if (imageFiles.length === 0) {
         return notFound(reply, 'Default emoji pack');
       }
 
-      // Check if already installed
       const existing = await db.emojiPacks.findByDefaultKey(serverId, key);
       if (existing) {
         return reply.code(409).send({ error: 'Pack already installed', packId: existing.id });
       }
 
-      // Check pack limit
       const packCount = await db.emojiPacks.countByServer(serverId);
       if (packCount >= MAX_PACKS_PER_SERVER) {
         return badRequest(reply, `Server can have at most ${MAX_PACKS_PER_SERVER} emoji packs`);
       }
 
-      // Check emoji limit
       const currentEmojiCount = await db.emojis.countByServer(serverId);
-      const available = MAX_EMOJIS_PER_SERVER - currentEmojiCount;
-      if (available <= 0) {
+      if (currentEmojiCount >= MAX_EMOJIS_PER_SERVER) {
         return badRequest(reply, 'Server emoji limit reached');
       }
 
-      // Extract pack name from key
-      const packName = key.split('/')[1];
-
-      // Create the pack
-      const pack = await db.emojiPacks.create({
-        server_id: serverId,
-        name: packName,
-        created_by_user_id: request.user!.id,
-        source: 'default',
-        default_pack_key: key,
-      });
-
-      const results = {
-        pack,
-        importedCount: 0,
-        conflicts: [] as { requested: string; assigned: string }[],
-        errors: [] as { filename: string; error: string }[],
-      };
-
-      const toProcess = imageFiles.slice(0, available);
-
-      for (const { filename, filepath } of toProcess) {
-        try {
-          const buffer = readPackImage(filepath);
-
-          const processed = await processEmoji(buffer);
-
-          // Derive shortcode from filename
-          let shortcode = filename
-            .replace(/\.[^/.]+$/, '')
-            .toLowerCase()
-            .replace(/[^a-z0-9_]/g, '_')
-            .slice(0, 32);
-          if (shortcode.length < 2) shortcode = `emoji_${nanoid(4)}`;
-
-          // Check uniqueness
-          const existingEmoji = await db.emojis.findByShortcode(serverId, shortcode);
-          if (existingEmoji) {
-            const original = shortcode;
-            shortcode = `${shortcode}_${nanoid(4)}`;
-            results.conflicts.push({ requested: original, assigned: shortcode });
-          }
-
-          const ext = processed.content_type === 'image/gif' ? 'gif' : 'webp';
-          const assetKey = `emojis/${serverId}/${nanoid(12)}.${ext}`;
-          await storage.uploadFile(processed.buffer, assetKey, processed.content_type);
-
-          await db.emojis.create({
-            server_id: serverId,
-            pack_id: pack.id,
-            shortcode,
-            content_type: processed.content_type,
-            is_animated: processed.is_animated,
-            width: processed.width,
-            height: processed.height,
-            size_bytes: processed.size_bytes,
-            asset_key: assetKey,
-            created_by_user_id: request.user!.id,
-          });
-
-          results.importedCount++;
-        } catch (err: any) {
-          results.errors.push({ filename, error: err.message });
-        }
+      const result = await installDefaultPack(serverId, key, request.user!.id);
+      if (!result) {
+        return reply.code(409).send({ error: 'Pack already installed or not found' });
       }
 
-      if (results.importedCount > 0) {
+      if (result.importedCount > 0) {
         await publishEvent({
           type: 'emoji.manifestUpdated',
           actorId: request.user!.id,
@@ -779,7 +712,7 @@ export const emojiRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      return results;
+      return result;
     },
   });
 

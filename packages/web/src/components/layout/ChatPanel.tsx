@@ -21,9 +21,11 @@ import {
   type MentionMapping,
 } from '@/lib/mentionUtils';
 import { CommandAutocomplete } from '@/components/ui/CommandAutocomplete';
+import { EmojiAutocomplete, detectEmojiTrigger } from '@/components/ui/EmojiAutocomplete';
 import type { SlashCommand } from '@sgchat/shared';
 import { MAX_MESSAGE_LENGTH } from '@sgchat/shared';
 import { api } from '@/api';
+import { useEmojiManifestStore } from '@/stores/emojiManifest';
 
 export interface MessageAuthor {
   id: string;
@@ -150,6 +152,20 @@ export function ChatPanel({
   const [mentionMappings, setMentionMappings] = useState<MentionMapping[]>([]);
   const [stimePrompt, setStimePrompt] = useState(false);
   const mentionContext = useMentionContext();
+
+  // Emoji autocomplete state
+  const [emojiTrigger, setEmojiTrigger] = useState<{
+    triggerStart: number;
+    query: string;
+  } | null>(null);
+  const emojiManifest = useEmojiManifestStore((s) => serverId ? s.manifests.get(serverId) : undefined);
+  const enabledEmojis = useMemo(() => {
+    if (!emojiManifest) return [];
+    const enabledPackIds = new Set(
+      emojiManifest.packs.filter((p) => p.enabled !== false).map((p) => p.id),
+    );
+    return emojiManifest.emojis.filter((e) => enabledPackIds.has(e.pack_id));
+  }, [emojiManifest]);
 
   // Build autocomplete item lists from MentionContext
   const atItems = useMemo(() => {
@@ -332,6 +348,30 @@ export function ChatPanel({
     });
   }, [mentionTrigger, messageInput, mentionMappings]);
 
+  // Handle emoji autocomplete selection
+  const handleEmojiSelect = useCallback(
+    (emoji: { shortcode: string }) => {
+      if (!emojiTrigger || !inputRef.current) return;
+
+      const before = messageInput.slice(0, emojiTrigger.triggerStart);
+      const after = messageInput.slice(
+        emojiTrigger.triggerStart + 1 + emojiTrigger.query.length,
+      );
+      const insertText = `:${emoji.shortcode}: `;
+      const newInput = before + insertText + after;
+
+      setMessageInput(newInput);
+      setEmojiTrigger(null);
+
+      const cursorPos = before.length + insertText.length;
+      requestAnimationFrame(() => {
+        inputRef.current?.setSelectionRange(cursorPos, cursorPos);
+        inputRef.current?.focus();
+      });
+    },
+    [emojiTrigger, messageInput],
+  );
+
   // Handle @stime time input
   const handleStimeInput = useCallback((timeStr: string) => {
     const ts = parseTimeInput(timeStr);
@@ -383,6 +423,12 @@ export function ChatPanel({
       if (handler && handler(e)) return;
     }
 
+    // Let emoji autocomplete handle keys when open
+    if (emojiTrigger) {
+      const emojiHandler = (EmojiAutocomplete as any)._handleKeyDown;
+      if (emojiHandler && emojiHandler(e)) return;
+    }
+
     // @stime prompt: Enter submits the time
     if (stimePrompt && e.key === 'Escape') {
       e.preventDefault();
@@ -394,7 +440,7 @@ export function ChatPanel({
       e.preventDefault();
       handleSend();
     }
-  }, [handleSend, mentionTrigger, stimePrompt, commandTrigger]);
+  }, [handleSend, mentionTrigger, stimePrompt, commandTrigger, emojiTrigger]);
 
   const isOverLimit = messageInput.length > MAX_MESSAGE_LENGTH;
   const charCountVisible = messageInput.length > MAX_MESSAGE_LENGTH * 0.75;
@@ -691,6 +737,18 @@ export function ChatPanel({
             )}
           </div>
 
+          {/* Emoji Autocomplete */}
+          <div className="relative">
+            {emojiTrigger && enabledEmojis.length > 0 && (
+              <EmojiAutocomplete
+                query={emojiTrigger.query}
+                emojis={enabledEmojis}
+                onSelect={handleEmojiSelect}
+                onClose={() => setEmojiTrigger(null)}
+              />
+            )}
+          </div>
+
           {/* @stime Time Input Prompt */}
           {stimePrompt && (
             <div className="flex items-center gap-2 px-3 py-2 mb-1 bg-brand-primary/10 border border-brand-primary/20 rounded-lg text-sm">
@@ -763,6 +821,13 @@ export function ChatPanel({
                 // Detect mention trigger (only if no command trigger)
                 const trigger = cmdTrigger === null ? detectTrigger(newValue, cursorPos) : null;
                 setMentionTrigger(trigger);
+
+                // Detect emoji trigger (only if no other triggers active)
+                const eTrigger =
+                  cmdTrigger === null && !trigger
+                    ? detectEmojiTrigger(newValue, cursorPos)
+                    : null;
+                setEmojiTrigger(eTrigger);
               }}
               onKeyDown={handleKeyDown}
               placeholder={`Message #${channel.name || 'channel'}`}

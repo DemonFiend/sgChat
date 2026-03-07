@@ -17,6 +17,7 @@ import {
   permissionToString,
 } from '@sgchat/shared';
 import { createDefaultGroups } from '../services/roleReactions.js';
+import { installAllDefaultPacks } from '../services/defaultEmojiPacks.js';
 
 /**
  * Bootstrap the server on first startup
@@ -34,6 +35,13 @@ export async function bootstrapServer(): Promise<void> {
       logClaimCode(existingServer.admin_claim_code);
     } else if (existingServer.admin_claimed) {
       console.log('✅ Server already claimed and configured');
+    }
+
+    // Auto-install any new default emoji packs on restart
+    try {
+      await installAllDefaultPacks(existingServer.id, SYSTEM_USER_ID);
+    } catch (err) {
+      console.error('[Bootstrap] Failed to auto-install default emoji packs:', err);
     }
     return;
   }
@@ -409,6 +417,13 @@ export async function bootstrapServer(): Promise<void> {
       afk_channel_id = ${afkChannel.id}
     WHERE id = ${server.id}
   `;
+
+  // Auto-install default emoji packs
+  try {
+    await installAllDefaultPacks(server.id, SYSTEM_USER_ID);
+  } catch (err) {
+    console.error('[Bootstrap] Failed to auto-install default emoji packs:', err);
+  }
 
   console.log(`✅ Server bootstrap complete!`);
   console.log('');

@@ -2,6 +2,10 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import type { DefaultPackCategory } from '@sgchat/shared';
+import { nanoid } from 'nanoid';
+import { db } from '../lib/db.js';
+import { storage } from '../lib/storage.js';
+import { processEmoji } from '../lib/emojiProcessor.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -120,4 +124,112 @@ export function readPackImage(filepath: string): Buffer {
 
 export function invalidateCache(): void {
   cachedCatalog = null;
+}
+
+/**
+ * Install a single default pack into a server.
+ * Returns the result or null if already installed / not found.
+ */
+export async function installDefaultPack(
+  serverId: string,
+  key: string,
+  userId: string,
+): Promise<{ packId: string; importedCount: number; errors: string[] } | null> {
+  const imageFiles = getPackImageFiles(key);
+  if (imageFiles.length === 0) return null;
+
+  // Check if already installed
+  const existing = await db.emojiPacks.findByDefaultKey(serverId, key);
+  if (existing) return null;
+
+  const packName = key.split('/')[1];
+  const pack = await db.emojiPacks.create({
+    server_id: serverId,
+    name: packName,
+    created_by_user_id: userId,
+    source: 'default',
+    default_pack_key: key,
+  });
+
+  let importedCount = 0;
+  const errors: string[] = [];
+
+  for (const { filename, filepath } of imageFiles) {
+    try {
+      const buffer = readPackImage(filepath);
+      const processed = await processEmoji(buffer);
+
+      let shortcode = filename
+        .replace(/\.[^/.]+$/, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9_]/g, '_')
+        .slice(0, 32);
+      if (shortcode.length < 2) shortcode = `emoji_${nanoid(4)}`;
+
+      const existingEmoji = await db.emojis.findByShortcode(serverId, shortcode);
+      if (existingEmoji) {
+        shortcode = `${shortcode}_${nanoid(4)}`;
+      }
+
+      const ext = processed.content_type === 'image/gif' ? 'gif' : 'webp';
+      const assetKey = `emojis/${serverId}/${nanoid(12)}.${ext}`;
+      await storage.uploadFile(processed.buffer, assetKey, processed.content_type);
+
+      await db.emojis.create({
+        server_id: serverId,
+        pack_id: pack.id,
+        shortcode,
+        content_type: processed.content_type,
+        is_animated: processed.is_animated,
+        width: processed.width,
+        height: processed.height,
+        size_bytes: processed.size_bytes,
+        asset_key: assetKey,
+        created_by_user_id: userId,
+      });
+
+      importedCount++;
+    } catch (err: any) {
+      errors.push(`${filename}: ${err.message}`);
+    }
+  }
+
+  return { packId: pack.id, importedCount, errors };
+}
+
+/**
+ * Auto-install all default packs that aren't already installed in a server.
+ * Called at startup from bootstrap.
+ */
+export async function installAllDefaultPacks(
+  serverId: string,
+  userId: string,
+): Promise<void> {
+  const categories = scanDefaultPacks();
+  if (categories.length === 0) return;
+
+  let totalInstalled = 0;
+
+  for (const cat of categories) {
+    for (const pack of cat.packs) {
+      try {
+        const result = await installDefaultPack(serverId, pack.key, userId);
+        if (result) {
+          console.log(
+            `[DefaultEmojiPacks] Auto-installed "${pack.name}" (${result.importedCount} emojis)`,
+          );
+          if (result.errors.length > 0) {
+            console.warn(`[DefaultEmojiPacks] Errors in "${pack.name}":`, result.errors);
+          }
+          totalInstalled++;
+        }
+      } catch (err) {
+        console.error(`[DefaultEmojiPacks] Failed to auto-install "${pack.key}":`, err);
+      }
+    }
+  }
+
+  if (totalInstalled > 0) {
+    console.log(`[DefaultEmojiPacks] Auto-installed ${totalInstalled} packs total`);
+  }
 }
