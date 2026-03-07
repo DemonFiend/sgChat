@@ -1283,7 +1283,9 @@ function MessageItem({
               <h3 className="text-sm font-semibold text-text-primary mt-1">{titleLine}</h3>
               <div className="space-y-0.5 mt-1 pl-2">
                 {mappingLines.map((line: string, i: number) => (
-                  <p key={i} className="text-sm text-text-secondary">{line.trim()}</p>
+                  <p key={i} className="text-sm text-text-secondary">
+                    <MessageContent content={line.trim()} serverId={serverId} compact />
+                  </p>
                 ))}
               </div>
               {renderReactions()}

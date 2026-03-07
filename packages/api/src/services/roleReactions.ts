@@ -119,8 +119,8 @@ export function buildMessageContent(
 ): string {
   let content = `**${groupName}**\n`;
   for (const m of mappings) {
-    const displayName = m.label || m.role_name || 'Unknown Role';
-    content += `\nPlease React ${m.emoji} to obtain @${displayName}`;
+    const roleRef = m.role_id ? `<@&${m.role_id}>` : `@${m.label || m.role_name || 'Unknown Role'}`;
+    content += `\nPlease React ${m.emoji} to obtain ${roleRef}`;
   }
   return content;
 }
