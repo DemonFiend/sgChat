@@ -492,8 +492,8 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
         const server = await db.servers.findById(serverId);
         if (server) {
           await sql`
-            INSERT INTO message_reactions (message_id, user_id, emoji)
-            VALUES (${group.message_id}, ${server.owner_id}, ${body.emoji})
+            INSERT INTO message_reactions (message_id, user_id, reaction_type, unicode_emoji)
+            VALUES (${group.message_id}, ${server.owner_id}, 'unicode', ${body.emoji})
             ON CONFLICT DO NOTHING
           `;
         }

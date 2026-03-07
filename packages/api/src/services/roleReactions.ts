@@ -171,8 +171,8 @@ export async function postRoleReactionMessage(
   // Add the emoji reactions to the message so users can just click them
   for (const m of mappings) {
     await tx`
-      INSERT INTO message_reactions (message_id, user_id, emoji)
-      VALUES (${message.id}, ${SYSTEM_USER_ID}, ${m.emoji})
+      INSERT INTO message_reactions (message_id, user_id, reaction_type, unicode_emoji)
+      VALUES (${message.id}, ${SYSTEM_USER_ID}, 'unicode', ${m.emoji})
       ON CONFLICT DO NOTHING
     `;
   }
