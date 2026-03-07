@@ -627,17 +627,22 @@ export const emojiRoutes: FastifyPluginAsync = async (fastify) => {
       }));
 
       // Mark which packs are already installed
-      const installed = await db.emojiPacks.findDefaultsByServer(serverId);
-      const installedMap = new Map(installed.map((p: any) => [p.default_pack_key, p.id]));
+      try {
+        const installed = await db.emojiPacks.findDefaultsByServer(serverId);
+        const installedMap = new Map(installed.map((p: any) => [p.default_pack_key, p.id]));
 
-      for (const cat of categories) {
-        for (const pack of cat.packs) {
-          const packId = installedMap.get(pack.key);
-          if (packId) {
-            pack.installed = true;
-            pack.installedPackId = packId;
+        for (const cat of categories) {
+          for (const pack of cat.packs) {
+            const packId = installedMap.get(pack.key);
+            if (packId) {
+              pack.installed = true;
+              pack.installedPackId = packId;
+            }
           }
         }
+      } catch (err) {
+        // source column may not exist yet if migration hasn't been applied
+        console.error('[DefaultEmojiPacks] Error checking installed packs:', err);
       }
 
       return { categories };

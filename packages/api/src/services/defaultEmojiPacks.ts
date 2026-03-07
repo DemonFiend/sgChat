@@ -8,7 +8,7 @@ let cachedDataDir: string | null = null;
 let cachedCatalog: DefaultPackCategory[] | null = null;
 
 function getDataDir(): string | null {
-  if (cachedDataDir !== null) return cachedDataDir;
+  if (cachedDataDir !== null) return cachedDataDir || null;
 
   const candidates = [
     path.resolve(__dirname, '../../data/default-emoji-packs'), // from dist/services/
@@ -19,12 +19,18 @@ function getDataDir(): string | null {
   ];
 
   for (const dir of candidates) {
-    if (fs.existsSync(dir)) {
-      cachedDataDir = dir;
-      return dir;
+    try {
+      if (fs.existsSync(dir)) {
+        cachedDataDir = dir;
+        console.log('[DefaultEmojiPacks] Found data dir:', dir);
+        return dir;
+      }
+    } catch {
+      // skip inaccessible paths
     }
   }
 
+  console.log('[DefaultEmojiPacks] No data dir found. Checked:', candidates);
   cachedDataDir = ''; // empty string = not found, but cached
   return null;
 }
@@ -42,42 +48,48 @@ export function scanDefaultPacks(): DefaultPackCategory[] {
     return [];
   }
 
-  const categories: DefaultPackCategory[] = [];
+  try {
+    const categories: DefaultPackCategory[] = [];
 
-  const categoryDirs = fs.readdirSync(dataDir, { withFileTypes: true });
-  for (const catEntry of categoryDirs) {
-    if (!catEntry.isDirectory()) continue;
+    const categoryDirs = fs.readdirSync(dataDir, { withFileTypes: true });
+    for (const catEntry of categoryDirs) {
+      if (!catEntry.isDirectory()) continue;
 
-    const categoryName = catEntry.name;
-    const categoryPath = path.join(dataDir, categoryName);
-    const packs: DefaultPackCategory['packs'] = [];
+      const categoryName = catEntry.name;
+      const categoryPath = path.join(dataDir, categoryName);
+      const packs: DefaultPackCategory['packs'] = [];
 
-    const packDirs = fs.readdirSync(categoryPath, { withFileTypes: true });
-    for (const packEntry of packDirs) {
-      if (!packEntry.isDirectory()) continue;
+      const packDirs = fs.readdirSync(categoryPath, { withFileTypes: true });
+      for (const packEntry of packDirs) {
+        if (!packEntry.isDirectory()) continue;
 
-      const packName = packEntry.name;
-      const packPath = path.join(categoryPath, packName);
-      const files = fs.readdirSync(packPath).filter(isImageFile);
+        const packName = packEntry.name;
+        const packPath = path.join(categoryPath, packName);
+        const files = fs.readdirSync(packPath).filter(isImageFile);
 
-      if (files.length === 0) continue;
+        if (files.length === 0) continue;
 
-      packs.push({
-        key: `${categoryName}/${packName}`,
-        category: categoryName,
-        name: packName,
-        emojiCount: files.length,
-        installed: false, // populated by the route
-      });
+        packs.push({
+          key: `${categoryName}/${packName}`,
+          category: categoryName,
+          name: packName,
+          emojiCount: files.length,
+          installed: false,
+        });
+      }
+
+      if (packs.length > 0) {
+        categories.push({ name: categoryName, packs });
+      }
     }
 
-    if (packs.length > 0) {
-      categories.push({ name: categoryName, packs });
-    }
+    cachedCatalog = categories;
+    return categories;
+  } catch (err) {
+    console.error('[DefaultEmojiPacks] Error scanning packs:', err);
+    cachedCatalog = [];
+    return [];
   }
-
-  cachedCatalog = categories;
-  return categories;
 }
 
 export function getPackImageFiles(key: string): { filename: string; filepath: string }[] {
