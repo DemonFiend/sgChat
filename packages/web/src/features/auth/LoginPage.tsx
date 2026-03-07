@@ -128,6 +128,7 @@ export function LoginPage() {
             <label className="flex items-center gap-2 text-sm text-text-muted cursor-pointer">
               <input
                 type="checkbox"
+                name="rememberMe"
                 checked={rememberMe}
                 onChange={(e) => setRememberMe(e.target.checked)}
                 disabled={isFormDisabled}

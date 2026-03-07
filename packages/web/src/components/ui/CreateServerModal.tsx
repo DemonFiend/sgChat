@@ -54,6 +54,7 @@ export function CreateServerModal({ isOpen, onClose, onCreated }: CreateServerMo
         </label>
         <input
           type="text"
+          name="server-name"
           value={serverName}
           onChange={(e) => setServerName(e.target.value)}
           onKeyDown={handleKeyDown}

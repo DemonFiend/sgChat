@@ -211,6 +211,7 @@ export function AvatarPicker({ currentAvatarUrl, username, displayName, onAvatar
           <input
             ref={fileInputRef}
             type="file"
+            name="avatar-upload"
             accept="image/jpeg,image/png,image/gif,image/webp"
             className="hidden"
             onChange={handleInputChange}

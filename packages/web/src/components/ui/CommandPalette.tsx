@@ -325,6 +325,7 @@ export function CommandPalette({
               <input
                 ref={inputRef}
                 type="text"
+                name="command-search"
                 value={query}
                 onChange={(e) => {
                   setQuery(e.target.value);

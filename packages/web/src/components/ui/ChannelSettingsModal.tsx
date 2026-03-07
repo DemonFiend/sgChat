@@ -182,6 +182,7 @@ export function ChannelSettingsModal({ isOpen, onClose, channel }: ChannelSettin
                 <label className="block text-sm font-medium text-text-secondary mb-1">Channel Name</label>
                 <input
                   type="text"
+                  name="channel-name"
                   value={channelName}
                   onChange={(e) => setChannelName(e.target.value)}
                   className="w-full px-3 py-2 bg-bg-secondary border border-border rounded-lg text-text-primary text-sm focus:outline-none focus:border-brand-primary"
@@ -193,6 +194,7 @@ export function ChannelSettingsModal({ isOpen, onClose, channel }: ChannelSettin
                 <label className="block text-sm font-medium text-text-secondary mb-1">Topic</label>
                 <input
                   type="text"
+                  name="channel-topic"
                   value={channelTopic}
                   onChange={(e) => setChannelTopic(e.target.value)}
                   placeholder="Set a topic for this channel"
@@ -210,6 +212,7 @@ export function ChannelSettingsModal({ isOpen, onClose, channel }: ChannelSettin
                     </label>
                     <input
                       type="range"
+                      name="channel-bitrate"
                       min="8000"
                       max="384000"
                       step="8000"
@@ -230,6 +233,7 @@ export function ChannelSettingsModal({ isOpen, onClose, channel }: ChannelSettin
                     </label>
                     <input
                       type="range"
+                      name="channel-user-limit"
                       min="0"
                       max="99"
                       step="1"

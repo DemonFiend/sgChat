@@ -762,6 +762,7 @@ export function ChatPanel({
               <span className="text-text-muted">Enter your local time:</span>
               <input
                 type="text"
+                name="local-time"
                 placeholder="e.g. 3pm, 15:00, 3:30 PM"
                 className="flex-1 bg-transparent text-text-primary outline-none text-sm"
                 autoFocus

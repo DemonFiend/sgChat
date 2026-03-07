@@ -136,6 +136,7 @@ export function GifPicker({ isOpen, onClose, onSelect, anchorRef }: GifPickerPro
           <input
             ref={inputRef}
             type="text"
+            name="gif-search"
             placeholder="Search GIFs..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
