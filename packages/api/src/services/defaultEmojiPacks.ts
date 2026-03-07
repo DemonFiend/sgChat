@@ -11,11 +11,13 @@ function getDataDir(): string | null {
   if (cachedDataDir !== null) return cachedDataDir || null;
 
   const candidates = [
-    path.resolve(__dirname, '../../data/default-emoji-packs'), // from dist/services/
-    path.resolve(__dirname, '../../../data/default-emoji-packs'), // from src/services/
+    path.resolve(__dirname, '../data/default-emoji-packs'), // from dist/services/ -> dist/data/
+    path.resolve(__dirname, '../../data/default-emoji-packs'), // from dist/services/ -> data/
+    path.resolve(__dirname, '../../../data/default-emoji-packs'), // from src/services/ -> data/
     path.resolve(process.cwd(), 'data/default-emoji-packs'), // from packages/api/
-    '/app/packages/api/data/default-emoji-packs', // Docker
+    path.resolve(process.cwd(), 'dist/data/default-emoji-packs'), // from packages/api/ dist
     '/app/packages/api/dist/data/default-emoji-packs', // Docker dist
+    '/app/packages/api/data/default-emoji-packs', // Docker source
   ];
 
   for (const dir of candidates) {
