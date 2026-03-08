@@ -47,6 +47,17 @@ export function sanitizeMessage(text: string): string {
 
   let sanitized = sanitize(withPlaceholders, SANITIZE_OPTIONS);
 
+  // Decode HTML entities that sanitize-html introduces (e.g. `<` → `&lt;`).
+  // We store plain text, not HTML — the client handles escaping via React JSX.
+  // Decode &amp; first to avoid double-decoding (e.g. `&amp;lt;` → `&lt;` → `<`).
+  sanitized = sanitized
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;/g, "'")
+    .replace(/&#x2F;/g, '/');
+
   // Restore mention syntax
   sanitized = sanitized.replace(/__MENTION_(\d+)__/g, (_, i) => preserved[parseInt(i, 10)]);
 

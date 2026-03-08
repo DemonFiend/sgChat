@@ -211,13 +211,17 @@ export function ChatPanel({
         parts.push(messageInput.slice(lastIdx, range.start));
       }
       if (range.type === 'emoji' && range.emoji) {
+        // Render emoji over the invisible shortcode text.
+        // The invisible text preserves textarea character alignment;
+        // we compress it with letter-spacing to minimize the gap around the emoji.
+        const shortcode = messageInput.slice(range.start, range.end);
         parts.push(
-          <span key={`inp-emoji-${range.start}`} className="relative">
-            <span className="invisible">{messageInput.slice(range.start, range.end)}</span>
+          <span key={`inp-emoji-${range.start}`} className="relative inline-block align-bottom" style={{ letterSpacing: '-0.35em' }}>
+            <span className="invisible">{shortcode}</span>
             <img
               src={range.emoji.url || range.emoji.asset_key}
-              alt={messageInput.slice(range.start, range.end)}
-              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+              alt={shortcode}
+              className="absolute left-0 top-1/2 -translate-y-1/2"
               style={{ width: '1.375em', height: '1.375em' }}
             />
           </span>
@@ -369,6 +373,10 @@ export function ChatPanel({
       setMentionTrigger(null);
       setCommandTrigger(null);
       setStimePrompt(false);
+      // Reset textarea height after sending
+      if (inputRef.current) {
+        inputRef.current.style.height = 'auto';
+      }
       inputRef.current?.focus();
     }
   }, [messageInput, onSendMessage, onTypingStop, mentionMappings, onClearMessages]);
@@ -971,6 +979,11 @@ export function ChatPanel({
                   const cursorPos = e.target.selectionStart ?? newValue.length;
                   setMessageInput(newValue);
                   handleTyping();
+
+                  // Auto-resize textarea to fit content
+                  const el = e.target;
+                  el.style.height = 'auto';
+                  el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
 
                   // Detect slash command trigger
                   const cmdTrigger = detectCommandTrigger(newValue);

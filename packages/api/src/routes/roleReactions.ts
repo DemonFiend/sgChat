@@ -20,6 +20,7 @@ import {
   getGroupsForServer,
   postRoleReactionMessage,
   refreshGroupMessage,
+  refreshAllGroupMessages,
   stripRolesForGroup,
   countNonRoleMessages,
   formatChannel,
@@ -48,6 +49,22 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
 
       const groups = await getGroupsForServer(serverId);
       return { groups };
+    },
+  });
+
+  /**
+   * POST /:serverId/role-reactions/refresh - Refresh all group messages (regenerate content)
+   */
+  fastify.post('/:serverId/role-reactions/refresh', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { serverId } = request.params as { serverId: string };
+
+      const denied = await requireManageRoles(request, reply, serverId);
+      if (denied) return denied;
+
+      const count = await refreshAllGroupMessages(serverId);
+      return { refreshed: count };
     },
   });
 

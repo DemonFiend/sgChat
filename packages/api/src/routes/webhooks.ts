@@ -6,6 +6,7 @@ import { calculatePermissions } from '../services/permissions.js';
 import { ServerPermissions, hasPermission, createWebhookSchema } from '@sgchat/shared';
 import { notFound, forbidden, badRequest } from '../utils/errors.js';
 import { sanitizeMessage } from '../utils/sanitize.js';
+import { resolveTextMentions } from '../utils/mentionResolver.js';
 
 export const webhookRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /webhooks?server_id=X - List webhooks for the server
@@ -163,7 +164,8 @@ export const webhookRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       // Sanitize message content
-      const content = sanitizeMessage(body.content);
+      let content = sanitizeMessage(body.content);
+      content = await resolveTextMentions(content, webhook.server_id);
 
       // Use the webhook name/avatar or override from the request body
       const displayName = body.username || webhook.name;

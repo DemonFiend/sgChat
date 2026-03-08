@@ -13,6 +13,7 @@ import {
 } from '@sgchat/shared';
 import { notFound, forbidden, badRequest } from '../utils/errors.js';
 import { sanitizeMessage } from '../utils/sanitize.js';
+import { resolveTextMentions } from '../utils/mentionResolver.js';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -130,7 +131,8 @@ export const threadRoutes: FastifyPluginAsync = async (fastify) => {
 
       // If initial message provided, create it
       if (body.initial_message) {
-        const content = sanitizeMessage(body.initial_message);
+        let content = sanitizeMessage(body.initial_message);
+        content = await resolveTextMentions(content, channel.server_id);
         const [msg] = await sql`
           INSERT INTO messages (
             channel_id, author_id, content, thread_id, attachments
@@ -348,7 +350,8 @@ export const threadRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       // Sanitize and create message
-      const content = sanitizeMessage(body.content);
+      let content = sanitizeMessage(body.content);
+      content = await resolveTextMentions(content, thread.server_id);
 
       const [message] = await sql`
         INSERT INTO messages (

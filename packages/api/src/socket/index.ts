@@ -17,6 +17,7 @@ import { processMentions } from '../services/mentions.js';
 import { cancelPendingCreation } from '../services/tempChannelTimers.js';
 import { markTempChannelEmpty } from '../services/tempChannels.js';
 import { sanitizeContent, sanitizeMessage } from '../utils/sanitize.js';
+import { resolveTextMentions } from '../utils/mentionResolver.js';
 import { encryptPayload, decryptPayload } from '../plugins/cryptoPayload.js';
 import { APP_VERSION } from '../lib/version.js';
 import { parseCommand, executeCommand } from '../services/commands.js';
@@ -427,6 +428,9 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
           return;
         }
 
+        // Auto-resolve plain @RoleName text into wire format <@&uuid>
+        data.content = await resolveTextMentions(data.content, channel.server_id);
+
         // ── Slash command processing ──────────────────────────
         const parsed = parseCommand(data.content);
         if (parsed) {
@@ -585,6 +589,12 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         if (!message || message.author_id !== userId) {
           socketEmit(socket, 'error', { message: 'Cannot edit this message' });
           return;
+        }
+
+        // Auto-resolve plain @RoleName text into wire format <@&uuid>
+        const editChannel = await db.channels.findById(message.channel_id);
+        if (editChannel?.server_id) {
+          data.content = await resolveTextMentions(data.content, editChannel.server_id);
         }
 
         const updated = await db.messages.update(data.message_id, {

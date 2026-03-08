@@ -229,6 +229,10 @@ export function DMChatPanel({
       setMessageInput('');
       setMentionMappings([]);
       setMentionTrigger(null);
+      // Reset textarea height after sending
+      if (inputRef.current) {
+        inputRef.current.style.height = 'auto';
+      }
       inputRef.current?.focus();
     }
   };
@@ -556,6 +560,11 @@ export function DMChatPanel({
                 // Only detect @ triggers in DMs (no # channels)
                 const trigger = detectTrigger(newValue, cursorPos);
                 setMentionTrigger(trigger?.triggerType === '@' ? trigger : null);
+
+                // Auto-resize textarea to fit content
+                const el = e.target;
+                el.style.height = 'auto';
+                el.style.height = `${Math.min(el.scrollHeight, 128)}px`;
               }}
               onKeyDown={handleKeyDown}
               placeholder={`Message @${friend.username}`}

@@ -10,6 +10,7 @@ import { ServerPermissions, TextPermissions, hasPermission, sendMessageSchema, c
 import { notFound, forbidden, badRequest } from '../utils/errors.js';
 import { storage } from '../lib/storage.js';
 import { sanitizeMessage } from '../utils/sanitize.js';
+import { resolveTextMentions } from '../utils/mentionResolver.js';
 import { parseCommand, executeCommand, getBuiltinCommands } from '../services/commands.js';
 import { z } from 'zod';
 import {
@@ -336,6 +337,9 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
 
       // Sanitize message content (strip HTML tags — defense-in-depth)
       body.content = sanitizeMessage(body.content);
+
+      // Auto-resolve plain @RoleName text into wire format <@&uuid>
+      body.content = await resolveTextMentions(body.content, channel.server_id);
 
       // ── Slash command processing ──────────────────────────
       const parsed = parseCommand(body.content);

@@ -462,6 +462,23 @@ export async function createDefaultGroups(
 }
 
 /**
+ * Refresh all role reaction group messages for a server.
+ * Regenerates message content with proper <@&uuid> wire format.
+ */
+export async function refreshAllGroupMessages(serverId: string) {
+  const groups = await sql`
+    SELECT id FROM role_reaction_groups
+    WHERE server_id = ${serverId} AND message_id IS NOT NULL
+  `;
+
+  for (const group of groups) {
+    await refreshGroupMessage(group.id);
+  }
+
+  return groups.length;
+}
+
+/**
  * Get all role reaction groups for a server with their mappings
  */
 export async function getGroupsForServer(serverId: string) {
