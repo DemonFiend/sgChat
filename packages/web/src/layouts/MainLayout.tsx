@@ -102,6 +102,7 @@ export function MainLayout() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentChannel, setCurrentChannel] = useState<ChannelInfo | null>(null);
   const [members, setMembers] = useState<MemberData[]>([]);
+  const [allRoles, setAllRoles] = useState<{ id: string; name: string; color: string | null }[]>([]);
   const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
   const [isMemberListOpen, setIsMemberListOpen] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -197,10 +198,11 @@ export function MainLayout() {
         setChannels(fetchedChannels);
         setCategories(fetchedCategories);
 
-        // Fetch members
-        const membersResponse = await api.get<
-          MemberData[] | { members: MemberData[] }
-        >('/members');
+        // Fetch members and roles in parallel
+        const [membersResponse, rolesResponse] = await Promise.all([
+          api.get<MemberData[] | { members: MemberData[] }>('/members'),
+          api.get<{ id: string; name: string; color: string | null }[]>('/roles'),
+        ]);
         if (Array.isArray(membersResponse)) {
           setMembers(membersResponse);
         } else if (
@@ -210,6 +212,9 @@ export function MainLayout() {
           setMembers(
             (membersResponse as { members: MemberData[] }).members || [],
           );
+        }
+        if (Array.isArray(rolesResponse)) {
+          setAllRoles(rolesResponse);
         }
 
         // Auto-navigate to first text channel if channelId is missing or invalid
@@ -828,6 +833,10 @@ export function MainLayout() {
         if (Array.isArray(res)) setMembers(res);
         else if (res?.members) setMembers(res.members);
       }).catch(() => {});
+      // Refetch all roles for mention context
+      api.get<{ id: string; name: string; color: string | null }[]>('/roles').then((res) => {
+        if (Array.isArray(res)) setAllRoles(res);
+      }).catch(() => {});
       // Refetch permissions (role changes may affect current user)
       if (currentServer) {
         api.get<{ permissions: Record<string, boolean> }>(`/servers/${currentServer.id}/permissions`).then((data) => {
@@ -1136,12 +1145,8 @@ export function MainLayout() {
     }
 
     const rolesMap = new Map<string, MentionRole>();
-    for (const m of members) {
-      for (const r of m.roles ?? []) {
-        if (!rolesMap.has(r.id)) {
-          rolesMap.set(r.id, { name: r.name, color: r.color });
-        }
-      }
+    for (const r of allRoles) {
+      rolesMap.set(r.id, { name: r.name, color: r.color });
     }
 
     return {
@@ -1168,7 +1173,7 @@ export function MainLayout() {
         ? () => useServerPopupStore.getState().showPopup(currentServer!.id)
         : undefined,
     };
-  }, [members, channels, currentServer?.timezone, currentServer?.motd, currentServer?.id, user?.id, navigate]);
+  }, [members, channels, allRoles, currentServer?.timezone, currentServer?.motd, currentServer?.id, user?.id, navigate]);
 
   // Wire up Electron global shortcuts for mute/deafen
   useGlobalShortcuts({

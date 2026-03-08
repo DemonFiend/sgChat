@@ -267,7 +267,7 @@ export const RoleTemplates = {
     text: ALL_PERMISSIONS.text,
     voice: ALL_PERMISSIONS.voice,
     hoist: true,
-    mentionable: false,
+    mentionable: true,
     description: 'Full server access. Use sparingly.',
   },
   MODERATOR: {
@@ -345,7 +345,7 @@ export const RoleTemplates = {
       VoicePermissions.USE_VOICE_ACTIVITY |
       VoicePermissions.USE_SOUNDBOARD,
     hoist: false,
-    mentionable: false,
+    mentionable: true,
     description: 'Standard member with voice/video access.',
   },
   MUTED: {
