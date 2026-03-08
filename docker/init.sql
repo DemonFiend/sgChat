@@ -1731,6 +1731,9 @@ INSERT INTO _migrations (name) VALUES
   ('017_default_emoji_packs'),
   ('018_emoji_packs_enabled'),
   ('019_storage_limits'),
+  ('011_system_user'),
   ('020_server_events'),
-  ('021_rsvp_events_permission')
+  ('021_rsvp_events_permission'),
+  ('022_role_reaction_custom_emoji'),
+  ('023_role_deny_permissions')
 ON CONFLICT (name) DO NOTHING;
