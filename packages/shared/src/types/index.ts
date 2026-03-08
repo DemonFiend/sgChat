@@ -181,6 +181,12 @@ export interface Role {
   server_permissions: string; // Bigint as string
   text_permissions: string;
   voice_permissions: string;
+  server_permissions_deny: string;
+  text_permissions_deny: string;
+  voice_permissions_deny: string;
+  is_hoisted: boolean;
+  is_mentionable: boolean;
+  description: string | null;
   created_at: Date;
 }
 
@@ -900,6 +906,10 @@ export interface RoleReactionMapping {
   role_name?: string;
   role_color?: string | null;
   emoji: string;
+  emoji_type: 'unicode' | 'custom';
+  custom_emoji_id: string | null;
+  custom_emoji_url?: string;
+  custom_emoji_shortcode?: string;
   label: string | null;
   position: number;
 }

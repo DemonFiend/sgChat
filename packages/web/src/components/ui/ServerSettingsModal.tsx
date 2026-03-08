@@ -11,6 +11,7 @@ import {
   ServerPermissionMetadata,
   TextPermissionMetadata,
   VoicePermissionMetadata,
+  type PermissionState,
 } from '@sgchat/shared';
 import {
   DndContext,
@@ -570,9 +571,10 @@ interface Role {
   name: string;
   color: string | null;
   position: number;
-  permissions: Record<string, boolean>;
+  permissions: Record<string, PermissionState>;
   member_count?: number;
   is_hoisted?: boolean;
+  is_mentionable?: boolean;
 }
 
 function SortableRoleItem({
@@ -649,8 +651,9 @@ function RolesTab() {
   // Editable role state
   const [editName, setEditName] = useState('');
   const [editColor, setEditColor] = useState('');
-  const [editPermissions, setEditPermissions] = useState<Record<string, boolean>>({});
+  const [editPermissions, setEditPermissions] = useState<Record<string, PermissionState>>({});
   const [editHoisted, setEditHoisted] = useState(false);
+  const [editMentionable, setEditMentionable] = useState(false);
 
   // Preset colors for quick selection
   const PRESET_COLORS = [
@@ -714,15 +717,16 @@ function RolesTab() {
     if (editName !== selectedRole.name) return true;
     if (editColor !== (selectedRole.color || '')) return true;
     if (editHoisted !== (selectedRole.is_hoisted ?? false)) return true;
+    if (editMentionable !== (selectedRole.is_mentionable ?? false)) return true;
     const savedPerms = selectedRole.permissions;
     for (const key of Object.keys(editPermissions)) {
-      if (editPermissions[key] !== (savedPerms[key] ?? false)) return true;
+      if (editPermissions[key] !== (savedPerms[key] ?? 'default')) return true;
     }
     for (const key of Object.keys(savedPerms)) {
-      if (savedPerms[key] !== (editPermissions[key] ?? false)) return true;
+      if (savedPerms[key] !== (editPermissions[key] ?? 'default')) return true;
     }
     return false;
-  }, [selectedRole, editName, editColor, editHoisted, editPermissions]);
+  }, [selectedRole, editName, editColor, editHoisted, editMentionable, editPermissions]);
 
   const filteredRoles = useMemo(() => {
     const search = roleSearch.toLowerCase();
@@ -754,6 +758,7 @@ function RolesTab() {
     setEditColor(role.color || '');
     setEditPermissions({ ...role.permissions });
     setEditHoisted(role.is_hoisted ?? false);
+    setEditMentionable(role.is_mentionable ?? false);
     setShowDeleteConfirm(false);
     setSaveSuccess(false);
   };
@@ -789,6 +794,7 @@ function RolesTab() {
         color: editColor || null,
         permissions: editPermissions,
         is_hoisted: editHoisted,
+        is_mentionable: editMentionable,
       });
       setRoles(prev => prev.map(r => r.id === selectedRole.id ? updated : r));
       setSelectedRole(updated);
@@ -815,7 +821,12 @@ function RolesTab() {
   };
 
   const togglePermission = (key: string) => {
-    setEditPermissions(prev => ({ ...prev, [key]: !prev[key] }));
+    setEditPermissions(prev => {
+      const current = prev[key] || 'default';
+      // Cycle: default -> allow -> deny -> default
+      const next: PermissionState = current === 'default' ? 'allow' : current === 'allow' ? 'deny' : 'default';
+      return { ...prev, [key]: next };
+    });
   };
 
   return (
@@ -1039,6 +1050,19 @@ function RolesTab() {
                     <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${editHoisted ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
                   </div>
                 </button>
+                <button
+                  onClick={() => setEditMentionable(!editMentionable)}
+                  className="flex items-center justify-between w-full cursor-pointer hover:bg-bg-modifier-hover p-2 rounded-md transition-colors"
+                >
+                  <div>
+                    <div className="text-sm font-medium text-text-primary text-left">Allow anyone to @mention this role</div>
+                    <div className="text-xs text-text-muted text-left">Members can mention this role in messages to notify all role members</div>
+                  </div>
+                  {/* Toggle switch */}
+                  <div className={`relative w-11 h-6 rounded-full transition-colors ${editMentionable ? 'bg-brand-primary' : 'bg-bg-tertiary'}`}>
+                    <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${editMentionable ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+                  </div>
+                </button>
               </div>
             </div>
 
@@ -1048,7 +1072,8 @@ function RolesTab() {
 
               {PERMISSION_GROUPS.map((group) => {
                 const isExpanded = expandedGroups.has(group.category);
-                const enabledCount = group.permissions.filter((p) => editPermissions[p.key]).length;
+                const allowCount = group.permissions.filter((p) => editPermissions[p.key] === 'allow').length;
+                const denyCount = group.permissions.filter((p) => editPermissions[p.key] === 'deny').length;
 
                 return (
                   <div key={group.category} className="mb-3">
@@ -1067,43 +1092,69 @@ function RolesTab() {
                         </svg>
                         <h4 className="text-xs font-semibold text-text-muted uppercase">{group.name}</h4>
                       </div>
-                      <span className="text-xs text-text-muted">{enabledCount}/{group.permissions.length}</span>
+                      <span className="text-xs text-text-muted">
+                        {allowCount > 0 && <span className="text-green-400">{allowCount}</span>}
+                        {allowCount > 0 && denyCount > 0 && ' / '}
+                        {denyCount > 0 && <span className="text-danger">{denyCount}</span>}
+                        {allowCount === 0 && denyCount === 0 && `0/${group.permissions.length}`}
+                        {(allowCount > 0 || denyCount > 0) && <span className="text-text-muted"> / {group.permissions.length}</span>}
+                      </span>
                     </button>
 
                     {/* Collapsible body */}
                     {isExpanded && (
                       <div className="bg-bg-secondary rounded-lg border border-border-subtle divide-y divide-border-subtle overflow-hidden">
-                        {group.permissions.map((perm) => (
-                          <button
-                            key={perm.key}
-                            onClick={() => togglePermission(perm.key)}
-                            className={clsx(
-                              'flex items-center justify-between p-3 w-full text-left cursor-pointer transition-colors',
-                              DANGEROUS_PERMS.has(perm.key) && editPermissions[perm.key]
-                                ? 'bg-danger/5 hover:bg-danger/10'
-                                : 'hover:bg-bg-modifier-hover'
-                            )}
-                          >
-                            <div className="pr-4">
-                              <div className={clsx('text-sm font-medium', DANGEROUS_PERMS.has(perm.key) ? 'text-danger' : 'text-text-primary')}>
-                                {perm.label}
+                        {group.permissions.map((perm) => {
+                          const state = editPermissions[perm.key] || 'default';
+                          return (
+                            <button
+                              key={perm.key}
+                              onClick={() => togglePermission(perm.key)}
+                              className={clsx(
+                                'flex items-center justify-between p-3 w-full text-left cursor-pointer transition-colors',
+                                state === 'allow' && DANGEROUS_PERMS.has(perm.key)
+                                  ? 'bg-danger/5 hover:bg-danger/10'
+                                  : state === 'deny'
+                                    ? 'bg-danger/5 hover:bg-danger/10'
+                                    : 'hover:bg-bg-modifier-hover'
+                              )}
+                            >
+                              <div className="pr-4">
+                                <div className={clsx('text-sm font-medium', DANGEROUS_PERMS.has(perm.key) ? 'text-danger' : 'text-text-primary')}>
+                                  {perm.label}
+                                </div>
+                                <div className="text-xs text-text-muted">{perm.description}</div>
                               </div>
-                              <div className="text-xs text-text-muted">{perm.description}</div>
-                            </div>
-                            {/* Toggle switch */}
-                            <div className={clsx(
-                              'relative w-11 h-6 rounded-full flex-shrink-0 transition-colors',
-                              editPermissions[perm.key]
-                                ? DANGEROUS_PERMS.has(perm.key) ? 'bg-danger' : 'bg-brand-primary'
-                                : 'bg-bg-tertiary'
-                            )}>
+                              {/* 3-state toggle: Deny (X) | Default (-) | Allow (check) */}
                               <div className={clsx(
-                                'absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform',
-                                editPermissions[perm.key] ? 'translate-x-[22px]' : 'translate-x-0.5'
-                              )} />
-                            </div>
-                          </button>
-                        ))}
+                                'relative w-16 h-6 rounded-full flex-shrink-0 transition-colors',
+                                state === 'allow'
+                                  ? DANGEROUS_PERMS.has(perm.key) ? 'bg-danger' : 'bg-green-500'
+                                  : state === 'deny'
+                                    ? 'bg-danger'
+                                    : 'bg-bg-tertiary'
+                              )}>
+                                {/* Track labels */}
+                                <div className="absolute inset-0 flex items-center justify-between px-1.5 text-[9px] font-bold text-white/40 select-none pointer-events-none">
+                                  <span>X</span>
+                                  <span>-</span>
+                                  <span className="text-[10px]">&#10003;</span>
+                                </div>
+                                {/* Knob */}
+                                <div className={clsx(
+                                  'absolute top-0.5 w-5 h-5 rounded-full shadow transition-transform flex items-center justify-center text-[10px] font-bold',
+                                  state === 'deny'
+                                    ? 'translate-x-0.5 bg-white text-danger'
+                                    : state === 'default'
+                                      ? 'translate-x-[22px] bg-white text-text-muted'
+                                      : 'translate-x-[42px] bg-white text-green-600'
+                                )}>
+                                  {state === 'deny' ? 'X' : state === 'allow' ? '\u2713' : '\u2014'}
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
                   </div>

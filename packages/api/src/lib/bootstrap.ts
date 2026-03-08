@@ -260,6 +260,14 @@ export async function bootstrapServer(): Promise<void> {
     ON CONFLICT DO NOTHING
   `;
 
+  // Install default emoji packs BEFORE role reactions (so custom emojis are available for mappings)
+  try {
+    await installAllDefaultPacks(server.id, SYSTEM_USER_ID);
+    console.log('✅ Installed default emoji packs');
+  } catch (err) {
+    console.error('[Bootstrap] Failed to install default emoji packs before role reactions:', err);
+  }
+
   // Set up default role reaction groups in #roles
   await createDefaultGroups(server.id, rolesChannel.id);
   console.log(`✅ Created Server Info channels: #announcements, #roles (with role reactions)`);
@@ -417,13 +425,6 @@ export async function bootstrapServer(): Promise<void> {
       afk_channel_id = ${afkChannel.id}
     WHERE id = ${server.id}
   `;
-
-  // Auto-install default emoji packs
-  try {
-    await installAllDefaultPacks(server.id, SYSTEM_USER_ID);
-  } catch (err) {
-    console.error('[Bootstrap] Failed to auto-install default emoji packs:', err);
-  }
 
   console.log(`✅ Server bootstrap complete!`);
   console.log('');

@@ -478,9 +478,12 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
         FROM role_reaction_mappings WHERE group_id = ${groupId}
       `;
 
+      const emojiType = body.emoji_type || 'unicode';
+      const customEmojiId = emojiType === 'custom' ? (body.custom_emoji_id || null) : null;
+
       const [mapping] = await sql`
-        INSERT INTO role_reaction_mappings (group_id, role_id, emoji, label, position)
-        VALUES (${groupId}, ${body.role_id}, ${body.emoji}, ${body.label || null}, ${maxPos.next_position})
+        INSERT INTO role_reaction_mappings (group_id, role_id, emoji, emoji_type, custom_emoji_id, label, position)
+        VALUES (${groupId}, ${body.role_id}, ${body.emoji}, ${emojiType}, ${customEmojiId}, ${body.label || null}, ${maxPos.next_position})
         RETURNING *
       `;
 
@@ -491,11 +494,19 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
       if (group.message_id) {
         const server = await db.servers.findById(serverId);
         if (server) {
-          await sql`
-            INSERT INTO message_reactions (message_id, user_id, reaction_type, unicode_emoji)
-            VALUES (${group.message_id}, ${server.owner_id}, 'unicode', ${body.emoji})
-            ON CONFLICT DO NOTHING
-          `;
+          if (emojiType === 'custom' && customEmojiId) {
+            await sql`
+              INSERT INTO message_reactions (message_id, user_id, reaction_type, custom_emoji_id)
+              VALUES (${group.message_id}, ${server.owner_id}, 'custom', ${customEmojiId})
+              ON CONFLICT DO NOTHING
+            `;
+          } else {
+            await sql`
+              INSERT INTO message_reactions (message_id, user_id, reaction_type, unicode_emoji)
+              VALUES (${group.message_id}, ${server.owner_id}, 'unicode', ${body.emoji})
+              ON CONFLICT DO NOTHING
+            `;
+          }
         }
       }
 
@@ -550,6 +561,8 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
       const [updated] = await sql`
         UPDATE role_reaction_mappings SET
           emoji = COALESCE(${body.emoji ?? null}, emoji),
+          emoji_type = COALESCE(${body.emoji_type ?? null}, emoji_type),
+          custom_emoji_id = ${body.emoji_type === 'custom' ? (body.custom_emoji_id || null) : (body.emoji_type === 'unicode' ? null : existing.custom_emoji_id)},
           role_id = COALESCE(${body.role_id ?? null}, role_id),
           label = COALESCE(${body.label !== undefined ? body.label : null}, label)
         WHERE id = ${mappingId}

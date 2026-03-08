@@ -13,12 +13,12 @@ import { calculatePermissions } from '../services/permissions.js';
 import { handleMemberLeave, generateInviteCode } from '../services/server.js';
 import {
   ServerPermissions,
-  TextPermissions,
-  VoicePermissions,
   hasPermission,
-  toNamedPermissions,
+  toNamedPermissionStates,
+  namedStatesToBitfields,
   createRoleSchema,
-  createInviteSchema
+  createInviteSchema,
+  type PermissionState,
 } from '@sgchat/shared';
 import { notFound, forbidden, badRequest, conflict, sendError } from '../utils/errors.js';
 import { emitEncrypted } from '../lib/socketEmit.js';
@@ -34,88 +34,30 @@ const updateRoleSchema = z.object({
       text: z.number().optional(),
       voice: z.number().optional(),
     }),
-    z.record(z.boolean()) // Accept named permissions from frontend
+    z.record(z.enum(['allow', 'deny', 'default'])), // 3-state named permissions
+    z.record(z.boolean()) // Legacy 2-state named permissions
   ]).optional(),
   is_hoisted: z.boolean().optional(),
+  is_mentionable: z.boolean().optional(),
 });
 
-// Helper function to convert named permissions to bitfields
-function namedPermissionsToBitfields(named: Record<string, boolean>): { server: bigint; text: bigint; voice: bigint } {
-  let server = 0n;
-  let text = 0n;
-  let voice = 0n;
+// Helper: check if permissions use 3-state format (PermissionState values)
+function isThreeStatePermissions(perms: Record<string, any>): perms is Record<string, PermissionState> {
+  const first = Object.values(perms)[0];
+  return typeof first === 'string' && (first === 'allow' || first === 'deny' || first === 'default');
+}
 
-  // Map of named permission keys to their bitfield values
-  const serverPermsMap: Record<string, bigint> = {
-    administrator: ServerPermissions.ADMINISTRATOR,
-    manage_server: ServerPermissions.MANAGE_SERVER,
-    manage_channels: ServerPermissions.MANAGE_CHANNELS,
-    manage_roles: ServerPermissions.MANAGE_ROLES,
-    manage_categories: ServerPermissions.MANAGE_CATEGORIES,
-    kick_members: ServerPermissions.KICK_MEMBERS,
-    ban_members: ServerPermissions.BAN_MEMBERS,
-    timeout_members: ServerPermissions.TIMEOUT_MEMBERS,
-    manage_nicknames: ServerPermissions.MANAGE_NICKNAMES,
-    create_invites: ServerPermissions.CREATE_INVITES,
-    manage_invites: ServerPermissions.MANAGE_INVITES,
-    change_nickname: ServerPermissions.CHANGE_NICKNAME,
-    view_audit_log: ServerPermissions.VIEW_AUDIT_LOG,
-    view_server_insights: ServerPermissions.VIEW_SERVER_INSIGHTS,
-    manage_emojis: ServerPermissions.MANAGE_EMOJIS,
-    manage_stickers: ServerPermissions.MANAGE_STICKERS,
-    manage_expressions: ServerPermissions.MANAGE_EXPRESSIONS,
-    manage_webhooks: ServerPermissions.MANAGE_WEBHOOKS,
-    create_events: ServerPermissions.CREATE_EVENTS,
-    manage_events: ServerPermissions.MANAGE_EVENTS,
-    manage_threads: ServerPermissions.MANAGE_THREADS,
-    create_public_threads: ServerPermissions.CREATE_PUBLIC_THREADS,
-    create_private_threads: ServerPermissions.CREATE_PRIVATE_THREADS,
-    view_server_members: ServerPermissions.VIEW_SERVER_MEMBERS,
-    moderate_members: ServerPermissions.MODERATE_MEMBERS,
-    rsvp_events: ServerPermissions.RSVP_EVENTS,
-  };
-
-  const textPermsMap: Record<string, bigint> = {
-    view_channel: TextPermissions.VIEW_CHANNEL,
-    send_messages: TextPermissions.SEND_MESSAGES,
-    send_tts_messages: TextPermissions.SEND_TTS_MESSAGES,
-    read_message_history: TextPermissions.READ_MESSAGE_HISTORY,
-    embed_links: TextPermissions.EMBED_LINKS,
-    attach_files: TextPermissions.ATTACH_FILES,
-    add_reactions: TextPermissions.ADD_REACTIONS,
-    mention_everyone: TextPermissions.MENTION_EVERYONE,
-    mention_roles: TextPermissions.MENTION_ROLES,
-    manage_messages: TextPermissions.MANAGE_MESSAGES,
-    use_external_emojis: TextPermissions.USE_EXTERNAL_EMOJIS,
-    use_external_stickers: TextPermissions.USE_EXTERNAL_STICKERS,
-    delete_own_messages: TextPermissions.DELETE_OWN_MESSAGES,
-    edit_own_messages: TextPermissions.EDIT_OWN_MESSAGES,
-    bypass_slowmode: TextPermissions.BYPASS_SLOWMODE,
-  };
-
-  const voicePermsMap: Record<string, bigint> = {
-    connect: VoicePermissions.CONNECT,
-    speak: VoicePermissions.SPEAK,
-    video: VoicePermissions.VIDEO,
-    stream: VoicePermissions.STREAM,
-    mute_members: VoicePermissions.MUTE_MEMBERS,
-    deafen_members: VoicePermissions.DEAFEN_MEMBERS,
-    move_members: VoicePermissions.MOVE_MEMBERS,
-    use_voice_activity: VoicePermissions.USE_VOICE_ACTIVITY,
-    priority_speaker: VoicePermissions.PRIORITY_SPEAKER,
-    disconnect_members: VoicePermissions.DISCONNECT_MEMBERS,
-  };
-
-  // Build bitfields from named permissions
+// Convert legacy 2-state (boolean) named permissions to bitfields (no deny support)
+function legacyNamedPermissionsToBitfields(named: Record<string, boolean>): {
+  server: bigint; text: bigint; voice: bigint;
+  server_deny: bigint; text_deny: bigint; voice_deny: bigint;
+} {
+  // Convert booleans to 3-state: true -> 'allow', false -> 'default'
+  const states: Record<string, PermissionState> = {};
   for (const [key, value] of Object.entries(named)) {
-    if (value === true) {
-      if (key in serverPermsMap) server |= serverPermsMap[key];
-      if (key in textPermsMap) text |= textPermsMap[key];
-      if (key in voicePermsMap) voice |= voicePermsMap[key];
-    }
+    states[key] = value ? 'allow' : 'default';
   }
-
-  return { server, text, voice };
+  return namedStatesToBitfields(states);
 }
 
 const updateMemberSchema = z.object({
@@ -150,13 +92,16 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
         ORDER BY r.position DESC
       `;
 
-      // Convert permissions to named format for each role
+      // Convert permissions to named 3-state format for each role
       return roles.map((role: any) => ({
         ...role,
-        permissions: toNamedPermissions(
+        permissions: toNamedPermissionStates(
           role.server_permissions || '0',
           role.text_permissions || '0',
-          role.voice_permissions || '0'
+          role.voice_permissions || '0',
+          role.server_permissions_deny || '0',
+          role.text_permissions_deny || '0',
+          role.voice_permissions_deny || '0',
         ),
       }));
     },
@@ -238,16 +183,29 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
           if (body.permissions.server !== undefined) updates.server_permissions = String(body.permissions.server);
           if (body.permissions.text !== undefined) updates.text_permissions = String(body.permissions.text);
           if (body.permissions.voice !== undefined) updates.voice_permissions = String(body.permissions.voice);
-        } else {
-          // Named format - convert to bitfields
-          const bitfields = namedPermissionsToBitfields(body.permissions as Record<string, boolean>);
+        } else if (isThreeStatePermissions(body.permissions as Record<string, any>)) {
+          // 3-state named format (allow/deny/default)
+          const bitfields = namedStatesToBitfields(body.permissions as Record<string, PermissionState>);
           updates.server_permissions = String(bitfields.server);
           updates.text_permissions = String(bitfields.text);
           updates.voice_permissions = String(bitfields.voice);
+          updates.server_permissions_deny = String(bitfields.server_deny);
+          updates.text_permissions_deny = String(bitfields.text_deny);
+          updates.voice_permissions_deny = String(bitfields.voice_deny);
+        } else {
+          // Legacy 2-state named format (boolean)
+          const bitfields = legacyNamedPermissionsToBitfields(body.permissions as Record<string, boolean>);
+          updates.server_permissions = String(bitfields.server);
+          updates.text_permissions = String(bitfields.text);
+          updates.voice_permissions = String(bitfields.voice);
+          updates.server_permissions_deny = String(bitfields.server_deny);
+          updates.text_permissions_deny = String(bitfields.text_deny);
+          updates.voice_permissions_deny = String(bitfields.voice_deny);
         }
       }
 
       if (body.is_hoisted !== undefined) updates.is_hoisted = body.is_hoisted;
+      if (body.is_mentionable !== undefined) updates.is_mentionable = body.is_mentionable;
 
       if (Object.keys(updates).length === 0) {
         return badRequest(reply, 'No updates provided');
@@ -256,8 +214,19 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
       await db.sql`UPDATE roles SET ${db.sql(updates)} WHERE id = ${roleId}`;
 
       const [updated] = await db.sql`SELECT * FROM roles WHERE id = ${roleId}`;
-      await emitEncrypted(fastify.io, `server:${server.id}`, 'role.update', updated);
-      return updated;
+      const enriched = {
+        ...updated,
+        permissions: toNamedPermissionStates(
+          updated.server_permissions || '0',
+          updated.text_permissions || '0',
+          updated.voice_permissions || '0',
+          updated.server_permissions_deny || '0',
+          updated.text_permissions_deny || '0',
+          updated.voice_permissions_deny || '0',
+        ),
+      };
+      await emitEncrypted(fastify.io, `server:${server.id}`, 'role.update', enriched);
+      return enriched;
     },
   });
 

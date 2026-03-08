@@ -19,6 +19,7 @@ import {
   createInviteSchema,
   RoleTemplates,
   toNamedPermissions,
+  toNamedPermissionStates,
   permissionToString,
 } from '@sgchat/shared';
 import { notFound, forbidden, conflict, badRequest, sendError } from '../utils/errors.js';
@@ -49,6 +50,9 @@ const updateRoleSchema = z.object({
   server_permissions: z.union([z.number(), z.string()]).optional(),
   text_permissions: z.union([z.number(), z.string()]).optional(),
   voice_permissions: z.union([z.number(), z.string()]).optional(),
+  server_permissions_deny: z.union([z.number(), z.string()]).optional(),
+  text_permissions_deny: z.union([z.number(), z.string()]).optional(),
+  voice_permissions_deny: z.union([z.number(), z.string()]).optional(),
   is_hoisted: z.boolean().optional(),
   is_mentionable: z.boolean().optional(),
   description: z.string().max(256).nullable().optional(),
@@ -446,6 +450,11 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       if (body.server_permissions !== undefined) updates.server_permissions = String(body.server_permissions);
       if (body.text_permissions !== undefined) updates.text_permissions = String(body.text_permissions);
       if (body.voice_permissions !== undefined) updates.voice_permissions = String(body.voice_permissions);
+      if (body.server_permissions_deny !== undefined) updates.server_permissions_deny = String(body.server_permissions_deny);
+      if (body.text_permissions_deny !== undefined) updates.text_permissions_deny = String(body.text_permissions_deny);
+      if (body.voice_permissions_deny !== undefined) updates.voice_permissions_deny = String(body.voice_permissions_deny);
+      if (body.is_hoisted !== undefined) updates.is_hoisted = body.is_hoisted;
+      if (body.is_mentionable !== undefined) updates.is_mentionable = body.is_mentionable;
 
       if (Object.keys(updates).length === 0) {
         return badRequest(reply, 'No updates provided');
@@ -1091,11 +1100,14 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
         return notFound(reply, 'Role');
       }
 
-      // Convert permissions to named object for easier client consumption
-      const namedPermissions = toNamedPermissions(
+      // Convert permissions to named 3-state object for easier client consumption
+      const namedPermissions = toNamedPermissionStates(
         role.server_permissions || '0',
         role.text_permissions || '0',
-        role.voice_permissions || '0'
+        role.voice_permissions || '0',
+        role.server_permissions_deny || '0',
+        role.text_permissions_deny || '0',
+        role.voice_permissions_deny || '0',
       );
 
       return {
@@ -1138,9 +1150,9 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
           ${String(body.server_permissions || 0)},
           ${String(body.text_permissions || 0)},
           ${String(body.voice_permissions || 0)},
-          false,
-          false,
-          null
+          ${body.is_hoisted ?? false},
+          ${body.is_mentionable ?? false},
+          ${body.description ?? null}
         )
         RETURNING *
       `;

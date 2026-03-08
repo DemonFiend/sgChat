@@ -675,6 +675,11 @@ ALTER TABLE roles ADD COLUMN IF NOT EXISTS description TEXT CHECK (length(descri
 ALTER TABLE roles ADD COLUMN IF NOT EXISTS icon_url TEXT;
 ALTER TABLE roles ADD COLUMN IF NOT EXISTS unicode_emoji TEXT CHECK (length(unicode_emoji) <= 32);
 
+-- Deny permission columns for 3-state permission toggles (Allow / Deny / Default)
+ALTER TABLE roles ADD COLUMN IF NOT EXISTS server_permissions_deny TEXT DEFAULT '0';
+ALTER TABLE roles ADD COLUMN IF NOT EXISTS text_permissions_deny TEXT DEFAULT '0';
+ALTER TABLE roles ADD COLUMN IF NOT EXISTS voice_permissions_deny TEXT DEFAULT '0';
+
 -- Add server_permissions to channel_permission_overrides for category-inherited permissions
 ALTER TABLE channel_permission_overrides ADD COLUMN IF NOT EXISTS server_allow TEXT DEFAULT '0';
 ALTER TABLE channel_permission_overrides ADD COLUMN IF NOT EXISTS server_deny TEXT DEFAULT '0';
@@ -1425,6 +1430,8 @@ CREATE TABLE IF NOT EXISTS role_reaction_mappings (
   group_id UUID NOT NULL REFERENCES role_reaction_groups(id) ON DELETE CASCADE,
   role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
   emoji TEXT NOT NULL CHECK (length(emoji) >= 1 AND length(emoji) <= 32),
+  emoji_type TEXT NOT NULL DEFAULT 'unicode' CHECK (emoji_type IN ('unicode', 'custom')),
+  custom_emoji_id UUID REFERENCES emojis(id) ON DELETE SET NULL,
   label TEXT CHECK (length(label) <= 100),
   position INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -1434,6 +1441,7 @@ CREATE TABLE IF NOT EXISTS role_reaction_mappings (
 
 CREATE INDEX IF NOT EXISTS idx_rrm_group ON role_reaction_mappings(group_id, position);
 CREATE INDEX IF NOT EXISTS idx_rrm_role ON role_reaction_mappings(role_id);
+CREATE INDEX IF NOT EXISTS idx_rrm_custom_emoji ON role_reaction_mappings(custom_emoji_id) WHERE custom_emoji_id IS NOT NULL;
 
 -- Update audit_log constraint to include role reaction actions
 ALTER TABLE audit_log DROP CONSTRAINT IF EXISTS audit_log_action_check;

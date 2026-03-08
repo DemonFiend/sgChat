@@ -143,6 +143,9 @@ export const updateRoleSchema = z.object({
   server_permissions: z.union([z.string(), z.number()]).optional(),
   text_permissions: z.union([z.string(), z.number()]).optional(),
   voice_permissions: z.union([z.string(), z.number()]).optional(),
+  server_permissions_deny: z.union([z.string(), z.number()]).optional(),
+  text_permissions_deny: z.union([z.string(), z.number()]).optional(),
+  voice_permissions_deny: z.union([z.string(), z.number()]).optional(),
   is_hoisted: z.boolean().optional(),
   is_mentionable: z.boolean().optional(),
   description: z.string().max(256).nullable().optional(),
@@ -281,12 +284,16 @@ export const toggleRoleReactionGroupSchema = z.object({
 
 export const createRoleReactionMappingSchema = z.object({
   emoji: z.string().min(1).max(32),
+  emoji_type: z.enum(['unicode', 'custom']).default('unicode'),
+  custom_emoji_id: z.string().uuid().nullable().optional(),
   role_id: z.string().uuid(),
   label: z.string().max(100).nullable().optional(),
 });
 
 export const updateRoleReactionMappingSchema = z.object({
   emoji: z.string().min(1).max(32).optional(),
+  emoji_type: z.enum(['unicode', 'custom']).optional(),
+  custom_emoji_id: z.string().uuid().nullable().optional(),
   role_id: z.string().uuid().optional(),
   label: z.string().max(100).nullable().optional(),
 });

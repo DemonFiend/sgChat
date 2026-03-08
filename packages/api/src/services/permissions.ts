@@ -88,21 +88,33 @@ export async function calculatePermissions(
     throw new Error('@everyone role not found');
   }
 
-  // Start with @everyone permissions
+  // Start with @everyone permissions (allow, then remove deny)
   let serverPerms = stringToPermission(everyoneRole.server_permissions || '0');
   let textPerms = stringToPermission(everyoneRole.text_permissions || '0');
   let voicePerms = stringToPermission(everyoneRole.voice_permissions || '0');
+  serverPerms &= ~stringToPermission(everyoneRole.server_permissions_deny || '0');
+  textPerms &= ~stringToPermission(everyoneRole.text_permissions_deny || '0');
+  voicePerms &= ~stringToPermission(everyoneRole.voice_permissions_deny || '0');
 
-  // Get user's roles (ordered by position descending for proper hierarchy)
+  // Get user's roles (ordered by position ascending so higher-position roles override)
   const userRoles = await sql`
     SELECT r.* FROM roles r
     INNER JOIN member_roles mr ON r.id = mr.role_id
     WHERE mr.member_user_id = ${userId} AND mr.member_server_id = ${serverId}
-    ORDER BY r.position DESC
+    ORDER BY r.position ASC
   `;
 
-  // Apply role permissions (OR operation - accumulate permissions)
+  // Apply role permissions with deny support
+  // Process lowest position first; higher-position roles override lower ones
   for (const role of userRoles) {
+    const deny_s = stringToPermission(role.server_permissions_deny || '0');
+    const deny_t = stringToPermission(role.text_permissions_deny || '0');
+    const deny_v = stringToPermission(role.voice_permissions_deny || '0');
+    // Deny removes bits
+    serverPerms &= ~deny_s;
+    textPerms &= ~deny_t;
+    voicePerms &= ~deny_v;
+    // Allow adds bits
     serverPerms |= stringToPermission(role.server_permissions || '0');
     textPerms |= stringToPermission(role.text_permissions || '0');
     voicePerms |= stringToPermission(role.voice_permissions || '0');

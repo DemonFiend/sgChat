@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '@/api';
 import type { RoleReactionGroup, RoleReactionMapping } from '@sgchat/shared';
+import { ReactionPicker } from './ReactionPicker';
 
 interface Channel {
   id: string;
@@ -38,8 +39,11 @@ export function RoleReactionsTab({ serverId, channels }: Props) {
 
   // New mapping form
   const [newMappingEmoji, setNewMappingEmoji] = useState('');
+  const [newMappingEmojiType, setNewMappingEmojiType] = useState<'unicode' | 'custom'>('unicode');
+  const [newMappingCustomEmojiId, setNewMappingCustomEmojiId] = useState<string | null>(null);
   const [newMappingRoleId, setNewMappingRoleId] = useState('');
   const [newMappingLabel, setNewMappingLabel] = useState('');
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
   // Edit state
   const [editName, setEditName] = useState('');
@@ -202,11 +206,15 @@ export function RoleReactionsTab({ serverId, channels }: Props) {
         `/servers/${serverId}/role-reactions/groups/${selectedGroup.id}/mappings`,
         {
           emoji: newMappingEmoji,
+          emoji_type: newMappingEmojiType,
+          custom_emoji_id: newMappingEmojiType === 'custom' ? newMappingCustomEmojiId : null,
           role_id: newMappingRoleId,
           label: newMappingLabel.trim() || null,
         }
       );
       setNewMappingEmoji('');
+      setNewMappingEmojiType('unicode');
+      setNewMappingCustomEmojiId(null);
       setNewMappingRoleId('');
       setNewMappingLabel('');
       await fetchData();
@@ -556,7 +564,11 @@ export function RoleReactionsTab({ serverId, channels }: Props) {
                         key={mapping.id}
                         className="flex items-center gap-3 px-3 py-2 bg-bg-tertiary rounded"
                       >
-                        <span className="text-lg w-8 text-center">{mapping.emoji}</span>
+                        {mapping.emoji_type === 'custom' && mapping.custom_emoji_url ? (
+                          <img src={mapping.custom_emoji_url} alt={mapping.emoji} className="w-6 h-6 object-contain mx-auto" />
+                        ) : (
+                          <span className="text-lg w-8 text-center">{mapping.emoji}</span>
+                        )}
                         <span className="text-sm text-text-muted">→</span>
                         <div className="flex items-center gap-1.5 flex-1 min-w-0">
                           {mapping.role_color && (
@@ -585,18 +597,33 @@ export function RoleReactionsTab({ serverId, channels }: Props) {
 
                 {/* Add mapping form */}
                 <div className="flex items-end gap-2">
-                  <div className="w-16">
-                    <label className="text-xs text-text-muted block mb-1" htmlFor="mapping-emoji">Emoji</label>
-                    <input
-                      type="text"
-                      id="mapping-emoji"
-                      name="mapping-emoji"
-                      value={newMappingEmoji}
-                      onChange={e => setNewMappingEmoji(e.target.value)}
-                      placeholder="🎮"
-                      maxLength={8}
-                      className="w-full px-2 py-1.5 bg-bg-tertiary border border-border-subtle rounded text-center text-lg focus:outline-none focus:border-brand-primary"
-                    />
+                  <div className="w-16 relative">
+                    <label className="text-xs text-text-muted block mb-1">Emoji</label>
+                    <button
+                      onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                      className="w-full px-2 py-1.5 bg-bg-tertiary border border-border-subtle rounded text-center text-lg focus:outline-none focus:border-brand-primary hover:bg-bg-modifier-hover transition-colors h-[34px] flex items-center justify-center"
+                    >
+                      {newMappingEmoji || <span className="text-text-muted text-sm">+</span>}
+                    </button>
+                    {showEmojiPicker && (
+                      <ReactionPicker
+                        isOpen={showEmojiPicker}
+                        onClose={() => setShowEmojiPicker(false)}
+                        onSelect={(emoji, customEmojiId) => {
+                          if (customEmojiId) {
+                            setNewMappingEmoji(emoji);
+                            setNewMappingEmojiType('custom');
+                            setNewMappingCustomEmojiId(customEmojiId);
+                          } else {
+                            setNewMappingEmoji(emoji);
+                            setNewMappingEmojiType('unicode');
+                            setNewMappingCustomEmojiId(null);
+                          }
+                          setShowEmojiPicker(false);
+                        }}
+                        serverId={serverId}
+                      />
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <label className="text-xs text-text-muted block mb-1">Role</label>

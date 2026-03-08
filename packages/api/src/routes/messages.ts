@@ -469,11 +469,14 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
         payload: { message_id: id, action: 'add', reactions },
       });
 
-      // Role reaction intercept for unicode
-      if (type === 'unicode' && value && message.channel_id) {
+      // Role reaction intercept for unicode and custom
+      if (message.channel_id && ((type === 'unicode' && value) || (type === 'custom' && emojiId))) {
         const channel = await db.channels.findById(message.channel_id);
         if (channel) {
-          const roleId = await assignRoleFromReaction(request.user!.id, channel.server_id, value, id);
+          const roleId = await assignRoleFromReaction(
+            request.user!.id, channel.server_id, value || '', id,
+            type === 'custom' ? emojiId : undefined
+          );
           if (roleId) {
             const userRoles = await db.sql`
               SELECT r.id, r.name, r.color, r.position FROM member_roles mr JOIN roles r ON mr.role_id = r.id
@@ -543,11 +546,14 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
         payload: { message_id: id, action: 'remove', reactions },
       });
 
-      // Role reaction intercept
-      if (type === 'unicode' && value && message.channel_id) {
+      // Role reaction intercept for unicode and custom
+      if (message.channel_id && ((type === 'unicode' && value) || (type === 'custom' && emojiId))) {
         const channel = await db.channels.findById(message.channel_id);
         if (channel) {
-          const roleId = await removeRoleFromReaction(request.user!.id, channel.server_id, value, id);
+          const roleId = await removeRoleFromReaction(
+            request.user!.id, channel.server_id, value || '', id,
+            type === 'custom' ? emojiId : undefined
+          );
           if (roleId) {
             const userRoles = await db.sql`
               SELECT r.id, r.name, r.color, r.position FROM member_roles mr JOIN roles r ON mr.role_id = r.id

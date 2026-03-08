@@ -559,6 +559,149 @@ export function toNamedPermissions(
 }
 
 /**
+ * 3-state permission value: allow, deny, or default (inherit from lower-position roles)
+ */
+export type PermissionState = 'allow' | 'deny' | 'default';
+
+/**
+ * Convert bitmask permissions (allow + deny) to named 3-state object.
+ * Used for role editing UI where permissions can be Allow / Deny / Default.
+ */
+export function toNamedPermissionStates(
+  serverAllow: bigint | string | number,
+  textAllow: bigint | string | number,
+  voiceAllow: bigint | string | number,
+  serverDeny: bigint | string | number = 0,
+  textDeny: bigint | string | number = 0,
+  voiceDeny: bigint | string | number = 0,
+): Record<string, PermissionState> {
+  const sAllow = typeof serverAllow === 'bigint' ? serverAllow : BigInt(serverAllow || 0);
+  const tAllow = typeof textAllow === 'bigint' ? textAllow : BigInt(textAllow || 0);
+  const vAllow = typeof voiceAllow === 'bigint' ? voiceAllow : BigInt(voiceAllow || 0);
+  const sDeny = typeof serverDeny === 'bigint' ? serverDeny : BigInt(serverDeny || 0);
+  const tDeny = typeof textDeny === 'bigint' ? textDeny : BigInt(textDeny || 0);
+  const vDeny = typeof voiceDeny === 'bigint' ? voiceDeny : BigInt(voiceDeny || 0);
+
+  function state(allow: bigint, deny: bigint, bit: bigint): PermissionState {
+    if ((allow & bit) !== 0n) return 'allow';
+    if ((deny & bit) !== 0n) return 'deny';
+    return 'default';
+  }
+
+  const result: Record<string, PermissionState> = {};
+
+  // Server permissions
+  for (const [key, bit] of Object.entries(ServerPermissions)) {
+    result[key.toLowerCase()] = state(sAllow, sDeny, bit);
+  }
+
+  // Text permissions - use same key mapping as NamedPermissions
+  const textKeyMap: Record<string, string> = {
+    VIEW_CHANNEL: 'view_channel',
+    SEND_MESSAGES: 'send_messages',
+    SEND_TTS_MESSAGES: 'send_tts_messages',
+    READ_MESSAGE_HISTORY: 'read_message_history',
+    EMBED_LINKS: 'embed_links',
+    ATTACH_FILES: 'attach_files',
+    USE_EXTERNAL_EMOJIS: 'use_external_emojis',
+    USE_EXTERNAL_STICKERS: 'use_external_stickers',
+    ADD_REACTIONS: 'add_reactions',
+    MENTION_EVERYONE: 'mention_everyone',
+    MENTION_ROLES: 'mention_roles',
+    MANAGE_MESSAGES: 'manage_messages',
+    DELETE_OWN_MESSAGES: 'delete_own_messages',
+    EDIT_OWN_MESSAGES: 'edit_own_messages',
+    CREATE_PUBLIC_THREADS: 'create_public_threads_text',
+    CREATE_PRIVATE_THREADS: 'create_private_threads_text',
+    SEND_MESSAGES_IN_THREADS: 'send_messages_in_threads',
+    MANAGE_THREADS: 'manage_threads_text',
+    USE_APPLICATION_COMMANDS: 'use_application_commands',
+    MANAGE_WEBHOOKS: 'manage_webhooks_text',
+    BYPASS_SLOWMODE: 'bypass_slowmode',
+  };
+  for (const [key, bit] of Object.entries(TextPermissions)) {
+    const namedKey = textKeyMap[key] || key.toLowerCase();
+    result[namedKey] = state(tAllow, tDeny, bit);
+  }
+
+  // Voice permissions
+  const voiceKeyMap: Record<string, string> = {
+    VIEW_CHANNEL: 'view_voice_channel',
+  };
+  for (const [key, bit] of Object.entries(VoicePermissions)) {
+    const namedKey = voiceKeyMap[key] || key.toLowerCase();
+    result[namedKey] = state(vAllow, vDeny, bit);
+  }
+
+  return result;
+}
+
+/**
+ * Convert named 3-state permissions to allow/deny bitfield pairs.
+ */
+export function namedStatesToBitfields(states: Record<string, PermissionState>): {
+  server: bigint; server_deny: bigint;
+  text: bigint; text_deny: bigint;
+  voice: bigint; voice_deny: bigint;
+} {
+  let server = 0n, server_deny = 0n;
+  let text = 0n, text_deny = 0n;
+  let voice = 0n, voice_deny = 0n;
+
+  const serverPermsMap: Record<string, bigint> = {};
+  for (const [key, bit] of Object.entries(ServerPermissions)) {
+    serverPermsMap[key.toLowerCase()] = bit;
+  }
+
+  const textPermsMap: Record<string, bigint> = {
+    view_channel: TextPermissions.VIEW_CHANNEL,
+    send_messages: TextPermissions.SEND_MESSAGES,
+    send_tts_messages: TextPermissions.SEND_TTS_MESSAGES,
+    read_message_history: TextPermissions.READ_MESSAGE_HISTORY,
+    embed_links: TextPermissions.EMBED_LINKS,
+    attach_files: TextPermissions.ATTACH_FILES,
+    use_external_emojis: TextPermissions.USE_EXTERNAL_EMOJIS,
+    use_external_stickers: TextPermissions.USE_EXTERNAL_STICKERS,
+    add_reactions: TextPermissions.ADD_REACTIONS,
+    mention_everyone: TextPermissions.MENTION_EVERYONE,
+    mention_roles: TextPermissions.MENTION_ROLES,
+    manage_messages: TextPermissions.MANAGE_MESSAGES,
+    delete_own_messages: TextPermissions.DELETE_OWN_MESSAGES,
+    edit_own_messages: TextPermissions.EDIT_OWN_MESSAGES,
+    create_public_threads_text: TextPermissions.CREATE_PUBLIC_THREADS,
+    create_private_threads_text: TextPermissions.CREATE_PRIVATE_THREADS,
+    send_messages_in_threads: TextPermissions.SEND_MESSAGES_IN_THREADS,
+    manage_threads_text: TextPermissions.MANAGE_THREADS,
+    use_application_commands: TextPermissions.USE_APPLICATION_COMMANDS,
+    manage_webhooks_text: TextPermissions.MANAGE_WEBHOOKS,
+    bypass_slowmode: TextPermissions.BYPASS_SLOWMODE,
+  };
+
+  const voicePermsMap: Record<string, bigint> = {};
+  for (const [key, bit] of Object.entries(VoicePermissions)) {
+    const namedKey = key === 'VIEW_CHANNEL' ? 'view_voice_channel' : key.toLowerCase();
+    voicePermsMap[namedKey] = bit;
+  }
+
+  for (const [key, value] of Object.entries(states)) {
+    if (key in serverPermsMap) {
+      if (value === 'allow') server |= serverPermsMap[key];
+      else if (value === 'deny') server_deny |= serverPermsMap[key];
+    }
+    if (key in textPermsMap) {
+      if (value === 'allow') text |= textPermsMap[key];
+      else if (value === 'deny') text_deny |= textPermsMap[key];
+    }
+    if (key in voicePermsMap) {
+      if (value === 'allow') voice |= voicePermsMap[key];
+      else if (value === 'deny') voice_deny |= voicePermsMap[key];
+    }
+  }
+
+  return { server, server_deny, text, text_deny, voice, voice_deny };
+}
+
+/**
  * Permission metadata for UI display
  */
 export interface PermissionMetadata {

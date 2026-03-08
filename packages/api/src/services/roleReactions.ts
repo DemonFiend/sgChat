@@ -2,21 +2,37 @@ import { SYSTEM_USER_ID } from '@sgchat/shared';
 import { sql } from '../lib/db.js';
 import { publishEvent } from '../lib/eventBus.js';
 
+// Mapping type for default role groups
+interface DefaultMapping {
+  emoji: string; // Unicode char or :shortcode: for custom
+  emoji_type: 'unicode' | 'custom';
+  shortcode?: string; // Custom emoji shortcode (without colons)
+  label: string;
+  color: string | null;
+}
+
+interface DefaultRoleGroup {
+  name: string;
+  description: string;
+  position: number;
+  mappings: DefaultMapping[];
+}
+
 // Default role groups with pre-created roles and emoji mappings
-export const DEFAULT_ROLE_GROUPS = [
+export const DEFAULT_ROLE_GROUPS: DefaultRoleGroup[] = [
   {
     name: 'Color Roles',
     description: 'React to choose a name color',
     position: 0,
     mappings: [
-      { emoji: '🔴', label: 'Red', color: '#e74c3c' },
-      { emoji: '🔵', label: 'Blue', color: '#3498db' },
-      { emoji: '🟢', label: 'Green', color: '#2ecc71' },
-      { emoji: '🟣', label: 'Purple', color: '#9b59b6' },
-      { emoji: '🟡', label: 'Yellow', color: '#f1c40f' },
-      { emoji: '🟠', label: 'Orange', color: '#e67e22' },
-      { emoji: '⚪', label: 'White', color: '#ecf0f1' },
-      { emoji: '⚫', label: 'Black', color: '#2c3e50' },
+      { emoji: ':member_red:', emoji_type: 'custom', shortcode: 'member_red', label: 'Red', color: '#e74c3c' },
+      { emoji: ':member_blue:', emoji_type: 'custom', shortcode: 'member_blue', label: 'Blue', color: '#3498db' },
+      { emoji: ':member_green:', emoji_type: 'custom', shortcode: 'member_green', label: 'Green', color: '#2ecc71' },
+      { emoji: ':member_purple:', emoji_type: 'custom', shortcode: 'member_purple', label: 'Purple', color: '#9b59b6' },
+      { emoji: ':member_yellow:', emoji_type: 'custom', shortcode: 'member_yellow', label: 'Yellow', color: '#f1c40f' },
+      { emoji: ':member_orange:', emoji_type: 'custom', shortcode: 'member_orange', label: 'Orange', color: '#e67e22' },
+      { emoji: ':member_white:', emoji_type: 'custom', shortcode: 'member_white', label: 'White', color: '#ecf0f1' },
+      { emoji: ':member_black:', emoji_type: 'custom', shortcode: 'member_black', label: 'Black', color: '#2c3e50' },
     ],
   },
   {
@@ -24,11 +40,11 @@ export const DEFAULT_ROLE_GROUPS = [
     description: 'React to set your pronouns',
     position: 1,
     mappings: [
-      { emoji: '💙', label: 'He/Him', color: null },
-      { emoji: '💜', label: 'She/Her', color: null },
-      { emoji: '💚', label: 'They/Them', color: null },
-      { emoji: '💛', label: 'Any Pronouns', color: null },
-      { emoji: '❓', label: 'Ask Me', color: null },
+      { emoji: ':cool_tiktok:', emoji_type: 'custom', shortcode: 'cool_tiktok', label: 'He/Him', color: null },
+      { emoji: ':angel_tiktok:', emoji_type: 'custom', shortcode: 'angel_tiktok', label: 'She/Her', color: null },
+      { emoji: ':proud_tiktok:', emoji_type: 'custom', shortcode: 'proud_tiktok', label: 'They/Them', color: null },
+      { emoji: ':joyful_tiktok:', emoji_type: 'custom', shortcode: 'joyful_tiktok', label: 'Any Pronouns', color: null },
+      { emoji: ':awkward_tiktok:', emoji_type: 'custom', shortcode: 'awkward_tiktok', label: 'Ask Me', color: null },
     ],
   },
   {
@@ -36,11 +52,11 @@ export const DEFAULT_ROLE_GROUPS = [
     description: 'React to subscribe to server notifications',
     position: 2,
     mappings: [
-      { emoji: '📢', label: 'Announcements', color: null },
-      { emoji: '🎉', label: 'Events', color: null },
-      { emoji: '🔄', label: 'Updates', color: null },
-      { emoji: '🎮', label: 'Game Nights', color: null },
-      { emoji: '🔊', label: 'Voice Events', color: null },
+      { emoji: ':channel:', emoji_type: 'custom', shortcode: 'channel', label: 'Announcements', color: null },
+      { emoji: ':party:', emoji_type: 'custom', shortcode: 'party', label: 'Events', color: null },
+      { emoji: ':sparkle7:', emoji_type: 'custom', shortcode: 'sparkle7', label: 'Updates', color: null },
+      { emoji: ':steam_amt:', emoji_type: 'custom', shortcode: 'steam_amt', label: 'Game Nights', color: null },
+      { emoji: ':excited_tiktok:', emoji_type: 'custom', shortcode: 'excited_tiktok', label: 'Voice Events', color: null },
     ],
   },
   {
@@ -48,29 +64,29 @@ export const DEFAULT_ROLE_GROUPS = [
     description: 'React to show your region',
     position: 3,
     mappings: [
-      { emoji: '🇨🇦', label: 'Canada', color: null },
-      { emoji: '🇺🇸', label: 'USA', color: null },
-      { emoji: '🇬🇧', label: 'United Kingdom', color: null },
-      { emoji: '🇩🇪', label: 'Germany', color: null },
-      { emoji: '🇫🇷', label: 'France', color: null },
-      { emoji: '🇪🇸', label: 'Spain', color: null },
-      { emoji: '🇮🇹', label: 'Italy', color: null },
-      { emoji: '🇳🇱', label: 'Netherlands', color: null },
-      { emoji: '🇸🇪', label: 'Sweden', color: null },
-      { emoji: '🇳🇴', label: 'Norway', color: null },
-      { emoji: '🇩🇰', label: 'Denmark', color: null },
-      { emoji: '🇫🇮', label: 'Finland', color: null },
-      { emoji: '🇵🇱', label: 'Poland', color: null },
-      { emoji: '🇧🇷', label: 'Brazil', color: null },
-      { emoji: '🇲🇽', label: 'Mexico', color: null },
-      { emoji: '🇯🇵', label: 'Japan', color: null },
-      { emoji: '🇰🇷', label: 'South Korea', color: null },
-      { emoji: '🇨🇳', label: 'China', color: null },
-      { emoji: '🇮🇳', label: 'India', color: null },
-      { emoji: '🇦🇺', label: 'Australia', color: null },
-      { emoji: '🇳🇿', label: 'New Zealand', color: null },
-      { emoji: '🇿🇦', label: 'South Africa', color: null },
-      { emoji: '🌍', label: 'Other', color: null },
+      { emoji: ':canadaflag:', emoji_type: 'custom', shortcode: 'canadaflag', label: 'Canada', color: null },
+      { emoji: ':unitedstatesflag:', emoji_type: 'custom', shortcode: 'unitedstatesflag', label: 'USA', color: null },
+      { emoji: ':uk_flag:', emoji_type: 'custom', shortcode: 'uk_flag', label: 'United Kingdom', color: null },
+      { emoji: '\u{1F1E9}\u{1F1EA}', emoji_type: 'unicode', label: 'Germany', color: null },
+      { emoji: ':franceflag:', emoji_type: 'custom', shortcode: 'franceflag', label: 'France', color: null },
+      { emoji: ':spainflag:', emoji_type: 'custom', shortcode: 'spainflag', label: 'Spain', color: null },
+      { emoji: ':italy_flag:', emoji_type: 'custom', shortcode: 'italy_flag', label: 'Italy', color: null },
+      { emoji: '\u{1F1F3}\u{1F1F1}', emoji_type: 'unicode', label: 'Netherlands', color: null },
+      { emoji: ':sweedenflag:', emoji_type: 'custom', shortcode: 'sweedenflag', label: 'Sweden', color: null },
+      { emoji: '\u{1F1F3}\u{1F1F4}', emoji_type: 'unicode', label: 'Norway', color: null },
+      { emoji: ':denmarkflag:', emoji_type: 'custom', shortcode: 'denmarkflag', label: 'Denmark', color: null },
+      { emoji: '\u{1F1EB}\u{1F1EE}', emoji_type: 'unicode', label: 'Finland', color: null },
+      { emoji: ':polandflag:', emoji_type: 'custom', shortcode: 'polandflag', label: 'Poland', color: null },
+      { emoji: ':brazilflag:', emoji_type: 'custom', shortcode: 'brazilflag', label: 'Brazil', color: null },
+      { emoji: ':mexicoflag:', emoji_type: 'custom', shortcode: 'mexicoflag', label: 'Mexico', color: null },
+      { emoji: ':japanflag:', emoji_type: 'custom', shortcode: 'japanflag', label: 'Japan', color: null },
+      { emoji: '\u{1F1F0}\u{1F1F7}', emoji_type: 'unicode', label: 'South Korea', color: null },
+      { emoji: ':chinaflag:', emoji_type: 'custom', shortcode: 'chinaflag', label: 'China', color: null },
+      { emoji: '\u{1F1EE}\u{1F1F3}', emoji_type: 'unicode', label: 'India', color: null },
+      { emoji: ':australia:', emoji_type: 'custom', shortcode: 'australia', label: 'Australia', color: null },
+      { emoji: '\u{1F1F3}\u{1F1FF}', emoji_type: 'unicode', label: 'New Zealand', color: null },
+      { emoji: ':southafricaflag:', emoji_type: 'custom', shortcode: 'southafricaflag', label: 'South Africa', color: null },
+      { emoji: ':flag_un:', emoji_type: 'custom', shortcode: 'flag_un', label: 'Other', color: null },
     ],
   },
   {
@@ -78,12 +94,12 @@ export const DEFAULT_ROLE_GROUPS = [
     description: 'React to show your primary platform',
     position: 4,
     mappings: [
-      { emoji: '🖥️', label: 'PC', color: null },
-      { emoji: '🎯', label: 'PlayStation', color: null },
-      { emoji: '🟩', label: 'Xbox', color: null },
-      { emoji: '📱', label: 'Mobile', color: null },
-      { emoji: '🥽', label: 'VR', color: null },
-      { emoji: '🍄', label: 'Nintendo', color: null },
+      { emoji: ':pc:', emoji_type: 'custom', shortcode: 'pc', label: 'PC', color: null },
+      { emoji: ':playstation:', emoji_type: 'custom', shortcode: 'playstation', label: 'PlayStation', color: null },
+      { emoji: ':xbox:', emoji_type: 'custom', shortcode: 'xbox', label: 'Xbox', color: null },
+      { emoji: ':mobilephone:', emoji_type: 'custom', shortcode: 'mobilephone', label: 'Mobile', color: null },
+      { emoji: '\u{1F97D}', emoji_type: 'unicode', label: 'VR', color: null },
+      { emoji: ':nintendo_switch:', emoji_type: 'custom', shortcode: 'nintendo_switch', label: 'Nintendo', color: null },
     ],
   },
   {
@@ -91,8 +107,8 @@ export const DEFAULT_ROLE_GROUPS = [
     description: 'React to unlock specific channels or content',
     position: 5,
     mappings: [
-      { emoji: '🔞', label: '18+ Content', color: null },
-      { emoji: '🤖', label: 'Bot Commands', color: null },
+      { emoji: '\u{1F51E}', emoji_type: 'unicode', label: '18+ Content', color: null },
+      { emoji: ':bot:', emoji_type: 'custom', shortcode: 'bot', label: 'Bot Commands', color: null },
     ],
   },
   {
@@ -100,14 +116,34 @@ export const DEFAULT_ROLE_GROUPS = [
     description: 'React to show your vibe',
     position: 6,
     mappings: [
-      { emoji: '👻', label: 'Lurker', color: null },
-      { emoji: '💬', label: 'Talkative', color: null },
-      { emoji: '🌪️', label: 'Chaos', color: null },
-      { emoji: '🧠', label: 'Big Brain', color: null },
-      { emoji: '👺', label: 'Goblin Mode', color: null },
+      { emoji: ':nap_tiktok:', emoji_type: 'custom', shortcode: 'nap_tiktok', label: 'Lurker', color: null },
+      { emoji: ':laugh_tiktok:', emoji_type: 'custom', shortcode: 'laugh_tiktok', label: 'Talkative', color: null },
+      { emoji: ':rage_tiktok:', emoji_type: 'custom', shortcode: 'rage_tiktok', label: 'Chaos', color: null },
+      { emoji: ':think:', emoji_type: 'custom', shortcode: 'think', label: 'Big Brain', color: null },
+      { emoji: ':evil_tiktok:', emoji_type: 'custom', shortcode: 'evil_tiktok', label: 'Goblin Mode', color: null },
     ],
   },
 ];
+
+/**
+ * Resolve a custom emoji shortcode to its ID for a given server.
+ * Returns null if the emoji is not found or its pack is disabled.
+ */
+async function resolveCustomEmojiId(
+  tx: any,
+  serverId: string,
+  shortcode: string
+): Promise<string | null> {
+  const [emoji] = await tx`
+    SELECT e.id FROM emojis e
+    JOIN emoji_packs ep ON e.pack_id = ep.id
+    WHERE e.server_id = ${serverId}
+      AND e.shortcode = ${shortcode}
+      AND ep.enabled = true
+    LIMIT 1
+  `;
+  return emoji?.id || null;
+}
 
 /**
  * Build message content for a role reaction group
@@ -166,11 +202,19 @@ export async function postRoleReactionMessage(
 
   // Add the emoji reactions to the message so users can just click them
   for (const m of mappings) {
-    await tx`
-      INSERT INTO message_reactions (message_id, user_id, reaction_type, unicode_emoji)
-      VALUES (${message.id}, ${SYSTEM_USER_ID}, 'unicode', ${m.emoji})
-      ON CONFLICT DO NOTHING
-    `;
+    if (m.emoji_type === 'custom' && m.custom_emoji_id) {
+      await tx`
+        INSERT INTO message_reactions (message_id, user_id, reaction_type, custom_emoji_id)
+        VALUES (${message.id}, ${SYSTEM_USER_ID}, 'custom', ${m.custom_emoji_id})
+        ON CONFLICT DO NOTHING
+      `;
+    } else {
+      await tx`
+        INSERT INTO message_reactions (message_id, user_id, reaction_type, unicode_emoji)
+        VALUES (${message.id}, ${SYSTEM_USER_ID}, 'unicode', ${m.emoji})
+        ON CONFLICT DO NOTHING
+      `;
+    }
   }
 
   return message;
@@ -223,7 +267,8 @@ export async function assignRoleFromReaction(
   userId: string,
   serverId: string,
   emoji: string,
-  messageId: string
+  messageId: string,
+  customEmojiId?: string
 ): Promise<string | null> {
   // Check if this message is a role-reaction message
   const [group] = await sql`
@@ -233,12 +278,21 @@ export async function assignRoleFromReaction(
   `;
   if (!group) return null;
 
-  // Look up the emoji mapping
-  const [mapping] = await sql`
-    SELECT rrm.role_id
-    FROM role_reaction_mappings rrm
-    WHERE rrm.group_id = ${group.id} AND rrm.emoji = ${emoji}
-  `;
+  // Look up the emoji mapping (custom emoji by ID, unicode by emoji string)
+  let mapping;
+  if (customEmojiId) {
+    [mapping] = await sql`
+      SELECT rrm.role_id
+      FROM role_reaction_mappings rrm
+      WHERE rrm.group_id = ${group.id} AND rrm.emoji_type = 'custom' AND rrm.custom_emoji_id = ${customEmojiId}
+    `;
+  } else {
+    [mapping] = await sql`
+      SELECT rrm.role_id
+      FROM role_reaction_mappings rrm
+      WHERE rrm.group_id = ${group.id} AND rrm.emoji_type = 'unicode' AND rrm.emoji = ${emoji}
+    `;
+  }
   if (!mapping) return null;
 
   // Assign the role (ignore if already assigned)
@@ -259,7 +313,8 @@ export async function removeRoleFromReaction(
   userId: string,
   serverId: string,
   emoji: string,
-  messageId: string
+  messageId: string,
+  customEmojiId?: string
 ): Promise<string | null> {
   // Check if this message is a role-reaction message
   const [group] = await sql`
@@ -269,12 +324,21 @@ export async function removeRoleFromReaction(
   `;
   if (!group) return null;
 
-  // Look up the emoji mapping
-  const [mapping] = await sql`
-    SELECT rrm.role_id
-    FROM role_reaction_mappings rrm
-    WHERE rrm.group_id = ${group.id} AND rrm.emoji = ${emoji}
-  `;
+  // Look up the emoji mapping (custom emoji by ID, unicode by emoji string)
+  let mapping;
+  if (customEmojiId) {
+    [mapping] = await sql`
+      SELECT rrm.role_id
+      FROM role_reaction_mappings rrm
+      WHERE rrm.group_id = ${group.id} AND rrm.emoji_type = 'custom' AND rrm.custom_emoji_id = ${customEmojiId}
+    `;
+  } else {
+    [mapping] = await sql`
+      SELECT rrm.role_id
+      FROM role_reaction_mappings rrm
+      WHERE rrm.group_id = ${group.id} AND rrm.emoji_type = 'unicode' AND rrm.emoji = ${emoji}
+    `;
+  }
   if (!mapping) return null;
 
   // Remove the role
@@ -345,10 +409,27 @@ export async function createDefaultGroups(
           RETURNING *
         `;
 
+        // Resolve custom emoji ID if this mapping uses a custom emoji
+        let customEmojiId: string | null = null;
+        let emojiType = m.emoji_type;
+        let emojiValue = m.emoji;
+
+        if (m.emoji_type === 'custom' && m.shortcode) {
+          customEmojiId = await resolveCustomEmojiId(tx, serverId, m.shortcode);
+          if (!customEmojiId) {
+            // Fallback to unicode if custom emoji not found
+            console.warn(
+              `[RoleReactions] Custom emoji :${m.shortcode}: not found for server ${serverId}, falling back to unicode`
+            );
+            emojiType = 'unicode';
+            emojiValue = m.label.charAt(0); // Use first letter as fallback
+          }
+        }
+
         // Create the mapping
         const [mapping] = await tx`
-          INSERT INTO role_reaction_mappings (group_id, role_id, emoji, label, position)
-          VALUES (${group.id}, ${role.id}, ${m.emoji}, ${m.label}, ${i})
+          INSERT INTO role_reaction_mappings (group_id, role_id, emoji, emoji_type, custom_emoji_id, label, position)
+          VALUES (${group.id}, ${role.id}, ${emojiValue}, ${emojiType}, ${customEmojiId}, ${m.label}, ${i})
           RETURNING *
         `;
 
@@ -393,13 +474,28 @@ export async function getGroupsForServer(serverId: string) {
   const result = [];
   for (const group of groups) {
     const mappings = await sql`
-      SELECT rrm.*, r.name as role_name, r.color as role_color
+      SELECT rrm.*, r.name as role_name, r.color as role_color,
+        e.shortcode as custom_emoji_shortcode, e.asset_key as custom_emoji_asset_key
       FROM role_reaction_mappings rrm
       JOIN roles r ON rrm.role_id = r.id
+      LEFT JOIN emojis e ON rrm.custom_emoji_id = e.id
       WHERE rrm.group_id = ${group.id}
       ORDER BY rrm.position ASC
     `;
-    result.push({ ...group, mappings });
+
+    // Enrich custom emoji mappings with URLs
+    const enrichedMappings = mappings.map((m: any) => {
+      if (m.emoji_type === 'custom' && m.custom_emoji_asset_key) {
+        return {
+          ...m,
+          custom_emoji_url: m.custom_emoji_asset_key,
+          custom_emoji_asset_key: undefined,
+        };
+      }
+      return { ...m, custom_emoji_asset_key: undefined };
+    });
+
+    result.push({ ...group, mappings: enrichedMappings });
   }
 
   return result;
