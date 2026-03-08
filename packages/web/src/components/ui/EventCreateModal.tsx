@@ -319,6 +319,7 @@ export function EventCreateModal({
   const [roles, setRoles] = useState<{ id: string; name: string; color: string | null }[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [openCal, setOpenCal] = useState<'start' | 'end' | null>(null);
 
   // Auto-adjust end when start changes (only for new events)
   useEffect(() => {
@@ -436,7 +437,7 @@ export function EventCreateModal({
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
           transition={{ duration: 0.15 }}
-          className="bg-bg-secondary rounded-xl border border-divider shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-hidden flex flex-col"
+          className="bg-bg-secondary rounded-xl border border-divider shadow-2xl w-full max-w-md mx-4 max-h-[90vh] overflow-hidden flex flex-col"
           onClick={(e) => e.stopPropagation()}
         >
           <form onSubmit={handleSubmit} className="flex flex-col h-full">
@@ -486,73 +487,94 @@ export function EventCreateModal({
 
               {/* Start Date + Time */}
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-medium text-text-muted uppercase">
-                    Start *
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setStartDay(today);
-                        setStartCalMonth(toMonthKey(today));
-                      }}
-                      className="px-2 py-0.5 text-[10px] font-medium rounded bg-bg-tertiary text-text-secondary hover:bg-bg-modifier-hover transition-colors border border-divider"
-                    >
-                      Today
-                    </button>
-                    <span className="text-xs text-text-secondary">{startSummary}</span>
+                <button
+                  type="button"
+                  onClick={() => setOpenCal(openCal === 'start' ? null : 'start')}
+                  className="w-full flex items-center justify-between mb-1.5 group"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <svg className={clsx('w-3 h-3 text-text-muted transition-transform', openCal === 'start' && 'rotate-90')} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                    </svg>
+                    <span className="text-xs font-medium text-text-muted uppercase">Start *</span>
                   </div>
-                </div>
-                <div className="bg-bg-tertiary border border-divider rounded-lg p-3">
-                  <MiniCalendar
-                    monthKey={startCalMonth}
-                    onMonthChange={setStartCalMonth}
-                    selectedDay={startDay}
-                    onSelectDay={(day) => {
-                      setStartDay(day);
-                      // If end is before new start, move end to same day
-                      if (endDay < day) {
-                        setEndDay(day);
-                        setEndCalMonth(toMonthKey(day));
-                      }
+                  <span className="text-xs text-text-secondary">{startSummary}</span>
+                </button>
+
+                <div className="flex items-center gap-2 mb-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStartDay(today);
+                      setStartCalMonth(toMonthKey(today));
                     }}
-                    minDate={isEditing ? new Date(0) : today}
+                    className="px-2 py-0.5 text-[10px] font-medium rounded bg-bg-tertiary text-text-secondary hover:bg-bg-modifier-hover transition-colors border border-divider"
+                  >
+                    Today
+                  </button>
+                  <TimePicker
+                    hour={startHour}
+                    minute={startMinute}
+                    onChange={(h, m) => { setStartHour(h); setStartMinute(m); }}
                   />
-                  <div className="mt-2 pt-2 border-t border-divider flex items-center gap-2">
-                    <span className="text-[10px] text-text-muted uppercase font-medium">Time</span>
-                    <TimePicker
-                      hour={startHour}
-                      minute={startMinute}
-                      onChange={(h, m) => { setStartHour(h); setStartMinute(m); }}
+                </div>
+
+                {openCal === 'start' && (
+                  <div className="bg-bg-tertiary border border-divider rounded-lg p-3">
+                    <MiniCalendar
+                      monthKey={startCalMonth}
+                      onMonthChange={setStartCalMonth}
+                      selectedDay={startDay}
+                      onSelectDay={(day) => {
+                        setStartDay(day);
+                        if (endDay < day) {
+                          setEndDay(day);
+                          setEndCalMonth(toMonthKey(day));
+                        }
+                        setOpenCal(null);
+                      }}
+                      minDate={isEditing ? new Date(0) : today}
                     />
                   </div>
-                </div>
+                )}
               </div>
 
               {/* End Date + Time */}
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-medium text-text-muted uppercase">
-                    End
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEndDay(new Date(startDay));
-                        setEndCalMonth(toMonthKey(startDay));
-                      }}
-                      className="px-2 py-0.5 text-[10px] font-medium rounded bg-bg-tertiary text-text-secondary hover:bg-bg-modifier-hover transition-colors border border-divider"
-                    >
-                      Same Day
-                    </button>
-                    <span className="text-xs text-text-secondary">{endSummary}</span>
+                <button
+                  type="button"
+                  onClick={() => setOpenCal(openCal === 'end' ? null : 'end')}
+                  className="w-full flex items-center justify-between mb-1.5 group"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <svg className={clsx('w-3 h-3 text-text-muted transition-transform', openCal === 'end' && 'rotate-90')} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                    </svg>
+                    <span className="text-xs font-medium text-text-muted uppercase">End</span>
                   </div>
+                  <span className="text-xs text-text-secondary">{endSummary}</span>
+                </button>
+
+                <div className="flex items-center gap-2 mb-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEndDay(new Date(startDay));
+                      setEndCalMonth(toMonthKey(startDay));
+                    }}
+                    className="px-2 py-0.5 text-[10px] font-medium rounded bg-bg-tertiary text-text-secondary hover:bg-bg-modifier-hover transition-colors border border-divider"
+                  >
+                    Same Day
+                  </button>
+                  <TimePicker
+                    hour={endHour}
+                    minute={endMinute}
+                    onChange={(h, m) => { setEndHour(h); setEndMinute(m); }}
+                  />
                 </div>
 
                 {/* Duration presets */}
-                <div className="flex flex-wrap gap-1 mb-2">
+                <div className="flex flex-wrap gap-1 mb-1.5">
                   {DURATION_PRESETS.map((preset) => (
                     <button
                       key={preset.label}
@@ -565,23 +587,20 @@ export function EventCreateModal({
                   ))}
                 </div>
 
-                <div className="bg-bg-tertiary border border-divider rounded-lg p-3">
-                  <MiniCalendar
-                    monthKey={endCalMonth}
-                    onMonthChange={setEndCalMonth}
-                    selectedDay={endDay}
-                    onSelectDay={setEndDay}
-                    minDate={startDay}
-                  />
-                  <div className="mt-2 pt-2 border-t border-divider flex items-center gap-2">
-                    <span className="text-[10px] text-text-muted uppercase font-medium">Time</span>
-                    <TimePicker
-                      hour={endHour}
-                      minute={endMinute}
-                      onChange={(h, m) => { setEndHour(h); setEndMinute(m); }}
+                {openCal === 'end' && (
+                  <div className="bg-bg-tertiary border border-divider rounded-lg p-3">
+                    <MiniCalendar
+                      monthKey={endCalMonth}
+                      onMonthChange={setEndCalMonth}
+                      selectedDay={endDay}
+                      onSelectDay={(day) => {
+                        setEndDay(day);
+                        setOpenCal(null);
+                      }}
+                      minDate={startDay}
                     />
                   </div>
-                </div>
+                )}
               </div>
 
               {/* Announce at start */}
