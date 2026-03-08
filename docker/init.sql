@@ -1431,7 +1431,7 @@ CREATE TABLE IF NOT EXISTS role_reaction_mappings (
   role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
   emoji TEXT NOT NULL CHECK (length(emoji) >= 1 AND length(emoji) <= 32),
   emoji_type TEXT NOT NULL DEFAULT 'unicode' CHECK (emoji_type IN ('unicode', 'custom')),
-  custom_emoji_id UUID REFERENCES emojis(id) ON DELETE SET NULL,
+  custom_emoji_id UUID,
   label TEXT CHECK (length(label) <= 100),
   position INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -1627,6 +1627,10 @@ CREATE TABLE IF NOT EXISTS emojis (
 
 CREATE INDEX IF NOT EXISTS idx_emojis_pack ON emojis(pack_id);
 CREATE INDEX IF NOT EXISTS idx_emojis_server_pack ON emojis(server_id, pack_id);
+
+-- Add deferred FK constraint for role_reaction_mappings -> emojis (emojis table created after mappings)
+ALTER TABLE role_reaction_mappings
+  ADD CONSTRAINT fk_rrm_custom_emoji FOREIGN KEY (custom_emoji_id) REFERENCES emojis(id) ON DELETE SET NULL;
 
 -- ============================================================
 -- MESSAGE REACTIONS (typed: unicode + custom emoji)
