@@ -1087,7 +1087,7 @@ function AppearanceTab() {
     if (loaded) saveSetting({ chat_density: d });
   }, [loaded, saveSetting]);
 
-  const fontSizeTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const fontSizeTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const handleFontSizeChange = useCallback((size: number) => {
     setFontSize(size);
     document.documentElement.style.setProperty('--chat-font-size', `${size}px`);
