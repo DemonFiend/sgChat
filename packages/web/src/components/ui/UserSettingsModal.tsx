@@ -5,6 +5,7 @@ import { clsx } from 'clsx';
 import { authStore } from '@/stores/auth';
 import { networkStore } from '@/stores/network';
 import { useThemeStore, themeNames, getAvailableThemes } from '@/stores/theme';
+import { useDevModeStore } from '@/stores/devMode';
 import { Avatar } from './Avatar';
 import { AvatarPicker } from './AvatarPicker';
 import { api } from '@/api';
@@ -1041,6 +1042,8 @@ function AppearanceTab() {
   const theme = useThemeStore(s => s.theme);
   const setTheme = useThemeStore(s => s.setTheme);
   const themes = getAvailableThemes();
+  const devMode = useDevModeStore(s => s.enabled);
+  const toggleDevMode = useDevModeStore(s => s.toggle);
   const [density, setDensity] = useState<'cozy' | 'compact'>('cozy');
   const [fontSize, setFontSize] = useState(16);
   const [loaded, setLoaded] = useState(false);
@@ -1187,6 +1190,30 @@ function AppearanceTab() {
               onChange={(e) => handleFontSizeChange(Number(e.target.value))}
               className="w-full accent-brand-primary"
             />
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-xs font-bold uppercase text-text-muted mb-4">Advanced</h3>
+          <div className="flex items-center justify-between p-4 bg-bg-secondary rounded-lg">
+            <div>
+              <div className="text-text-primary font-medium">Developer Mode</div>
+              <div className="text-sm text-text-muted">Show detailed error messages and stack traces for debugging</div>
+            </div>
+            <button
+              onClick={toggleDevMode}
+              className={clsx(
+                'relative w-11 h-6 rounded-full transition-colors flex-shrink-0',
+                devMode ? 'bg-success' : 'bg-bg-tertiary'
+              )}
+            >
+              <div
+                className={clsx(
+                  'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
+                  devMode ? 'left-6' : 'left-1'
+                )}
+              />
+            </button>
           </div>
         </div>
       </div>

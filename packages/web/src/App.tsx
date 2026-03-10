@@ -6,6 +6,7 @@ import { socketService } from '@/lib/socket';
 import { SessionExpiredOverlay } from '@/components/ui/SessionExpiredOverlay';
 import { NotificationToast } from '@/components/ui/NotificationToast';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
+import { RuntimeErrorOverlay } from '@/components/ui/RuntimeErrorOverlay';
 
 const LoginPage = lazy(() => import('@/features/auth/LoginPage').then((m) => ({ default: m.LoginPage })));
 const RegisterPage = lazy(() => import('@/features/auth/RegisterPage').then((m) => ({ default: m.RegisterPage })));
@@ -148,6 +149,7 @@ function RootLayout({ children }: { children: ReactNode }) {
         {children}
       </Suspense>
       <NotificationToast />
+      <RuntimeErrorOverlay />
     </>
   );
 }
