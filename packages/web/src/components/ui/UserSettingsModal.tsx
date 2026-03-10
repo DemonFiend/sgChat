@@ -1041,6 +1041,69 @@ function AppearanceTab() {
   const theme = useThemeStore(s => s.theme);
   const setTheme = useThemeStore(s => s.setTheme);
   const themes = getAvailableThemes();
+  const [density, setDensity] = useState<'cozy' | 'compact'>('cozy');
+  const [fontSize, setFontSize] = useState(16);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const settings = await api.get<any>('/users/me/settings');
+        if (settings) {
+          if (settings.chat_density === 'compact' || settings.chat_density === 'cozy') {
+            setDensity(settings.chat_density);
+          }
+          if (typeof settings.font_size === 'number' && settings.font_size >= 10 && settings.font_size <= 24) {
+            setFontSize(settings.font_size);
+          }
+          if (settings.theme_id && settings.theme_id !== theme) {
+            setTheme(settings.theme_id);
+          }
+        }
+      } catch {
+        // Use defaults
+      } finally {
+        setLoaded(true);
+      }
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const saveSetting = useCallback(async (updates: Record<string, any>) => {
+    try {
+      await api.patch('/users/me/settings', updates);
+    } catch (err) {
+      console.error('Failed to save appearance settings:', err);
+    }
+  }, []);
+
+  const handleThemeChange = useCallback((t: string) => {
+    setTheme(t as any);
+    if (loaded) saveSetting({ theme_id: t });
+  }, [loaded, setTheme, saveSetting]);
+
+  const handleDensityChange = useCallback((d: 'cozy' | 'compact') => {
+    setDensity(d);
+    document.documentElement.setAttribute('data-density', d);
+    if (loaded) saveSetting({ chat_density: d });
+  }, [loaded, saveSetting]);
+
+  const fontSizeTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const handleFontSizeChange = useCallback((size: number) => {
+    setFontSize(size);
+    document.documentElement.style.setProperty('--chat-font-size', `${size}px`);
+    if (loaded) {
+      clearTimeout(fontSizeTimerRef.current);
+      fontSizeTimerRef.current = setTimeout(() => saveSetting({ font_size: size }), 500);
+    }
+  }, [loaded, saveSetting]);
+
+  // Apply density and font size on mount
+  useEffect(() => {
+    if (loaded) {
+      document.documentElement.setAttribute('data-density', density);
+      document.documentElement.style.setProperty('--chat-font-size', `${fontSize}px`);
+    }
+  }, [loaded, density, fontSize]);
 
   return (
     <div>
@@ -1053,7 +1116,7 @@ function AppearanceTab() {
             {themes.map((t) => (
               <button
                 key={t}
-                onClick={() => setTheme(t)}
+                onClick={() => handleThemeChange(t)}
                 className={clsx(
                   'p-4 rounded-lg border-2 transition-colors',
                   theme === t
@@ -1080,14 +1143,50 @@ function AppearanceTab() {
         <div>
           <h3 className="text-xs font-bold uppercase text-text-muted mb-4">Message Display</h3>
           <div className="flex gap-3">
-            <button className="flex-1 p-4 rounded-lg border-2 border-brand-primary bg-brand-primary/10">
+            <button
+              onClick={() => handleDensityChange('cozy')}
+              className={clsx(
+                'flex-1 p-4 rounded-lg border-2 transition-colors',
+                density === 'cozy'
+                  ? 'border-brand-primary bg-brand-primary/10'
+                  : 'border-border-subtle hover:border-border-strong'
+              )}
+            >
               <div className="text-sm text-text-primary font-medium mb-1">Cozy</div>
               <div className="text-xs text-text-muted">Display avatars and full timestamps</div>
             </button>
-            <button className="flex-1 p-4 rounded-lg border-2 border-border-subtle hover:border-border-strong">
+            <button
+              onClick={() => handleDensityChange('compact')}
+              className={clsx(
+                'flex-1 p-4 rounded-lg border-2 transition-colors',
+                density === 'compact'
+                  ? 'border-brand-primary bg-brand-primary/10'
+                  : 'border-border-subtle hover:border-border-strong'
+              )}
+            >
               <div className="text-sm text-text-primary font-medium mb-1">Compact</div>
               <div className="text-xs text-text-muted">Smaller text and tighter spacing</div>
             </button>
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-xs font-bold uppercase text-text-muted mb-4">Font Size</h3>
+          <div className="p-4 bg-bg-secondary rounded-lg">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm text-text-muted">10px</span>
+              <span className="text-sm text-text-primary font-medium">{fontSize}px</span>
+              <span className="text-sm text-text-muted">24px</span>
+            </div>
+            <input
+              type="range"
+              min={10}
+              max={24}
+              step={1}
+              value={fontSize}
+              onChange={(e) => handleFontSizeChange(Number(e.target.value))}
+              className="w-full accent-brand-primary"
+            />
           </div>
         </div>
       </div>
@@ -1207,26 +1306,28 @@ function NotificationsTab() {
           </button>
         </div>
 
-        <div className="flex items-center justify-between p-4 bg-bg-secondary rounded-lg">
-          <div>
-            <div className="text-text-primary font-medium">Flash Taskbar</div>
-            <div className="text-sm text-text-muted">Flash the taskbar icon when you receive a notification</div>
-          </div>
-          <button
-            onClick={() => toggleSetting(flashTaskbar, setFlashTaskbar, 'flash_taskbar')}
-            className={clsx(
-              'relative w-11 h-6 rounded-full transition-colors flex-shrink-0',
-              flashTaskbar ? 'bg-success' : 'bg-bg-tertiary'
-            )}
-          >
-            <div
+        {isElectron() && (
+          <div className="flex items-center justify-between p-4 bg-bg-secondary rounded-lg">
+            <div>
+              <div className="text-text-primary font-medium">Flash Taskbar</div>
+              <div className="text-sm text-text-muted">Flash the taskbar icon when you receive a notification</div>
+            </div>
+            <button
+              onClick={() => toggleSetting(flashTaskbar, setFlashTaskbar, 'flash_taskbar')}
               className={clsx(
-                'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
-                flashTaskbar ? 'left-6' : 'left-1'
+                'relative w-11 h-6 rounded-full transition-colors flex-shrink-0',
+                flashTaskbar ? 'bg-success' : 'bg-bg-tertiary'
               )}
-            />
-          </button>
-        </div>
+            >
+              <div
+                className={clsx(
+                  'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
+                  flashTaskbar ? 'left-6' : 'left-1'
+                )}
+              />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
