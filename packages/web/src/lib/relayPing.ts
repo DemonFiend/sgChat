@@ -1,10 +1,12 @@
 import { api } from '@/api';
 
-interface RelayInfo {
+export interface RelayInfo {
   id: string;
   name: string;
   region: string;
   health_url: string | null;
+  livekit_url?: string;
+  status?: string;
 }
 
 interface PingResult {
@@ -16,11 +18,17 @@ const PING_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const PING_SAMPLES = 3; // Average over 3 pings per relay
 
 let pingResults: Map<string, number> = new Map();
+let cachedRelays: RelayInfo[] = [];
 let pingTimer: ReturnType<typeof setInterval> | null = null;
 
 /** Get stored ping results (relayId → avgLatencyMs) */
 export function getRelayPings(): ReadonlyMap<string, number> {
   return pingResults;
+}
+
+/** Get cached relay list from last successful fetch */
+export function getCachedRelays(): ReadonlyArray<RelayInfo> {
+  return cachedRelays;
 }
 
 /** Ping a single relay health URL and return latency in ms */
@@ -56,6 +64,9 @@ async function runPingCycle() {
   try {
     const relays = await api.get<RelayInfo[]>('/api/relays');
     if (!Array.isArray(relays) || relays.length === 0) return;
+
+    // Cache relay list for offline fallback
+    cachedRelays = relays;
 
     const results: PingResult[] = [];
 
@@ -105,4 +116,5 @@ export function stopRelayPingService() {
     pingTimer = null;
   }
   pingResults = new Map();
+  cachedRelays = [];
 }

@@ -6,6 +6,7 @@ import { soundService } from './soundService';
 import { SCREEN_SHARE_QUALITIES } from '@sgchat/shared';
 import { streamViewerStore } from '@/stores/streamViewer';
 import { isElectron, getElectronAPI } from './electron';
+import { getCachedRelays, getRelayPings } from './relayPing';
 
 interface JoinVoiceResponse {
   token: string;
@@ -267,6 +268,58 @@ class VoiceServiceClass {
   }
 
   /**
+   * Try to get a voice token from a relay directly when Master is unreachable.
+   * Iterates cached relays sorted by latency and calls their /voice-authorize endpoint.
+   */
+  private async tryRelayDirectAuthorize(
+    userId: string,
+    channelId: string,
+  ): Promise<JoinVoiceResponse | null> {
+    const relays = getCachedRelays();
+    if (relays.length === 0) return null;
+
+    const pings = getRelayPings();
+
+    // Sort relays by latency (lowest first), unknown latency at the end
+    const sorted = [...relays]
+      .filter((r) => r.health_url)
+      .sort((a, b) => {
+        const la = pings.get(a.id) ?? Infinity;
+        const lb = pings.get(b.id) ?? Infinity;
+        return la - lb;
+      });
+
+    for (const relay of sorted) {
+      try {
+        // Derive relay base URL from health_url (e.g., https://relay.example.com/health → https://relay.example.com)
+        const baseUrl = relay.health_url!.replace(/\/health$/, '');
+        const res = await fetch(`${baseUrl}/voice-authorize`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: userId, channel_id: channelId }),
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!res.ok) continue;
+        const data = (await res.json()) as { token: string; url: string; cache_authorized?: boolean };
+        if (data.token && data.url) {
+          console.log('[VoiceService] Got token from relay', relay.id, relay.name, data.cache_authorized ? '(cache)' : '');
+          return {
+            token: data.token,
+            url: data.url,
+            channel_id: channelId,
+            relay_id: relay.id,
+            relay_region: relay.region,
+          };
+        }
+      } catch {
+        // Try next relay
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * Join a voice channel
    */
   async join(channelId: string, channelName: string): Promise<void> {
@@ -285,7 +338,18 @@ class VoiceServiceClass {
       this.loadPerUserSettings();
 
       // 1. Get token from server (may redirect to temp channel)
-      const response = await api.post<JoinVoiceResponse>(`/voice/join/${channelId}`, {});
+      //    If Master is unreachable, try relay direct authorization as fallback
+      let response: JoinVoiceResponse;
+      try {
+        response = await api.post<JoinVoiceResponse>(`/voice/join/${channelId}`, {});
+      } catch (masterErr) {
+        console.warn('[VoiceService] Master unreachable, trying relay direct authorization');
+        const userId = (await import('@/stores/auth')).useAuthStore.getState().user?.id;
+        if (!userId) throw masterErr;
+        const relayResponse = await this.tryRelayDirectAuthorize(userId, channelId);
+        if (!relayResponse) throw masterErr; // No relay fallback available
+        response = relayResponse;
+      }
       const { token, url, permissions, bitrate, user_limit, channel_id: actualChannelId, is_temp_channel, relay_id, relay_region } = response;
 
       // Use the actual channel ID returned by the server (may differ for temp_voice_generator)

@@ -517,6 +517,80 @@ export const relayRoutes: FastifyPluginAsync = async (fastify) => {
     return { token, url: relay?.livekit_url || '' };
   });
 
+  // Voice cache — relay fetches permission snapshots for offline authorization
+  fastify.get('/internal/relay/voice-cache', async (request, reply) => {
+    const auth = await authenticateRelay(request, reply);
+    if (!auth) return;
+
+    // Get voice channels that use this relay (active or preferred)
+    const channels = await db.sql`
+      SELECT c.id, c.name, c.server_id, c.type, c.voice_relay_policy,
+             c.preferred_relay_id, c.active_relay_id, c.bitrate, c.user_limit
+      FROM channels c
+      WHERE c.type IN ('voice', 'music', 'temp_voice')
+        AND (c.active_relay_id = ${auth.relayId} OR c.preferred_relay_id = ${auth.relayId})
+    `;
+
+    if (channels.length === 0) {
+      return { channels: [], permission_snapshots: [], users: [] };
+    }
+
+    const channelIds = channels.map((c: any) => c.id);
+    const serverIds = [...new Set(channels.map((c: any) => c.server_id))];
+
+    // Get all members of the servers that have these channels
+    const members = await db.sql`
+      SELECT DISTINCT m.user_id, m.server_id
+      FROM members m
+      WHERE m.server_id = ANY(${serverIds})
+    `;
+
+    const userIds = [...new Set(members.map((m: any) => m.user_id))];
+
+    // Calculate permissions for each user×channel pair
+    const { VoicePermissions: VP } = await import('@sgchat/shared');
+    const permissionSnapshots: Array<{
+      user_id: string;
+      channel_id: string;
+      can_connect: boolean;
+      can_speak: boolean;
+    }> = [];
+
+    for (const channelId of channelIds) {
+      const channel = channels.find((c: any) => c.id === channelId);
+      if (!channel) continue;
+
+      // Get members of this channel's server
+      const serverMembers = members
+        .filter((m: any) => m.server_id === channel.server_id)
+        .map((m: any) => m.user_id);
+
+      for (const userId of serverMembers) {
+        try {
+          const perms = await calculatePermissions(userId, channel.server_id, channelId);
+          permissionSnapshots.push({
+            user_id: userId,
+            channel_id: channelId,
+            can_connect: hasPermission(perms.voice, VP.CONNECT),
+            can_speak: hasPermission(perms.voice, VP.SPEAK),
+          });
+        } catch {
+          // Skip users with permission calculation errors
+        }
+      }
+    }
+
+    // Get user info for cached users
+    const users = userIds.length > 0
+      ? await db.sql`
+          SELECT id, username, display_name, avatar_url
+          FROM users WHERE id = ANY(${userIds})
+        `
+      : [];
+
+    return { channels, permission_snapshots: permissionSnapshots, users };
+  });
+
   // Voice event forwarding (relay → Master for broadcast)
   fastify.post('/internal/relay/voice-event', async (request, reply) => {
     const auth = await authenticateRelay(request, reply);

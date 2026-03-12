@@ -141,6 +141,9 @@ importers:
       fastify:
         specifier: ^4.25.2
         version: 4.29.1
+      livekit-server-sdk:
+        specifier: ^2.0.5
+        version: 2.15.0
       pino-pretty:
         specifier: ^10.3.1
         version: 10.3.1

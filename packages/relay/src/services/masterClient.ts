@@ -63,6 +63,22 @@ export class MasterClient {
     }
   }
 
+  async fetchVoiceCache(): Promise<{
+    channels: any[];
+    permission_snapshots: any[];
+    users: any[];
+  } | null> {
+    try {
+      const response = await this.signedFetch('/api/internal/relay/voice-cache', {
+        method: 'GET',
+      });
+      if (!response.ok) return null;
+      return response.json() as Promise<{ channels: any[]; permission_snapshots: any[]; users: any[] }>;
+    } catch {
+      return null;
+    }
+  }
+
   async forwardVoiceEvent(event: {
     type: string;
     user_id: string;

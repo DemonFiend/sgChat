@@ -3,6 +3,10 @@ import Fastify from 'fastify';
 import { getEnvConfig, loadRelayConfig } from './config.js';
 import { healthRoutes } from './routes/health.js';
 import { HeartbeatService } from './services/heartbeat.js';
+import { MasterClient } from './services/masterClient.js';
+import { VoiceCacheService } from './services/voiceCache.js';
+import { EventBufferService } from './services/eventBuffer.js';
+import { voiceAuthorizeRoutes } from './routes/voiceAuthorize.js';
 
 async function main(): Promise<void> {
   const env = getEnvConfig();
@@ -24,13 +28,25 @@ async function main(): Promise<void> {
   // Start heartbeat if paired
   const config = loadRelayConfig();
   if (config) {
-    console.log(`  Relay "${config.relay_id}" paired — starting heartbeat`);
+    console.log(`  Relay "${config.relay_id}" paired — starting services`);
+    const masterClient = new MasterClient(config);
     const heartbeat = new HeartbeatService(config);
     heartbeat.start();
+
+    const voiceCache = new VoiceCacheService(masterClient, config, env);
+    voiceCache.start();
+
+    const eventBuffer = new EventBufferService(masterClient);
+    eventBuffer.start();
+
+    // Register voice-authorize route (clients call this when Master is down)
+    await fastify.register(voiceAuthorizeRoutes(masterClient, voiceCache));
 
     // Graceful shutdown
     const shutdown = () => {
       heartbeat.stop();
+      voiceCache.stop();
+      eventBuffer.stop();
       fastify.close();
     };
     process.on('SIGINT', shutdown);
