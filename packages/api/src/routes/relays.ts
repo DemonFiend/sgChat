@@ -12,6 +12,7 @@ import { calculatePermissions } from '../services/permissions.js';
 import { ServerPermissions, hasPermission } from '@sgchat/shared';
 import type { RelayCreateRequest, RelayUpdateRequest, RelayPairRequest } from '@sgchat/shared';
 import { forbidden, notFound, badRequest, sendError } from '../utils/errors.js';
+import { redis } from '../lib/redis.js';
 import { z } from 'zod';
 import {
   generateECDHKeyPair,
@@ -165,6 +166,31 @@ export const relayRoutes: FastifyPluginAsync = async (fastify) => {
       current_participants: r.current_participants,
       last_health_status: r.last_health_status,
     }));
+  });
+
+  // ════════════════════════════════════════════════════════════
+  // PUBLIC: Client ping report
+  // ════════════════════════════════════════════════════════════
+
+  fastify.post('/relays/ping-report', { preHandler: [authenticate] }, async (request, _reply) => {
+    const schema = z.object({
+      pings: z.array(z.object({
+        relayId: z.string().uuid(),
+        latencyMs: z.number().int().min(0).max(30000),
+      })),
+    });
+
+    const parsed = schema.safeParse(request.body);
+    if (!parsed.success) return { ok: true }; // Silently ignore bad data
+
+    const userId = request.user.id;
+    const pipeline = redis.client.pipeline();
+    for (const ping of parsed.data.pings) {
+      pipeline.setex(`relay:ping:${userId}:${ping.relayId}`, 600, String(ping.latencyMs));
+    }
+    await pipeline.exec();
+
+    return { ok: true };
   });
 
   // ════════════════════════════════════════════════════════════

@@ -26,6 +26,7 @@ import { getDefaultServer } from './server.js';
  */
 async function resolveVoiceRelay(
   channel: any,
+  userId?: string,
 ): Promise<{ relayId: string; livekitUrl: string } | null> {
   const policy = channel.voice_relay_policy || 'master';
 
@@ -51,7 +52,7 @@ async function resolveVoiceRelay(
       await db.sql`UPDATE channels SET active_relay_id = NULL WHERE id = ${channel.id}`;
     }
 
-    // Pick the best available relay (lowest current_participants with capacity)
+    // Pick the best available relay using client ping data (if available) or lowest load
     const relays = await db.relays.findTrusted();
     const available = relays.filter(
       (r: any) => r.livekit_url && r.current_participants < r.max_participants,
@@ -59,10 +60,31 @@ async function resolveVoiceRelay(
 
     if (available.length === 0) return null; // No relays available, use Master
 
-    // Simple selection: pick relay with lowest load
-    const best = available.reduce((a: any, b: any) =>
-      a.current_participants < b.current_participants ? a : b,
-    );
+    // Try to use client's ping data for selection
+    let best = available[0];
+    if (userId && available.length > 1) {
+      const pingKeys = available.map((r: any) => `relay:ping:${userId}:${r.id}`);
+      const pings = await redis.client.mget(...pingKeys);
+      const scored = available.map((r: any, i: number) => ({
+        relay: r,
+        latency: pings[i] ? parseInt(pings[i]!, 10) : null,
+      }));
+
+      // Prefer relays with ping data; among those, pick lowest latency
+      const withPing = scored.filter((s) => s.latency !== null);
+      if (withPing.length > 0) {
+        best = withPing.reduce((a, b) => (a.latency! < b.latency! ? a : b)).relay;
+      } else {
+        // No ping data — fall back to lowest load
+        best = available.reduce((a: any, b: any) =>
+          a.current_participants < b.current_participants ? a : b,
+        );
+      }
+    } else if (available.length > 1) {
+      best = available.reduce((a: any, b: any) =>
+        a.current_participants < b.current_participants ? a : b,
+      );
+    }
 
     // Anchor this channel to the selected relay
     await db.sql`UPDATE channels SET active_relay_id = ${best.id} WHERE id = ${channel.id}`;
@@ -79,8 +101,9 @@ async function resolveVoiceRelay(
 async function generateVoiceToken(
   channel: any,
   options: LiveKitTokenOptions,
+  userId?: string,
 ): Promise<{ token: string; url: string; relayId: string | null; relayRegion: string | null }> {
-  const relay = await resolveVoiceRelay(channel);
+  const relay = await resolveVoiceRelay(channel, userId);
 
   if (relay) {
     const token = await generateLiveKitTokenForRelay(relay.relayId, options);
@@ -217,7 +240,7 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
         canPublishVideo: isAfkChannel ? false : hasPermission(perms.voice, VoicePermissions.VIDEO),
         canPublishScreen: isAfkChannel ? false : hasPermission(perms.voice, VoicePermissions.STREAM),
         canSubscribe: !isAfkChannel,
-      });
+      }, request.user!.id);
 
       // Check for custom join sound
       const customJoinSound = await db.userVoiceSounds.findByUserServerType(request.user!.id, channel.server_id, 'join');
@@ -383,7 +406,7 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
         canPublishVideo: isAfkChannel ? false : hasPermission(perms.voice, VoicePermissions.VIDEO),
         canPublishScreen: isAfkChannel ? false : hasPermission(perms.voice, VoicePermissions.STREAM),
         canSubscribe: !isAfkChannel,
-      });
+      }, request.user!.id);
 
       // Check for custom join sound
       const customJoinSound = await db.userVoiceSounds.findByUserServerType(request.user!.id, channel.server_id, 'join');

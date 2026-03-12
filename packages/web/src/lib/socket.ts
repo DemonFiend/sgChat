@@ -6,6 +6,7 @@ import {
   getCryptoSessionId,
   decryptFromTransport,
 } from '@/lib/transportCrypto';
+import { startRelayPingService, stopRelayPingService } from '@/lib/relayPing';
 
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
 
@@ -117,6 +118,7 @@ function connect() {
 
   socket.on('gateway.ready', (data: { sequences?: Record<string, number> }) => {
     lastSequences = data.sequences || {};
+    startRelayPingService();
   });
 
   socket.on('gateway.resumed', (data: { session_id?: string; missed_events?: any[]; sequences?: Record<string, number> }) => {
@@ -200,6 +202,7 @@ function connect() {
 
 function disconnect() {
   stopHeartbeat();
+  stopRelayPingService();
   socket?.disconnect();
   socket = null;
   gatewaySessionId = null;
