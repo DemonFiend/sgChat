@@ -48,7 +48,9 @@ import { CommandPalette, type CommandPaletteChannel, type CommandPaletteMember }
 import { useGlobalShortcuts } from '@/hooks/useElectron';
 import { canManageChannels, canManageMessages, hasAnyAdminPermission } from '@/stores/permissions';
 import { ServerGearMenu } from '@/components/ui/ServerGearMenu';
+import { AdminMenu } from '@/components/ui/AdminMenu';
 import { EventsPanel } from '@/components/ui/EventsPanel';
+import { StorageDashboardPanel } from '@/components/ui/StorageDashboardPanel';
 import { eventsStore } from '@/stores/events';
 import { slideInRight, easeTransition } from '@/lib/motion';
 import { PinnedMessagesPanel, type PinnedMessage } from '@/components/ui/PinnedMessagesPanel';
@@ -147,9 +149,11 @@ export function MainLayout() {
   const [userTimezone, setUserTimezone] = useState<string | undefined>(undefined);
   const [showClaimAdmin, setShowClaimAdmin] = useState(false);
 
-  // Gear menu + Events panel state
+  // Gear menu + Events panel + Admin menu state
   const [gearMenuPosition, setGearMenuPosition] = useState<{ x: number; y: number } | null>(null);
+  const [adminMenuPosition, setAdminMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [showEventsPanel, setShowEventsPanel] = useState(false);
+  const [showStorageDashboard, setShowStorageDashboard] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<string | undefined>(undefined);
 
   // Fetch user timezone from settings on mount
@@ -1286,8 +1290,10 @@ export function MainLayout() {
             channels={channels}
             categories={categories}
             onGearClick={(pos) => setGearMenuPosition(pos)}
-            onEventsClick={() => setShowEventsPanel(true)}
+            onAdminClick={(pos) => setAdminMenuPosition(pos)}
+            onEventsClick={() => { setShowEventsPanel(true); setShowStorageDashboard(false); }}
             showGearButton={hasAnyAdminPermission(currentServer?.owner_id)}
+            showAdminButton={hasAnyAdminPermission(currentServer?.owner_id)}
             onServerSettingsClick={() => setShowServerSettings(true)}
             onChannelSettingsClick={(channel) =>
               setSettingsChannel({
@@ -1301,6 +1307,7 @@ export function MainLayout() {
             onCreateChannel={canManageChannels() ? () => setShowServerSettings(true) : undefined}
             onChannelDoubleClick={(chId) => {
               setShowEventsPanel(false);
+              setShowStorageDashboard(false);
               setIsSearchOpen(false);
               setShowServerSettings(false);
               setSettingsChannel(null);
@@ -1317,7 +1324,11 @@ export function MainLayout() {
         {/* Chat Panel / Events Panel + Member List — wrapped with MentionProvider */}
         <MentionProvider value={mentionContextValue}>
         <div className="flex-1 flex h-full min-w-0">
-          {showEventsPanel && currentServer ? (
+          {showStorageDashboard && currentServer ? (
+            <StorageDashboardPanel
+              onClose={() => setShowStorageDashboard(false)}
+            />
+          ) : showEventsPanel && currentServer ? (
             <EventsPanel
               serverId={currentServer.id}
               serverTimezone={currentServer.timezone}
@@ -1451,6 +1462,20 @@ export function MainLayout() {
             setSettingsInitialTab(tab);
             setShowServerSettings(true);
             setGearMenuPosition(null);
+          }}
+        />
+      )}
+
+      {/* Admin Context Menu */}
+      {currentServer && (
+        <AdminMenu
+          isOpen={!!adminMenuPosition}
+          onClose={() => setAdminMenuPosition(null)}
+          position={adminMenuPosition || { x: 0, y: 0 }}
+          onOpenStorageDashboard={() => {
+            setShowStorageDashboard(true);
+            setShowEventsPanel(false);
+            setAdminMenuPosition(null);
           }}
         />
       )}

@@ -26,15 +26,17 @@ interface ServerSidebarProps {
   categories: Category[];
   onServerSettingsClick?: () => void;
   onGearClick?: (position: { x: number; y: number }) => void;
+  onAdminClick?: (position: { x: number; y: number }) => void;
   onEventsClick?: () => void;
   onChannelSettingsClick?: (channel: Channel) => void;
   onCreateChannel?: () => void;
   onChannelDoubleClick?: (channelId: string) => void;
   onLogout?: () => void;
   showGearButton?: boolean;
+  showAdminButton?: boolean;
 }
 
-export function ServerSidebar({ server, channels, categories, onServerSettingsClick, onGearClick, onEventsClick, onChannelSettingsClick, onCreateChannel, onChannelDoubleClick, showGearButton }: ServerSidebarProps) {
+export function ServerSidebar({ server, channels, categories, onServerSettingsClick, onGearClick, onAdminClick, onEventsClick, onChannelSettingsClick, onCreateChannel, onChannelDoubleClick, showGearButton, showAdminButton }: ServerSidebarProps) {
   const { channelId: _channelId } = useParams<{ channelId?: string }>();
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
@@ -137,6 +139,22 @@ export function ServerSidebar({ server, channels, categories, onServerSettingsCl
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          </button>
+        )}
+
+        {/* Admin Button - admin only */}
+        {showAdminButton && onAdminClick && (
+          <button
+            onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              onAdminClick({ x: rect.left, y: rect.bottom + 4 });
+            }}
+            className="p-2 rounded hover:bg-bg-modifier-hover text-text-muted hover:text-text-primary transition-colors"
+            title="Admin"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
             </svg>
           </button>
         )}

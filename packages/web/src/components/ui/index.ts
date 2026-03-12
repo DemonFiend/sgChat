@@ -46,3 +46,5 @@ export { RoleReactionsTab } from './RoleReactionsTab';
 export { UserProfilePopover } from './UserProfilePopover';
 export { TitleBar } from './TitleBar';
 export { Skeleton, SkeletonText, SkeletonAvatar, SkeletonMessage } from './Skeleton';
+export { AdminMenu } from './AdminMenu';
+export { StorageDashboardPanel } from './StorageDashboardPanel';
