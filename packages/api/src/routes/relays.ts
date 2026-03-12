@@ -345,6 +345,29 @@ export const relayRoutes: FastifyPluginAsync = async (fastify) => {
     },
   );
 
+  // Drain relay (graceful — no new joins, transitions to offline when empty)
+  fastify.post(
+    '/admin/relays/:id/drain',
+    { preHandler: [authenticate] },
+    async (request, reply) => {
+      if (!(await requireAdmin(request.user.id, reply))) return;
+      const { id } = request.params as { id: string };
+
+      const relay = await db.relays.findById(id);
+      if (!relay) return notFound(reply, 'Relay');
+      if (relay.status !== 'trusted') {
+        return badRequest(reply, 'Only trusted relays can be drained');
+      }
+
+      await db.relays.update(id, { status: 'draining' });
+
+      // Clear active_relay_id on channels anchored to this relay so new joins go elsewhere
+      await db.sql`UPDATE channels SET active_relay_id = NULL WHERE active_relay_id = ${id}`;
+
+      return { success: true, message: 'Relay is draining — no new voice joins will be routed to it' };
+    },
+  );
+
   // Delete relay
   fastify.delete('/admin/relays/:id', { preHandler: [authenticate] }, async (request, reply) => {
     if (!(await requireAdmin(request.user.id, reply))) return;

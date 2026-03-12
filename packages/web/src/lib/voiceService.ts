@@ -664,6 +664,36 @@ class VoiceServiceClass {
   }
 
   /**
+   * Handle relay switch event from server (relay failure or admin-initiated).
+   * Reconnects to the same channel but via a different LiveKit URL/relay.
+   */
+  async handleRelaySwitch(channelId: string, newRelayId: string | null, newRelayRegion: string | null): Promise<void> {
+    const currentChannel = voiceStore.currentChannelId();
+    if (currentChannel !== channelId) return; // Not our channel
+
+    const channelName = voiceStore.currentChannelName() || 'Voice Channel';
+    console.log('[VoiceService] Relay switch — reconnecting channel', channelId, 'to relay', newRelayId || 'Master');
+
+    // Disconnect locally without notifying server (backend already updated)
+    this._isIntentionalLeave = true;
+    if (this.room) {
+      this.stopConnectionQualityMonitoring();
+      this.teardownActivityTracking();
+      if (voiceStore.isScreenSharing()) {
+        await this.stopScreenShare();
+      }
+      await this.room.disconnect();
+      this.room = null;
+      this.cleanupAudioElements();
+      this.cleanupVideoElements();
+    }
+    this._isIntentionalLeave = false;
+
+    voiceStore.setDisconnected();
+    await this.join(channelId, channelName);
+  }
+
+  /**
    * Move a member to a different voice channel (moderator action)
    */
   async moveMember(userId: string, fromChannelId: string, toChannelId: string): Promise<void> {

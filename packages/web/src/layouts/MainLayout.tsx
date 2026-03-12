@@ -716,10 +716,21 @@ export function MainLayout() {
       voiceService.setServerDeafened(data.deafened);
     };
 
+    const handleRelaySwitch = (data: any) => {
+      if (data.channel_id) {
+        voiceService.handleRelaySwitch(
+          data.channel_id,
+          data.new_relay_id || null,
+          data.new_relay_region || null,
+        );
+      }
+    };
+
     socketService.on('voice.state_update', handleVoiceStateUpdate as (data: unknown) => void);
     socketService.on('voice.force_disconnect', handleForceDisconnect as (data: unknown) => void);
     socketService.on('voice.server_mute', handleServerMute as (data: unknown) => void);
     socketService.on('voice.server_deafen', handleServerDeafen as (data: unknown) => void);
+    socketService.on('voice.relay_switch', handleRelaySwitch as (data: unknown) => void);
 
     return () => {
       socketService.off('voice.join', handleVoiceJoin as (data: unknown) => void);
@@ -728,6 +739,7 @@ export function MainLayout() {
       socketService.off('voice.force_disconnect', handleForceDisconnect as (data: unknown) => void);
       socketService.off('voice.server_mute', handleServerMute as (data: unknown) => void);
       socketService.off('voice.server_deafen', handleServerDeafen as (data: unknown) => void);
+      socketService.off('voice.relay_switch', handleRelaySwitch as (data: unknown) => void);
     };
   }, []);
 

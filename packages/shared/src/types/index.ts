@@ -426,7 +426,7 @@ export interface UserAvatar {
 // Relay Servers
 // ============================================================
 
-export type RelayStatus = 'pending' | 'trusted' | 'suspended' | 'offline';
+export type RelayStatus = 'pending' | 'trusted' | 'suspended' | 'offline' | 'draining';
 export type VoiceRelayPolicy = 'master' | 'auto' | 'specific';
 export type RelayHealthStatus = 'healthy' | 'degraded' | 'unreachable';
 

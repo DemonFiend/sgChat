@@ -54,6 +54,7 @@ import { initSocketIO } from './socket/index.js';
 import { cleanupEmptyTempChannels } from './services/tempChannels.js';
 import { checkAndMoveAfkUsers } from './services/afkService.js';
 import { checkAndAnnounceEvents } from './services/eventAnnouncements.js';
+import { startRelayHealthService, stopRelayHealthService } from './services/relayHealth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -426,6 +427,9 @@ async function start() {
     }
   }, 60 * 60 * 1000);
 
+  // Start relay health monitoring (every 15s)
+  startRelayHealthService();
+
   // Graceful shutdown
   const gracefulShutdown = async (signal: string) => {
     fastify.log.info(`${signal} received, shutting down gracefully...`);
@@ -435,6 +439,7 @@ async function start() {
     clearInterval(afkCheckInterval);
     clearInterval(autoPurgeInterval);
     clearInterval(eventAnnouncementInterval);
+    stopRelayHealthService();
 
     await fastify.close();
     await shutdownEventBus();
