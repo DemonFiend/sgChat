@@ -161,7 +161,7 @@ for (const [metaKey, meta] of Object.entries(VoicePermissionMetadata)) {
 
 // ── End permission groups ────────────────────────────────────────────
 
-type ServerSettingsTab = 'general' | 'roles' | 'role-reactions' | 'members' | 'channels' | 'soundboard' | 'stickers' | 'emoji-packs' | 'webhooks' | 'afk' | 'invites' | 'bans' | 'audit-log' | 'storage' | 'crash-reports' | 'releases';
+type ServerSettingsTab = 'general' | 'roles' | 'role-reactions' | 'members' | 'channels' | 'soundboard' | 'stickers' | 'emoji-packs' | 'webhooks' | 'afk' | 'invites' | 'bans' | 'audit-log' | 'storage' | 'relays' | 'crash-reports' | 'releases';
 
 interface ServerSettings {
   motd: string;
@@ -345,6 +345,16 @@ const tabs: { id: ServerSettingsTab; label: string; icon: ReactNode; permission?
       </svg>
     ),
     permission: 'manage_server',
+  },
+  {
+    id: 'relays',
+    label: 'Relay Servers',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+      </svg>
+    ),
+    permission: 'administrator',
   },
   {
     id: 'crash-reports',
@@ -544,6 +554,7 @@ export function ServerSettingsModal({ isOpen, onClose, serverName, serverIcon: _
                 )}
                 {activeTab === 'audit-log' && <AuditLogTab />}
                 {activeTab === 'storage' && <StorageTab />}
+                {activeTab === 'relays' && <RelayServersTab />}
                 {activeTab === 'crash-reports' && <CrashReportsTab />}
                 {activeTab === 'releases' && <ReleasesTab />}
               </>
@@ -4239,6 +4250,338 @@ function WebhooksTab({ serverId, channels }: { serverId: string; channels: Chann
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Relay Servers Tab ───────────────────────────────────────────────────── */
+
+interface RelayServerRow {
+  id: string;
+  name: string;
+  region: string;
+  status: string;
+  health_url: string | null;
+  livekit_url: string | null;
+  max_participants: number;
+  current_participants: number;
+  allow_master_fallback: boolean;
+  last_health_status: string | null;
+  created_at: string;
+}
+
+const RELAY_REGIONS = [
+  { value: 'us-east', label: 'US East' },
+  { value: 'us-west', label: 'US West' },
+  { value: 'us-central', label: 'US Central' },
+  { value: 'eu-west', label: 'EU West' },
+  { value: 'eu-central', label: 'EU Central' },
+  { value: 'eu-north', label: 'EU North' },
+  { value: 'asia-east', label: 'Asia East' },
+  { value: 'asia-southeast', label: 'Asia Southeast' },
+  { value: 'oceania', label: 'Oceania' },
+  { value: 'south-america', label: 'South America' },
+  { value: 'africa', label: 'Africa' },
+  { value: 'middle-east', label: 'Middle East' },
+] as const;
+
+function RelayServersTab() {
+  const [relays, setRelays] = useState<RelayServerRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [pairingToken, setPairingToken] = useState<string | null>(null);
+  const [copiedToken, setCopiedToken] = useState(false);
+  const [newRelay, setNewRelay] = useState({
+    name: '',
+    region: 'us-east',
+    max_participants: 100,
+    allow_master_fallback: true,
+  });
+
+  const fetchRelays = useCallback(async () => {
+    try {
+      const data = await api.get<{ relays: RelayServerRow[] }>('/api/admin/relays');
+      setRelays(data.relays || []);
+    } catch {
+      /* ignore */
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchRelays();
+  }, [fetchRelays]);
+
+  const handleCreate = async () => {
+    if (!newRelay.name.trim()) return;
+    setCreating(true);
+    try {
+      const data = await api.post<{ pairing_token: string }>('/api/admin/relays', newRelay);
+      setPairingToken(data.pairing_token);
+      setShowCreate(false);
+      setNewRelay({ name: '', region: 'us-east', max_participants: 100, allow_master_fallback: true });
+      fetchRelays();
+    } catch (err: any) {
+      toastStore.addToast({ type: 'system', title: 'Error', message: err?.message || 'Failed to create relay' });
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleSuspend = async (id: string) => {
+    try {
+      await api.post(`/api/admin/relays/${id}/suspend`);
+      fetchRelays();
+    } catch (err: any) {
+      toastStore.addToast({ type: 'system', title: 'Error', message: err?.message || 'Failed to suspend relay' });
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this relay server? This cannot be undone.')) return;
+    try {
+      await api.delete(`/api/admin/relays/${id}`);
+      fetchRelays();
+    } catch (err: any) {
+      toastStore.addToast({ type: 'system', title: 'Error', message: err?.message || 'Failed to delete relay' });
+    }
+  };
+
+  const handleRegenerate = async (id: string) => {
+    try {
+      const data = await api.post<{ pairing_token: string }>(`/api/admin/relays/${id}/regenerate`);
+      setPairingToken(data.pairing_token);
+      fetchRelays();
+    } catch (err: any) {
+      toastStore.addToast({ type: 'system', title: 'Error', message: err?.message || 'Failed to regenerate token' });
+    }
+  };
+
+  const copyPairingToken = () => {
+    if (!pairingToken) return;
+    navigator.clipboard.writeText(pairingToken);
+    setCopiedToken(true);
+    setTimeout(() => setCopiedToken(false), 2000);
+  };
+
+  const statusColor = (status: string) => {
+    switch (status) {
+      case 'trusted': return 'text-green-400';
+      case 'pending': return 'text-yellow-400';
+      case 'suspended': return 'text-red-400';
+      case 'offline': return 'text-text-muted';
+      default: return 'text-text-muted';
+    }
+  };
+
+  const healthColor = (health: string | null) => {
+    switch (health) {
+      case 'healthy': return 'bg-green-400';
+      case 'degraded': return 'bg-yellow-400';
+      case 'unreachable': return 'bg-red-400';
+      default: return 'bg-gray-500';
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12 text-text-muted">
+        Loading relay servers...
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Pairing token banner */}
+      {pairingToken && (
+        <div className="p-4 rounded-lg bg-accent/10 border border-accent/30">
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-sm font-semibold text-accent">Pairing Token Generated</h4>
+            <button
+              onClick={() => setPairingToken(null)}
+              className="text-text-muted hover:text-text-primary text-xs"
+            >
+              Dismiss
+            </button>
+          </div>
+          <p className="text-xs text-text-secondary mb-2">
+            Give this token to the relay operator. It expires in 24 hours and can only be used once.
+          </p>
+          <div className="flex gap-2">
+            <code className="flex-1 text-xs bg-bg-primary p-2 rounded font-mono break-all select-all max-h-20 overflow-y-auto">
+              {pairingToken}
+            </code>
+            <button
+              onClick={copyPairingToken}
+              className="px-3 py-1 text-xs bg-accent hover:bg-accent/80 text-white rounded transition-colors whitespace-nowrap"
+            >
+              {copiedToken ? 'Copied!' : 'Copy'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-base font-semibold text-text-primary">Relay Servers</h3>
+          <p className="text-xs text-text-muted mt-0.5">
+            Regional voice relays for lower latency. Relays handle voice only.
+          </p>
+        </div>
+        <button
+          onClick={() => setShowCreate(!showCreate)}
+          className="px-3 py-1.5 text-sm bg-accent hover:bg-accent/80 text-white rounded-md transition-colors"
+        >
+          {showCreate ? 'Cancel' : 'Add Relay'}
+        </button>
+      </div>
+
+      {/* Create form */}
+      {showCreate && (
+        <div className="p-4 rounded-lg bg-bg-tertiary border border-divider space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-text-secondary mb-1">Name</label>
+            <input
+              type="text"
+              value={newRelay.name}
+              onChange={(e) => setNewRelay({ ...newRelay, name: e.target.value })}
+              placeholder="EU West Relay"
+              className="w-full px-3 py-1.5 text-sm bg-bg-primary border border-divider rounded text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1">Region</label>
+              <select
+                value={newRelay.region}
+                onChange={(e) => setNewRelay({ ...newRelay, region: e.target.value })}
+                className="w-full px-3 py-1.5 text-sm bg-bg-primary border border-divider rounded text-text-primary focus:outline-none focus:border-accent"
+              >
+                {RELAY_REGIONS.map((r) => (
+                  <option key={r.value} value={r.value}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1">
+                Max Participants
+              </label>
+              <input
+                type="number"
+                value={newRelay.max_participants}
+                onChange={(e) =>
+                  setNewRelay({ ...newRelay, max_participants: parseInt(e.target.value) || 100 })
+                }
+                min={1}
+                className="w-full px-3 py-1.5 text-sm bg-bg-primary border border-divider rounded text-text-primary focus:outline-none focus:border-accent"
+              />
+            </div>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
+            <input
+              type="checkbox"
+              checked={newRelay.allow_master_fallback}
+              onChange={(e) =>
+                setNewRelay({ ...newRelay, allow_master_fallback: e.target.checked })
+              }
+              className="rounded"
+            />
+            Allow as master fallback
+          </label>
+          <button
+            onClick={handleCreate}
+            disabled={creating || !newRelay.name.trim()}
+            className="px-4 py-1.5 text-sm bg-accent hover:bg-accent/80 disabled:opacity-50 text-white rounded transition-colors"
+          >
+            {creating ? 'Creating...' : 'Create & Generate Pairing Token'}
+          </button>
+        </div>
+      )}
+
+      {/* Relay list */}
+      {relays.length === 0 ? (
+        <div className="text-center py-8 text-text-muted text-sm">
+          No relay servers configured. Click "Add Relay" to register one.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {relays.map((relay) => (
+            <div
+              key={relay.id}
+              className="p-3 rounded-lg bg-bg-tertiary border border-divider hover:border-divider/80 transition-colors"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={`w-2.5 h-2.5 rounded-full ${healthColor(relay.last_health_status)}`} />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-text-primary truncate">
+                        {relay.name}
+                      </span>
+                      <span className={`text-xs font-mono ${statusColor(relay.status)}`}>
+                        {relay.status}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-text-muted">
+                      <span>{relay.region}</span>
+                      <span>-</span>
+                      <span>
+                        {relay.current_participants}/{relay.max_participants} users
+                      </span>
+                      {relay.last_health_status && (
+                        <>
+                          <span>-</span>
+                          <span>{relay.last_health_status}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  {relay.status === 'pending' && (
+                    <button
+                      onClick={() => handleRegenerate(relay.id)}
+                      className="px-2 py-1 text-xs bg-bg-modifier-hover hover:bg-bg-modifier-active text-text-secondary rounded transition-colors"
+                      title="Regenerate pairing token"
+                    >
+                      Re-pair
+                    </button>
+                  )}
+                  {relay.status === 'trusted' && (
+                    <button
+                      onClick={() => handleSuspend(relay.id)}
+                      className="px-2 py-1 text-xs text-yellow-400 hover:bg-yellow-400/10 rounded transition-colors"
+                      title="Suspend relay"
+                    >
+                      Suspend
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleDelete(relay.id)}
+                    className="p-1 text-text-muted hover:text-danger transition-colors"
+                    title="Delete relay"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                      />
                     </svg>
                   </button>
                 </div>

@@ -1704,6 +1704,54 @@ CREATE TABLE IF NOT EXISTS server_event_announcements (
 );
 
 -- ============================================================
+-- RELAY SERVERS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS relay_servers (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL,                                    -- "EU West", "US East" (set by admin)
+  region TEXT NOT NULL,                                  -- "eu-west", "us-east" (set by admin from dropdown)
+  status TEXT NOT NULL DEFAULT 'pending'                 -- pending (awaiting pairing), trusted, suspended, offline
+    CHECK (status IN ('pending', 'trusted', 'suspended', 'offline')),
+
+  -- Pairing (set on creation, cleared after successful pair)
+  pairing_token_hash TEXT,                               -- SHA-256 hash of one-time pairing token
+  pairing_expires_at TIMESTAMPTZ,                        -- token expiry (default: 24h from creation)
+
+  -- Connection info (set during pairing by relay)
+  health_url TEXT,                                       -- https://relay-eu.example.com/health
+  livekit_url TEXT,                                      -- wss://relay-eu.example.com:7880
+  livekit_api_key_encrypted TEXT,                        -- encrypted with Master's key
+  livekit_api_secret_encrypted TEXT,                     -- encrypted with Master's key
+
+  -- Crypto (set during pairing)
+  relay_public_key TEXT,                                 -- ECDH P-256 public key from relay
+  master_public_key TEXT,                                -- Master's ECDH public key for this relay
+  shared_secret_encrypted TEXT,                          -- derived ECDH shared secret (encrypted at rest)
+  trust_certificate TEXT,                                -- signed trust cert issued by Master
+
+  -- Operational
+  max_participants INTEGER DEFAULT 100,                  -- capacity limit
+  current_participants INTEGER DEFAULT 0,                -- live count (updated by relay heartbeat)
+  allow_master_fallback BOOLEAN DEFAULT true,            -- can this relay be used as a voice fallback?
+  last_health_check TIMESTAMPTZ,
+  last_health_status TEXT                                -- 'healthy', 'degraded', 'unreachable'
+    CHECK (last_health_status IS NULL OR last_health_status IN ('healthy', 'degraded', 'unreachable')),
+
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_relay_servers_status ON relay_servers(status);
+CREATE INDEX IF NOT EXISTS idx_relay_servers_region ON relay_servers(region);
+
+-- Channel relay policy columns
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS voice_relay_policy TEXT DEFAULT 'master'
+  CHECK (voice_relay_policy IN ('master', 'auto', 'specific'));
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS preferred_relay_id UUID REFERENCES relay_servers(id) ON DELETE SET NULL;
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS active_relay_id UUID REFERENCES relay_servers(id) ON DELETE SET NULL;
+
+-- ============================================================
 -- MIGRATION TRACKING
 -- ============================================================
 
@@ -1739,5 +1787,6 @@ INSERT INTO _migrations (name) VALUES
   ('020_server_events'),
   ('021_rsvp_events_permission'),
   ('022_role_reaction_custom_emoji'),
-  ('023_role_deny_permissions')
+  ('023_role_deny_permissions'),
+  ('024_relay_servers')
 ON CONFLICT (name) DO NOTHING;

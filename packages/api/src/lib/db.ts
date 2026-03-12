@@ -1322,6 +1322,98 @@ export const db = {
     },
   },
 
+  // Relay Servers
+  relays: {
+    async findById(id: string) {
+      const [relay] = await sql`SELECT * FROM relay_servers WHERE id = ${id}`;
+      return relay;
+    },
+    async findAll() {
+      return sql`SELECT * FROM relay_servers ORDER BY created_at ASC`;
+    },
+    async findTrusted() {
+      return sql`SELECT * FROM relay_servers WHERE status = 'trusted' ORDER BY region, name`;
+    },
+    async findByStatus(status: string) {
+      return sql`SELECT * FROM relay_servers WHERE status = ${status}`;
+    },
+    async create(data: {
+      name: string;
+      region: string;
+      pairing_token_hash: string;
+      pairing_expires_at: Date;
+      master_public_key: string;
+      max_participants?: number;
+      allow_master_fallback?: boolean;
+    }) {
+      const [relay] = await sql`
+        INSERT INTO relay_servers (
+          name, region, status, pairing_token_hash, pairing_expires_at,
+          master_public_key, max_participants, allow_master_fallback
+        )
+        VALUES (
+          ${data.name}, ${data.region}, 'pending', ${data.pairing_token_hash},
+          ${data.pairing_expires_at}, ${data.master_public_key},
+          ${data.max_participants ?? 100}, ${data.allow_master_fallback ?? true}
+        )
+        RETURNING *
+      `;
+      return relay;
+    },
+    async update(id: string, data: Record<string, any>) {
+      data.updated_at = new Date();
+      const [relay] = await sql`
+        UPDATE relay_servers SET ${sql(data)} WHERE id = ${id} RETURNING *
+      `;
+      return relay;
+    },
+    async completePairing(id: string, data: {
+      relay_public_key: string;
+      shared_secret_encrypted: string;
+      trust_certificate: string;
+      health_url: string;
+      livekit_url: string;
+      livekit_api_key_encrypted: string;
+      livekit_api_secret_encrypted: string;
+    }) {
+      const [relay] = await sql`
+        UPDATE relay_servers SET
+          status = 'trusted',
+          relay_public_key = ${data.relay_public_key},
+          shared_secret_encrypted = ${data.shared_secret_encrypted},
+          trust_certificate = ${data.trust_certificate},
+          health_url = ${data.health_url},
+          livekit_url = ${data.livekit_url},
+          livekit_api_key_encrypted = ${data.livekit_api_key_encrypted},
+          livekit_api_secret_encrypted = ${data.livekit_api_secret_encrypted},
+          pairing_token_hash = NULL,
+          pairing_expires_at = NULL,
+          updated_at = NOW()
+        WHERE id = ${id}
+        RETURNING *
+      `;
+      return relay;
+    },
+    async updateHeartbeat(id: string, data: {
+      current_participants: number;
+      last_health_status: string;
+    }) {
+      const [relay] = await sql`
+        UPDATE relay_servers SET
+          current_participants = ${data.current_participants},
+          last_health_check = NOW(),
+          last_health_status = ${data.last_health_status},
+          updated_at = NOW()
+        WHERE id = ${id}
+        RETURNING *
+      `;
+      return relay;
+    },
+    async delete(id: string) {
+      await sql`DELETE FROM relay_servers WHERE id = ${id}`;
+    },
+  },
+
   // Helper to run transactions
   transaction: sql.begin,
 

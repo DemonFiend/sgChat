@@ -13,6 +13,8 @@ interface JoinVoiceResponse {
   room_name?: string;
   channel_id?: string;
   is_temp_channel?: boolean;
+  relay_id?: string | null;
+  relay_region?: string | null;
   bitrate?: number;
   user_limit?: number;
   permissions?: {
@@ -284,16 +286,19 @@ class VoiceServiceClass {
 
       // 1. Get token from server (may redirect to temp channel)
       const response = await api.post<JoinVoiceResponse>(`/voice/join/${channelId}`, {});
-      const { token, url, permissions, bitrate, user_limit, channel_id: actualChannelId, is_temp_channel } = response;
-      
+      const { token, url, permissions, bitrate, user_limit, channel_id: actualChannelId, is_temp_channel, relay_id, relay_region } = response;
+
       // Use the actual channel ID returned by the server (may differ for temp_voice_generator)
       const targetChannelId = actualChannelId || channelId;
       const targetChannelName = is_temp_channel ? `${channelName} (Temp)` : channelName;
-      
+
       if (targetChannelId !== channelId) {
         console.log('[VoiceService] Redirected to temp channel:', targetChannelId);
         // Update the connecting state with the actual channel ID
-        voiceStore.setConnecting(targetChannelId, targetChannelName);
+        voiceStore.setConnecting(targetChannelId, targetChannelName, relay_id, relay_region);
+      } else if (relay_id) {
+        // Update relay info on the existing connecting state
+        voiceStore.setConnecting(channelId, channelName, relay_id, relay_region);
       }
       
       console.log('[VoiceService] Got token, connecting to LiveKit at:', url);

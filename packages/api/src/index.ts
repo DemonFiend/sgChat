@@ -48,6 +48,7 @@ import { stickerRoutes } from './routes/stickers.js';
 import { emojiRoutes } from './routes/emojis.js';
 import { threadRoutes } from './routes/threads.js';
 import { eventRoutes } from './routes/events.js';
+import { relayRoutes } from './routes/relays.js';
 import { cryptoPayloadPlugin } from './plugins/cryptoPayload.js';
 import { initSocketIO } from './socket/index.js';
 import { cleanupEmptyTempChannels } from './services/tempChannels.js';
@@ -241,6 +242,9 @@ async function start() {
     // Threads
     await api.register(threadRoutes);
 
+    // Relay servers
+    await api.register(relayRoutes);
+
     // Health check with server info for client network discovery
     api.get('/health', async () => {
       return {
@@ -306,6 +310,7 @@ async function start() {
   await fastify.register(searchRoutes, { prefix: '/search' });
   await fastify.register(webhookRoutes, { prefix: '/webhooks' });
   await fastify.register(threadRoutes);
+  await fastify.register(relayRoutes);
 
   // ============================================================
   // Web Client - serve built SPA from packages/web/dist

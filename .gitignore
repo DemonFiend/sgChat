@@ -67,6 +67,9 @@ markdown/
 # MCP config (user-specific)
 .mcp.json
 
+# Relay config (contains secrets)
+relay-config.json
+
 # Beads local files and agent docs
 AGENTS.md
 .beads/

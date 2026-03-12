@@ -4,7 +4,13 @@ import { db } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
 import { publishEvent } from '../lib/eventBus.js';
 import { calculatePermissions } from '../services/permissions.js';
-import { generateLiveKitToken, getLiveKitUrl } from '../services/livekit.js';
+import {
+  generateLiveKitToken,
+  generateLiveKitTokenForRelay,
+  getLiveKitUrl,
+  getRelayLiveKitUrl,
+} from '../services/livekit.js';
+import type { LiveKitTokenOptions } from '../services/livekit.js';
 import { VoicePermissions, ServerPermissions, hasPermission, RATE_LIMITS } from '@sgchat/shared';
 import { notFound, forbidden, badRequest } from '../utils/errors.js';
 import {
@@ -13,6 +19,83 @@ import {
 } from '../services/tempChannels.js';
 import { scheduleTempChannelCreation, cancelPendingCreation } from '../services/tempChannelTimers.js';
 import { getDefaultServer } from './server.js';
+
+/**
+ * Resolve the target relay for a voice channel based on its relay policy.
+ * Returns { relayId, livekitUrl } or null for Master's own LiveKit.
+ */
+async function resolveVoiceRelay(
+  channel: any,
+): Promise<{ relayId: string; livekitUrl: string } | null> {
+  const policy = channel.voice_relay_policy || 'master';
+
+  if (policy === 'master') return null;
+
+  if (policy === 'specific' && channel.preferred_relay_id) {
+    const relay = await db.relays.findById(channel.preferred_relay_id);
+    if (relay && relay.status === 'trusted' && relay.livekit_url) {
+      return { relayId: relay.id, livekitUrl: relay.livekit_url };
+    }
+    // Fallback to Master if preferred relay is unavailable
+    return null;
+  }
+
+  if (policy === 'auto') {
+    // If channel already has an active relay, use it (anchor until empty)
+    if (channel.active_relay_id) {
+      const relay = await db.relays.findById(channel.active_relay_id);
+      if (relay && relay.status === 'trusted' && relay.livekit_url) {
+        return { relayId: relay.id, livekitUrl: relay.livekit_url };
+      }
+      // Active relay is down, clear it and pick a new one
+      await db.sql`UPDATE channels SET active_relay_id = NULL WHERE id = ${channel.id}`;
+    }
+
+    // Pick the best available relay (lowest current_participants with capacity)
+    const relays = await db.relays.findTrusted();
+    const available = relays.filter(
+      (r: any) => r.livekit_url && r.current_participants < r.max_participants,
+    );
+
+    if (available.length === 0) return null; // No relays available, use Master
+
+    // Simple selection: pick relay with lowest load
+    const best = available.reduce((a: any, b: any) =>
+      a.current_participants < b.current_participants ? a : b,
+    );
+
+    // Anchor this channel to the selected relay
+    await db.sql`UPDATE channels SET active_relay_id = ${best.id} WHERE id = ${channel.id}`;
+
+    return { relayId: best.id, livekitUrl: best.livekit_url };
+  }
+
+  return null;
+}
+
+/**
+ * Generate a voice token, routing to relay or Master as appropriate.
+ */
+async function generateVoiceToken(
+  channel: any,
+  options: LiveKitTokenOptions,
+): Promise<{ token: string; url: string; relayId: string | null; relayRegion: string | null }> {
+  const relay = await resolveVoiceRelay(channel);
+
+  if (relay) {
+    const token = await generateLiveKitTokenForRelay(relay.relayId, options);
+    const relayRecord = await db.relays.findById(relay.relayId);
+    return {
+      token,
+      url: relay.livekitUrl,
+      relayId: relay.relayId,
+      relayRegion: relayRecord?.region || null,
+    };
+  }
+
+  const token = await generateLiveKitToken(options);
+  return { token, url: getLiveKitUrl(), relayId: null, relayRegion: null };
+}
 
 export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
   // Get voice token for a channel (GET endpoint as specified in SERVER_HANDOFF.md)
@@ -124,9 +207,9 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
       // Get user info for socket event + LiveKit name
       const user = await db.users.findById(request.user!.id);
 
-      // Generate LiveKit token with appropriate grants
+      // Generate LiveKit token with appropriate grants (routed to relay if applicable)
       // AFK channel: no publish/subscribe — full silence, no audio in or out
-      const token = await generateLiveKitToken({
+      const voiceResult = await generateVoiceToken(channel, {
         identity: request.user!.id,
         name: user.display_name || user.username || request.user!.username,
         room: roomName,
@@ -158,11 +241,13 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       return {
-        token,
-        url: getLiveKitUrl(),
+        token: voiceResult.token,
+        url: voiceResult.url,
         room_name: roomName,
         channel_id: actualChannelId,
         is_temp_channel: channel.is_temp_channel || false,
+        relay_id: voiceResult.relayId,
+        relay_region: voiceResult.relayRegion,
       };
     },
   });
@@ -288,9 +373,9 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
       // Get user info for socket event + LiveKit name
       const user = await db.users.findById(request.user!.id);
 
-      // Generate LiveKit token with appropriate grants
+      // Generate LiveKit token with relay routing
       // AFK channel: no publish/subscribe — full silence, no audio in or out
-      const token = await generateLiveKitToken({
+      const voiceResult = await generateVoiceToken(channel, {
         identity: request.user!.id,
         name: user.display_name || user.username || request.user!.username,
         room: `voice:${actualChannelId}`,
@@ -321,19 +406,20 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
         },
       });
 
-      const livekitUrl = getLiveKitUrl();
       const speak = hasPermission(perms.voice, VoicePermissions.SPEAK);
       const video = hasPermission(perms.voice, VoicePermissions.VIDEO);
       const stream = hasPermission(perms.voice, VoicePermissions.STREAM);
 
       return {
-        token,
-        livekit_token: token,
-        url: livekitUrl,
-        livekit_url: livekitUrl,
+        token: voiceResult.token,
+        livekit_token: voiceResult.token,
+        url: voiceResult.url,
+        livekit_url: voiceResult.url,
         room_name: `voice:${actualChannelId}`,
         channel_id: actualChannelId,
         is_temp_channel: channel.is_temp_channel || false,
+        relay_id: voiceResult.relayId,
+        relay_region: voiceResult.relayRegion,
         bitrate: channel.bitrate || 64000,
         user_limit: channel.user_limit || 0,
         permissions: {
@@ -559,12 +645,18 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
         },
       });
 
-      // Check if temp channel is now empty
-      if (channel.is_temp_channel) {
-        const participants = await redis.getVoiceChannelParticipants(channelId);
-        if (participants.length === 0) {
+      // Check if channel is now empty
+      const remainingParticipants = await redis.getVoiceChannelParticipants(channelId);
+      if (remainingParticipants.length === 0) {
+        // Clear active relay anchor for auto-policy channels
+        if (channel.voice_relay_policy === 'auto' && channel.active_relay_id) {
+          await db.sql`UPDATE channels SET active_relay_id = NULL WHERE id = ${channelId}`;
+        }
+
+        // Check if temp channel cleanup needed
+        if (channel.is_temp_channel) {
           await markTempChannelEmpty(channelId);
-          console.log(`🕐 Temp channel ${channel.name} is now empty, starting cleanup timer`);
+          console.log(`Temp channel ${channel.name} is now empty, starting cleanup timer`);
         }
       }
 

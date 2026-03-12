@@ -49,6 +49,8 @@ export interface VoiceState {
   connectionState: VoiceConnectionState;
   currentChannelId: string | null;
   currentChannelName: string | null;
+  currentRelayId: string | null;
+  currentRelayRegion: string | null;
   participants: Record<string, VoiceParticipant[]>;
   permissions: VoicePermissions | null;
   localState: {
@@ -68,7 +70,7 @@ interface VoiceActions {
   getParticipants: (channelId: string) => VoiceParticipant[];
   currentParticipants: () => VoiceParticipant[];
   // State setters
-  setConnecting: (channelId: string, channelName: string) => void;
+  setConnecting: (channelId: string, channelName: string, relayId?: string | null, relayRegion?: string | null) => void;
   setConnected: (permissions: VoicePermissions) => void;
   setDisconnected: () => void;
   setError: (error: string) => void;
@@ -91,6 +93,8 @@ export const useVoiceStore = create<VoiceState & VoiceActions>((set, get) => ({
   connectionState: 'idle',
   currentChannelId: null,
   currentChannelName: null,
+  currentRelayId: null,
+  currentRelayRegion: null,
   participants: {},
   permissions: null,
   localState: { isMuted: false, isDeafened: false, isSpeaking: false },
@@ -106,10 +110,10 @@ export const useVoiceStore = create<VoiceState & VoiceActions>((set, get) => ({
     return currentChannelId ? participants[currentChannelId] || EMPTY_PARTICIPANTS : EMPTY_PARTICIPANTS;
   },
 
-  setConnecting: (channelId, channelName) => set({ connectionState: 'connecting', currentChannelId: channelId, currentChannelName: channelName, error: null }),
+  setConnecting: (channelId, channelName, relayId, relayRegion) => set({ connectionState: 'connecting', currentChannelId: channelId, currentChannelName: channelName, currentRelayId: relayId ?? null, currentRelayRegion: relayRegion ?? null, error: null }),
   setConnected: (permissions) => set({ connectionState: 'connected', permissions, error: null }),
   setDisconnected: () => set({
-    connectionState: 'idle', currentChannelId: null, currentChannelName: null, permissions: null,
+    connectionState: 'idle', currentChannelId: null, currentChannelName: null, currentRelayId: null, currentRelayRegion: null, permissions: null,
     localState: { isMuted: false, isDeafened: false, isSpeaking: false },
     screenShare: { isSharing: false, quality: 'standard' },
     connectionQuality: { level: 'unknown', ping: null, jitter: null, packetLoss: null },
@@ -212,7 +216,7 @@ export const voiceStore = {
   isScreenSharing: () => useVoiceStore.getState().screenShare.isSharing,
   screenShareQuality: () => useVoiceStore.getState().screenShare.quality,
   connectionQuality: () => useVoiceStore.getState().connectionQuality,
-  setConnecting: (channelId: string, channelName: string) => useVoiceStore.getState().setConnecting(channelId, channelName),
+  setConnecting: (channelId: string, channelName: string, relayId?: string | null, relayRegion?: string | null) => useVoiceStore.getState().setConnecting(channelId, channelName, relayId, relayRegion),
   setConnected: (permissions: VoicePermissions) => useVoiceStore.getState().setConnected(permissions),
   setDisconnected: () => useVoiceStore.getState().setDisconnected(),
   setError: (error: string) => useVoiceStore.getState().setError(error),

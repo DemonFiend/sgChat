@@ -102,6 +102,9 @@ export interface Channel {
   user_limit: number; // Voice/Music only
   is_afk_channel: boolean;
   category_id: UUID | null;
+  voice_relay_policy: VoiceRelayPolicy;
+  preferred_relay_id: UUID | null;
+  active_relay_id: UUID | null;
   created_at: Date;
 }
 
@@ -419,6 +422,120 @@ export interface UserAvatar {
   created_at: Date;
 }
 
+// ============================================================
+// Relay Servers
+// ============================================================
+
+export type RelayStatus = 'pending' | 'trusted' | 'suspended' | 'offline';
+export type VoiceRelayPolicy = 'master' | 'auto' | 'specific';
+export type RelayHealthStatus = 'healthy' | 'degraded' | 'unreachable';
+
+export const RELAY_REGIONS = [
+  'us-east',
+  'us-west',
+  'us-central',
+  'eu-west',
+  'eu-central',
+  'eu-north',
+  'asia-east',
+  'asia-southeast',
+  'oceania',
+  'south-america',
+  'africa',
+  'middle-east',
+] as const;
+
+export type RelayRegion = (typeof RELAY_REGIONS)[number] | string;
+
+export interface RelayServer {
+  id: UUID;
+  name: string;
+  region: string;
+  status: RelayStatus;
+  health_url: string | null;
+  livekit_url: string | null;
+  max_participants: number;
+  current_participants: number;
+  allow_master_fallback: boolean;
+  last_health_check: Date | null;
+  last_health_status: RelayHealthStatus | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface RelayServerAdmin extends RelayServer {
+  pairing_token_hash: string | null;
+  pairing_expires_at: Date | null;
+  relay_public_key: string | null;
+  master_public_key: string | null;
+  trust_certificate: string | null;
+}
+
+export interface RelayPairingToken {
+  relay_id: UUID;
+  name: string;
+  region: string;
+  master_url: string;
+  master_public_key: string;
+  pairing_secret: string;
+  expires_at: string;
+}
+
+export interface RelayPairRequest {
+  pairing_token: string;
+  relay_public_key: string;
+  livekit_url: string;
+  livekit_api_key: string;
+  livekit_api_secret: string;
+  health_url: string;
+}
+
+export interface RelayPairResponse {
+  relay_id: UUID;
+  trust_certificate: string;
+  shared_secret_confirmation: string;
+}
+
+export interface RelayHeartbeat {
+  relay_id: UUID;
+  current_participants: number;
+  active_rooms: string[];
+  health: {
+    status: RelayHealthStatus;
+    cpu_usage_percent: number;
+    memory_usage_percent: number;
+    uptime_seconds: number;
+  };
+}
+
+export interface VoiceJoinResponse {
+  token: string;
+  url: string;
+  room_name: string;
+  channel_id: UUID;
+  relay_id: UUID | null;
+  relay_region: string | null;
+}
+
+export interface RelayCreateRequest {
+  name: string;
+  region: string;
+  max_participants?: number;
+  allow_master_fallback?: boolean;
+}
+
+export interface RelayCreateResponse {
+  relay: RelayServerAdmin;
+  pairing_token: string;
+}
+
+export interface RelayUpdateRequest {
+  name?: string;
+  region?: string;
+  max_participants?: number;
+  allow_master_fallback?: boolean;
+}
+
 // Voice state (stored in Redis)
 export interface VoiceState {
   user_id: UUID;
@@ -467,6 +584,7 @@ export type EventType =
   | 'voice.force_disconnect'
   | 'voice.server_mute'
   | 'voice.server_deafen'
+  | 'voice.relay_switch'
   // Notifications
   | 'notification.new'
   | 'notification.read'
@@ -1115,6 +1233,14 @@ export interface ServerEvent {
   rsvp_counts?: { interested: number; tentative: number; not_interested: number };
   my_rsvp?: RSVPStatus | null;
   visible_role_ids?: string[];
+}
+
+export interface VoiceRelaySwitchPayload {
+  channel_id: UUID;
+  old_relay_id: UUID | null;
+  new_relay_id: UUID | null;
+  new_livekit_url: string;
+  reason: 'relay_failure' | 'admin_action' | 'rebalance';
 }
 
 export interface ServerEventRSVP {

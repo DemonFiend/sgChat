@@ -369,6 +369,7 @@ const ChannelItem = memo(function ChannelItem({ channel, isActive, serverId: _se
   const hasUnread = (channel.unread_count ?? 0) > 0;
   const voice = isVoiceType(channel.type);
   const currentVoiceChannelId = useVoiceStore((s) => s.currentChannelId);
+  const relayRegion = useVoiceStore((s) => s.currentRelayRegion);
   const isInThisVoice = voice && currentVoiceChannelId === channel.id;
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
 
@@ -394,6 +395,15 @@ const ChannelItem = memo(function ChannelItem({ channel, isActive, serverId: _se
           >
             {channelIcon(channel.type)}
             <span className="truncate flex-1">{channel.name}</span>
+
+            {isInThisVoice && relayRegion && (
+              <span
+                className="text-[10px] text-accent-primary uppercase font-semibold tracking-wide px-1 py-0.5 rounded bg-accent-primary/10"
+                title={`Connected via relay: ${relayRegion}`}
+              >
+                {relayRegion.split('-').map(s => s.slice(0, 2).toUpperCase()).join('-')}
+              </span>
+            )}
 
             {channel.is_afk_channel && (
               <span className="text-[10px] text-text-muted uppercase font-semibold tracking-wide">AFK</span>
