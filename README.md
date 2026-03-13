@@ -50,6 +50,7 @@ All features are experimental until the official V1.0.0 release. Please report b
 - User limits and bitrate configuration
 - Soundboard (per-server audio clips)
 - Custom join/leave voice sounds (per-user, per-server)
+- Regional relay servers for distributed voice (see [Relay Servers](#relay-servers))
 
 ### Live Streaming / Screen Share
 - Full-screen stream viewer overlay
@@ -75,13 +76,45 @@ All features are experimental until the official V1.0.0 release. Please report b
 - Role management with templates and bulk operations
 - Granular bitflag-based permissions (server, text, voice)
 - Channel permission overrides (role and user level)
-- Member management (kick, ban, timeout)
+- Member management (kick, ban, timeout with configurable duration)
 - Invite system with expiration and max uses
 - Server ownership transfer
 - Welcome channel and announcement channels
 - Server popup configuration (welcome messages)
 - Role reactions (self-service role assignment via emoji)
-- Audit logging for server actions
+- Custom emoji packs (per-server, PNG/GIF/WebP/APNG, up to 500 per server)
+- Sticker support (per-server, up to 50 per server)
+- Audit logging with filtering by action type, user, and date range
+
+### Events & Calendar
+- Server events with start/end times and descriptions
+- Month-based event browsing
+- RSVP system (interested, tentative, not interested)
+- Role-based event visibility (restrict events to specific roles)
+- Event announcements to designated channels
+- Event history tracking (including cancelled events)
+- Permission-gated: `CREATE_EVENTS`, `MANAGE_EVENTS`, `RSVP_EVENTS`
+
+### Storage Dashboard
+- Server-wide storage statistics with per-category breakdowns
+- Per-channel and per-DM storage tracking
+- Configurable storage limits per category (messages, attachments, emojis, stickers, profiles)
+- Storage threshold alerts (warning and action thresholds)
+- Manual purge by category with dry-run preview
+- Automated retention policies (time-based and size-based)
+- Cleanup scheduling and audit logs
+- Requires `ADMINISTRATOR` permission
+
+### Relay Servers
+- Distributed voice infrastructure for regional routing
+- Relay pairing via secure ECDH key exchange + one-time pairing tokens
+- Heartbeat-based health monitoring (15s intervals, auto-failover on 3 missed beats)
+- Channel relay policies: `master` (use host), `auto` (best relay by latency/load), `specific` (pinned relay)
+- Client ping reporting for latency-aware relay selection
+- WebSocket proxy through master's SSL (no mixed-content issues)
+- Admin lifecycle: create, suspend, drain (graceful shutdown), delete
+- Per-relay participant limits and load tracking
+- Relay CLI package (`packages/relay/`) for standalone deployment
 
 ### Security & Authentication
 - JWT access tokens + httpOnly refresh token cookies
@@ -110,9 +143,7 @@ All features are experimental until the official V1.0.0 release. Please report b
 - Auto-migrations on API startup (version-tracked)
 - Message archiving to MinIO cold storage (gzip compressed)
 - Message segmentation for efficient history management
-- Retention policies (time-based and size-based)
 - Message export (JSON/CSV with date range filtering)
-- Storage statistics per channel/DM
 - Event bus system (pub/sub for real-time events)
 - Gateway protocol with heartbeat and resume support (sequence-based gap detection)
 - SSE fallback gateway
@@ -131,12 +162,11 @@ All features are experimental until the official V1.0.0 release. Please report b
 
 ## Planned Features
 
-- Custom emoji support (server-specific)
-- Sticker packs
 - Two-factor authentication (2FA/TOTP)
 - End-to-end encryption for voice/video calls
 - Language localization (i18n)
 - Mobile client (React Native)
+- Windows/Linux desktop client
 
 ## Known Limitations
 
@@ -150,6 +180,13 @@ The `getDisplayMedia()` browser API has inherent limitations for audio capture:
 | **Entire Screen** | Captures all system audio |
 
 Browsers intentionally do not expose per-application audio routing for privacy/security. For advanced use cases, the Electron desktop app provides better audio capture.
+
+### Relay Server Networking
+When deploying relay servers on the same LAN as the master, the relay must report a reachable IP address — not `localhost`. The master's API container proxies LiveKit WebSocket signaling through its own SSL, so the relay's `livekit_url` must be reachable from inside the Docker container.
+
+- Set `PUBLIC_IP` or `LIVEKIT_PUBLIC_URL` to the relay machine's LAN IP when starting the relay
+- Example: `LIVEKIT_PUBLIC_URL=ws://192.168.1.50:7880`
+- If using Docker bridge networking (default), `localhost` resolves to the container itself, not the host
 
 ## Getting Started
 
@@ -211,19 +248,25 @@ sgChat-Server/
 │   │       ├── middleware/  # JWT auth middleware
 │   │       ├── migrations/  # Auto-applied SQL migrations
 │   │       └── plugins/     # Rate limiting, error handler
-│   └── web/             # React 19 frontend (served by API container)
+│   ├── web/             # React 19 frontend (served by API container)
+│   │   └── src/
+│   │       ├── layouts/     # MainLayout (app shell)
+│   │       ├── components/  # UI components (layout/, ui/, voice/)
+│   │       ├── stores/      # Zustand state management
+│   │       ├── api/         # API client wrapper
+│   │       └── lib/         # Socket service, voice service, utilities
+│   └── relay/           # Standalone relay server CLI
 │       └── src/
-│           ├── layouts/     # MainLayout (app shell)
-│           ├── components/  # UI components (layout/, ui/, voice/)
-│           ├── stores/      # Zustand state management
-│           ├── api/         # API client wrapper
-│           └── lib/         # Socket service, voice service, utilities
+│           ├── lib/         # Auto-pairing, crypto, WebSocket proxy
+│           └── services/    # Heartbeat, voice auth, event relay
 ├── docker/
 │   ├── docker-compose.yml   # Full stack definition
 │   ├── Dockerfile.api       # Builds shared -> web -> api
 │   ├── Dockerfile.postgres  # PostgreSQL with pg_cron
 │   ├── init.sql             # Database schema (source of truth)
 │   └── livekit.yaml         # LiveKit configuration
+├── docs/
+│   └── CLIENT-API-REFERENCE.md  # API contract for client developers
 └── CLAUDE.md                # AI agent instructions
 ```
 
