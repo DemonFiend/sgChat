@@ -227,7 +227,7 @@ export const relayRoutes: FastifyPluginAsync = async (fastify) => {
         VALUES (
           ${data.name}, ${data.region}, 'pending', 'pending',
           ${expiresAt}, ${masterPublicKey},
-          ${data.max_participants ?? 100}, ${data.allow_master_fallback ?? true}
+          ${data.max_participants ?? 200}, ${data.allow_master_fallback ?? true}
         )
         RETURNING *
       `;

@@ -82,7 +82,7 @@ async function main(): Promise<void> {
       )
       VALUES (
         ${name}, ${region}, 'pending', 'pending',
-        ${expiresAt}, ${masterPublicKey}, 100, true
+        ${expiresAt}, ${masterPublicKey}, 200, true
       )
       RETURNING *
     `;

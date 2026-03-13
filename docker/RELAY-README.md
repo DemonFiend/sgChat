@@ -2,23 +2,25 @@
 
 A voice relay server offloads voice, video, and screen sharing traffic from the main sgChat server to a separate machine. This reduces latency for users in different regions and distributes media processing load.
 
-All media types (voice, video, screen share) route through the relay when assigned — the relay runs its own LiveKit SFU instance.
+All media types (voice, video, screen share) route through the relay when assigned -- the relay runs its own LiveKit SFU instance.
 
 ---
 
 ## How It Works
 
-1. **Master creates a relay** — generates a one-time setup token
-2. **Relay starts with the token** — auto-detects its public IP, generates its own LiveKit credentials, and pairs with Master via an ECDH cryptographic handshake
-3. **Relay becomes trusted** — Master begins health-checking it every 15 seconds
-4. **Voice channels can be assigned** — via the channel settings Region dropdown (Main Server / Automatic / specific relay)
-5. **Clients measure latency** — the web client pings all relays every 5 minutes and reports results to Master for automatic relay selection
+1. **Master creates a relay** -- generates a one-time setup token
+2. **Relay starts with the token** -- auto-detects its public IP, generates its own LiveKit credentials, and pairs with Master via an ECDH cryptographic handshake
+3. **Relay becomes trusted** -- Master begins health-checking it every 15 seconds
+4. **Voice channels can be assigned** -- via the channel settings Region dropdown (Main Server / Automatic / specific relay)
+5. **Clients measure latency** -- the web client pings all relays every 5 minutes and reports results to Master for automatic relay selection
 
 ---
 
 ## Recommended Specs
 
-### Small Community (1–30 concurrent voice users)
+The relay's `max_participants` defaults to **200** (Tier 2). This is the recommended starting point -- it can comfortably handle multiple active voice channels simultaneously. Adjust when creating the relay if your needs differ.
+
+### Tier 1 -- Small (1-99 concurrent users)
 
 | Resource | Minimum | Recommended |
 |----------|---------|-------------|
@@ -27,42 +29,46 @@ All media types (voice, video, screen share) route through the relay when assign
 | Bandwidth | 100 Mbps | 250 Mbps |
 | Storage | 1 GB | 1 GB |
 
-Suitable for voice-only usage with a small group. A $4–6/mo VPS from Hetzner, Vultr, DigitalOcean, or similar works fine.
+Budget-friendly option for small communities or testing. A $4-6/mo VPS from Hetzner, Vultr, DigitalOcean, or similar. Handles 1-2 active voice channels comfortably, or a single channel with video/screen sharing.
 
-- ~30–40 voice-only participants
-- ~5–8 video (720p) participants
-- ~3–5 screen share participants
+- ~40-50 voice-only participants
+- ~8-10 video (720p) participants
+- ~5 screen share participants
 
-### Medium Community (30–100 concurrent voice users)
+### Tier 2 -- Medium (100-249 concurrent users) -- Recommended Default
 
 | Resource | Minimum | Recommended |
 |----------|---------|-------------|
 | CPU | 2 vCPU | 4 vCPU |
-| RAM | 2 GB | 4 GB |
+| RAM | 4 GB | 8 GB |
 | Bandwidth | 250 Mbps | 500 Mbps |
 | Storage | 1 GB | 1 GB |
 
-Handles mixed voice + video workloads. The relay's `max_participants` defaults to 100 — adjust when creating the relay if needed.
+**This is the recommended minimum spec for a production relay.** Handles multiple active voice channels with mixed voice + video workloads. Enough headroom for a few concurrent channels with screen sharing or video alongside regular voice traffic.
 
-### Large Community (100–500 concurrent voice users)
+- ~200 voice-only participants across multiple channels
+- ~20-40 video (720p) participants
+- ~15-25 screen share participants
+
+### Tier 3 -- Large (250-500+ concurrent users)
 
 | Resource | Minimum | Recommended |
 |----------|---------|-------------|
 | CPU | 4 vCPU | 8 vCPU |
-| RAM | 4 GB | 8 GB |
+| RAM | 8 GB | 16 GB |
 | Bandwidth | 500 Mbps | 1 Gbps |
 | Storage | 1 GB | 1 GB |
 
-For large-scale usage, deploy **multiple relays** across regions. The automatic relay selection will distribute users to the lowest-latency relay. Each relay handles up to its `max_participants` limit.
+For large-scale usage, deploy **multiple relays** across regions. The automatic relay selection distributes users to the lowest-latency relay. Each relay handles up to its `max_participants` limit -- set this when creating the relay to match your hardware.
 
 ### Resource Usage Per Participant
 
 | Media Type | CPU per User | RAM per User |
 |------------|-------------|-------------|
 | Voice only | ~0.02 cores | ~5 MB |
-| Video (720p) | ~0.1–0.2 cores | ~30–50 MB |
-| Screen share | ~0.1–0.2 cores | ~30–50 MB |
-| Video (1080p) | ~0.2–0.4 cores | ~50–80 MB |
+| Video (720p) | ~0.1-0.2 cores | ~30-50 MB |
+| Screen share | ~0.1-0.2 cores | ~30-50 MB |
+| Video (1080p) | ~0.2-0.4 cores | ~50-80 MB |
 
 ### Network Ports Required
 
@@ -70,7 +76,7 @@ For large-scale usage, deploy **multiple relays** across regions. The automatic 
 |------|----------|---------|
 | 3100 | TCP | Relay API (health checks, voice authorize) |
 | 7880 | TCP | LiveKit signaling (WebSocket) |
-| 50000–50100 | UDP | LiveKit WebRTC media (voice/video/screen) |
+| 50000-50100 | UDP | LiveKit WebRTC media (voice/video/screen) |
 
 Ensure these ports are open in your firewall and/or cloud security group.
 
@@ -82,7 +88,7 @@ Ensure these ports are open in your firewall and/or cloud security group.
 
 - A Linux server with Docker and Docker Compose installed
 - Network access to the Master sgChat server
-- Ports 3100 (TCP), 7880 (TCP), and 50000–50100 (UDP) open
+- Ports 3100 (TCP), 7880 (TCP), and 50000-50100 (UDP) open
 
 ### Step 1: Generate the Setup Token (on Master)
 
@@ -119,12 +125,12 @@ mkdir -p ~/sgchat-relay && cd ~/sgchat-relay
 
 Copy `docker-compose.relay.yml` from the sgChat repository to your relay server. You can either:
 
-**Option A** — Download directly:
+**Option A** -- Download directly:
 ```bash
 curl -O https://raw.githubusercontent.com/DemonFiend/sgChat/main/docker/docker-compose.relay.yml
 ```
 
-**Option B** — Create it manually:
+**Option B** -- Create it manually:
 ```bash
 cat > docker-compose.relay.yml << 'EOF'
 services:
@@ -185,7 +191,7 @@ Health URL: http://203.0.113.50:3100/health
 LiveKit URL: ws://localhost:7880
 ===========================
 sgChat Relay listening on 0.0.0.0:3100
-Pairing token detected — auto-pairing with Master...
+Pairing token detected -- auto-pairing with Master...
   Decoding pairing token...
   Relay: "US-East" (us-east)
   Master URL: https://chat.sosiagaming.com
@@ -217,7 +223,7 @@ If you prefer to run containers individually:
 
 ### Step 1: Generate Setup Token
 
-Same as above — run on the Master server:
+Same as above -- run on the Master server:
 
 ```bash
 docker exec sgchat-api-1 node dist/cli/create-relay.js --name "US-East" --region "us-east"
@@ -283,7 +289,7 @@ cd ~/sgchat-relay
 docker compose restart
 ```
 
-The relay persists its config in the Docker volume. It does **not** need the setup token after the first successful pairing — it reconnects using saved credentials.
+The relay persists its config in the Docker volume. It does **not** need the setup token after the first successful pairing -- it reconnects using saved credentials.
 
 ### Update the Relay
 
@@ -338,13 +344,13 @@ To stop routing new users to a relay while letting existing sessions finish:
 
 ### Voice not connecting through relay
 
-- **Ports 50000–50100 (UDP) not open**: LiveKit needs these for WebRTC media.
+- **Ports 50000-50100 (UDP) not open**: LiveKit needs these for WebRTC media.
 - **Port 7880 (TCP) not open**: LiveKit needs this for WebSocket signaling.
-- **Channel not assigned**: Check the voice channel's Region setting — it defaults to "Main Server".
+- **Channel not assigned**: Check the voice channel's Region setting -- it defaults to "Main Server".
 
 ### LiveKit container restarting
 
-This is normal on first boot — LiveKit starts before the relay writes `livekit.yaml`. It will stabilize after 1–2 restarts (10–20 seconds).
+This is normal on first boot -- LiveKit starts before the relay writes `livekit.yaml`. It will stabilize after 1-2 restarts (10-20 seconds).
 
 ---
 
@@ -352,7 +358,7 @@ This is normal on first boot — LiveKit starts before the relay writes `livekit
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `RELAY_SETUP_TOKEN` | Yes (first boot) | — | One-time pairing token from Master |
+| `RELAY_SETUP_TOKEN` | Yes (first boot) | -- | One-time pairing token from Master |
 | `PUBLIC_IP` | No | Auto-detected | Override public IP for health URL |
 | `RELAY_HEALTH_URL` | No | `http://{PUBLIC_IP}:3100/health` | Full override for health endpoint URL |
 | `RELAY_PORT` | No | `3100` | Relay API listen port |
@@ -369,19 +375,19 @@ Most users only need `RELAY_SETUP_TOKEN`. Everything else has sensible defaults.
 
 ```
   Users (Browser/Desktop)
-         │
-         ├── REST API, WebSocket ──────► Master Server (sgChat API)
-         │                                    │
-         └── WebRTC (voice/video) ──► Relay Server
-                                        ├── sgchat-relay (Node.js)
-                                        │     ├── Health endpoint (/health)
-                                        │     ├── Voice authorize (/voice-authorize)
-                                        │     ├── Heartbeat → Master (every 15s)
-                                        │     └── Permission cache (offline auth, 10min TTL)
-                                        │
-                                        └── LiveKit SFU
-                                              ├── WebSocket signaling (port 7880)
-                                              └── WebRTC media (ports 50000–50100 UDP)
+         |
+         |-- REST API, WebSocket ------> Master Server (sgChat API)
+         |                                    |
+         '-- WebRTC (voice/video) --> Relay Server
+                                        |-- sgchat-relay (Node.js)
+                                        |     |-- Health endpoint (/health)
+                                        |     |-- Voice authorize (/voice-authorize)
+                                        |     |-- Heartbeat -> Master (every 15s)
+                                        |     '-- Permission cache (offline auth, 10min TTL)
+                                        |
+                                        '-- LiveKit SFU
+                                              |-- WebSocket signaling (port 7880)
+                                              '-- WebRTC media (ports 50000-50100 UDP)
 ```
 
 The relay handles **only media traffic**. All chat messages, presence, permissions, and other real-time events still go through the Master server's Socket.IO connection.

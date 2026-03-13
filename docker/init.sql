@@ -1731,7 +1731,7 @@ CREATE TABLE IF NOT EXISTS relay_servers (
   trust_certificate TEXT,                                -- signed trust cert issued by Master
 
   -- Operational
-  max_participants INTEGER DEFAULT 100,                  -- capacity limit
+  max_participants INTEGER DEFAULT 200,                  -- capacity limit
   current_participants INTEGER DEFAULT 0,                -- live count (updated by relay heartbeat)
   allow_master_fallback BOOLEAN DEFAULT true,            -- can this relay be used as a voice fallback?
   last_health_check TIMESTAMPTZ,
