@@ -55,6 +55,7 @@ import { cleanupEmptyTempChannels } from './services/tempChannels.js';
 import { checkAndMoveAfkUsers } from './services/afkService.js';
 import { checkAndAnnounceEvents } from './services/eventAnnouncements.js';
 import { startRelayHealthService, stopRelayHealthService } from './services/relayHealth.js';
+import { setupRelayWsProxy } from './lib/relayWsProxy.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -375,6 +376,9 @@ async function start() {
   fastify.io = io;
 
   initSocketIO(io, fastify);
+
+  // Set up WebSocket proxy for relay LiveKit signaling (must be after Socket.IO)
+  setupRelayWsProxy(fastify.server);
 
   // Start HTTP server
   await fastify.listen({ port: PORT, host: HOST });

@@ -1,42 +1,25 @@
 /**
  * Relay Health Checker Service
  *
- * Periodically pings trusted relay health URLs.
- * On failure (3 consecutive misses), marks relay unreachable and
+ * Monitors relay health by checking heartbeat recency.
+ * Relays push their health status via POST /api/internal/relay/heartbeat
+ * every 15 seconds. This service checks if heartbeats have gone stale.
+ * On failure (3 consecutive stale checks), marks relay unreachable and
  * triggers voice channel failover to the next-best relay or Master.
  */
 
 import { db } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
 import { publishEvent } from '../lib/eventBus.js';
+import { getRelayLiveKitUrl, getLiveKitUrl } from './livekit.js';
 
 const HEALTH_CHECK_INTERVAL_MS = 15_000; // 15 seconds
-const HEALTH_CHECK_TIMEOUT_MS = 5_000; // 5 second timeout per check
-const FAILURE_THRESHOLD = 3; // 3 consecutive failures → unreachable
+const HEARTBEAT_STALE_MS = 45_000; // 45 seconds without heartbeat → considered missed
+const FAILURE_THRESHOLD = 3; // 3 consecutive stale checks → unreachable
 
 // Track consecutive failures per relay
 const failureCounts = new Map<string, number>();
 let healthCheckTimer: ReturnType<typeof setInterval> | null = null;
-
-/**
- * Ping a single relay's health URL.
- * Returns the parsed health response or null on failure.
- */
-async function pingRelayHealth(
-  healthUrl: string,
-): Promise<{ status: string } | null> {
-  try {
-    const res = await fetch(healthUrl, {
-      method: 'GET',
-      signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
-    });
-    if (!res.ok) return null;
-    const body = await res.json();
-    return body as { status: string };
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Select the next-best relay for a channel during failover.
@@ -47,7 +30,7 @@ async function pingRelayHealth(
 async function selectFailoverRelay(
   channelId: string,
   failedRelayId: string,
-): Promise<{ relayId: string; livekitUrl: string } | null> {
+): Promise<{ relayId: string } | null> {
   const relays = await db.relays.findTrusted();
   const available = relays.filter(
     (r: any) =>
@@ -89,7 +72,7 @@ async function selectFailoverRelay(
       const best = withPing.reduce((a, b) =>
         a.avgLatency! < b.avgLatency! ? a : b,
       );
-      return { relayId: best.relay.id, livekitUrl: best.relay.livekit_url };
+      return { relayId: best.relay.id };
     }
   }
 
@@ -97,7 +80,7 @@ async function selectFailoverRelay(
   const best = available.reduce((a: any, b: any) =>
     a.current_participants < b.current_participants ? a : b,
   );
-  return { relayId: best.id, livekitUrl: best.livekit_url };
+  return { relayId: best.id };
 }
 
 /**
@@ -122,6 +105,7 @@ async function handleRelayFailure(relayId: string) {
       await db.sql`UPDATE channels SET active_relay_id = ${failover.relayId} WHERE id = ${channel.id}`;
 
       const newRelay = await db.relays.findById(failover.relayId);
+      const newLivekitUrl = await getRelayLiveKitUrl(failover.relayId);
       await publishEvent({
         type: 'voice.relay_switch',
         actorId: null,
@@ -130,7 +114,7 @@ async function handleRelayFailure(relayId: string) {
           channel_id: channel.id,
           old_relay_id: relayId,
           new_relay_id: failover.relayId,
-          new_livekit_url: failover.livekitUrl,
+          new_livekit_url: newLivekitUrl,
           new_relay_region: newRelay?.region || null,
           reason: 'relay_failure',
         },
@@ -139,8 +123,6 @@ async function handleRelayFailure(relayId: string) {
       // Fall back to Master
       await db.sql`UPDATE channels SET active_relay_id = NULL WHERE id = ${channel.id}`;
 
-      const masterLivekitUrl =
-        process.env.LIVEKIT_URL || 'ws://localhost:7880';
       await publishEvent({
         type: 'voice.relay_switch',
         actorId: null,
@@ -149,7 +131,7 @@ async function handleRelayFailure(relayId: string) {
           channel_id: channel.id,
           old_relay_id: relayId,
           new_relay_id: null,
-          new_livekit_url: masterLivekitUrl,
+          new_livekit_url: getLiveKitUrl(),
           new_relay_region: null,
           reason: 'relay_failure',
         },
@@ -172,25 +154,26 @@ async function handleRelayRecovery(relayId: string, relayName: string) {
 
 /**
  * Run one health check cycle across all trusted/suspended relays.
+ * Instead of HTTP pinging, checks if the relay's last heartbeat is recent.
+ * Relays push heartbeats every 15s via POST /api/internal/relay/heartbeat.
  */
 async function runHealthCheckCycle() {
   try {
-    // Check trusted + offline relays (offline ones might come back)
     const relays =
-      await db.sql`SELECT * FROM relay_servers WHERE status IN ('trusted', 'offline') AND health_url IS NOT NULL`;
+      await db.sql`SELECT * FROM relay_servers WHERE status IN ('trusted', 'offline')`;
+
+    const now = Date.now();
 
     for (const relay of relays) {
-      const result = await pingRelayHealth(relay.health_url);
+      const lastCheck = relay.last_health_check
+        ? new Date(relay.last_health_check).getTime()
+        : 0;
+      const staleDuration = now - lastCheck;
+      const isHeartbeatFresh = staleDuration < HEARTBEAT_STALE_MS;
 
-      if (result) {
-        // Success — reset failure count
+      if (isHeartbeatFresh) {
+        // Heartbeat is recent — relay is alive
         failureCounts.set(relay.id, 0);
-
-        const healthStatus = result.status || 'healthy';
-        await db.relays.update(relay.id, {
-          last_health_check: new Date(),
-          last_health_status: healthStatus,
-        });
 
         // If relay was previously unreachable/offline, mark it recovered
         if (
@@ -200,7 +183,7 @@ async function runHealthCheckCycle() {
           await handleRelayRecovery(relay.id, relay.name);
         }
       } else {
-        // Failure — increment count
+        // Heartbeat is stale — increment failure count
         const count = (failureCounts.get(relay.id) || 0) + 1;
         failureCounts.set(relay.id, count);
 
@@ -208,20 +191,18 @@ async function runHealthCheckCycle() {
           // Only trigger failover if this is a new unreachable state
           if (relay.last_health_status !== 'unreachable') {
             console.warn(
-              `⚠️ Relay "${relay.name}" (${relay.id}) failed ${count} consecutive health checks — marking unreachable`,
+              `⚠️ Relay "${relay.name}" (${relay.id}) heartbeat stale for ${Math.round(staleDuration / 1000)}s (${count} checks) — marking unreachable`,
             );
 
             await db.relays.update(relay.id, {
-              last_health_check: new Date(),
               last_health_status: 'unreachable',
             });
 
             await handleRelayFailure(relay.id);
           }
-        } else {
+        } else if (relay.last_health_status !== 'unreachable') {
           // Not yet at threshold — mark degraded
           await db.relays.update(relay.id, {
-            last_health_check: new Date(),
             last_health_status: 'degraded',
           });
         }
@@ -257,7 +238,7 @@ export async function checkDrainingRelays() {
 export function startRelayHealthService() {
   if (healthCheckTimer) return; // Already running
 
-  console.log('🏥 Relay health checker started (every 15s)');
+  console.log('🏥 Relay health checker started (heartbeat-based, every 15s)');
 
   // Run immediately, then on interval
   runHealthCheckCycle();

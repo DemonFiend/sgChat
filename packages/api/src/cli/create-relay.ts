@@ -47,7 +47,7 @@ function parseArgs(): { name: string; region: string; masterUrl?: string } {
     );
     console.error('');
     console.error(
-      'If --master-url is not provided, falls back to PUBLIC_URL or API_URL env vars.',
+      'If --master-url is not provided, falls back to APP_URL env var.',
     );
     process.exit(1);
   }
@@ -84,11 +84,11 @@ async function main(): Promise<void> {
 
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
     const masterUrl =
-      cliMasterUrl || process.env.PUBLIC_URL || process.env.API_URL || 'http://localhost:3000';
+      cliMasterUrl || process.env.APP_URL || 'http://localhost:3000';
 
     if (masterUrl === 'http://localhost:3000') {
       console.warn(
-        'Warning: No --master-url provided and no PUBLIC_URL/API_URL env var found.',
+        'Warning: No --master-url provided and no APP_URL env var found.',
       );
       console.warn(
         '  The relay will try to reach Master at http://localhost:3000 which may not work.',

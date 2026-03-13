@@ -94,8 +94,18 @@ export function getLiveKitUrl(): string {
 
 /**
  * Get the LiveKit URL for a specific relay server.
+ * Returns a proxied WSS URL through Master's SSL when APP_URL is set,
+ * so browsers on HTTPS pages can connect without mixed-content errors.
+ * Falls back to direct relay URL for non-HTTPS / LAN setups.
  */
 export async function getRelayLiveKitUrl(relayId: string): Promise<string> {
+  const publicUrl = process.env.APP_URL || '';
+  if (publicUrl) {
+    // Proxy through Master: https://chat.example.com → wss://chat.example.com/relay-ws/<id>
+    const base = publicUrl.replace(/^http/, 'ws');
+    return `${base}/relay-ws/${relayId}`;
+  }
+  // Fallback: direct URL (works for non-HTTPS setups / LAN)
   const relay = await db.relays.findById(relayId);
   if (!relay || !relay.livekit_url) {
     throw new Error(`Relay ${relayId} has no LiveKit URL`);

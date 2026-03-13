@@ -217,8 +217,7 @@ export const relayRoutes: FastifyPluginAsync = async (fastify) => {
     const origin = request.headers.origin || request.headers.referer;
     const MASTER_URL = origin
       ? new URL(origin).origin
-      : process.env.PUBLIC_URL ||
-        process.env.API_URL ||
+      : process.env.APP_URL ||
         `${request.protocol}://${request.hostname}`;
     const encryptionKey = getMasterEncryptionKey();
     const encryptedPrivateKey = await encryptWithKey(masterPrivateKey, encryptionKey);

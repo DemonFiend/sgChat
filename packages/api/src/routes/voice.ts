@@ -22,12 +22,12 @@ import { getDefaultServer } from './server.js';
 
 /**
  * Resolve the target relay for a voice channel based on its relay policy.
- * Returns { relayId, livekitUrl } or null for Master's own LiveKit.
+ * Returns the relay ID or null for Master's own LiveKit.
  */
 async function resolveVoiceRelay(
   channel: any,
   userId?: string,
-): Promise<{ relayId: string; livekitUrl: string } | null> {
+): Promise<string | null> {
   const policy = channel.voice_relay_policy || 'master';
 
   if (policy === 'master') return null;
@@ -35,7 +35,7 @@ async function resolveVoiceRelay(
   if (policy === 'specific' && channel.preferred_relay_id) {
     const relay = await db.relays.findById(channel.preferred_relay_id);
     if (relay && relay.status === 'trusted' && relay.livekit_url && relay.last_health_status !== 'unreachable') {
-      return { relayId: relay.id, livekitUrl: relay.livekit_url };
+      return relay.id;
     }
     // Fallback to Master if preferred relay is unavailable
     return null;
@@ -46,7 +46,7 @@ async function resolveVoiceRelay(
     if (channel.active_relay_id) {
       const relay = await db.relays.findById(channel.active_relay_id);
       if (relay && relay.status === 'trusted' && relay.livekit_url && relay.last_health_status !== 'unreachable') {
-        return { relayId: relay.id, livekitUrl: relay.livekit_url };
+        return relay.id;
       }
       // Active relay is down, clear it and pick a new one
       await db.sql`UPDATE channels SET active_relay_id = NULL WHERE id = ${channel.id}`;
@@ -89,7 +89,7 @@ async function resolveVoiceRelay(
     // Anchor this channel to the selected relay
     await db.sql`UPDATE channels SET active_relay_id = ${best.id} WHERE id = ${channel.id}`;
 
-    return { relayId: best.id, livekitUrl: best.livekit_url };
+    return best.id;
   }
 
   return null;
@@ -103,15 +103,16 @@ async function generateVoiceToken(
   options: LiveKitTokenOptions,
   userId?: string,
 ): Promise<{ token: string; url: string; relayId: string | null; relayRegion: string | null }> {
-  const relay = await resolveVoiceRelay(channel, userId);
+  const relayId = await resolveVoiceRelay(channel, userId);
 
-  if (relay) {
-    const token = await generateLiveKitTokenForRelay(relay.relayId, options);
-    const relayRecord = await db.relays.findById(relay.relayId);
+  if (relayId) {
+    const token = await generateLiveKitTokenForRelay(relayId, options);
+    const relayRecord = await db.relays.findById(relayId);
+    const url = await getRelayLiveKitUrl(relayId);
     return {
       token,
-      url: relay.livekitUrl,
-      relayId: relay.relayId,
+      url,
+      relayId,
       relayRegion: relayRecord?.region || null,
     };
   }
