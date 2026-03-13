@@ -44,7 +44,7 @@ export async function autoPair(tokenStr: string, env: EnvConfig): Promise<boolea
   const pairPayload: RelayPairRequest = {
     pairing_token: tokenStr,
     relay_public_key: publicKey,
-    livekit_url: env.LIVEKIT_URL,
+    livekit_url: env.LIVEKIT_PUBLIC_URL,
     livekit_api_key: env.LIVEKIT_API_KEY,
     livekit_api_secret: env.LIVEKIT_API_SECRET,
     health_url: healthUrl,

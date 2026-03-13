@@ -20,6 +20,7 @@ export interface EnvConfig {
   PUBLIC_IP?: string;
   RELAY_PAIRING_TOKEN?: string;
   LIVEKIT_URL: string;
+  LIVEKIT_PUBLIC_URL: string;
   LIVEKIT_API_KEY: string;
   LIVEKIT_API_SECRET: string;
   HEALTH_URL?: string;
@@ -35,6 +36,9 @@ export function getEnvConfig(): EnvConfig {
     PUBLIC_IP: publicIp,
     RELAY_PAIRING_TOKEN: process.env.RELAY_PAIRING_TOKEN,
     LIVEKIT_URL: process.env.LIVEKIT_URL || 'ws://localhost:7880',
+    LIVEKIT_PUBLIC_URL:
+      process.env.LIVEKIT_PUBLIC_URL ||
+      (publicIp ? `ws://${publicIp}:7880` : process.env.LIVEKIT_URL || 'ws://localhost:7880'),
     LIVEKIT_API_KEY: process.env.LIVEKIT_API_KEY || '',
     LIVEKIT_API_SECRET: process.env.LIVEKIT_API_SECRET || '',
     HEALTH_URL:
