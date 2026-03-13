@@ -9,7 +9,7 @@ import { authenticate } from '../middleware/auth.js';
 import { db, sql } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
 import { getDefaultServer } from './server.js';
-import { calculatePermissions } from '../services/permissions.js';
+import { calculatePermissions, canManageMember, timeoutMember, removeTimeout } from '../services/permissions.js';
 import { handleMemberLeave, generateInviteCode } from '../services/server.js';
 import {
   ServerPermissions,
@@ -66,6 +66,11 @@ const updateMemberSchema = z.object({
 });
 
 const kickBanSchema = z.object({
+  reason: z.string().max(512).optional(),
+});
+
+const timeoutMemberSchema = z.object({
+  duration: z.number().min(1).max(2419200), // 1 second to 28 days
   reason: z.string().max(512).optional(),
 });
 
@@ -140,8 +145,19 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
         VALUES (${server.id}, ${request.user!.id}, 'role_create', 'role', ${role.id}, ${JSON.stringify({ created: role })})
       `;
 
-      await emitEncrypted(fastify.io, `server:${server.id}`, 'role.create', role);
-      return role;
+      const enriched = {
+        ...role,
+        permissions: toNamedPermissionStates(
+          role.server_permissions || '0',
+          role.text_permissions || '0',
+          role.voice_permissions || '0',
+          role.server_permissions_deny || '0',
+          role.text_permissions_deny || '0',
+          role.voice_permissions_deny || '0',
+        ),
+      };
+      await emitEncrypted(fastify.io, `server:${server.id}`, 'role.create', enriched);
+      return enriched;
     },
   });
 
@@ -399,6 +415,7 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
           })),
           joined_at: m.joined_at,
           last_seen_at: m.last_seen_at || null,
+          timeout_until: m.timeout_until || null,
         };
       }));
 
@@ -546,6 +563,80 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       return { message: 'Member banned' };
+    },
+  });
+
+  // Timeout member
+  fastify.post('/members/:userId/timeout', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) return notFound(reply, 'Server');
+      const { userId } = request.params as { userId: string };
+      const body = timeoutMemberSchema.parse(request.body);
+
+      if (userId === server.owner_id) return badRequest(reply, 'Cannot timeout the server owner');
+      if (userId === request.user!.id) return badRequest(reply, 'Cannot timeout yourself');
+
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      if (!hasPermission(perms.server, ServerPermissions.TIMEOUT_MEMBERS)) {
+        return forbidden(reply, 'Missing TIMEOUT_MEMBERS permission');
+      }
+
+      const canManage = await canManageMember(request.user!.id, userId, server.id);
+      if (!canManage) {
+        return forbidden(reply, 'Cannot timeout members with equal or higher roles');
+      }
+
+      const member = await db.members.findByUserAndServer(userId, server.id);
+      if (!member) return notFound(reply, 'Member');
+
+      await timeoutMember(userId, server.id, body.duration, body.reason);
+
+      await sql`
+        INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, reason, changes)
+        VALUES (${server.id}, ${request.user!.id}, 'member_timeout', 'member', ${userId}, ${body.reason || null}, ${JSON.stringify({ duration: body.duration })})
+      `;
+
+      await emitEncrypted(fastify.io, `user:${userId}`, 'member.timeout', {
+        server_id: server.id,
+        server_name: server.name,
+        duration: body.duration,
+        reason: body.reason,
+      });
+
+      return { message: 'Member timed out', duration: body.duration };
+    },
+  });
+
+  // Remove timeout from member
+  fastify.delete('/members/:userId/timeout', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) return notFound(reply, 'Server');
+      const { userId } = request.params as { userId: string };
+
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      if (!hasPermission(perms.server, ServerPermissions.TIMEOUT_MEMBERS)) {
+        return forbidden(reply, 'Missing TIMEOUT_MEMBERS permission');
+      }
+
+      const member = await db.members.findByUserAndServer(userId, server.id);
+      if (!member) return notFound(reply, 'Member');
+
+      await removeTimeout(userId, server.id);
+
+      await sql`
+        INSERT INTO audit_log (server_id, user_id, action, target_type, target_id)
+        VALUES (${server.id}, ${request.user!.id}, 'member_timeout_remove', 'member', ${userId})
+      `;
+
+      await emitEncrypted(fastify.io, `user:${userId}`, 'member.timeout.remove', {
+        server_id: server.id,
+      });
+
+      return { message: 'Timeout removed' };
     },
   });
 

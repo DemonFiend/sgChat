@@ -1249,6 +1249,7 @@ interface ServerMember {
   avatar_url?: string | null;
   roles: string[];
   joined_at: string;
+  timeout_until?: string | null;
 }
 
 function MembersTab() {
@@ -1326,6 +1327,58 @@ function MembersTab() {
     } finally {
       setActionInProgress(null);
     }
+  };
+
+  const [showTimeoutPicker, setShowTimeoutPicker] = useState(false);
+  const [timeoutReason, setTimeoutReason] = useState('');
+
+  const timeoutDurations = [
+    { label: '5 minutes', value: 300 },
+    { label: '10 minutes', value: 600 },
+    { label: '1 hour', value: 3600 },
+    { label: '1 day', value: 86400 },
+    { label: '1 week', value: 604800 },
+  ];
+
+  const handleTimeout = async (member: ServerMember, duration: number) => {
+    setActionInProgress(member.id);
+    try {
+      await api.post(`/members/${member.id}/timeout`, {
+        duration,
+        reason: timeoutReason || undefined,
+      });
+      const timeoutUntil = new Date(Date.now() + duration * 1000).toISOString();
+      setMembers(prev => prev.map(m =>
+        m.id === member.id ? { ...m, timeout_until: timeoutUntil } : m
+      ));
+      setSelectedMember({ ...member, timeout_until: timeoutUntil });
+      setShowTimeoutPicker(false);
+      setTimeoutReason('');
+    } catch (err: any) {
+      alert(err?.message || 'Failed to timeout member');
+    } finally {
+      setActionInProgress(null);
+    }
+  };
+
+  const handleRemoveTimeout = async (member: ServerMember) => {
+    setActionInProgress(member.id);
+    try {
+      await api.delete(`/members/${member.id}/timeout`);
+      setMembers(prev => prev.map(m =>
+        m.id === member.id ? { ...m, timeout_until: null } : m
+      ));
+      setSelectedMember({ ...member, timeout_until: null });
+    } catch (err: any) {
+      alert(err?.message || 'Failed to remove timeout');
+    } finally {
+      setActionInProgress(null);
+    }
+  };
+
+  const isTimedOut = (member: ServerMember) => {
+    if (!member.timeout_until) return false;
+    return new Date(member.timeout_until) > new Date();
   };
 
   const formatDate = (dateStr: string) => {
@@ -1541,12 +1594,40 @@ function MembersTab() {
                 )}
               </div>
 
+              {/* Timeout Status */}
+              {isTimedOut(selectedMember) && (
+                <div className="bg-warning/10 border border-warning/30 rounded-lg p-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-sm font-medium text-warning">Timed Out</span>
+                      <p className="text-xs text-text-muted mt-0.5">
+                        Until {new Date(selectedMember.timeout_until!).toLocaleString()}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleRemoveTimeout(selectedMember)}
+                      disabled={actionInProgress === selectedMember.id}
+                      className="px-2 py-1 text-xs bg-bg-tertiary hover:bg-bg-modifier-hover text-text-secondary rounded transition-colors disabled:opacity-50"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Moderation Actions */}
               <div className="border-t border-border-subtle pt-4">
                 <h4 className="text-sm font-semibold text-text-muted uppercase mb-3">
                   Moderation
                 </h4>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    onClick={() => setShowTimeoutPicker(!showTimeoutPicker)}
+                    disabled={actionInProgress === selectedMember.id}
+                    className="px-3 py-1.5 bg-orange-500/20 text-orange-400 text-sm font-medium rounded hover:bg-orange-500/30 transition-colors disabled:opacity-50"
+                  >
+                    Timeout
+                  </button>
                   <button
                     onClick={() => handleKick(selectedMember)}
                     disabled={actionInProgress === selectedMember.id}
@@ -1562,6 +1643,33 @@ function MembersTab() {
                     {actionInProgress === selectedMember.id ? 'Processing...' : 'Ban'}
                   </button>
                 </div>
+
+                {/* Timeout Duration Picker */}
+                {showTimeoutPicker && (
+                  <div className="mt-3 p-3 bg-bg-tertiary rounded-lg border border-border-subtle">
+                    <div className="mb-2">
+                      <input
+                        type="text"
+                        value={timeoutReason}
+                        onChange={(e) => setTimeoutReason(e.target.value)}
+                        placeholder="Reason (optional)"
+                        className="w-full px-2 py-1.5 text-sm bg-bg-primary border border-border-subtle rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:border-brand-primary"
+                      />
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {timeoutDurations.map((d) => (
+                        <button
+                          key={d.value}
+                          onClick={() => handleTimeout(selectedMember, d.value)}
+                          disabled={actionInProgress === selectedMember.id}
+                          className="px-2.5 py-1 text-xs bg-bg-modifier-hover hover:bg-bg-modifier-active text-text-secondary rounded transition-colors disabled:opacity-50"
+                        >
+                          {d.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -2750,6 +2858,14 @@ function AuditLogTab() {
     { value: 'invite_create', label: 'Invite Create' },
     { value: 'invite_delete', label: 'Invite Delete' },
     { value: 'message_delete', label: 'Message Delete' },
+    { value: 'member_timeout', label: 'Member Timeout' },
+    { value: 'member_timeout_remove', label: 'Timeout Removed' },
+    { value: 'ownership_transferred', label: 'Ownership Transfer' },
+    { value: 'category_create', label: 'Category Create' },
+    { value: 'category_update', label: 'Category Update' },
+    { value: 'category_delete', label: 'Category Delete' },
+    { value: 'storage_purge', label: 'Storage Purge' },
+    { value: 'storage_settings_update', label: 'Storage Settings' },
   ];
 
   const fetchAuditLog = async (filter?: string) => {
@@ -2854,9 +2970,31 @@ function AuditLogTab() {
                       )}
                       {entry.changes && (
                         <div className="text-xs text-text-muted">
-                          {Object.entries(entry.changes).map(([key, change]) => (
-                            <div key={key}>{key}: {String(change.old)} → {String(change.new)}</div>
-                          ))}
+                          {(() => {
+                            const c = entry.changes as Record<string, any>;
+                            // Update format: { old: {...}, new: {...} }
+                            if (c.old && c.new && typeof c.old === 'object' && typeof c.new === 'object') {
+                              return Object.keys(c.new).map((field) => (
+                                <div key={field}>
+                                  {field}: {String(c.old[field] ?? '—')} → {String(c.new[field])}
+                                </div>
+                              ));
+                            }
+                            // Create format: { created: {...} }
+                            if (c.created && typeof c.created === 'object') {
+                              const name = c.created.name || c.created.title || c.created.id || '';
+                              return <div>Created: {name}</div>;
+                            }
+                            // Delete format: { deleted: {...} }
+                            if (c.deleted && typeof c.deleted === 'object') {
+                              const name = c.deleted.name || c.deleted.title || c.deleted.id || '';
+                              return <div>Deleted: {name}</div>;
+                            }
+                            // Fallback: show key-value pairs
+                            return Object.entries(c).map(([key, val]) => (
+                              <div key={key}>{key}: {typeof val === 'object' ? JSON.stringify(val) : String(val)}</div>
+                            ));
+                          })()}
                         </div>
                       )}
                       <div className="text-xs text-text-muted mt-1">{formatDate(entry.created_at)}</div>
@@ -4347,6 +4485,15 @@ function RelayServersTab() {
     }
   };
 
+  const handleDrain = async (id: string) => {
+    try {
+      await api.post(`/admin/relays/${id}/drain`);
+      fetchRelays();
+    } catch (err: any) {
+      toastStore.addToast({ type: 'system', title: 'Error', message: err?.message || 'Failed to drain relay' });
+    }
+  };
+
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this relay server? This cannot be undone.')) return;
     try {
@@ -4379,6 +4526,7 @@ function RelayServersTab() {
       case 'trusted': return 'text-green-400';
       case 'pending': return 'text-yellow-400';
       case 'suspended': return 'text-red-400';
+      case 'draining': return 'text-orange-400';
       case 'offline': return 'text-text-muted';
       default: return 'text-text-muted';
     }
@@ -4562,12 +4710,30 @@ function RelayServersTab() {
                     </button>
                   )}
                   {relay.status === 'trusted' && (
+                    <>
+                      <button
+                        onClick={() => handleDrain(relay.id)}
+                        className="px-2 py-1 text-xs text-orange-400 hover:bg-orange-400/10 rounded transition-colors"
+                        title="Graceful drain — no new joins, waits for users to leave"
+                      >
+                        Drain
+                      </button>
+                      <button
+                        onClick={() => handleSuspend(relay.id)}
+                        className="px-2 py-1 text-xs text-yellow-400 hover:bg-yellow-400/10 rounded transition-colors"
+                        title="Suspend relay"
+                      >
+                        Suspend
+                      </button>
+                    </>
+                  )}
+                  {relay.status === 'suspended' && (
                     <button
-                      onClick={() => handleSuspend(relay.id)}
-                      className="px-2 py-1 text-xs text-yellow-400 hover:bg-yellow-400/10 rounded transition-colors"
-                      title="Suspend relay"
+                      onClick={() => handleRegenerate(relay.id)}
+                      className="px-2 py-1 text-xs text-green-400 hover:bg-green-400/10 rounded transition-colors"
+                      title="Regenerate pairing token to re-trust this relay"
                     >
-                      Suspend
+                      Re-pair
                     </button>
                   )}
                   <button
