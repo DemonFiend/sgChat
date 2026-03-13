@@ -430,9 +430,9 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
         },
       });
 
-      const speak = hasPermission(perms.voice, VoicePermissions.SPEAK);
-      const video = hasPermission(perms.voice, VoicePermissions.VIDEO);
-      const stream = hasPermission(perms.voice, VoicePermissions.STREAM);
+      const speak = isAfkChannel ? false : isStageChannel ? canSpeak : hasPermission(perms.voice, VoicePermissions.SPEAK);
+      const video = isAfkChannel ? false : hasPermission(perms.voice, VoicePermissions.VIDEO);
+      const stream = isAfkChannel ? false : hasPermission(perms.voice, VoicePermissions.STREAM);
 
       return {
         token: voiceResult.token,
