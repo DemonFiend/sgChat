@@ -71,13 +71,17 @@ async function runPingCycle() {
     const results: PingResult[] = [];
 
     // Ping all relays in parallel
+    // Skip HTTP health URLs when page is HTTPS (browsers block mixed content)
+    const isSecurePage = window.location.protocol === 'https:';
+    const pingableRelays = relays.filter(
+      (r) => r.health_url && !(isSecurePage && r.health_url.startsWith('http://')),
+    );
+
     const measurements = await Promise.all(
-      relays
-        .filter((r) => r.health_url)
-        .map(async (relay) => {
-          const latency = await measureRelay(relay.health_url!);
-          return { relayId: relay.id, latency };
-        }),
+      pingableRelays.map(async (relay) => {
+        const latency = await measureRelay(relay.health_url!);
+        return { relayId: relay.id, latency };
+      }),
     );
 
     for (const { relayId, latency } of measurements) {
