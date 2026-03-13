@@ -62,7 +62,7 @@ async function measureRelay(healthUrl: string): Promise<number | null> {
 /** Fetch relay list, ping each, store results, report to Master */
 async function runPingCycle() {
   try {
-    const relays = await api.get<RelayInfo[]>('/api/relays');
+    const relays = await api.get<RelayInfo[]>('/relays');
     if (!Array.isArray(relays) || relays.length === 0) return;
 
     // Cache relay list for offline fallback
@@ -90,7 +90,7 @@ async function runPingCycle() {
     // Report to Master
     if (results.length > 0) {
       try {
-        await api.post('/api/relays/ping-report', { pings: results });
+        await api.post('/relays/ping-report', { pings: results });
       } catch {
         // Non-critical — Master may be temporarily unavailable
       }

@@ -4309,7 +4309,7 @@ function RelayServersTab() {
 
   const fetchRelays = useCallback(async () => {
     try {
-      const data = await api.get<{ relays: RelayServerRow[] }>('/api/admin/relays');
+      const data = await api.get<{ relays: RelayServerRow[] }>('/admin/relays');
       setRelays(data.relays || []);
     } catch {
       /* ignore */
@@ -4326,7 +4326,7 @@ function RelayServersTab() {
     if (!newRelay.name.trim()) return;
     setCreating(true);
     try {
-      const data = await api.post<{ pairing_token: string }>('/api/admin/relays', newRelay);
+      const data = await api.post<{ pairing_token: string }>('/admin/relays', newRelay);
       setPairingToken(data.pairing_token);
       setShowCreate(false);
       setNewRelay({ name: '', region: 'us-east', max_participants: 100, allow_master_fallback: true });
@@ -4340,7 +4340,7 @@ function RelayServersTab() {
 
   const handleSuspend = async (id: string) => {
     try {
-      await api.post(`/api/admin/relays/${id}/suspend`);
+      await api.post(`/admin/relays/${id}/suspend`);
       fetchRelays();
     } catch (err: any) {
       toastStore.addToast({ type: 'system', title: 'Error', message: err?.message || 'Failed to suspend relay' });
@@ -4350,7 +4350,7 @@ function RelayServersTab() {
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this relay server? This cannot be undone.')) return;
     try {
-      await api.delete(`/api/admin/relays/${id}`);
+      await api.delete(`/admin/relays/${id}`);
       fetchRelays();
     } catch (err: any) {
       toastStore.addToast({ type: 'system', title: 'Error', message: err?.message || 'Failed to delete relay' });
@@ -4359,7 +4359,7 @@ function RelayServersTab() {
 
   const handleRegenerate = async (id: string) => {
     try {
-      const data = await api.post<{ pairing_token: string }>(`/api/admin/relays/${id}/regenerate`);
+      const data = await api.post<{ pairing_token: string }>(`/admin/relays/${id}/regenerate`);
       setPairingToken(data.pairing_token);
       fetchRelays();
     } catch (err: any) {
