@@ -17,6 +17,7 @@ export interface RelayConfig {
 export interface EnvConfig {
   PORT: number;
   HOST: string;
+  PUBLIC_IP?: string;
   RELAY_PAIRING_TOKEN?: string;
   LIVEKIT_URL: string;
   LIVEKIT_API_KEY: string;
@@ -25,19 +26,26 @@ export interface EnvConfig {
 }
 
 export function getEnvConfig(): EnvConfig {
+  const port = parseInt(process.env.RELAY_PORT || '3100', 10);
+  const publicIp = process.env.PUBLIC_IP;
+
   const config: EnvConfig = {
-    PORT: parseInt(process.env.RELAY_PORT || '3100', 10),
+    PORT: port,
     HOST: process.env.RELAY_HOST || '0.0.0.0',
+    PUBLIC_IP: publicIp,
     RELAY_PAIRING_TOKEN: process.env.RELAY_PAIRING_TOKEN,
     LIVEKIT_URL: process.env.LIVEKIT_URL || 'ws://localhost:7880',
     LIVEKIT_API_KEY: process.env.LIVEKIT_API_KEY || '',
     LIVEKIT_API_SECRET: process.env.LIVEKIT_API_SECRET || '',
-    HEALTH_URL: process.env.RELAY_HEALTH_URL,
+    HEALTH_URL:
+      process.env.RELAY_HEALTH_URL ||
+      (publicIp ? `http://${publicIp}:${port}/health` : undefined),
   };
 
   // Validate LiveKit credentials (required for token generation)
   if (!config.LIVEKIT_API_KEY || !config.LIVEKIT_API_SECRET) {
     console.error('  FATAL: LIVEKIT_API_KEY and LIVEKIT_API_SECRET must be set');
+    console.error('  (The relay-entrypoint.sh should set these automatically)');
     process.exit(1);
   }
 

@@ -1,15 +1,17 @@
 ###############################################################################
 # sgChat Relay Server — Docker Compose
 #
-# Usage:
-#   1. Copy .env.relay.example to .env and fill in your values
-#   2. Get a pairing token from the sgChat admin panel
-#   3. Set RELAY_PAIRING_TOKEN in .env
-#   4. Run: docker compose -f docker-compose.relay.yml up -d
+# Setup:
+#   1. On Master, run:
+#      docker exec sgchat-api-1 node dist/cli/create-relay.js --name "My Relay" --region "us-east"
+#   2. Create .env with:
+#      RELAY_SETUP_TOKEN=<paste token from step 1>
+#   3. Run:
+#      docker compose -f docker-compose.relay.yml up -d
 #
-# The relay will auto-pair with Master on first startup, then begin
-# heartbeating. On subsequent restarts it uses the saved config (persisted
-# in the relay-data volume).
+# The relay auto-detects its public IP, generates LiveKit credentials,
+# and pairs with Master on first startup. Config is persisted in the
+# relay-data volume for subsequent restarts.
 ###############################################################################
 
 services:
@@ -17,34 +19,17 @@ services:
     image: livekit/livekit-server:latest
     network_mode: host
     volumes:
-      - ./livekit-relay.yaml:/livekit.yaml
-    command: ["--config", "/livekit.yaml"]
+      - relay-data:/data:ro
+    command: ["--config", "/data/livekit.yaml"]
     restart: unless-stopped
 
   relay:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.relay
-    ports:
-      - "${RELAY_PORT:-3100}:3100"
+    image: sosiagaming/sgchat-relay:latest
+    network_mode: host
     volumes:
       - relay-data:/data
     environment:
-      # --- Pairing (set once, used on first startup) ---
-      - RELAY_PAIRING_TOKEN=${RELAY_PAIRING_TOKEN}
-
-      # --- LiveKit credentials (YOUR relay's LiveKit, not Master's) ---
-      - LIVEKIT_URL=${LIVEKIT_URL:-ws://localhost:7880}
-      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
-      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
-
-      # --- Relay settings ---
-      - RELAY_PORT=3100
-      - RELAY_HOST=0.0.0.0
-      - RELAY_HEALTH_URL=${RELAY_HEALTH_URL}
-      - RELAY_CONFIG_PATH=/data/relay-config.json
-    depends_on:
-      - livekit
+      - RELAY_SETUP_TOKEN=${RELAY_SETUP_TOKEN}
     restart: unless-stopped
 
 volumes:

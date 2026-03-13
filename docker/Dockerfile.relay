@@ -2,6 +2,9 @@ FROM node:20-alpine AS base
 
 WORKDIR /app
 
+# Install curl for public IP auto-detection
+RUN apk add --no-cache curl
+
 # Copy package files for dependency install
 COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml ./
 COPY packages/shared/package.json ./packages/shared/package.json
@@ -20,6 +23,10 @@ COPY tsconfig.json ./tsconfig.json
 RUN pnpm --filter @sgchat/shared build
 RUN pnpm --filter @sgchat/relay build
 
+# Copy entrypoint script
+COPY docker/relay-entrypoint.sh /app/relay-entrypoint.sh
+RUN chmod +x /app/relay-entrypoint.sh
+
 # Persistent config directory (mount a volume here)
 RUN mkdir -p /data
 ENV RELAY_CONFIG_PATH=/data/relay-config.json
@@ -27,4 +34,4 @@ ENV RELAY_CONFIG_PATH=/data/relay-config.json
 EXPOSE 3100
 
 WORKDIR /app/packages/relay
-CMD ["node", "dist/cli.js", "start"]
+ENTRYPOINT ["/app/relay-entrypoint.sh"]
