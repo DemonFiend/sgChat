@@ -77,7 +77,8 @@ export class EventBufferService {
    * Called periodically and can be called manually.
    */
   async tryReplay(): Promise<boolean> {
-    if (this.buffer.length === 0 || this.isReplaying) return true;
+    if (this.buffer.length === 0) return true;
+    if (this.isReplaying) return false; // Already replaying, don't report success
 
     this.isReplaying = true;
     try {
@@ -85,8 +86,8 @@ export class EventBufferService {
         const batch = this.buffer.splice(0, REPLAY_BATCH_SIZE);
 
         // Try to forward each event in the batch
-        let allSucceeded = true;
-        for (const event of batch) {
+        for (let i = 0; i < batch.length; i++) {
+          const event = batch[i];
           const ok = await this.masterClient.forwardVoiceEvent({
             type: event.type,
             user_id: event.user_id,
@@ -95,19 +96,15 @@ export class EventBufferService {
           });
 
           if (!ok) {
-            // Master still unreachable — put events back and stop
-            this.buffer.unshift(...batch);
-            allSucceeded = false;
-            break;
+            // Master still unreachable — put only unsent events back and stop
+            const unsent = batch.slice(i);
+            this.buffer.unshift(...unsent);
+            return false;
           }
         }
-
-        if (!allSucceeded) return false;
       }
 
-      if (this.buffer.length === 0) {
-        console.log('✅ All buffered voice events replayed to Master');
-      }
+      console.log('[EventBuffer] All buffered voice events replayed to Master');
       return true;
     } catch {
       return false;

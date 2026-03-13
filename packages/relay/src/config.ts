@@ -25,7 +25,7 @@ export interface EnvConfig {
 }
 
 export function getEnvConfig(): EnvConfig {
-  return {
+  const config: EnvConfig = {
     PORT: parseInt(process.env.RELAY_PORT || '3100', 10),
     HOST: process.env.RELAY_HOST || '0.0.0.0',
     RELAY_PAIRING_TOKEN: process.env.RELAY_PAIRING_TOKEN,
@@ -34,6 +34,14 @@ export function getEnvConfig(): EnvConfig {
     LIVEKIT_API_SECRET: process.env.LIVEKIT_API_SECRET || '',
     HEALTH_URL: process.env.RELAY_HEALTH_URL,
   };
+
+  // Validate LiveKit credentials (required for token generation)
+  if (!config.LIVEKIT_API_KEY || !config.LIVEKIT_API_SECRET) {
+    console.error('  FATAL: LIVEKIT_API_KEY and LIVEKIT_API_SECRET must be set');
+    process.exit(1);
+  }
+
+  return config;
 }
 
 export function loadRelayConfig(): RelayConfig | null {

@@ -132,6 +132,9 @@ importers:
 
   packages/relay:
     dependencies:
+      '@fastify/cors':
+        specifier: ^9.0.1
+        version: 9.0.1
       '@sgchat/shared':
         specifier: workspace:*
         version: link:../shared

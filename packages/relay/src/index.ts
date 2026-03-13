@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import Fastify from 'fastify';
+import cors from '@fastify/cors';
 import { getEnvConfig, loadRelayConfig } from './config.js';
 import { healthRoutes } from './routes/health.js';
 import { HeartbeatService } from './services/heartbeat.js';
@@ -18,6 +19,9 @@ async function main(): Promise<void> {
     },
   });
 
+  // Enable CORS (clients call /voice-authorize cross-origin during Master outage)
+  await fastify.register(cors, { origin: true });
+
   // Register routes
   await fastify.register(healthRoutes);
 
@@ -30,7 +34,7 @@ async function main(): Promise<void> {
   if (config) {
     console.log(`  Relay "${config.relay_id}" paired — starting services`);
     const masterClient = new MasterClient(config);
-    const heartbeat = new HeartbeatService(config);
+    const heartbeat = new HeartbeatService(config, env);
     heartbeat.start();
 
     const voiceCache = new VoiceCacheService(masterClient, config, env);

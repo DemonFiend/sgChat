@@ -9,7 +9,7 @@ import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
 import { calculatePermissions } from '../services/permissions.js';
-import { ServerPermissions, hasPermission } from '@sgchat/shared';
+import { ServerPermissions, VoicePermissions, hasPermission } from '@sgchat/shared';
 import type { RelayCreateRequest, RelayUpdateRequest, RelayPairRequest } from '@sgchat/shared';
 import { forbidden, notFound, badRequest, sendError } from '../utils/errors.js';
 import { redis } from '../lib/redis.js';
@@ -21,6 +21,7 @@ import {
   hashPairingToken,
   verifyHmacSignature,
   encryptWithKey,
+  decryptWithKey,
   generateTrustCertificate,
 } from '../lib/relayCrypto.js';
 import { getMasterEncryptionKey, generateLiveKitTokenForRelay } from '../services/livekit.js';
@@ -126,7 +127,6 @@ async function authenticateRelay(
   }
 
   // Decrypt shared secret
-  const { decryptWithKey } = await import('../lib/relayCrypto.js');
   const sharedSecret = await decryptWithKey(
     relay.shared_secret_encrypted,
     getMasterEncryptionKey(),
@@ -213,44 +213,49 @@ export const relayRoutes: FastifyPluginAsync = async (fastify) => {
     // Create relay record
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
 
-    // Generate pairing token (needs relay_id, so we create a placeholder)
     const MASTER_URL = process.env.PUBLIC_URL || process.env.API_URL || 'http://localhost:3000';
-
-    // Create relay in DB first to get ID
-    const relay = await db.relays.create({
-      name: data.name,
-      region: data.region,
-      pairing_token_hash: 'pending', // will update after generating token
-      pairing_expires_at: expiresAt,
-      master_public_key: masterPublicKey,
-      max_participants: data.max_participants,
-      allow_master_fallback: data.allow_master_fallback,
-    });
-
-    // Generate pairing token with relay ID
-    const { token, hash } = generatePairingToken({
-      relay_id: relay.id,
-      name: data.name,
-      region: data.region,
-      master_url: MASTER_URL,
-      master_public_key: masterPublicKey,
-      expires_at: expiresAt.toISOString(),
-    });
-
-    // Update relay with actual token hash and store master private key (encrypted)
     const encryptionKey = getMasterEncryptionKey();
     const encryptedPrivateKey = await encryptWithKey(masterPrivateKey, encryptionKey);
 
-    await db.relays.update(relay.id, {
-      pairing_token_hash: hash,
-      // Store master's private key temporarily for pairing completion
-      // Using shared_secret_encrypted field temporarily (will be replaced during pairing)
-      shared_secret_encrypted: encryptedPrivateKey,
+    // Atomic create + token hash update in a single transaction
+    const result = await db.transaction(async (tx: any) => {
+      const [created] = await tx`
+        INSERT INTO relay_servers (
+          name, region, status, pairing_token_hash, pairing_expires_at,
+          master_public_key, max_participants, allow_master_fallback
+        )
+        VALUES (
+          ${data.name}, ${data.region}, 'pending', 'pending',
+          ${expiresAt}, ${masterPublicKey},
+          ${data.max_participants ?? 100}, ${data.allow_master_fallback ?? true}
+        )
+        RETURNING *
+      `;
+
+      const { token: pairingToken, hash } = generatePairingToken({
+        relay_id: created.id,
+        name: data.name,
+        region: data.region,
+        master_url: MASTER_URL,
+        master_public_key: masterPublicKey,
+        expires_at: expiresAt.toISOString(),
+      });
+
+      const [updated] = await tx`
+        UPDATE relay_servers SET
+          pairing_token_hash = ${hash},
+          shared_secret_encrypted = ${encryptedPrivateKey},
+          updated_at = NOW()
+        WHERE id = ${created.id}
+        RETURNING *
+      `;
+
+      return { relay: updated, pairingToken };
     });
 
     return reply.status(201).send({
-      relay: { ...relay, pairing_token_hash: undefined },
-      pairing_token: token,
+      relay: { ...result.relay, pairing_token_hash: undefined },
+      pairing_token: result.pairingToken,
     });
   });
 
@@ -415,9 +420,11 @@ export const relayRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     // Decrypt Master's private key for this relay (stored temporarily during creation)
+    if (!relay.shared_secret_encrypted) {
+      return sendError(reply, 500, 'Relay record is missing encrypted key data — try regenerating the pairing token');
+    }
     const encryptionKey = getMasterEncryptionKey();
-    const { decryptWithKey: decrypt } = await import('../lib/relayCrypto.js');
-    const masterPrivateKey = await decrypt(relay.shared_secret_encrypted, encryptionKey);
+    const masterPrivateKey = await decryptWithKey(relay.shared_secret_encrypted, encryptionKey);
 
     // Derive shared secret using ECDH
     const sharedSecret = await deriveSharedSecret(masterPrivateKey, data.relay_public_key);
@@ -498,7 +505,6 @@ export const relayRoutes: FastifyPluginAsync = async (fastify) => {
 
     // Check user permissions
     const perms = await calculatePermissions(user_id, channel.server_id, channel_id);
-    const { VoicePermissions } = await import('@sgchat/shared');
     if (!hasPermission(perms.voice, VoicePermissions.CONNECT)) {
       return sendError(reply, 403, 'User cannot connect to this voice channel');
     }
@@ -538,17 +544,19 @@ export const relayRoutes: FastifyPluginAsync = async (fastify) => {
     const channelIds = channels.map((c: any) => c.id);
     const serverIds = [...new Set(channels.map((c: any) => c.server_id))];
 
-    // Get all members of the servers that have these channels
+    // Get members of the servers that have these channels (limit per server to prevent DoS)
+    const MAX_MEMBERS_PER_SERVER = 500;
     const members = await db.sql`
-      SELECT DISTINCT m.user_id, m.server_id
+      SELECT DISTINCT ON (m.user_id, m.server_id) m.user_id, m.server_id
       FROM members m
       WHERE m.server_id = ANY(${serverIds})
+      ORDER BY m.user_id, m.server_id
+      LIMIT ${serverIds.length * MAX_MEMBERS_PER_SERVER}
     `;
 
     const userIds = [...new Set(members.map((m: any) => m.user_id))];
 
     // Calculate permissions for each user×channel pair
-    const { VoicePermissions: VP } = await import('@sgchat/shared');
     const permissionSnapshots: Array<{
       user_id: string;
       channel_id: string;
@@ -571,8 +579,8 @@ export const relayRoutes: FastifyPluginAsync = async (fastify) => {
           permissionSnapshots.push({
             user_id: userId,
             channel_id: channelId,
-            can_connect: hasPermission(perms.voice, VP.CONNECT),
-            can_speak: hasPermission(perms.voice, VP.SPEAK),
+            can_connect: hasPermission(perms.voice, VoicePermissions.CONNECT),
+            can_speak: hasPermission(perms.voice, VoicePermissions.SPEAK),
           });
         } catch {
           // Skip users with permission calculation errors

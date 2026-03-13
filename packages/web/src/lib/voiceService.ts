@@ -297,6 +297,7 @@ class VoiceServiceClass {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ user_id: userId, channel_id: channelId }),
+          mode: 'cors',
           signal: AbortSignal.timeout(5000),
         });
         if (!res.ok) continue;
@@ -738,6 +739,10 @@ class VoiceServiceClass {
     const channelName = voiceStore.currentChannelName() || 'Voice Channel';
     console.log('[VoiceService] Relay switch — reconnecting channel', channelId, 'to relay', newRelayId || 'Master');
 
+    // Preserve mute/deafen state before disconnecting
+    const wasMuted = voiceStore.isMuted();
+    const wasDeafened = voiceStore.isDeafened();
+
     // Disconnect locally without notifying server (backend already updated)
     this._isIntentionalLeave = true;
     if (this.room) {
@@ -755,6 +760,13 @@ class VoiceServiceClass {
 
     voiceStore.setDisconnected();
     await this.join(channelId, channelName);
+
+    // Restore mute/deafen state after rejoining
+    if (wasDeafened) {
+      await this.toggleDeafen();
+    } else if (wasMuted) {
+      await this.toggleMute();
+    }
   }
 
   /**

@@ -34,7 +34,7 @@ async function resolveVoiceRelay(
 
   if (policy === 'specific' && channel.preferred_relay_id) {
     const relay = await db.relays.findById(channel.preferred_relay_id);
-    if (relay && relay.status === 'trusted' && relay.livekit_url) {
+    if (relay && relay.status === 'trusted' && relay.livekit_url && relay.last_health_status !== 'unreachable') {
       return { relayId: relay.id, livekitUrl: relay.livekit_url };
     }
     // Fallback to Master if preferred relay is unavailable
@@ -45,7 +45,7 @@ async function resolveVoiceRelay(
     // If channel already has an active relay, use it (anchor until empty)
     if (channel.active_relay_id) {
       const relay = await db.relays.findById(channel.active_relay_id);
-      if (relay && relay.status === 'trusted' && relay.livekit_url) {
+      if (relay && relay.status === 'trusted' && relay.livekit_url && relay.last_health_status !== 'unreachable') {
         return { relayId: relay.id, livekitUrl: relay.livekit_url };
       }
       // Active relay is down, clear it and pick a new one
@@ -55,7 +55,7 @@ async function resolveVoiceRelay(
     // Pick the best available relay using client ping data (if available) or lowest load
     const relays = await db.relays.findTrusted();
     const available = relays.filter(
-      (r: any) => r.livekit_url && r.current_participants < r.max_participants,
+      (r: any) => r.livekit_url && r.current_participants < r.max_participants && r.last_health_status !== 'unreachable',
     );
 
     if (available.length === 0) return null; // No relays available, use Master

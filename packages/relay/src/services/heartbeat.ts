@@ -1,17 +1,24 @@
+import { RoomServiceClient } from 'livekit-server-sdk';
 import { MasterClient } from './masterClient.js';
-import type { RelayConfig } from '../config.js';
+import type { RelayConfig, EnvConfig } from '../config.js';
 import { cpus, totalmem, freemem } from 'os';
 
 const HEARTBEAT_INTERVAL = 15_000; // 15 seconds
 
 export class HeartbeatService {
   private client: MasterClient;
+  private roomService: RoomServiceClient | null = null;
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private startTime = Date.now();
   private consecutiveFailures = 0;
 
-  constructor(config: RelayConfig) {
+  constructor(config: RelayConfig, env?: EnvConfig) {
     this.client = new MasterClient(config);
+    if (env?.LIVEKIT_API_KEY && env?.LIVEKIT_API_SECRET && env?.LIVEKIT_URL) {
+      // RoomServiceClient needs HTTP URL, convert ws:// to http://
+      const httpUrl = env.LIVEKIT_URL.replace(/^ws(s?):\/\//, 'http$1://');
+      this.roomService = new RoomServiceClient(httpUrl, env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET);
+    }
   }
 
   start(): void {
@@ -31,6 +38,22 @@ export class HeartbeatService {
     }
   }
 
+  private async getLiveKitStats(): Promise<{ participants: number; rooms: string[] }> {
+    if (!this.roomService) return { participants: 0, rooms: [] };
+    try {
+      const rooms = await this.roomService.listRooms();
+      let totalParticipants = 0;
+      const roomNames: string[] = [];
+      for (const room of rooms) {
+        totalParticipants += room.numParticipants;
+        roomNames.push(room.name);
+      }
+      return { participants: totalParticipants, rooms: roomNames };
+    } catch {
+      return { participants: 0, rooms: [] };
+    }
+  }
+
   private async sendHeartbeat(): Promise<void> {
     const cpuLoad =
       cpus().reduce((acc, cpu) => {
@@ -41,9 +64,11 @@ export class HeartbeatService {
     const totalMem = totalmem();
     const memUsage = ((totalMem - freemem()) / totalMem) * 100;
 
+    const lkStats = await this.getLiveKitStats();
+
     const ok = await this.client.heartbeat({
-      current_participants: 0, // TODO: get from LiveKit when wired up
-      active_rooms: [],
+      current_participants: lkStats.participants,
+      active_rooms: lkStats.rooms,
       health: {
         status: 'healthy',
         cpu_usage_percent: Math.round(cpuLoad),

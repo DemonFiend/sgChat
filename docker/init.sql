@@ -1712,7 +1712,7 @@ CREATE TABLE IF NOT EXISTS relay_servers (
   name TEXT NOT NULL,                                    -- "EU West", "US East" (set by admin)
   region TEXT NOT NULL,                                  -- "eu-west", "us-east" (set by admin from dropdown)
   status TEXT NOT NULL DEFAULT 'pending'                 -- pending (awaiting pairing), trusted, suspended, offline
-    CHECK (status IN ('pending', 'trusted', 'suspended', 'offline')),
+    CHECK (status IN ('pending', 'trusted', 'suspended', 'offline', 'draining')),
 
   -- Pairing (set on creation, cleared after successful pair)
   pairing_token_hash TEXT,                               -- SHA-256 hash of one-time pairing token
@@ -1744,6 +1744,7 @@ CREATE TABLE IF NOT EXISTS relay_servers (
 
 CREATE INDEX IF NOT EXISTS idx_relay_servers_status ON relay_servers(status);
 CREATE INDEX IF NOT EXISTS idx_relay_servers_region ON relay_servers(region);
+CREATE INDEX IF NOT EXISTS idx_relay_servers_status_health ON relay_servers(status, health_url) WHERE health_url IS NOT NULL;
 
 -- Channel relay policy columns
 ALTER TABLE channels ADD COLUMN IF NOT EXISTS voice_relay_policy TEXT DEFAULT 'master'

@@ -10,7 +10,9 @@ export class MasterClient {
     this.masterUrl = config.master_url.replace(/\/$/, '');
   }
 
-  private async signedFetch(path: string, options: RequestInit = {}): Promise<Response> {
+  private static readonly DEFAULT_TIMEOUT_MS = 10_000;
+
+  private async signedFetch(path: string, options: RequestInit = {}, timeoutMs?: number): Promise<Response> {
     const url = `${this.masterUrl}${path}`;
     const timestamp = Date.now().toString();
     const body = options.body ? String(options.body) : '';
@@ -23,7 +25,11 @@ export class MasterClient {
     headers.set('X-Relay-Timestamp', timestamp);
     headers.set('X-Relay-Signature', signature);
 
-    return fetch(url, { ...options, headers });
+    return fetch(url, {
+      ...options,
+      headers,
+      signal: AbortSignal.timeout(timeoutMs ?? MasterClient.DEFAULT_TIMEOUT_MS),
+    });
   }
 
   async heartbeat(data: {
@@ -42,7 +48,8 @@ export class MasterClient {
         body: JSON.stringify({ relay_id: this.config.relay_id, ...data }),
       });
       return response.ok;
-    } catch {
+    } catch (err) {
+      console.warn('[MasterClient] Heartbeat failed:', (err as Error).message);
       return false;
     }
   }
@@ -58,7 +65,8 @@ export class MasterClient {
       });
       if (!response.ok) return null;
       return response.json() as Promise<{ token: string; url: string }>;
-    } catch {
+    } catch (err) {
+      console.warn('[MasterClient] Voice authorize failed:', (err as Error).message);
       return null;
     }
   }
@@ -74,7 +82,8 @@ export class MasterClient {
       });
       if (!response.ok) return null;
       return response.json() as Promise<{ channels: any[]; permission_snapshots: any[]; users: any[] }>;
-    } catch {
+    } catch (err) {
+      console.warn('[MasterClient] Voice cache fetch failed:', (err as Error).message);
       return null;
     }
   }
@@ -91,7 +100,8 @@ export class MasterClient {
         body: JSON.stringify(event),
       });
       return response.ok;
-    } catch {
+    } catch (err) {
+      console.warn('[MasterClient] Voice event forward failed:', (err as Error).message);
       return false;
     }
   }
