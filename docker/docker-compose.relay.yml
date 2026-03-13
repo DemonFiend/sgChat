@@ -30,6 +30,8 @@ services:
       - relay-data:/data
     environment:
       - RELAY_SETUP_TOKEN=${RELAY_SETUP_TOKEN}
+      - LIVEKIT_PORT=${LIVEKIT_PORT:-7880}
+      - LIVEKIT_PUBLIC_URL=${LIVEKIT_PUBLIC_URL:-}
     restart: unless-stopped
 
 volumes:

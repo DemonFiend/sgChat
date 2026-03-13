@@ -5,6 +5,7 @@ DATA_DIR="/data"
 CREDS_FILE="$DATA_DIR/livekit-creds.json"
 LIVEKIT_CONFIG="$DATA_DIR/livekit.yaml"
 RELAY_PORT="${RELAY_PORT:-3100}"
+LIVEKIT_PORT="${LIVEKIT_PORT:-7880}"
 
 echo "=== sgChat Relay Server ==="
 
@@ -51,7 +52,7 @@ LK_API_SECRET=$(sed 's/.*"api_secret":"\([^"]*\)".*/\1/' "$CREDS_FILE")
 # ── 3. Write LiveKit config ─────────────────────────────────
 
 cat > "$LIVEKIT_CONFIG" <<LK_EOF
-port: 7880
+port: $LIVEKIT_PORT
 rtc:
   port_range_start: 50000
   port_range_end: 50100
@@ -67,7 +68,7 @@ echo "LiveKit config written to $LIVEKIT_CONFIG"
 export LIVEKIT_API_KEY="$LK_API_KEY"
 export LIVEKIT_API_SECRET="$LK_API_SECRET"
 export LIVEKIT_URL="${LIVEKIT_URL:-ws://localhost:7880}"
-export LIVEKIT_PUBLIC_URL="${LIVEKIT_PUBLIC_URL:-ws://$PUBLIC_IP:7880}"
+export LIVEKIT_PUBLIC_URL="${LIVEKIT_PUBLIC_URL:-ws://$PUBLIC_IP:$LIVEKIT_PORT}"
 export RELAY_HOST="${RELAY_HOST:-0.0.0.0}"
 export RELAY_PORT="$RELAY_PORT"
 export RELAY_CONFIG_PATH="${RELAY_CONFIG_PATH:-$DATA_DIR/relay-config.json}"
