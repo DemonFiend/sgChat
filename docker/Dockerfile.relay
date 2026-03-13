@@ -1,0 +1,30 @@
+FROM node:20-alpine AS base
+
+WORKDIR /app
+
+# Copy package files for dependency install
+COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml ./
+COPY packages/shared/package.json ./packages/shared/package.json
+COPY packages/relay/package.json ./packages/relay/package.json
+
+# Install pnpm and dependencies
+RUN npm install -g pnpm@9
+RUN pnpm install --prefer-offline || pnpm install || pnpm install
+
+# Copy source code
+COPY packages/shared ./packages/shared
+COPY packages/relay ./packages/relay
+COPY tsconfig.json ./tsconfig.json
+
+# Build shared types first, then relay
+RUN pnpm --filter @sgchat/shared build
+RUN pnpm --filter @sgchat/relay build
+
+# Persistent config directory (mount a volume here)
+RUN mkdir -p /data
+ENV RELAY_CONFIG_PATH=/data/relay-config.json
+
+EXPOSE 3100
+
+WORKDIR /app/packages/relay
+CMD ["node", "dist/cli.js", "start"]

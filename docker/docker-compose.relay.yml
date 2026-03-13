@@ -1,0 +1,51 @@
+###############################################################################
+# sgChat Relay Server — Docker Compose
+#
+# Usage:
+#   1. Copy .env.relay.example to .env and fill in your values
+#   2. Get a pairing token from the sgChat admin panel
+#   3. Set RELAY_PAIRING_TOKEN in .env
+#   4. Run: docker compose -f docker-compose.relay.yml up -d
+#
+# The relay will auto-pair with Master on first startup, then begin
+# heartbeating. On subsequent restarts it uses the saved config (persisted
+# in the relay-data volume).
+###############################################################################
+
+services:
+  livekit:
+    image: livekit/livekit-server:latest
+    network_mode: host
+    volumes:
+      - ./livekit-relay.yaml:/livekit.yaml
+    command: ["--config", "/livekit.yaml"]
+    restart: unless-stopped
+
+  relay:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.relay
+    ports:
+      - "${RELAY_PORT:-3100}:3100"
+    volumes:
+      - relay-data:/data
+    environment:
+      # --- Pairing (set once, used on first startup) ---
+      - RELAY_PAIRING_TOKEN=${RELAY_PAIRING_TOKEN}
+
+      # --- LiveKit credentials (YOUR relay's LiveKit, not Master's) ---
+      - LIVEKIT_URL=${LIVEKIT_URL:-ws://localhost:7880}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
+
+      # --- Relay settings ---
+      - RELAY_PORT=3100
+      - RELAY_HOST=0.0.0.0
+      - RELAY_HEALTH_URL=${RELAY_HEALTH_URL}
+      - RELAY_CONFIG_PATH=/data/relay-config.json
+    depends_on:
+      - livekit
+    restart: unless-stopped
+
+volumes:
+  relay-data:

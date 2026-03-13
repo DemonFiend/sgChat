@@ -3,7 +3,7 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const CONFIG_PATH = resolve(__dirname, '..', 'relay-config.json');
+const CONFIG_PATH = process.env.RELAY_CONFIG_PATH || resolve(__dirname, '..', 'relay-config.json');
 
 export interface RelayConfig {
   relay_id: string;
