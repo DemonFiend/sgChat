@@ -35,7 +35,7 @@ Budget-friendly option for small communities or testing. A $4-6/mo VPS from Hetz
 - ~8-10 video (720p) participants
 - ~5 screen share participants
 
-### Tier 2 -- Medium (100-249 concurrent users) -- Recommended Default
+### Tier 2 -- Medium (100-500 concurrent users) -- Recommended Default
 
 | Resource | Minimum | Recommended |
 |----------|---------|-------------|
@@ -46,11 +46,11 @@ Budget-friendly option for small communities or testing. A $4-6/mo VPS from Hetz
 
 **This is the recommended minimum spec for a production relay.** Handles multiple active voice channels with mixed voice + video workloads. Enough headroom for a few concurrent channels with screen sharing or video alongside regular voice traffic.
 
-- ~200 voice-only participants across multiple channels
-- ~20-40 video (720p) participants
-- ~15-25 screen share participants
+- ~200-500 voice-only participants across multiple channels
+- ~20-50 video (720p) participants
+- ~15-30 screen share participants
 
-### Tier 3 -- Large (250-500+ concurrent users)
+### Tier 3 -- Large (500-1000+ concurrent users)
 
 | Resource | Minimum | Recommended |
 |----------|---------|-------------|
@@ -60,6 +60,18 @@ Budget-friendly option for small communities or testing. A $4-6/mo VPS from Hetz
 | Storage | 1 GB | 1 GB |
 
 For large-scale usage, deploy **multiple relays** across regions. The automatic relay selection distributes users to the lowest-latency relay. Each relay handles up to its `max_participants` limit -- set this when creating the relay to match your hardware.
+
+### Federation (1000+ concurrent users)
+
+For communities exceeding 1000 concurrent users, federation across multiple relay servers is recommended over scaling a single relay. Deploy relays in different regions and use the **Automatic (best relay)** policy -- the client-side latency measurement system distributes users to their nearest relay automatically.
+
+| Resource | Setup |
+|----------|-------|
+| Relays | 3+ across regions |
+| Each relay | Tier 2 or Tier 3 specs |
+| Bandwidth | 1 Gbps+ per relay |
+
+Federation provides better latency, fault tolerance, and horizontal scaling compared to a single large relay. If one relay goes down, users automatically fail over to the next best option.
 
 ### Resource Usage Per Participant
 
