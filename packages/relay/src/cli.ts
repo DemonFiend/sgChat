@@ -30,7 +30,11 @@ async function pair(tokenStr: string): Promise<void> {
   const { publicKey, privateKey } = await generateKeyPair();
 
   const env = getEnvConfig();
-  const healthUrl = env.HEALTH_URL || `http://localhost:${env.PORT}/health`;
+  const healthUrl =
+    env.HEALTH_URL ||
+    (env.PUBLIC_IP
+      ? `http://${env.PUBLIC_IP}:${env.PORT}/health`
+      : `http://localhost:${env.PORT}/health`);
 
   // Send pair request to Master
   console.log('  Pairing with Master...');

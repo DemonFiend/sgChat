@@ -140,7 +140,7 @@ export class VoiceCacheService {
 
     return {
       token,
-      url: this.envConfig.LIVEKIT_URL,
+      url: this.envConfig.LIVEKIT_PUBLIC_URL,
       cache_authorized: true,
     };
   }
