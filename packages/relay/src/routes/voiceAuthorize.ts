@@ -15,14 +15,20 @@ interface VoiceAuthorizeBody {
   channel_id: string;
 }
 
-export function voiceAuthorizeRoutes(
-  masterClient: MasterClient,
-  voiceCache: VoiceCacheService,
-) {
+export interface ServiceRefs {
+  masterClient: MasterClient | null;
+  voiceCache: VoiceCacheService | null;
+}
+
+export function voiceAuthorizeRoutes(refs: ServiceRefs) {
   return async function (fastify: FastifyInstance): Promise<void> {
     fastify.post<{ Body: VoiceAuthorizeBody }>(
       '/voice-authorize',
       async (request, reply) => {
+        if (!refs.masterClient || !refs.voiceCache) {
+          return reply.status(503).send({ error: 'Relay not yet paired' });
+        }
+
         const { user_id, channel_id } = request.body || {};
 
         if (!user_id || !channel_id) {
@@ -30,13 +36,13 @@ export function voiceAuthorizeRoutes(
         }
 
         // Try Master first
-        const masterResult = await masterClient.voiceAuthorize(user_id, channel_id);
+        const masterResult = await refs.masterClient.voiceAuthorize(user_id, channel_id);
         if (masterResult) {
           return masterResult;
         }
 
         // Master unreachable — try cached authorization
-        const cachedResult = await voiceCache.authorizeFromCache(user_id, channel_id);
+        const cachedResult = await refs.voiceCache.authorizeFromCache(user_id, channel_id);
         if (cachedResult) {
           console.log(
             `[VoiceAuthorize] Cache-authorized user ${user_id} for channel ${channel_id}`,

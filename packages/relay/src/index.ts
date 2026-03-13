@@ -10,11 +10,13 @@ import { EventBufferService } from './services/eventBuffer.js';
 import { voiceAuthorizeRoutes } from './routes/voiceAuthorize.js';
 import type { FastifyInstance } from 'fastify';
 
-async function startServices(
-  fastify: FastifyInstance,
-  config: RelayConfig,
-  env: EnvConfig,
-): Promise<void> {
+// Mutable holders so the voice-authorize route can be registered before pairing completes
+const serviceRefs: { masterClient: MasterClient | null; voiceCache: VoiceCacheService | null } = {
+  masterClient: null,
+  voiceCache: null,
+};
+
+function startServices(config: RelayConfig, env: EnvConfig, fastify: FastifyInstance): void {
   console.log(`  Relay "${config.relay_id}" paired — starting services`);
   const masterClient = new MasterClient(config);
   const heartbeat = new HeartbeatService(config, env);
@@ -26,8 +28,9 @@ async function startServices(
   const eventBuffer = new EventBufferService(masterClient);
   eventBuffer.start();
 
-  // Register voice-authorize route (clients call this when Master is down)
-  await fastify.register(voiceAuthorizeRoutes(masterClient, voiceCache));
+  // Inject into holders so the already-registered voice-authorize route can use them
+  serviceRefs.masterClient = masterClient;
+  serviceRefs.voiceCache = voiceCache;
 
   // Graceful shutdown
   const shutdown = () => {
@@ -53,8 +56,9 @@ async function main(): Promise<void> {
   // Enable CORS (clients call /voice-authorize cross-origin during Master outage)
   await fastify.register(cors, { origin: true });
 
-  // Register routes
+  // Register routes (must be before listen — Fastify doesn't allow registering after boot)
   await fastify.register(healthRoutes);
+  await fastify.register(voiceAuthorizeRoutes(serviceRefs));
 
   // Start server
   await fastify.listen({ port: env.PORT, host: env.HOST });
@@ -77,7 +81,7 @@ async function main(): Promise<void> {
   }
 
   if (config) {
-    await startServices(fastify, config, env);
+    startServices(config, env, fastify);
   } else {
     console.log(
       '  No relay config found. Set RELAY_PAIRING_TOKEN env var or run: sgchat-relay pair <token>',
