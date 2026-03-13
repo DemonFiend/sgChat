@@ -1789,5 +1789,8 @@ INSERT INTO _migrations (name) VALUES
   ('021_rsvp_events_permission'),
   ('022_role_reaction_custom_emoji'),
   ('023_role_deny_permissions'),
-  ('024_relay_servers')
+  ('024_roles_mentionable_default'),
+  ('024_relay_servers'),
+  ('025_relay_servers'),
+  ('026_relay_draining_status')
 ON CONFLICT (name) DO NOTHING;
