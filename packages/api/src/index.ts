@@ -365,6 +365,11 @@ async function start() {
   // We need to use fastify.server which is available after ready()
   await fastify.ready();
 
+  // Set up WebSocket proxy for relay LiveKit signaling BEFORE Socket.IO
+  // so our upgrade handler runs first and intercepts /relay-ws/* paths.
+  // Socket.IO would otherwise consume all upgrade requests.
+  setupRelayWsProxy(fastify.server);
+
   const io = new SocketIOServer(fastify.server, {
     cors: {
       origin: corsOrigins,
@@ -376,9 +381,6 @@ async function start() {
   fastify.io = io;
 
   initSocketIO(io, fastify);
-
-  // Set up WebSocket proxy for relay LiveKit signaling (must be after Socket.IO)
-  setupRelayWsProxy(fastify.server);
 
   // Start HTTP server
   await fastify.listen({ port: PORT, host: HOST });
