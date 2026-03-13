@@ -3,7 +3,7 @@
 #
 # Setup:
 #   1. On Master, run:
-#      docker exec sgchat-api-1 node dist/cli/create-relay.js --name "My Relay" --region "us-east"
+#      docker exec sgchat-api-1 node dist/cli/create-relay.js --name "My Relay" --region "us-east" --master-url "https://chat.example.com"
 #   2. Create .env with:
 #      RELAY_SETUP_TOKEN=<paste token from step 1>
 #   3. Run:

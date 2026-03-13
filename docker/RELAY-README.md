@@ -107,10 +107,10 @@ Ensure these ports are open in your firewall and/or cloud security group.
 SSH into your **Master sgChat server** and run:
 
 ```bash
-docker exec sgchat-api-1 node dist/cli/create-relay.js --name "US-East" --region "us-east"
+docker exec sgchat-api-1 node dist/cli/create-relay.js --name "US-East" --region "us-east" --master-url "https://chat.example.com"
 ```
 
-Replace `"US-East"` with a display name and `"us-east"` with a region identifier.
+Replace `"US-East"` with a display name, `"us-east"` with a region identifier, and the URL with your Master server's public URL.
 
 This outputs something like:
 
@@ -238,7 +238,7 @@ If you prefer to run containers individually:
 Same as above -- run on the Master server:
 
 ```bash
-docker exec sgchat-api-1 node dist/cli/create-relay.js --name "US-East" --region "us-east"
+docker exec sgchat-api-1 node dist/cli/create-relay.js --name "US-East" --region "us-east" --master-url "https://chat.example.com"
 ```
 
 ### Step 2: Create a Shared Volume

@@ -18,35 +18,47 @@ import {
 
 // ── Parse CLI args ──────────────────────────────────────────
 
-function parseArgs(): { name: string; region: string } {
+function parseArgs(): { name: string; region: string; masterUrl?: string } {
   const args = process.argv.slice(2);
   let name = '';
   let region = '';
+  let masterUrl = '';
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--name' && args[i + 1]) {
       name = args[++i];
     } else if (args[i] === '--region' && args[i + 1]) {
       region = args[++i];
+    } else if (args[i] === '--master-url' && args[i + 1]) {
+      masterUrl = args[++i];
     }
   }
 
   if (!name || !region) {
-    console.error('Usage: create-relay --name "Relay Name" --region "us-east"');
+    console.error(
+      'Usage: create-relay --name "Relay Name" --region "us-east" --master-url "https://chat.example.com"',
+    );
     console.error('');
     console.error('Options:');
-    console.error('  --name    Display name for the relay (e.g. "US-East")');
-    console.error('  --region  Region identifier (e.g. "us-east", "eu-west")');
+    console.error('  --name        Display name for the relay (e.g. "US-East")');
+    console.error('  --region      Region identifier (e.g. "us-east", "eu-west")');
+    console.error(
+      '  --master-url  Public URL of the master server (e.g. "https://chat.example.com")',
+    );
+    console.error('');
+    console.error(
+      'If --master-url is not provided, falls back to PUBLIC_URL or API_URL env vars.',
+    );
     process.exit(1);
   }
 
-  return { name, region };
+  return { name, region, masterUrl: masterUrl || undefined };
 }
 
 // ── Main ────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  const { name, region } = parseArgs();
+  const { name, region, masterUrl: cliMasterUrl } = parseArgs();
 
   // Derive master encryption key from JWT_SECRET (same as services/livekit.ts)
   const jwtSecret = process.env.JWT_SECRET;
@@ -72,7 +84,20 @@ async function main(): Promise<void> {
 
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
     const masterUrl =
-      process.env.PUBLIC_URL || process.env.API_URL || 'http://localhost:3000';
+      cliMasterUrl || process.env.PUBLIC_URL || process.env.API_URL || 'http://localhost:3000';
+
+    if (masterUrl === 'http://localhost:3000') {
+      console.warn(
+        'Warning: No --master-url provided and no PUBLIC_URL/API_URL env var found.',
+      );
+      console.warn(
+        '  The relay will try to reach Master at http://localhost:3000 which may not work.',
+      );
+      console.warn(
+        '  Use: create-relay --name "..." --region "..." --master-url "https://your-domain.com"',
+      );
+      console.warn('');
+    }
 
     // Create relay record
     const [created] = await sql`
