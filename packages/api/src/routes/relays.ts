@@ -213,7 +213,13 @@ export const relayRoutes: FastifyPluginAsync = async (fastify) => {
     // Create relay record
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
 
-    const MASTER_URL = process.env.PUBLIC_URL || process.env.API_URL || 'http://localhost:3000';
+    // Derive master URL from the request origin (the browser knows the correct public URL)
+    const origin = request.headers.origin || request.headers.referer;
+    const MASTER_URL = origin
+      ? new URL(origin).origin
+      : process.env.PUBLIC_URL ||
+        process.env.API_URL ||
+        `${request.protocol}://${request.hostname}`;
     const encryptionKey = getMasterEncryptionKey();
     const encryptedPrivateKey = await encryptWithKey(masterPrivateKey, encryptionKey);
 
@@ -308,7 +314,12 @@ export const relayRoutes: FastifyPluginAsync = async (fastify) => {
         await generateECDHKeyPair();
 
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-      const MASTER_URL = process.env.PUBLIC_URL || process.env.API_URL || 'http://localhost:3000';
+      const origin = request.headers.origin || request.headers.referer;
+      const MASTER_URL = origin
+        ? new URL(origin).origin
+        : process.env.PUBLIC_URL ||
+          process.env.API_URL ||
+          `${request.protocol}://${request.hostname}`;
 
       const { token, hash } = generatePairingToken({
         relay_id: id,
