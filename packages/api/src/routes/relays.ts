@@ -268,7 +268,8 @@ export const relayRoutes: FastifyPluginAsync = async (fastify) => {
   // List all relays (admin view)
   fastify.get('/admin/relays', { preHandler: [authenticate] }, async (request, reply) => {
     if (!(await requireAdmin(request.user.id, reply))) return;
-    return db.relays.findAll();
+    const relays = await db.relays.findAll();
+    return { relays };
   });
 
   // Get relay details
