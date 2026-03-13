@@ -155,8 +155,13 @@ async function handleRelayUpgrade(
 function filterHeaders(headers: IncomingMessage['headers']): Record<string, string | string[] | undefined> {
   const filtered: Record<string, string | string[] | undefined> = {};
   for (const [key, value] of Object.entries(headers)) {
-    // Skip host (we set our own) and keep everything else
+    // Skip host (we set our own)
     if (key === 'host') continue;
+    // Strip WebSocket extensions — the proxy does raw byte piping and cannot
+    // handle permessage-deflate compression.  If the relay negotiates compression
+    // but the client doesn't know about it, the browser rejects the compressed
+    // frames with "reserved bits are on" errors.
+    if (key === 'sec-websocket-extensions') continue;
     filtered[key] = value;
   }
   return filtered;

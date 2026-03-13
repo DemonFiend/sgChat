@@ -938,6 +938,8 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
           c.user_limit,
           c.is_afk_channel,
           c.is_temp_channel,
+          c.voice_relay_policy,
+          c.preferred_relay_id,
           c.created_at,
           -- Calculate unread count
           COALESCE(
@@ -988,6 +990,8 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
           has_mentions: c.has_mentions,
           is_afk_channel: c.is_afk_channel || false,
           is_temp_channel: c.is_temp_channel || false,
+          voice_relay_policy: c.voice_relay_policy || 'master',
+          preferred_relay_id: c.preferred_relay_id || null,
         })),
         categories: categories.map((cat: any) => ({
           id: cat.id,
