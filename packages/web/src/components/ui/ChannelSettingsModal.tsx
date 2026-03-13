@@ -13,7 +13,17 @@ interface ChannelSettingsModalProps {
     bitrate?: number;
     user_limit?: number;
     server_id: string;
+    voice_relay_policy?: string;
+    preferred_relay_id?: string | null;
   };
+}
+
+interface TrustedRelay {
+  id: string;
+  name: string;
+  region: string;
+  status: string;
+  last_health_status: string | null;
 }
 
 interface PermissionOverride {
@@ -45,6 +55,9 @@ export function ChannelSettingsModal({ isOpen, onClose, channel }: ChannelSettin
   const [saving, setSaving] = useState(false);
   const [overrides, setOverrides] = useState<PermissionOverride[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
+  const [relays, setRelays] = useState<TrustedRelay[]>([]);
+  const [relayPolicy, setRelayPolicy] = useState<string>('master');
+  const [preferredRelayId, setPreferredRelayId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [expandedOverrideId, setExpandedOverrideId] = useState<string | null>(null);
 
@@ -55,6 +68,8 @@ export function ChannelSettingsModal({ isOpen, onClose, channel }: ChannelSettin
     setChannelTopic(channel.topic || '');
     setBitrate(channel.bitrate || 64000);
     setUserLimit(channel.user_limit || 0);
+    setRelayPolicy(channel.voice_relay_policy || 'master');
+    setPreferredRelayId(channel.preferred_relay_id || null);
 
     (async () => {
       try {
@@ -66,6 +81,16 @@ export function ChannelSettingsModal({ isOpen, onClose, channel }: ChannelSettin
         setRoles(rolesData || []);
       } catch {
         // Non-critical, permissions tab just won't show data
+      }
+
+      // Fetch trusted relays for voice region selector
+      if (isVoice) {
+        try {
+          const relayList = await api.get<TrustedRelay[]>('/relays');
+          setRelays(relayList || []);
+        } catch {
+          // No relays available, that's fine
+        }
       }
     })();
   }, []);
@@ -80,6 +105,12 @@ export function ChannelSettingsModal({ isOpen, onClose, channel }: ChannelSettin
       if (isVoice) {
         if (bitrate !== (channel.bitrate || 64000)) updates.bitrate = bitrate;
         if (userLimit !== (channel.user_limit || 0)) updates.user_limit = userLimit;
+        if (relayPolicy !== (channel.voice_relay_policy || 'master')) {
+          updates.voice_relay_policy = relayPolicy;
+        }
+        if (relayPolicy === 'specific' && preferredRelayId !== (channel.preferred_relay_id || null)) {
+          updates.preferred_relay_id = preferredRelayId;
+        }
       }
 
       if (Object.keys(updates).length > 0) {
@@ -247,17 +278,39 @@ export function ChannelSettingsModal({ isOpen, onClose, channel }: ChannelSettin
                     </div>
                   </div>
 
-                  {/* Voice Region */}
+                  {/* Voice Region / Relay Policy */}
                   <div>
                     <label className="block text-sm font-medium text-text-secondary mb-1">Region</label>
                     <select
-                      value="automatic"
+                      value={relayPolicy === 'specific' ? `specific:${preferredRelayId || ''}` : relayPolicy}
                       className="w-full px-3 py-2 bg-bg-secondary border border-border rounded-lg text-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary"
-                      onChange={() => {}}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === 'master') {
+                          setRelayPolicy('master');
+                          setPreferredRelayId(null);
+                        } else if (val === 'auto') {
+                          setRelayPolicy('auto');
+                          setPreferredRelayId(null);
+                        } else if (val.startsWith('specific:')) {
+                          setRelayPolicy('specific');
+                          setPreferredRelayId(val.replace('specific:', ''));
+                        }
+                      }}
                     >
-                      <option value="automatic">Automatic</option>
+                      <option value="master">Main Server</option>
+                      {relays.length > 0 && <option value="auto">Automatic (best relay)</option>}
+                      {relays.map((relay) => (
+                        <option key={relay.id} value={`specific:${relay.id}`}>
+                          {relay.name} ({relay.region}){relay.last_health_status === 'unreachable' ? ' — offline' : ''}
+                        </option>
+                      ))}
                     </select>
-                    <p className="text-xs text-text-muted mt-1">Voice channels use the server&apos;s default region. Additional regions will be available when multi-region support is configured.</p>
+                    <p className="text-xs text-text-muted mt-1">
+                      {relayPolicy === 'master' && 'Voice traffic routes through the main server.'}
+                      {relayPolicy === 'auto' && 'Automatically selects the lowest-latency relay server.'}
+                      {relayPolicy === 'specific' && 'Voice traffic routes through the selected relay server.'}
+                    </p>
                   </div>
                 </>
               )}

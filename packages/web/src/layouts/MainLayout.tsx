@@ -129,6 +129,10 @@ export function MainLayout() {
     type: string;
     topic?: string;
     server_id: string;
+    bitrate?: number;
+    user_limit?: number;
+    voice_relay_policy?: string;
+    preferred_relay_id?: string | null;
   } | null>(null);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [profilePopover, setProfilePopover] = useState<{
@@ -1313,6 +1317,10 @@ export function MainLayout() {
                 name: channel.name,
                 type: channel.type,
                 topic: channel.topic,
+                bitrate: channel.bitrate,
+                user_limit: channel.user_limit,
+                voice_relay_policy: channel.voice_relay_policy,
+                preferred_relay_id: channel.preferred_relay_id,
                 server_id: currentServer?.id || '',
               })
             }

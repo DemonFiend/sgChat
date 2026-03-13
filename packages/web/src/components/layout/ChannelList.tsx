@@ -24,6 +24,8 @@ export interface Channel {
   is_afk_channel?: boolean;
   bitrate?: number;
   user_limit?: number;
+  voice_relay_policy?: string;
+  preferred_relay_id?: string | null;
 }
 
 export interface Category {

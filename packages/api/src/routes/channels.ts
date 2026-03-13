@@ -46,6 +46,8 @@ const updateChannelSchema = z.object({
   bitrate: z.number().min(8000).max(384000).optional(), // voice only
   user_limit: z.number().min(0).max(99).optional(), // voice only
   is_afk_channel: z.boolean().optional(), // voice only
+  voice_relay_policy: z.enum(['master', 'auto', 'specific']).optional(), // voice only
+  preferred_relay_id: z.string().uuid().nullable().optional(), // voice only, for 'specific' policy
 });
 
 const reorderChannelsSchema = z.object({
@@ -543,10 +545,22 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
       if (body.position !== undefined) updates.position = body.position;
 
       // Voice channel specific
-      if (channel.type === 'voice') {
+      if (channel.type === 'voice' || channel.type === 'music' || channel.type === 'temp_voice') {
         if (body.bitrate !== undefined) updates.bitrate = body.bitrate;
         if (body.user_limit !== undefined) updates.user_limit = body.user_limit;
         if (body.is_afk_channel !== undefined) updates.is_afk_channel = body.is_afk_channel;
+        if (body.voice_relay_policy !== undefined) {
+          updates.voice_relay_policy = body.voice_relay_policy;
+          // Clear preferred_relay_id when switching away from 'specific'
+          if (body.voice_relay_policy !== 'specific') {
+            updates.preferred_relay_id = null;
+          }
+          // Clear active_relay_id when switching to 'master' (no relay needed)
+          if (body.voice_relay_policy === 'master') {
+            updates.active_relay_id = null;
+          }
+        }
+        if (body.preferred_relay_id !== undefined) updates.preferred_relay_id = body.preferred_relay_id;
       }
 
       if (Object.keys(updates).length === 0) {
