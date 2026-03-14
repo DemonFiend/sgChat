@@ -14,10 +14,13 @@ import {
   reorderRoleReactionMappingsSchema,
   roleReactionSetupSchema,
   formatChannelSchema,
+  rolePickerToggleSchema,
 } from '@sgchat/shared';
 import {
   createDefaultGroups,
   getGroupsForServer,
+  getPickerGroupsForUser,
+  toggleRoleForUser,
   postRoleReactionMessage,
   refreshGroupMessage,
   refreshAllGroupMessages,
@@ -44,6 +47,79 @@ async function requireManageRoles(request: any, reply: any, serverId: string) {
 }
 
 export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
+  // ============================================================
+  // USER-FACING ROLE PICKER ENDPOINTS (no MANAGE_ROLES required)
+  // ============================================================
+
+  /**
+   * GET /:serverId/role-picker - Get enabled modern-mode groups with user's current roles
+   */
+  fastify.get('/:serverId/role-picker', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { serverId } = request.params as { serverId: string };
+
+      // Verify user is a member of this server
+      const [member] = await sql`
+        SELECT 1 FROM members WHERE user_id = ${request.user!.id} AND server_id = ${serverId}
+      `;
+      if (!member) return notFound(reply, 'Server');
+
+      const groups = await getPickerGroupsForUser(serverId, request.user!.id);
+      return { groups };
+    },
+  });
+
+  /**
+   * POST /:serverId/role-picker/toggle - Toggle a role on/off for the current user
+   */
+  fastify.post('/:serverId/role-picker/toggle', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { serverId } = request.params as { serverId: string };
+      const body = rolePickerToggleSchema.parse(request.body);
+
+      // Verify user is a member of this server
+      const [member] = await sql`
+        SELECT 1 FROM members WHERE user_id = ${request.user!.id} AND server_id = ${serverId}
+      `;
+      if (!member) return notFound(reply, 'Server');
+
+      let result;
+      try {
+        result = await toggleRoleForUser(serverId, request.user!.id, body.group_id, body.role_id);
+      } catch (err: any) {
+        return badRequest(reply, err.message);
+      }
+
+      // Broadcast member.update with updated roles
+      const userRoles = await sql`
+        SELECT r.id, r.name, r.color, r.position
+        FROM member_roles mr
+        JOIN roles r ON mr.role_id = r.id
+        WHERE mr.member_user_id = ${request.user!.id}
+          AND mr.member_server_id = ${serverId}
+      `;
+
+      await publishEvent({
+        type: 'member.update',
+        resourceId: `server:${serverId}`,
+        actorId: null,
+        payload: {
+          user_id: request.user!.id,
+          server_id: serverId,
+          roles: userRoles,
+        },
+      });
+
+      return result;
+    },
+  });
+
+  // ============================================================
+  // ADMIN ENDPOINTS (require MANAGE_ROLES)
+  // ============================================================
+
   /**
    * GET /:serverId/role-reactions - List all groups with mappings
    */
@@ -147,11 +223,14 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
       if (denied) return denied;
 
       const body = createRoleReactionGroupSchema.parse(request.body);
+      const mode = body.mode ?? 'modern';
 
-      // Verify channel belongs to server
-      const channel = await db.channels.findById(body.channel_id);
-      if (!channel || channel.server_id !== serverId) {
-        return notFound(reply, 'Channel');
+      // Verify channel belongs to server (required for legacy mode)
+      if (body.channel_id) {
+        const channel = await db.channels.findById(body.channel_id);
+        if (!channel || channel.server_id !== serverId) {
+          return notFound(reply, 'Channel');
+        }
       }
 
       // Check name uniqueness
@@ -164,21 +243,22 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
 
       const [group] = await sql`
         INSERT INTO role_reaction_groups (
-          server_id, channel_id, name, description, position, enabled, remove_roles_on_disable, exclusive
+          server_id, channel_id, name, description, position, enabled, remove_roles_on_disable, exclusive, mode
         )
         VALUES (
-          ${serverId}, ${body.channel_id}, ${body.name},
+          ${serverId}, ${body.channel_id || null}, ${body.name},
           ${body.description || null},
           ${body.position ?? 0},
           ${body.enabled ?? true},
           ${body.remove_roles_on_disable ?? true},
-          ${body.exclusive ?? false}
+          ${body.exclusive ?? false},
+          ${mode}
         )
         RETURNING *
       `;
 
-      // If enabled, post an empty message (mappings added later)
-      if (group.enabled) {
+      // If enabled and legacy mode with a channel, post a reaction message
+      if (group.enabled && mode === 'legacy' && body.channel_id) {
         const message = await postRoleReactionMessage(
           sql, group.id, serverId, body.channel_id,
           group.name, group.description || null, [],
@@ -252,10 +332,11 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
         UPDATE role_reaction_groups SET
           name = COALESCE(${body.name ?? null}, name),
           description = COALESCE(${body.description !== undefined ? body.description : null}, description),
-          channel_id = COALESCE(${body.channel_id ?? null}, channel_id),
+          channel_id = ${body.channel_id !== undefined ? body.channel_id : sql`channel_id`},
           position = COALESCE(${body.position ?? null}, position),
           remove_roles_on_disable = COALESCE(${body.remove_roles_on_disable ?? null}, remove_roles_on_disable),
           exclusive = COALESCE(${body.exclusive ?? null}, exclusive),
+          mode = COALESCE(${body.mode ?? null}, mode),
           message_id = ${channelChanged ? null : sql`message_id`},
           updated_at = NOW()
         WHERE id = ${groupId}

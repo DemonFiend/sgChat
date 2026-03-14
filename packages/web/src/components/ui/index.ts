@@ -43,6 +43,7 @@ export { ServerPopupConfigForm } from './ServerPopupConfigForm';
 export { SoundboardPanel } from './SoundboardPanel';
 export { StickerPicker } from './StickerPicker';
 export { RoleReactionsTab } from './RoleReactionsTab';
+export { RolePickerModal } from './RolePickerModal';
 export { UserProfilePopover } from './UserProfilePopover';
 export { TitleBar } from './TitleBar';
 export { Skeleton, SkeletonText, SkeletonAvatar, SkeletonMessage } from './Skeleton';

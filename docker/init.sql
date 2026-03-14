@@ -1413,7 +1413,7 @@ CREATE INDEX IF NOT EXISTS idx_warnings_server ON warnings(server_id, created_at
 CREATE TABLE IF NOT EXISTS role_reaction_groups (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   server_id UUID NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
-  channel_id UUID NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+  channel_id UUID REFERENCES channels(id) ON DELETE CASCADE,
   message_id UUID REFERENCES messages(id) ON DELETE SET NULL,
 
   name TEXT NOT NULL CHECK (length(name) >= 1 AND length(name) <= 100),
@@ -1422,6 +1422,7 @@ CREATE TABLE IF NOT EXISTS role_reaction_groups (
   enabled BOOLEAN DEFAULT true,
   remove_roles_on_disable BOOLEAN DEFAULT true,
   exclusive BOOLEAN DEFAULT false,
+  mode TEXT NOT NULL DEFAULT 'modern' CHECK (mode IN ('modern', 'legacy')),
 
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),

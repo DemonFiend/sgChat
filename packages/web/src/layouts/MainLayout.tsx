@@ -56,6 +56,7 @@ import { slideInRight, easeTransition } from '@/lib/motion';
 import { PinnedMessagesPanel, type PinnedMessage } from '@/components/ui/PinnedMessagesPanel';
 import { ThreadPanel, type ThreadInfo } from '@/components/ui/ThreadPanel';
 import { SearchModal } from '@/components/ui/SearchModal';
+import { RolePickerModal } from '@/components/ui/RolePickerModal';
 import type { Channel, Category } from '@/components/layout/ChannelList';
 
 interface ServerData {
@@ -123,6 +124,7 @@ export function MainLayout() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   // Modal & popover state
+  const [showRolePicker, setShowRolePicker] = useState(false);
   const [showServerSettings, setShowServerSettings] = useState(false);
   const [settingsChannel, setSettingsChannel] = useState<{
     id: string;
@@ -1322,6 +1324,7 @@ export function MainLayout() {
             categories={categories}
             onGearClick={(pos) => setGearMenuPosition(pos)}
             onAdminClick={(pos) => setAdminMenuPosition(pos)}
+            onRolePickerClick={() => setShowRolePicker(true)}
             onEventsClick={() => { setShowEventsPanel(true); setShowStorageDashboard(false); }}
             showGearButton={hasAnyAdminPermission(currentServer?.owner_id)}
             showAdminButton={hasAnyAdminPermission(currentServer?.owner_id)}
@@ -1528,6 +1531,15 @@ export function MainLayout() {
           serverIcon={currentServer.icon_url}
           serverOwnerId={currentServer.owner_id}
           initialTab={settingsInitialTab as any}
+        />
+      )}
+
+      {/* Role Picker Modal */}
+      {currentServer && (
+        <RolePickerModal
+          isOpen={showRolePicker}
+          onClose={() => setShowRolePicker(false)}
+          serverId={currentServer.id}
         />
       )}
 

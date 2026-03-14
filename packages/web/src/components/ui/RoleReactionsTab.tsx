@@ -51,6 +51,7 @@ export function RoleReactionsTab({ serverId, channels }: Props) {
   const [editChannelId, setEditChannelId] = useState('');
   const [editRemoveRolesOnDisable, setEditRemoveRolesOnDisable] = useState(true);
   const [editExclusive, setEditExclusive] = useState(false);
+  const [editMode, setEditMode] = useState<'modern' | 'legacy'>('modern');
   const [isSaving, setIsSaving] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
@@ -101,9 +102,10 @@ export function RoleReactionsTab({ serverId, channels }: Props) {
     if (selectedGroup) {
       setEditName(selectedGroup.name);
       setEditDescription(selectedGroup.description || '');
-      setEditChannelId(selectedGroup.channel_id);
+      setEditChannelId(selectedGroup.channel_id || '');
       setEditRemoveRolesOnDisable(selectedGroup.remove_roles_on_disable);
       setEditExclusive(selectedGroup.exclusive);
+      setEditMode(selectedGroup.mode || 'legacy');
       setHasUnsavedChanges(false);
     }
   }, [selectedGroupId]);
@@ -189,9 +191,10 @@ export function RoleReactionsTab({ serverId, channels }: Props) {
       await api.patch(`/servers/${serverId}/role-reactions/groups/${selectedGroup.id}`, {
         name: editName.trim(),
         description: editDescription.trim() || null,
-        channel_id: editChannelId,
+        channel_id: editChannelId || null,
         remove_roles_on_disable: editRemoveRolesOnDisable,
         exclusive: editExclusive,
+        mode: editMode,
       });
       setHasUnsavedChanges(false);
       await fetchData();
@@ -282,7 +285,7 @@ export function RoleReactionsTab({ serverId, channels }: Props) {
   if (groups.length === 0) {
     return (
       <div>
-        <h2 className="text-xl font-bold text-text-primary mb-2">Role Reactions</h2>
+        <h2 className="text-xl font-bold text-text-primary mb-2">Role Picker</h2>
         <p className="text-sm text-text-secondary mb-6">
           Allow members to self-assign roles by reacting to messages with emojis.
           Setting up will create 7 default role groups with pre-configured roles and emojis
@@ -333,7 +336,7 @@ export function RoleReactionsTab({ serverId, channels }: Props) {
             disabled={!setupChannelId || isSettingUp}
             className="px-4 py-2 bg-brand-primary text-white rounded hover:bg-brand-primary/80 disabled:opacity-50 transition-colors"
           >
-            {isSettingUp ? 'Setting up...' : 'Set Up Role Reactions'}
+            {isSettingUp ? 'Setting up...' : 'Set Up Role Picker'}
           </button>
         </div>
       </div>
@@ -344,7 +347,7 @@ export function RoleReactionsTab({ serverId, channels }: Props) {
   return (
     <div>
       <div className="flex items-center justify-between mb-5">
-        <h2 className="text-xl font-bold text-text-primary">Role Reactions</h2>
+        <h2 className="text-xl font-bold text-text-primary">Role Picker</h2>
       </div>
 
       {error && (
@@ -496,21 +499,6 @@ export function RoleReactionsTab({ serverId, channels }: Props) {
                     />
                   </div>
 
-                  <div>
-                    <label className="text-xs font-semibold uppercase text-text-muted mb-1.5 tracking-wide block">
-                      Channel
-                    </label>
-                    <select
-                      value={editChannelId}
-                      onChange={e => { setEditChannelId(e.target.value); setHasUnsavedChanges(true); }}
-                      className="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
-                    >
-                      {textChannels.map(c => (
-                        <option key={c.id} value={c.id}>#{c.name}</option>
-                      ))}
-                    </select>
-                  </div>
-
                   <div className="flex items-center justify-between">
                     <div>
                       <span className="text-sm text-text-primary">Enabled</span>
@@ -573,8 +561,122 @@ export function RoleReactionsTab({ serverId, channels }: Props) {
                       }`} />
                     </button>
                   </div>
+
+                  {/* Mode selector */}
+                  <div>
+                    <label className="text-xs font-semibold uppercase text-text-muted mb-1.5 tracking-wide block">
+                      Mode
+                    </label>
+                    <div className="flex rounded-lg overflow-hidden border border-border-subtle">
+                      <button
+                        onClick={() => { setEditMode('modern'); setHasUnsavedChanges(true); }}
+                        className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
+                          editMode === 'modern'
+                            ? 'bg-brand-primary text-white'
+                            : 'bg-bg-tertiary text-text-secondary hover:text-text-primary'
+                        }`}
+                      >
+                        Modern
+                      </button>
+                      <button
+                        onClick={() => { setEditMode('legacy'); setHasUnsavedChanges(true); }}
+                        className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
+                          editMode === 'legacy'
+                            ? 'bg-brand-primary text-white'
+                            : 'bg-bg-tertiary text-text-secondary hover:text-text-primary'
+                        }`}
+                      >
+                        Legacy
+                      </button>
+                    </div>
+                    <p className="text-xs text-text-muted mt-1.5">
+                      {editMode === 'modern'
+                        ? 'Roles appear in the Role Picker modal with interactive pill buttons.'
+                        : 'Roles appear as a reaction message in a channel. Members react to get roles.'}
+                    </p>
+                  </div>
+
+                  {/* Channel (required for legacy, optional for modern) */}
+                  {editMode === 'legacy' && (
+                    <div>
+                      <label className="text-xs font-semibold uppercase text-text-muted mb-1.5 tracking-wide block">
+                        Channel <span className="text-danger">*</span>
+                      </label>
+                      <select
+                        value={editChannelId}
+                        onChange={e => { setEditChannelId(e.target.value); setHasUnsavedChanges(true); }}
+                        className="w-full px-3 py-2 bg-bg-tertiary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-brand-primary"
+                      >
+                        <option value="">Select a channel...</option>
+                        {textChannels.map(c => (
+                          <option key={c.id} value={c.id}>#{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
               </div>
+
+              {/* Preview */}
+              {editMode === 'legacy' && selectedGroup.mappings.length > 0 && (
+                <div className="bg-bg-secondary rounded-lg p-5 border border-border-subtle">
+                  <h4 className="text-xs font-semibold uppercase text-text-muted mb-3 tracking-wide">
+                    Legacy Preview
+                  </h4>
+                  <div className="bg-bg-tertiary rounded-lg p-4 border border-border-subtle/50">
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-full bg-brand-primary flex items-center justify-center flex-shrink-0">
+                        <span className="text-white text-xs font-bold">R</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className="text-sm font-semibold text-brand-primary">Roles</span>
+                          <span className="px-1 py-0.5 text-[9px] bg-brand-primary/20 text-brand-primary rounded uppercase font-semibold">Bot</span>
+                        </div>
+                        <div className="text-sm text-text-primary space-y-0.5">
+                          <p className="font-semibold">Category: {editName || selectedGroup.name}</p>
+                          {(editDescription || selectedGroup.description) && (
+                            <p className="text-text-secondary">{editDescription || selectedGroup.description}</p>
+                          )}
+                          {selectedGroup.mappings.map((m: RoleReactionMapping) => (
+                            <p key={m.id} className="text-text-secondary">
+                              Please React{' '}
+                              {m.emoji_type === 'custom' && m.custom_emoji_url ? (
+                                <img src={m.custom_emoji_url} alt={m.emoji} className="w-4 h-4 inline-block align-text-bottom" />
+                              ) : (
+                                <span>{m.emoji}</span>
+                              )}{' '}
+                              to obtain{' '}
+                              <span style={{ color: m.role_color || undefined }} className="font-medium">
+                                @{m.label || m.role_name || 'Unknown'}
+                              </span>
+                            </p>
+                          ))}
+                        </div>
+                        {/* Fake reaction bubbles */}
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {selectedGroup.mappings.slice(0, 8).map((m: RoleReactionMapping) => (
+                            <div
+                              key={m.id}
+                              className="flex items-center gap-1 px-1.5 py-0.5 bg-bg-secondary rounded border border-border-subtle"
+                            >
+                              {m.emoji_type === 'custom' && m.custom_emoji_url ? (
+                                <img src={m.custom_emoji_url} alt="" className="w-3.5 h-3.5" />
+                              ) : (
+                                <span className="text-xs">{m.emoji}</span>
+                              )}
+                              <span className="text-[10px] text-text-muted">1</span>
+                            </div>
+                          ))}
+                          {selectedGroup.mappings.length > 8 && (
+                            <span className="text-[10px] text-text-muted self-center">+{selectedGroup.mappings.length - 8} more</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Mappings */}
               <div className="bg-bg-secondary rounded-lg p-5 border border-border-subtle">
@@ -715,9 +817,10 @@ export function RoleReactionsTab({ serverId, channels }: Props) {
                         if (selectedGroup) {
                           setEditName(selectedGroup.name);
                           setEditDescription(selectedGroup.description || '');
-                          setEditChannelId(selectedGroup.channel_id);
+                          setEditChannelId(selectedGroup.channel_id || '');
                           setEditRemoveRolesOnDisable(selectedGroup.remove_roles_on_disable);
                           setEditExclusive(selectedGroup.exclusive);
+                          setEditMode(selectedGroup.mode || 'legacy');
                           setHasUnsavedChanges(false);
                         }
                       }}

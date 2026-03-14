@@ -1,4 +1,5 @@
 import { ROLES_USER_ID } from '@sgchat/shared';
+import type { RolePickerGroup } from '@sgchat/shared';
 import { sql } from '../lib/db.js';
 import { publishEvent } from '../lib/eventBus.js';
 
@@ -621,6 +622,139 @@ export async function countNonRoleMessages(channelId: string): Promise<number> {
       )
   `;
   return result.count;
+}
+
+/**
+ * Get all enabled modern-mode role picker groups for a server,
+ * with has_role flag per mapping for the given user.
+ */
+export async function getPickerGroupsForUser(
+  serverId: string,
+  userId: string
+): Promise<RolePickerGroup[]> {
+  const groups = await sql`
+    SELECT id, name, description, exclusive, position
+    FROM role_reaction_groups
+    WHERE server_id = ${serverId} AND enabled = true AND mode = 'modern'
+    ORDER BY position ASC
+  `;
+
+  if (groups.length === 0) return [];
+
+  // Get user's current roles in this server
+  const userRoleRows = await sql`
+    SELECT role_id FROM member_roles
+    WHERE member_user_id = ${userId} AND member_server_id = ${serverId}
+  `;
+  const userRoleIds = new Set(userRoleRows.map((r: any) => r.role_id));
+
+  const result: RolePickerGroup[] = [];
+  for (const group of groups) {
+    const mappings = await sql`
+      SELECT rrm.role_id, r.name as role_name, r.color as role_color,
+        rrm.emoji, rrm.emoji_type, rrm.label,
+        e.shortcode as custom_emoji_shortcode, e.asset_key as custom_emoji_asset_key
+      FROM role_reaction_mappings rrm
+      JOIN roles r ON rrm.role_id = r.id
+      LEFT JOIN emojis e ON rrm.custom_emoji_id = e.id
+      WHERE rrm.group_id = ${group.id}
+      ORDER BY rrm.position ASC
+    `;
+
+    result.push({
+      id: group.id,
+      name: group.name,
+      description: group.description,
+      exclusive: group.exclusive,
+      position: group.position,
+      mappings: mappings.map((m: any) => ({
+        role_id: m.role_id,
+        role_name: m.role_name,
+        role_color: m.role_color,
+        emoji: m.emoji,
+        emoji_type: m.emoji_type,
+        custom_emoji_url: m.custom_emoji_asset_key || undefined,
+        custom_emoji_shortcode: m.custom_emoji_shortcode || undefined,
+        label: m.label,
+        has_role: userRoleIds.has(m.role_id),
+      })),
+    });
+  }
+
+  return result;
+}
+
+/**
+ * Toggle a role for a user via the role picker (modern mode).
+ * Returns whether the role was added/removed and any roles removed (exclusive groups).
+ */
+export async function toggleRoleForUser(
+  serverId: string,
+  userId: string,
+  groupId: string,
+  roleId: string
+): Promise<{ added: boolean; role_id: string; removed_role_ids: string[] }> {
+  // Verify group exists, is enabled, and is in modern mode
+  const [group] = await sql`
+    SELECT id, exclusive, mode FROM role_reaction_groups
+    WHERE id = ${groupId} AND server_id = ${serverId} AND enabled = true AND mode = 'modern'
+  `;
+  if (!group) throw new Error('Group not found or not in modern mode');
+
+  // Verify the mapping exists in this group
+  const [mapping] = await sql`
+    SELECT role_id FROM role_reaction_mappings
+    WHERE group_id = ${groupId} AND role_id = ${roleId}
+  `;
+  if (!mapping) throw new Error('Role not found in this group');
+
+  // Check if user already has this role
+  const [existing] = await sql`
+    SELECT 1 FROM member_roles
+    WHERE member_user_id = ${userId} AND member_server_id = ${serverId} AND role_id = ${roleId}
+  `;
+
+  const removedRoleIds: string[] = [];
+
+  if (existing) {
+    // Remove the role (toggle off)
+    await sql`
+      DELETE FROM member_roles
+      WHERE member_user_id = ${userId} AND member_server_id = ${serverId} AND role_id = ${roleId}
+    `;
+    return { added: false, role_id: roleId, removed_role_ids: [] };
+  }
+
+  // Assigning the role (toggle on)
+  if (group.exclusive) {
+    // Remove other roles from this group first
+    const otherMappings = await sql`
+      SELECT role_id FROM role_reaction_mappings
+      WHERE group_id = ${groupId} AND role_id != ${roleId}
+    `;
+    if (otherMappings.length > 0) {
+      const otherRoleIds = otherMappings.map((m: any) => m.role_id);
+      const removed = await sql`
+        DELETE FROM member_roles
+        WHERE member_user_id = ${userId}
+          AND member_server_id = ${serverId}
+          AND role_id = ANY(${otherRoleIds})
+        RETURNING role_id
+      `;
+      for (const r of removed) {
+        removedRoleIds.push(r.role_id);
+      }
+    }
+  }
+
+  // Assign the role
+  await sql`
+    INSERT INTO member_roles (member_user_id, member_server_id, role_id)
+    VALUES (${userId}, ${serverId}, ${roleId})
+    ON CONFLICT (member_user_id, member_server_id, role_id) DO NOTHING
+  `;
+
+  return { added: true, role_id: roleId, removed_role_ids: removedRoleIds };
 }
 
 /**

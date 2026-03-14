@@ -28,6 +28,7 @@ interface ServerSidebarProps {
   onGearClick?: (position: { x: number; y: number }) => void;
   onAdminClick?: (position: { x: number; y: number }) => void;
   onEventsClick?: () => void;
+  onRolePickerClick?: () => void;
   onChannelSettingsClick?: (channel: Channel) => void;
   onCreateChannel?: () => void;
   onChannelDoubleClick?: (channelId: string) => void;
@@ -36,7 +37,7 @@ interface ServerSidebarProps {
   showAdminButton?: boolean;
 }
 
-export function ServerSidebar({ server, channels, categories, onServerSettingsClick, onGearClick, onAdminClick, onEventsClick, onChannelSettingsClick, onCreateChannel, onChannelDoubleClick, showGearButton, showAdminButton }: ServerSidebarProps) {
+export function ServerSidebar({ server, channels, categories, onServerSettingsClick, onGearClick, onAdminClick, onEventsClick, onRolePickerClick, onChannelSettingsClick, onCreateChannel, onChannelDoubleClick, showGearButton, showAdminButton }: ServerSidebarProps) {
   const { channelId: _channelId } = useParams<{ channelId?: string }>();
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
@@ -139,6 +140,19 @@ export function ServerSidebar({ server, channels, categories, onServerSettingsCl
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          </button>
+        )}
+
+        {/* Roles Button - visible to all members */}
+        {onRolePickerClick && (
+          <button
+            onClick={onRolePickerClick}
+            className="p-2 rounded hover:bg-bg-modifier-hover text-text-muted hover:text-text-primary transition-colors"
+            title="Choose Roles"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
             </svg>
           </button>
         )}

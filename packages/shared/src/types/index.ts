@@ -1002,10 +1002,12 @@ export interface ComprehensiveStorageStats {
 // Role Reactions
 // ============================================================
 
+export type RoleReactionMode = 'modern' | 'legacy';
+
 export interface RoleReactionGroup {
   id: string;
   server_id: string;
-  channel_id: string;
+  channel_id: string | null;
   message_id: string | null;
   name: string;
   description: string | null;
@@ -1013,9 +1015,43 @@ export interface RoleReactionGroup {
   enabled: boolean;
   remove_roles_on_disable: boolean;
   exclusive: boolean;
+  mode: RoleReactionMode;
   mappings: RoleReactionMapping[];
   created_at: string;
   updated_at: string;
+}
+
+// Role Picker API types (user-facing, no admin permission required)
+export interface RolePickerGroup {
+  id: string;
+  name: string;
+  description: string | null;
+  exclusive: boolean;
+  position: number;
+  mappings: RolePickerMapping[];
+}
+
+export interface RolePickerMapping {
+  role_id: string;
+  role_name: string;
+  role_color: string | null;
+  emoji: string;
+  emoji_type: 'unicode' | 'custom';
+  custom_emoji_url?: string;
+  custom_emoji_shortcode?: string;
+  label: string | null;
+  has_role: boolean;
+}
+
+export interface RolePickerToggleRequest {
+  group_id: string;
+  role_id: string;
+}
+
+export interface RolePickerToggleResponse {
+  added: boolean;
+  role_id: string;
+  removed_role_ids: string[];
 }
 
 export interface RoleReactionMapping {

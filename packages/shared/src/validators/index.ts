@@ -260,23 +260,30 @@ export type UpdateThreadInput = z.infer<typeof updateThreadSchema>;
 // Role Reaction validators
 // ============================================================
 
+export const roleReactionModeSchema = z.enum(['modern', 'legacy']);
+
 export const createRoleReactionGroupSchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().max(500).nullable().optional(),
-  channel_id: z.string().uuid(),
+  channel_id: z.string().uuid().optional(),
   position: z.number().min(0).optional(),
   enabled: z.boolean().optional(),
   remove_roles_on_disable: z.boolean().optional(),
   exclusive: z.boolean().optional(),
-});
+  mode: roleReactionModeSchema.optional(),
+}).refine(
+  (data) => data.mode !== 'legacy' || data.channel_id,
+  { message: 'channel_id is required for legacy mode groups', path: ['channel_id'] },
+);
 
 export const updateRoleReactionGroupSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(500).nullable().optional(),
-  channel_id: z.string().uuid().optional(),
+  channel_id: z.string().uuid().nullable().optional(),
   position: z.number().min(0).optional(),
   remove_roles_on_disable: z.boolean().optional(),
   exclusive: z.boolean().optional(),
+  mode: roleReactionModeSchema.optional(),
 });
 
 export const toggleRoleReactionGroupSchema = z.object({
@@ -312,6 +319,13 @@ export const formatChannelSchema = z.object({
   channel_id: z.string().uuid(),
 });
 
+// Role Picker validators (user-facing self-service)
+export const rolePickerToggleSchema = z.object({
+  group_id: z.string().uuid(),
+  role_id: z.string().uuid(),
+});
+
+export type RolePickerToggleInput = z.infer<typeof rolePickerToggleSchema>;
 export type CreateRoleReactionGroupInput = z.infer<typeof createRoleReactionGroupSchema>;
 export type UpdateRoleReactionGroupInput = z.infer<typeof updateRoleReactionGroupSchema>;
 export type ToggleRoleReactionGroupInput = z.infer<typeof toggleRoleReactionGroupSchema>;
