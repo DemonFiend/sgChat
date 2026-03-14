@@ -3,7 +3,6 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { clsx } from 'clsx';
 import { Avatar } from '@/components/ui/Avatar';
 import { MessageContent } from '@/components/ui/MessageContent';
-import { RoleReactionEmbed } from '@/components/ui/RoleReactionEmbed';
 import { ReactionPicker } from '@/components/ui/ReactionPicker';
 import { GifPicker } from '@/components/ui/GifPicker';
 import { StickerPicker } from '@/components/ui/StickerPicker';
@@ -64,7 +63,7 @@ export interface Message {
   attachments?: any[];
   reply_to_id?: string | null;
   reactions?: Reaction[];
-  type?: 'system' | 'default' | 'role_reaction';
+  type?: 'system' | 'default';
   system_event?: SystemEvent;
   pinned?: boolean;
 }
@@ -603,8 +602,7 @@ export function ChatPanel({
   };
 
   const isSystemMessage = (message: Message) =>
-    (message.type === 'system' || (message.system_event != null && message.system_event.type !== 'role_reaction'))
-    && message.type !== 'role_reaction';
+    message.type === 'system' || message.system_event != null;
 
   const shouldShowAuthor = (message: Message, index: number) => {
     if (isSystemMessage(message)) return true;
@@ -1276,11 +1274,8 @@ function MessageItem({
   isPinned, canPin, onPinClick,
   onCreateThread, hasThread, onOpenThread,
 }: MessageItemProps) {
-  const isRoleReaction = message.type === 'role_reaction' || message.system_event?.type === 'role_reaction';
-  const isSystem = (message.type === 'system' || message.system_event != null) && !isRoleReaction;
-  const author = isRoleReaction && (!message.author || !message.author.id)
-    ? { id: 'system', username: 'System', display_name: 'System', avatar_url: null, role_color: null }
-    : (message.author || { id: 'unknown', username: 'Unknown User', display_name: null, avatar_url: null });
+  const isSystem = message.type === 'system' || message.system_event != null;
+  const author = message.author || { id: 'unknown', username: 'Unknown User', display_name: null, avatar_url: null };
   const displayName = author.display_name || author.username;
   const isOwnMessage = currentUserId === author.id;
 
@@ -1373,17 +1368,6 @@ function MessageItem({
             {' \u2022 '}enter to <button onClick={onEditSave} className="text-text-link hover:underline">save</button>
           </div>
         </div>
-      );
-    }
-    if (isRoleReaction) {
-      return (
-        <RoleReactionEmbed
-          content={message.content}
-          systemEvent={message.system_event as any}
-          reactions={message.reactions || []}
-          onReactionClick={handleReactionClick}
-          serverId={serverId}
-        />
       );
     }
     return (

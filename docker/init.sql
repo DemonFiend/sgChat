@@ -55,6 +55,17 @@ VALUES (
   'offline'
 ) ON CONFLICT (id) DO NOTHING;
 
+-- Roles bot user (well-known UUID for posting role reaction messages)
+INSERT INTO users (id, username, email, password_hash, display_name, status)
+VALUES (
+  '00000000-0000-0000-0000-000000000002',
+  'Roles',
+  'roles@localhost',
+  '!disabled',
+  'Roles',
+  'offline'
+) ON CONFLICT (id) DO NOTHING;
+
 -- ============================================================
 -- SERVERS
 -- ============================================================

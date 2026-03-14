@@ -273,7 +273,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
         attachments: m.attachments || [],
         reply_to_id: m.reply_to_id,
         reactions: reactionsMap.get(m.id) || [],
-        type: m.system_event?.type === 'role_reaction' ? 'role_reaction' : (m.author_id === null ? 'system' : 'default'),
+        type: m.author_id === null ? 'system' : 'default',
         system_event: m.system_event || null,
         is_tts: m.is_tts || false,
       }));

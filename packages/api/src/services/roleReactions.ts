@@ -1,4 +1,4 @@
-import { SYSTEM_USER_ID } from '@sgchat/shared';
+import { ROLES_USER_ID } from '@sgchat/shared';
 import { sql } from '../lib/db.js';
 import { publishEvent } from '../lib/eventBus.js';
 
@@ -184,25 +184,18 @@ export async function postRoleReactionMessage(
   groupName: string,
   description: string | null,
   mappings: any[],
-  exclusive?: boolean
+  _exclusive?: boolean
 ) {
   const content = buildMessageContent(groupName, description, mappings);
 
   const [message] = await tx`
     INSERT INTO messages (
-      channel_id, author_id, content, system_event
+      channel_id, author_id, content
     )
     VALUES (
       ${channelId},
-      ${SYSTEM_USER_ID},
-      ${content},
-      ${JSON.stringify({
-        type: 'role_reaction',
-        group_id: groupId,
-        group_name: groupName,
-        description: description || null,
-        exclusive: exclusive ?? false,
-      })}
+      ${ROLES_USER_ID},
+      ${content}
     )
     RETURNING *
   `;
@@ -219,13 +212,13 @@ export async function postRoleReactionMessage(
     if (m.emoji_type === 'custom' && m.custom_emoji_id) {
       await tx`
         INSERT INTO message_reactions (message_id, user_id, reaction_type, custom_emoji_id)
-        VALUES (${message.id}, ${SYSTEM_USER_ID}, 'custom', ${m.custom_emoji_id})
+        VALUES (${message.id}, ${ROLES_USER_ID}, 'custom', ${m.custom_emoji_id})
         ON CONFLICT DO NOTHING
       `;
     } else {
       await tx`
         INSERT INTO message_reactions (message_id, user_id, reaction_type, unicode_emoji)
-        VALUES (${message.id}, ${SYSTEM_USER_ID}, 'unicode', ${m.emoji})
+        VALUES (${message.id}, ${ROLES_USER_ID}, 'unicode', ${m.emoji})
         ON CONFLICT DO NOTHING
       `;
     }
@@ -258,13 +251,6 @@ export async function refreshGroupMessage(groupId: string) {
   await sql`
     UPDATE messages
     SET content = ${content},
-        system_event = ${JSON.stringify({
-          type: 'role_reaction',
-          group_id: groupId,
-          group_name: group.name,
-          description: group.description || null,
-          exclusive: group.exclusive ?? false,
-        })},
         edited_at = NOW()
     WHERE id = ${group.message_id}
   `;
@@ -629,7 +615,10 @@ export async function countNonRoleMessages(channelId: string): Promise<number> {
     SELECT COUNT(*)::int as count
     FROM messages
     WHERE channel_id = ${channelId}
-      AND (system_event IS NULL OR system_event->>'type' != 'role_reaction')
+      AND id NOT IN (
+        SELECT message_id FROM role_reaction_groups
+        WHERE channel_id = ${channelId} AND message_id IS NOT NULL
+      )
   `;
   return result.count;
 }
@@ -643,14 +632,20 @@ export async function formatChannel(serverId: string, channelId: string) {
     const deleteResult = await tx`
       DELETE FROM messages
       WHERE channel_id = ${channelId}
-        AND (system_event IS NULL OR system_event->>'type' != 'role_reaction')
+        AND id NOT IN (
+          SELECT message_id FROM role_reaction_groups
+          WHERE channel_id = ${channelId} AND message_id IS NOT NULL
+        )
     `;
 
     // Also delete existing role-reaction messages (we'll repost them in order)
     await tx`
       DELETE FROM messages
       WHERE channel_id = ${channelId}
-        AND system_event->>'type' = 'role_reaction'
+        AND id IN (
+          SELECT message_id FROM role_reaction_groups
+          WHERE channel_id = ${channelId} AND message_id IS NOT NULL
+        )
     `;
 
     // Clear message_ids on all groups for this channel

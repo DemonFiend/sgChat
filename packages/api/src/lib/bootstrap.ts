@@ -13,6 +13,7 @@ import {
   DEFAULT_EVERYONE_PERMISSIONS,
   RoleTemplates,
   SYSTEM_USER_ID,
+  ROLES_USER_ID,
   TextPermissions,
   permissionToString,
 } from '@sgchat/shared';
@@ -253,10 +254,17 @@ export async function bootstrapServer(): Promise<void> {
     )
   `;
 
-  // Add system user as a server member (needed for seeding reactions)
+  // Add system user as a server member
   await db.sql`
     INSERT INTO members (user_id, server_id)
     VALUES (${SYSTEM_USER_ID}, ${server.id})
+    ON CONFLICT DO NOTHING
+  `;
+
+  // Add roles bot user as a server member (posts role reaction messages)
+  await db.sql`
+    INSERT INTO members (user_id, server_id)
+    VALUES (${ROLES_USER_ID}, ${server.id})
     ON CONFLICT DO NOTHING
   `;
 
