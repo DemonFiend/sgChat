@@ -746,6 +746,14 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
         })})
       `;
 
+      // Publish channel update so clients refresh their message list
+      await publishEvent({
+        type: 'channel.update',
+        resourceId: `server:${serverId}`,
+        actorId: request.user!.id,
+        payload: { id: body.channel_id, server_id: serverId },
+      });
+
       return result;
     },
   });
