@@ -3,7 +3,7 @@ import { authenticate } from '../middleware/auth.js';
 import { db, sql } from '../lib/db.js';
 import { publishEvent } from '../lib/eventBus.js';
 import { calculatePermissions } from '../services/permissions.js';
-import { ServerPermissions, hasPermission } from '@sgchat/shared';
+import { ServerPermissions, hasPermission, SYSTEM_USER_ID } from '@sgchat/shared';
 import { notFound, badRequest, forbidden, conflict } from '../utils/errors.js';
 import {
   createRoleReactionGroupSchema,
@@ -25,6 +25,14 @@ import {
   countNonRoleMessages,
   formatChannel,
 } from '../services/roleReactions.js';
+
+const SYSTEM_AUTHOR = {
+  id: SYSTEM_USER_ID,
+  username: 'System',
+  display_name: 'System',
+  avatar_url: null,
+  role_color: null,
+};
 
 async function requireManageRoles(request: any, reply: any, serverId: string) {
   const perms = await calculatePermissions(request.user!.id, serverId);
@@ -108,7 +116,7 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
               type: 'message.new',
               resourceId: `channel:${body.channel_id}`,
               actorId: null,
-              payload: { ...message, type: 'role_reaction' },
+              payload: { ...message, type: 'role_reaction', author: SYSTEM_AUTHOR },
             });
           }
         }
@@ -181,7 +189,7 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
           type: 'message.new',
           resourceId: `channel:${body.channel_id}`,
           actorId: null,
-          payload: { ...message, type: 'role_reaction' },
+          payload: { ...message, type: 'role_reaction', author: SYSTEM_AUTHOR },
         });
 
         group.message_id = message.id;
@@ -274,7 +282,7 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
           type: 'message.new',
           resourceId: `channel:${newChannelId}`,
           actorId: null,
-          payload: { ...message, type: 'role_reaction' },
+          payload: { ...message, type: 'role_reaction', author: SYSTEM_AUTHOR },
         });
       } else if (!channelChanged && updated.message_id) {
         // Just refresh the message content if name/description changed
@@ -447,7 +455,7 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
           type: 'message.new',
           resourceId: `channel:${group.channel_id}`,
           actorId: null,
-          payload: { ...message, type: 'role_reaction' },
+          payload: { ...message, type: 'role_reaction', author: SYSTEM_AUTHOR },
         });
 
         await sql`

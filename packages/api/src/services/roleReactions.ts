@@ -194,7 +194,7 @@ export async function postRoleReactionMessage(
     )
     VALUES (
       ${channelId},
-      NULL,
+      ${SYSTEM_USER_ID},
       ${content},
       ${JSON.stringify({
         type: 'role_reaction',
