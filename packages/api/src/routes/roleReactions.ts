@@ -742,7 +742,17 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
         return notFound(reply, 'Channel');
       }
 
-      const result = await formatChannel(serverId, body.channel_id);
+      let result;
+      try {
+        result = await formatChannel(serverId, body.channel_id);
+      } catch (err: any) {
+        request.log.error({ err }, 'Format channel failed');
+        return reply.code(500).send({
+          statusCode: 500,
+          error: 'Internal Server Error',
+          message: `Failed to format channel: ${err.message}`,
+        });
+      }
 
       await sql`
         INSERT INTO audit_log (server_id, user_id, action, changes)
@@ -753,6 +763,22 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
           groups_reposted: result.groups_reposted,
         })})
       `;
+
+      // Publish message.new events for each reposted message
+      const newMessages = await sql`
+        SELECT * FROM messages
+        WHERE channel_id = ${body.channel_id}
+          AND system_event->>'type' = 'role_reaction'
+        ORDER BY created_at ASC
+      `;
+      for (const msg of newMessages) {
+        await publishEvent({
+          type: 'message.new',
+          resourceId: `channel:${body.channel_id}`,
+          actorId: null,
+          payload: { ...msg, type: 'role_reaction', author: SYSTEM_AUTHOR },
+        });
+      }
 
       // Publish channel update so clients refresh their message list
       await publishEvent({

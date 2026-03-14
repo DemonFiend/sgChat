@@ -792,6 +792,20 @@ export function MainLayout() {
       setChannels((prev) =>
         prev.map((c) => (c.id === channel.id ? { ...c, ...channel } : c)),
       );
+      // Refetch messages if this is the currently viewed channel
+      if (channel.id === channelId) {
+        api.get<{ messages: Message[] } | Message[]>(
+          `/channels/${channel.id}/messages`,
+        ).then((response) => {
+          if (Array.isArray(response)) {
+            setMessages(response);
+          } else {
+            setMessages(response.messages);
+          }
+        }).catch((err) => {
+          console.error('[MainLayout] Failed to refetch messages after channel update:', err);
+        });
+      }
     };
 
     const handleChannelDelete = (data: any) => {
