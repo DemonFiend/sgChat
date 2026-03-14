@@ -62,6 +62,7 @@ interface ServerData {
   id: string;
   name: string;
   icon_url: string | null;
+  banner_url: string | null;
   owner_id: string;
   motd?: string;
   server_time?: string;
@@ -1385,6 +1386,7 @@ export function MainLayout() {
             onSearchOpen={() => setIsSearchOpen(true)}
             onClearMessages={() => setMessages([])}
             serverId={currentServer?.id}
+            serverBannerUrl={currentServer?.banner_url}
             onCreateThread={handleCreateThread}
             threadMessageIds={threadMessageIds}
             onOpenThread={handleOpenThread}

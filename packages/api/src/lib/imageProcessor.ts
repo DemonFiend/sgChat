@@ -50,6 +50,40 @@ export async function processAvatarImage(
 }
 
 /**
+ * Process a banner image:
+ * - Resize to fit within width x height (cover crop from center)
+ * - Convert to WebP for optimal compression
+ */
+export async function processBannerImage(
+  buffer: Buffer,
+  width: number,
+  height: number,
+  quality: number
+): Promise<ProcessedImage> {
+  const image = sharp(buffer);
+
+  const metadata = await image.metadata();
+  if (!metadata.width || !metadata.height) {
+    throw new Error('Invalid image: could not read dimensions');
+  }
+
+  const processed = await image
+    .resize(width, height, {
+      fit: 'cover',
+      position: 'center',
+    })
+    .webp({ quality })
+    .toBuffer();
+
+  return {
+    buffer: processed,
+    width,
+    height,
+    format: 'webp',
+  };
+}
+
+/**
  * Validate that a buffer is a valid image.
  * Returns metadata if valid, throws if not.
  */

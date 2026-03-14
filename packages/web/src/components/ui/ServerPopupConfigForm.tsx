@@ -40,6 +40,11 @@ export function ServerPopupConfigForm({
   const [iconDragOver, setIconDragOver] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
+  // Banner upload state
+  const bannerFileRef = useRef<HTMLInputElement>(null);
+  const [isUploadingBanner, setIsUploadingBanner] = useState(false);
+  const [bannerDragOver, setBannerDragOver] = useState(false);
+
   const textChannels = channels.filter((c) => c.type === 'text');
 
   // Load config on mount
@@ -111,6 +116,61 @@ export function ServerPopupConfigForm({
     if (file) handleIconFileSelect(file);
     e.target.value = '';
   }, [handleIconFileSelect]);
+
+  const handleBannerFileSelect = useCallback(async (file: File) => {
+    setUploadError(null);
+
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      setUploadError('Invalid file type. Allowed: JPEG, PNG, GIF, WebP');
+      return;
+    }
+
+    if (file.size > 8 * 1024 * 1024) {
+      setUploadError('File too large. Maximum size: 8MB');
+      return;
+    }
+
+    setIsUploadingBanner(true);
+    try {
+      const result = await api.upload<{ banner_url: string }>('/server/banner', file);
+      setLocalConfig((current) => {
+        if (!current) return current;
+        return { ...current, bannerUrl: result.banner_url };
+      });
+      setHasUnsavedChanges(true);
+    } catch (err: any) {
+      setUploadError(err.message || 'Failed to upload banner');
+    } finally {
+      setIsUploadingBanner(false);
+    }
+  }, []);
+
+  const handleBannerDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setBannerDragOver(false);
+    const file = e.dataTransfer?.files?.[0];
+    if (file) handleBannerFileSelect(file);
+  }, [handleBannerFileSelect]);
+
+  const handleBannerInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleBannerFileSelect(file);
+    e.target.value = '';
+  }, [handleBannerFileSelect]);
+
+  const handleBannerDelete = useCallback(async () => {
+    try {
+      await api.delete('/server/banner');
+      setLocalConfig((current) => {
+        if (!current) return current;
+        return { ...current, bannerUrl: null };
+      });
+      setHasUnsavedChanges(true);
+    } catch (err: any) {
+      setUploadError(err.message || 'Failed to delete banner');
+    }
+  }, []);
 
   const handleFieldChange = useCallback(
     <K extends keyof ServerPopupConfig>(field: K, value: ServerPopupConfig[K]) => {
@@ -319,8 +379,73 @@ export function ServerPopupConfigForm({
               </div>
               <div>
                 <label className="block text-xs font-bold uppercase text-text-muted mb-2">
-                  Banner Image URL
+                  Server Banner
                 </label>
+                <div
+                  className={clsx(
+                    'relative w-full h-32 rounded-lg border-2 border-dashed cursor-pointer overflow-hidden transition-colors',
+                    bannerDragOver
+                      ? 'border-accent-primary bg-accent-primary/10'
+                      : localConfig.bannerUrl
+                        ? 'border-transparent'
+                        : 'border-border-subtle hover:border-accent-primary/50'
+                  )}
+                  onClick={() => bannerFileRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); setBannerDragOver(true); }}
+                  onDragLeave={() => setBannerDragOver(false)}
+                  onDrop={handleBannerDrop}
+                >
+                  {localConfig.bannerUrl ? (
+                    <img
+                      src={localConfig.bannerUrl}
+                      alt="Server banner"
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = 'none';
+                      }}
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center h-full text-text-muted">
+                      <svg className="w-8 h-8 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <span className="text-xs">Click or drag to upload banner</span>
+                    </div>
+                  )}
+                  {isUploadingBanner && (
+                    <div className="absolute inset-0 bg-bg-primary/70 flex items-center justify-center">
+                      <div className="w-6 h-6 border-2 border-accent-primary border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  )}
+                  {localConfig.bannerUrl && !isUploadingBanner && (
+                    <div className="absolute inset-0 bg-black/0 hover:bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                      <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                    </div>
+                  )}
+                </div>
+                <input
+                  ref={bannerFileRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/gif,image/webp"
+                  className="hidden"
+                  onChange={handleBannerInputChange}
+                />
+                {localConfig.bannerUrl && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); handleBannerDelete(); }}
+                    className="mt-2 text-xs text-status-danger hover:underline"
+                  >
+                    Remove banner
+                  </button>
+                )}
+                <p className="text-xs text-text-muted mt-1">
+                  Wide image recommended (1920x480). Max 8MB. Processed to 4:1 aspect ratio.
+                </p>
+                <p className="text-xs text-text-muted mt-2 mb-1">Or enter a URL directly</p>
                 <Input
                   type="url"
                   value={localConfig.bannerUrl || ''}
@@ -328,22 +453,6 @@ export function ServerPopupConfigForm({
                   placeholder="https://example.com/banner.jpg"
                   className="w-full"
                 />
-                {localConfig.bannerUrl && (
-                  <div className="mt-2 p-3 bg-bg-tertiary rounded border border-border-subtle">
-                    <img
-                      src={localConfig.bannerUrl}
-                      alt="Banner preview"
-                      className="w-full h-32 rounded object-cover"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).alt = 'Failed to load banner';
-                      }}
-                    />
-                    <span className="text-xs text-text-muted mt-2 block">
-                      Preview (16:9 aspect ratio recommended)
-                    </span>
-                  </div>
-                )}
-                <p className="text-xs text-text-muted mt-1">Wide image recommended (1920x1080)</p>
               </div>
             </div>
           </div>

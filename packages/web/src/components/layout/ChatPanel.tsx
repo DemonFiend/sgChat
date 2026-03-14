@@ -111,6 +111,7 @@ interface ChatPanelProps {
   threadMessageIds?: Set<string>;
   onOpenThread?: (messageId: string) => void;
   serverId?: string;
+  serverBannerUrl?: string | null;
 }
 
 export function ChatPanel({
@@ -122,7 +123,7 @@ export function ChatPanel({
   onPinMessage, onUnpinMessage, pinnedMessageIds, isPinnedPanelOpen, onTogglePinnedPanel,
   canManageMessages, onSearchOpen, onClearMessages,
   onCreateThread, threadMessageIds, onOpenThread,
-  serverId,
+  serverId, serverBannerUrl,
 }: ChatPanelProps) {
   const [messageInput, setMessageInput] = useState('');
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
@@ -615,8 +616,17 @@ export function ChatPanel({
   return (
     <div className="flex flex-col h-full flex-1 min-w-0 bg-bg-primary">
       {/* Channel Header */}
-      <header className="h-12 px-4 flex items-center gap-3 border-b border-bg-tertiary bg-bg-primary shadow-sm flex-shrink-0">
-        <div className="flex items-center gap-2">
+      <header
+        className={clsx(
+          'relative px-4 flex items-center gap-3 border-b border-bg-tertiary shadow-sm flex-shrink-0 bg-cover bg-center',
+          serverBannerUrl ? 'h-24' : 'h-12 bg-bg-primary'
+        )}
+        style={serverBannerUrl ? { backgroundImage: `url(${serverBannerUrl})` } : undefined}
+      >
+        {serverBannerUrl && (
+          <div className="absolute inset-0 bg-gradient-to-r from-bg-primary/85 via-bg-primary/60 to-bg-primary/40" />
+        )}
+        <div className="relative z-10 flex items-center gap-2">
           <svg className="w-5 h-5 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
           </svg>
@@ -626,54 +636,56 @@ export function ChatPanel({
         </div>
         {channel?.topic && (
           <>
-            <div className="h-6 w-px bg-border-subtle" />
-            <span className="text-sm text-text-muted truncate">{channel.topic}</span>
+            <div className="relative z-10 h-6 w-px bg-border-subtle" />
+            <span className="relative z-10 text-sm text-text-muted truncate">{channel.topic}</span>
           </>
         )}
 
         <div className="flex-1 min-w-0" />
 
-        {onSearchOpen && (
-          <button
-            onClick={onSearchOpen}
-            className="p-2 rounded text-text-muted hover:text-text-primary hover:bg-bg-modifier-hover transition-colors"
-            title="Search messages (Ctrl+F)"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-          </button>
-        )}
+        <div className="relative z-10 flex items-center">
+          {onSearchOpen && (
+            <button
+              onClick={onSearchOpen}
+              className="p-2 rounded text-text-muted hover:text-text-primary hover:bg-bg-modifier-hover transition-colors"
+              title="Search messages (Ctrl+F)"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </button>
+          )}
 
-        {onTogglePinnedPanel && (
-          <button
-            onClick={onTogglePinnedPanel}
-            className={clsx(
-              'p-2 rounded hover:bg-bg-modifier-hover transition-colors',
-              isPinnedPanelOpen ? 'text-text-primary' : 'text-text-muted'
-            )}
-            title={isPinnedPanelOpen ? 'Hide pinned messages' : 'Show pinned messages'}
-          >
-            <svg className="w-5 h-5" fill={isPinnedPanelOpen ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v3a2 2 0 01-1 1.73V14l1 1v1H5v-1l1-1V9.73A2 2 0 015 8V5zm7 14v3" />
-            </svg>
-          </button>
-        )}
+          {onTogglePinnedPanel && (
+            <button
+              onClick={onTogglePinnedPanel}
+              className={clsx(
+                'p-2 rounded hover:bg-bg-modifier-hover transition-colors',
+                isPinnedPanelOpen ? 'text-text-primary' : 'text-text-muted'
+              )}
+              title={isPinnedPanelOpen ? 'Hide pinned messages' : 'Show pinned messages'}
+            >
+              <svg className="w-5 h-5" fill={isPinnedPanelOpen ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v3a2 2 0 01-1 1.73V14l1 1v1H5v-1l1-1V9.73A2 2 0 015 8V5zm7 14v3" />
+              </svg>
+            </button>
+          )}
 
-        {onToggleMemberList && (
-          <button
-            onClick={onToggleMemberList}
-            className={clsx(
-              'p-2 rounded hover:bg-bg-modifier-hover transition-colors',
-              isMemberListOpen ? 'text-text-primary' : 'text-text-muted'
-            )}
-            title={isMemberListOpen ? 'Hide member list' : 'Show member list'}
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-            </svg>
-          </button>
-        )}
+          {onToggleMemberList && (
+            <button
+              onClick={onToggleMemberList}
+              className={clsx(
+                'p-2 rounded hover:bg-bg-modifier-hover transition-colors',
+                isMemberListOpen ? 'text-text-primary' : 'text-text-muted'
+              )}
+              title={isMemberListOpen ? 'Hide member list' : 'Show member list'}
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+            </button>
+          )}
+        </div>
       </header>
 
       {/* Messages Area */}

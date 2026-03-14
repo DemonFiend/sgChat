@@ -12,7 +12,11 @@ import type { AvatarLimits } from '@sgchat/shared';
 import { calculatePermissions } from '../services/permissions.js';
 import { forbidden, notFound, badRequest } from '../utils/errors.js';
 import { z } from 'zod';
+import { nanoid } from 'nanoid';
 import { emitEncrypted } from '../lib/socketEmit.js';
+import { extractFileData } from './upload.js';
+import { validateImage, processBannerImage } from '../lib/imageProcessor.js';
+import { storage } from '../lib/storage.js';
 import { getServerStorageStats } from '../services/segmentation.js';
 import { 
   getServerRetentionSettings, 
@@ -255,6 +259,110 @@ export const globalServerRoutes: FastifyPluginAsync = async (fastify) => {
       await emitEncrypted(fastify.io, `server:${server.id}`,'server.update', updated);
 
       return updated;
+    },
+  });
+
+  /**
+   * POST /server/banner - Upload server banner image
+   * Requires ADMINISTRATOR permission or be server owner
+   */
+  fastify.post('/banner', {
+    onRequest: [authenticate],
+    config: {
+      rateLimit: { max: 10, timeWindow: '1 hour' },
+    },
+    bodyLimit: 12 * 1024 * 1024,
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) return notFound(reply, 'Server');
+
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) ||
+                      server.owner_id === request.user!.id;
+      if (!isAdmin) return forbidden(reply, 'Only administrators can modify server settings');
+
+      const fileData = await extractFileData(request);
+      if (!fileData) return badRequest(reply, 'No file uploaded');
+
+      const { buffer } = fileData;
+      const maxSize = 8 * 1024 * 1024;
+      if (buffer.length > maxSize) return badRequest(reply, 'File too large. Maximum size is 8MB');
+
+      try {
+        await validateImage(buffer);
+      } catch (error) {
+        return badRequest(reply, error instanceof Error ? error.message : 'Invalid image');
+      }
+
+      // Delete old banner if exists
+      if (server.banner_url) {
+        try {
+          const url = new URL(server.banner_url);
+          const objectPath = url.pathname.split('/').slice(2).join('/');
+          await storage.deleteFile(objectPath);
+        } catch {
+          // Old banner cleanup is best-effort
+        }
+      }
+
+      const processed = await processBannerImage(buffer, 1920, 480, 80);
+      const storagePath = `banners/server-${server.id}-${nanoid(8)}.webp`;
+      const bannerUrl = await storage.uploadFile(processed.buffer, storagePath, 'image/webp');
+
+      await db.sql`
+        UPDATE servers SET banner_url = ${bannerUrl} WHERE id = ${server.id}
+      `;
+
+      await db.sql`
+        INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
+        VALUES (${server.id}, ${request.user!.id}, 'server_update', 'server', ${server.id}, ${JSON.stringify({ banner_url: bannerUrl })})
+      `;
+
+      const updated = await getDefaultServer();
+      await emitEncrypted(fastify.io, `server:${server.id}`, 'server.update', updated);
+
+      return { banner_url: bannerUrl };
+    },
+  });
+
+  /**
+   * DELETE /server/banner - Remove server banner image
+   * Requires ADMINISTRATOR permission or be server owner
+   */
+  fastify.delete('/banner', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) return notFound(reply, 'Server');
+
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) ||
+                      server.owner_id === request.user!.id;
+      if (!isAdmin) return forbidden(reply, 'Only administrators can modify server settings');
+
+      if (!server.banner_url) return badRequest(reply, 'No banner to delete');
+
+      try {
+        const url = new URL(server.banner_url);
+        const objectPath = url.pathname.split('/').slice(2).join('/');
+        await storage.deleteFile(objectPath);
+      } catch {
+        // Cleanup is best-effort
+      }
+
+      await db.sql`
+        UPDATE servers SET banner_url = NULL WHERE id = ${server.id}
+      `;
+
+      await db.sql`
+        INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
+        VALUES (${server.id}, ${request.user!.id}, 'server_update', 'server', ${server.id}, ${JSON.stringify({ banner_url: null })})
+      `;
+
+      const updated = await getDefaultServer();
+      await emitEncrypted(fastify.io, `server:${server.id}`, 'server.update', updated);
+
+      return { message: 'Banner removed' };
     },
   });
 
