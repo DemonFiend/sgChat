@@ -116,7 +116,7 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
 
       // Audit log
       await sql`
-        INSERT INTO audit_log (server_id, user_id, action, details)
+        INSERT INTO audit_log (server_id, user_id, action, changes)
         VALUES (${serverId}, ${request.user!.id}, 'role_reaction_setup', ${JSON.stringify({
           channel_id: body.channel_id,
           groups_created: groups.length,
@@ -188,7 +188,7 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       await sql`
-        INSERT INTO audit_log (server_id, user_id, action, details)
+        INSERT INTO audit_log (server_id, user_id, action, changes)
         VALUES (${serverId}, ${request.user!.id}, 'role_reaction_group_create', ${JSON.stringify({
           group_id: group.id,
           name: group.name,
@@ -282,7 +282,7 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       await sql`
-        INSERT INTO audit_log (server_id, user_id, action, details)
+        INSERT INTO audit_log (server_id, user_id, action, changes)
         VALUES (${serverId}, ${request.user!.id}, 'role_reaction_group_update', ${JSON.stringify({
           group_id: groupId,
           changes: body,
@@ -339,7 +339,7 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
       await sql`DELETE FROM role_reaction_groups WHERE id = ${groupId}`;
 
       await sql`
-        INSERT INTO audit_log (server_id, user_id, action, details)
+        INSERT INTO audit_log (server_id, user_id, action, changes)
         VALUES (${serverId}, ${request.user!.id}, 'role_reaction_group_delete', ${JSON.stringify({
           group_id: groupId,
           name: group.name,
@@ -407,7 +407,7 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
         `;
 
         await sql`
-          INSERT INTO audit_log (server_id, user_id, action, details)
+          INSERT INTO audit_log (server_id, user_id, action, changes)
           VALUES (${serverId}, ${request.user!.id}, 'role_reaction_group_toggle', ${JSON.stringify({
             group_id: groupId,
             enabled: false,
@@ -451,7 +451,7 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
         });
 
         await sql`
-          INSERT INTO audit_log (server_id, user_id, action, details)
+          INSERT INTO audit_log (server_id, user_id, action, changes)
           VALUES (${serverId}, ${request.user!.id}, 'role_reaction_group_toggle', ${JSON.stringify({
             group_id: groupId,
             enabled: true,
@@ -737,7 +737,7 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
       const result = await formatChannel(serverId, body.channel_id);
 
       await sql`
-        INSERT INTO audit_log (server_id, user_id, action, details)
+        INSERT INTO audit_log (server_id, user_id, action, changes)
         VALUES (${serverId}, ${request.user!.id}, 'role_reaction_format_channel', ${JSON.stringify({
           channel_id: body.channel_id,
           channel_name: channel.name,
