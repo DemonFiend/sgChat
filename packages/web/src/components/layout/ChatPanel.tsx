@@ -3,6 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { clsx } from 'clsx';
 import { Avatar } from '@/components/ui/Avatar';
 import { MessageContent } from '@/components/ui/MessageContent';
+import { RoleReactionEmbed } from '@/components/ui/RoleReactionEmbed';
 import { ReactionPicker } from '@/components/ui/ReactionPicker';
 import { GifPicker } from '@/components/ui/GifPicker';
 import { StickerPicker } from '@/components/ui/StickerPicker';
@@ -1370,6 +1371,17 @@ function MessageItem({
             {' \u2022 '}enter to <button onClick={onEditSave} className="text-text-link hover:underline">save</button>
           </div>
         </div>
+      );
+    }
+    if (isRoleReaction) {
+      return (
+        <RoleReactionEmbed
+          content={message.content}
+          systemEvent={message.system_event as any}
+          reactions={message.reactions || []}
+          onReactionClick={handleReactionClick}
+          serverId={serverId}
+        />
       );
     }
     return (

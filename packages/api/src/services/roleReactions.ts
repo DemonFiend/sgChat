@@ -155,10 +155,19 @@ export function buildMessageContent(
   description: string | null,
   mappings: any[]
 ): string {
-  let content = `**${groupName}**\n`;
+  let content = `**Category:** ${groupName}`;
+  if (description) {
+    content += `\n${description}`;
+  }
   for (const m of mappings) {
     const roleRef = m.role_id ? `<@&${m.role_id}>` : `@${m.label || m.role_name || 'Unknown Role'}`;
-    content += `\nPlease React ${m.emoji} to obtain ${roleRef}`;
+    const emojiDisplay =
+      m.emoji_type === 'custom' && m.custom_emoji_shortcode
+        ? `:${m.custom_emoji_shortcode}:`
+        : m.emoji_type === 'custom' && m.shortcode
+          ? `:${m.shortcode}:`
+          : m.emoji;
+    content += `\nPlease React ${emojiDisplay} to obtain ${roleRef}`;
   }
   return content;
 }
@@ -174,7 +183,8 @@ export async function postRoleReactionMessage(
   channelId: string,
   groupName: string,
   description: string | null,
-  mappings: any[]
+  mappings: any[],
+  exclusive?: boolean
 ) {
   const content = buildMessageContent(groupName, description, mappings);
 
@@ -190,6 +200,8 @@ export async function postRoleReactionMessage(
         type: 'role_reaction',
         group_id: groupId,
         group_name: groupName,
+        description: description || null,
+        exclusive: exclusive ?? false,
       })}
     )
     RETURNING *
@@ -232,9 +244,11 @@ export async function refreshGroupMessage(groupId: string) {
   if (!group || !group.message_id) return;
 
   const mappings = await sql`
-    SELECT rrm.*, r.name as role_name, r.color as role_color
+    SELECT rrm.*, r.name as role_name, r.color as role_color,
+      e.shortcode as custom_emoji_shortcode
     FROM role_reaction_mappings rrm
     JOIN roles r ON rrm.role_id = r.id
+    LEFT JOIN emojis e ON rrm.custom_emoji_id = e.id
     WHERE rrm.group_id = ${groupId}
     ORDER BY rrm.position ASC
   `;
@@ -243,7 +257,15 @@ export async function refreshGroupMessage(groupId: string) {
 
   await sql`
     UPDATE messages
-    SET content = ${content}, edited_at = NOW()
+    SET content = ${content},
+        system_event = ${JSON.stringify({
+          type: 'role_reaction',
+          group_id: groupId,
+          group_name: group.name,
+          description: group.description || null,
+          exclusive: group.exclusive ?? false,
+        })},
+        edited_at = NOW()
     WHERE id = ${group.message_id}
   `;
 
@@ -524,7 +546,8 @@ export async function createDefaultGroups(
         channelId,
         groupDef.name,
         groupDef.description,
-        mappings
+        mappings,
+        groupDef.exclusive
       );
 
       createdGroups.push({
@@ -647,9 +670,11 @@ export async function formatChannel(serverId: string, channelId: string) {
     let groupsReposted = 0;
     for (const group of groups) {
       const mappings = await tx`
-        SELECT rrm.*, r.name as role_name, r.color as role_color
+        SELECT rrm.*, r.name as role_name, r.color as role_color,
+          e.shortcode as custom_emoji_shortcode
         FROM role_reaction_mappings rrm
         JOIN roles r ON rrm.role_id = r.id
+        LEFT JOIN emojis e ON rrm.custom_emoji_id = e.id
         WHERE rrm.group_id = ${group.id}
         ORDER BY rrm.position ASC
       `;
@@ -661,7 +686,8 @@ export async function formatChannel(serverId: string, channelId: string) {
         channelId,
         group.name,
         group.description,
-        mappings
+        mappings,
+        group.exclusive
       );
       groupsReposted++;
     }

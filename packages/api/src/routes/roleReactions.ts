@@ -173,7 +173,8 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
       if (group.enabled) {
         const message = await postRoleReactionMessage(
           sql, group.id, serverId, body.channel_id,
-          group.name, group.description || null, []
+          group.name, group.description || null, [],
+          body.exclusive ?? false
         );
 
         await publishEvent({
@@ -256,15 +257,18 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
       // If channel changed and group is enabled, post new message
       if (channelChanged && updated.enabled) {
         const mappings = await sql`
-          SELECT rrm.*, r.name as role_name, r.color as role_color
+          SELECT rrm.*, r.name as role_name, r.color as role_color,
+            e.shortcode as custom_emoji_shortcode
           FROM role_reaction_mappings rrm
           JOIN roles r ON rrm.role_id = r.id
+          LEFT JOIN emojis e ON rrm.custom_emoji_id = e.id
           WHERE rrm.group_id = ${groupId}
           ORDER BY rrm.position ASC
         `;
         const message = await postRoleReactionMessage(
           sql, groupId, serverId, newChannelId!,
-          updated.name, updated.description, mappings
+          updated.name, updated.description, mappings,
+          updated.exclusive
         );
         await publishEvent({
           type: 'message.new',
@@ -418,16 +422,19 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
       } else {
         // Enabling: post new message
         const mappings = await sql`
-          SELECT rrm.*, r.name as role_name, r.color as role_color
+          SELECT rrm.*, r.name as role_name, r.color as role_color,
+            e.shortcode as custom_emoji_shortcode
           FROM role_reaction_mappings rrm
           JOIN roles r ON rrm.role_id = r.id
+          LEFT JOIN emojis e ON rrm.custom_emoji_id = e.id
           WHERE rrm.group_id = ${groupId}
           ORDER BY rrm.position ASC
         `;
 
         const message = await postRoleReactionMessage(
           sql, groupId, serverId, group.channel_id,
-          group.name, group.description, mappings
+          group.name, group.description, mappings,
+          group.exclusive
         );
 
         await sql`
