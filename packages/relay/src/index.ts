@@ -67,16 +67,25 @@ async function main(): Promise<void> {
   // Check for existing config (already paired)
   let config = loadRelayConfig();
 
-  // Auto-pair on first startup if token is provided but not yet paired (Docker workflow)
-  if (!config && env.RELAY_PAIRING_TOKEN) {
-    console.log('  Pairing token detected — auto-pairing with Master...');
+  // If a pairing token is provided, re-pair even if config exists (new token = new identity)
+  if (env.RELAY_PAIRING_TOKEN) {
+    if (config) {
+      console.log('  Pairing token provided — re-pairing (replacing existing config)...');
+    } else {
+      console.log('  Pairing token detected — auto-pairing with Master...');
+    }
     const { autoPair } = await import('./lib/autoPair.js');
     const paired = await autoPair(env.RELAY_PAIRING_TOKEN, env);
     if (paired) {
       config = loadRelayConfig();
     } else {
-      console.error('  Auto-pair failed. Check the pairing token and Master URL.');
-      process.exit(1);
+      // If re-pairing failed but we had an old config, fall back to it
+      if (config) {
+        console.warn('  Re-pair failed — falling back to existing config.');
+      } else {
+        console.error('  Auto-pair failed. Check the pairing token and Master URL.');
+        process.exit(1);
+      }
     }
   }
 

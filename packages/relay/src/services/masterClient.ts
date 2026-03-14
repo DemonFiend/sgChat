@@ -47,6 +47,10 @@ export class MasterClient {
         method: 'POST',
         body: JSON.stringify({ relay_id: this.config.relay_id, ...data }),
       });
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        console.warn(`[MasterClient] Heartbeat rejected: ${response.status} ${text}`);
+      }
       return response.ok;
     } catch (err) {
       console.warn('[MasterClient] Heartbeat failed:', (err as Error).message);
