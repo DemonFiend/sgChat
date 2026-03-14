@@ -2,7 +2,7 @@
 // import 'dotenv/config';
 import { fileURLToPath } from 'url';
 import { dirname, join, resolve } from 'path';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
@@ -333,7 +333,7 @@ async function start() {
         !request.url.startsWith('/api/')
       ) {
         reply.code(200).type('text/html');
-        return reply.sendFile('index.html');
+        return readFileSync(resolve(webClientPath, 'index.html'));
       }
       return payload;
     });
