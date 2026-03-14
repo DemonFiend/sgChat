@@ -64,7 +64,7 @@ export interface Message {
   attachments?: any[];
   reply_to_id?: string | null;
   reactions?: Reaction[];
-  type?: 'system' | 'default';
+  type?: 'system' | 'default' | 'role_reaction';
   system_event?: SystemEvent;
   pinned?: boolean;
 }
@@ -602,7 +602,9 @@ export function ChatPanel({
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  const isSystemMessage = (message: Message) => message.type === 'system' || message.system_event != null;
+  const isSystemMessage = (message: Message) =>
+    (message.type === 'system' || (message.system_event != null && message.system_event.type !== 'role_reaction'))
+    && message.type !== 'role_reaction';
 
   const shouldShowAuthor = (message: Message, index: number) => {
     if (isSystemMessage(message)) return true;
@@ -1274,7 +1276,7 @@ function MessageItem({
   isPinned, canPin, onPinClick,
   onCreateThread, hasThread, onOpenThread,
 }: MessageItemProps) {
-  const isRoleReaction = message.system_event?.type === 'role_reaction';
+  const isRoleReaction = message.type === 'role_reaction' || message.system_event?.type === 'role_reaction';
   const isSystem = (message.type === 'system' || message.system_event != null) && !isRoleReaction;
   const author = isRoleReaction && (!message.author || !message.author.id)
     ? { id: 'system', username: 'System', display_name: 'System', avatar_url: null, role_color: null }

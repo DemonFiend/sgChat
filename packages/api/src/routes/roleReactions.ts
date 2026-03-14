@@ -108,7 +108,7 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
               type: 'message.new',
               resourceId: `channel:${body.channel_id}`,
               actorId: null,
-              payload: { ...message, type: 'system' },
+              payload: { ...message, type: 'role_reaction' },
             });
           }
         }
@@ -181,7 +181,7 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
           type: 'message.new',
           resourceId: `channel:${body.channel_id}`,
           actorId: null,
-          payload: { ...message, type: 'system' },
+          payload: { ...message, type: 'role_reaction' },
         });
 
         group.message_id = message.id;
@@ -274,7 +274,7 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
           type: 'message.new',
           resourceId: `channel:${newChannelId}`,
           actorId: null,
-          payload: { ...message, type: 'system' },
+          payload: { ...message, type: 'role_reaction' },
         });
       } else if (!channelChanged && updated.message_id) {
         // Just refresh the message content if name/description changed
@@ -447,7 +447,7 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
           type: 'message.new',
           resourceId: `channel:${group.channel_id}`,
           actorId: null,
-          payload: { ...message, type: 'system' },
+          payload: { ...message, type: 'role_reaction' },
         });
 
         await sql`
