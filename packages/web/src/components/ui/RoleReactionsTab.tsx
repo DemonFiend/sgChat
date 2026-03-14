@@ -50,6 +50,7 @@ export function RoleReactionsTab({ serverId, channels }: Props) {
   const [editDescription, setEditDescription] = useState('');
   const [editChannelId, setEditChannelId] = useState('');
   const [editRemoveRolesOnDisable, setEditRemoveRolesOnDisable] = useState(true);
+  const [editExclusive, setEditExclusive] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
@@ -102,6 +103,7 @@ export function RoleReactionsTab({ serverId, channels }: Props) {
       setEditDescription(selectedGroup.description || '');
       setEditChannelId(selectedGroup.channel_id);
       setEditRemoveRolesOnDisable(selectedGroup.remove_roles_on_disable);
+      setEditExclusive(selectedGroup.exclusive);
       setHasUnsavedChanges(false);
     }
   }, [selectedGroupId]);
@@ -189,6 +191,7 @@ export function RoleReactionsTab({ serverId, channels }: Props) {
         description: editDescription.trim() || null,
         channel_id: editChannelId,
         remove_roles_on_disable: editRemoveRolesOnDisable,
+        exclusive: editExclusive,
       });
       setHasUnsavedChanges(false);
       await fetchData();
@@ -548,6 +551,28 @@ export function RoleReactionsTab({ serverId, channels }: Props) {
                       }`} />
                     </button>
                   </div>
+
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-sm text-text-primary">Exclusive selection</span>
+                      <p className="text-xs text-text-muted">
+                        Members can only have one role from this group at a time
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setEditExclusive(!editExclusive);
+                        setHasUnsavedChanges(true);
+                      }}
+                      className={`relative w-11 h-6 rounded-full transition-colors ${
+                        editExclusive ? 'bg-brand-primary' : 'bg-bg-tertiary'
+                      }`}
+                    >
+                      <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                        editExclusive ? 'translate-x-[22px]' : 'translate-x-0.5'
+                      }`} />
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -692,6 +717,7 @@ export function RoleReactionsTab({ serverId, channels }: Props) {
                           setEditDescription(selectedGroup.description || '');
                           setEditChannelId(selectedGroup.channel_id);
                           setEditRemoveRolesOnDisable(selectedGroup.remove_roles_on_disable);
+                          setEditExclusive(selectedGroup.exclusive);
                           setHasUnsavedChanges(false);
                         }
                       }}

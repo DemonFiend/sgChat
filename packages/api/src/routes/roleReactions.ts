@@ -156,14 +156,15 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
 
       const [group] = await sql`
         INSERT INTO role_reaction_groups (
-          server_id, channel_id, name, description, position, enabled, remove_roles_on_disable
+          server_id, channel_id, name, description, position, enabled, remove_roles_on_disable, exclusive
         )
         VALUES (
           ${serverId}, ${body.channel_id}, ${body.name},
           ${body.description || null},
           ${body.position ?? 0},
           ${body.enabled ?? true},
-          ${body.remove_roles_on_disable ?? true}
+          ${body.remove_roles_on_disable ?? true},
+          ${body.exclusive ?? false}
         )
         RETURNING *
       `;
@@ -245,6 +246,7 @@ export const roleReactionRoutes: FastifyPluginAsync = async (fastify) => {
           channel_id = COALESCE(${body.channel_id ?? null}, channel_id),
           position = COALESCE(${body.position ?? null}, position),
           remove_roles_on_disable = COALESCE(${body.remove_roles_on_disable ?? null}, remove_roles_on_disable),
+          exclusive = COALESCE(${body.exclusive ?? null}, exclusive),
           message_id = ${channelChanged ? null : sql`message_id`},
           updated_at = NOW()
         WHERE id = ${groupId}

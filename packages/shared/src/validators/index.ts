@@ -267,6 +267,7 @@ export const createRoleReactionGroupSchema = z.object({
   position: z.number().min(0).optional(),
   enabled: z.boolean().optional(),
   remove_roles_on_disable: z.boolean().optional(),
+  exclusive: z.boolean().optional(),
 });
 
 export const updateRoleReactionGroupSchema = z.object({
@@ -275,6 +276,7 @@ export const updateRoleReactionGroupSchema = z.object({
   channel_id: z.string().uuid().optional(),
   position: z.number().min(0).optional(),
   remove_roles_on_disable: z.boolean().optional(),
+  exclusive: z.boolean().optional(),
 });
 
 export const toggleRoleReactionGroupSchema = z.object({

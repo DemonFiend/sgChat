@@ -239,10 +239,10 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
       if (message.channel_id) {
         const channel = await db.channels.findById(message.channel_id);
         if (channel) {
-          const roleId = await assignRoleFromReaction(
+          const result = await assignRoleFromReaction(
             request.user!.id, channel.server_id, emojiDecoded, id
           );
-          if (roleId) {
+          if (result) {
             // Broadcast role update so other clients see the change
             const userRoles = await db.sql`
               SELECT r.id, r.name, r.color, r.position
@@ -262,6 +262,23 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
                 roles: userRoles,
               },
             });
+            // If exclusive group removed other reactions, broadcast updated reaction counts
+            if (result.removedReactions.length > 0) {
+              const updatedReactions = await db.sql`
+                SELECT
+                  reaction_type as type, unicode_emoji as emoji, custom_emoji_id as "emojiId",
+                  COUNT(*)::int as count, BOOL_OR(user_id = ${request.user!.id}) as me
+                FROM message_reactions WHERE message_id = ${id}
+                GROUP BY reaction_type, unicode_emoji, custom_emoji_id
+              `;
+              const enrichedReactions = await enrichReactions(updatedReactions);
+              await publishEvent({
+                type: 'message.update',
+                actorId: request.user!.id,
+                resourceId: `channel:${message.channel_id}`,
+                payload: { message_id: id, action: 'remove', reactions: enrichedReactions },
+              });
+            }
           }
         }
       }
@@ -473,11 +490,11 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
       if (message.channel_id && ((type === 'unicode' && value) || (type === 'custom' && emojiId))) {
         const channel = await db.channels.findById(message.channel_id);
         if (channel) {
-          const roleId = await assignRoleFromReaction(
+          const result = await assignRoleFromReaction(
             request.user!.id, channel.server_id, value || '', id,
             type === 'custom' ? emojiId : undefined
           );
-          if (roleId) {
+          if (result) {
             const userRoles = await db.sql`
               SELECT r.id, r.name, r.color, r.position FROM member_roles mr JOIN roles r ON mr.role_id = r.id
               WHERE mr.member_user_id = ${request.user!.id} AND mr.member_server_id = ${channel.server_id}
@@ -487,6 +504,22 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
               type: 'member.update', resourceId: `server:${channel.server_id}`, actorId: null,
               payload: { user_id: request.user!.id, server_id: channel.server_id, roles: userRoles },
             });
+            // If exclusive group removed other reactions, broadcast updated reaction counts
+            if (result.removedReactions.length > 0) {
+              const updatedReactions = await db.sql`
+                SELECT
+                  reaction_type as type, unicode_emoji as emoji, custom_emoji_id as "emojiId",
+                  COUNT(*)::int as count, BOOL_OR(user_id = ${request.user!.id}) as me
+                FROM message_reactions WHERE message_id = ${id}
+                GROUP BY reaction_type, unicode_emoji, custom_emoji_id
+              `;
+              const enrichedReactions = await enrichReactions(updatedReactions);
+              await publishEvent({
+                type: 'message.update', actorId: request.user!.id,
+                resourceId: `channel:${message.channel_id}`,
+                payload: { message_id: id, action: 'remove', reactions: enrichedReactions },
+              });
+            }
           }
         }
       }

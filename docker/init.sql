@@ -1410,6 +1410,7 @@ CREATE TABLE IF NOT EXISTS role_reaction_groups (
   position INTEGER DEFAULT 0,
   enabled BOOLEAN DEFAULT true,
   remove_roles_on_disable BOOLEAN DEFAULT true,
+  exclusive BOOLEAN DEFAULT false,
 
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),

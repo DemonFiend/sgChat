@@ -1012,6 +1012,7 @@ export interface RoleReactionGroup {
   position: number;
   enabled: boolean;
   remove_roles_on_disable: boolean;
+  exclusive: boolean;
   mappings: RoleReactionMapping[];
   created_at: string;
   updated_at: string;

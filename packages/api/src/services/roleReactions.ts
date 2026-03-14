@@ -15,6 +15,7 @@ interface DefaultRoleGroup {
   name: string;
   description: string;
   position: number;
+  exclusive?: boolean;
   mappings: DefaultMapping[];
 }
 
@@ -24,6 +25,7 @@ export const DEFAULT_ROLE_GROUPS: DefaultRoleGroup[] = [
     name: 'Color Roles',
     description: 'React to choose a name color',
     position: 0,
+    exclusive: true,
     mappings: [
       { emoji: ':member_red:', emoji_type: 'custom', shortcode: 'member_red', label: 'Red', color: '#e74c3c' },
       { emoji: ':member_blue:', emoji_type: 'custom', shortcode: 'member_blue', label: 'Blue', color: '#3498db' },
@@ -259,9 +261,20 @@ export async function refreshGroupMessage(groupId: string) {
   });
 }
 
+export interface RoleAssignmentResult {
+  assignedRoleId: string;
+  removedRoleIds: string[];
+  removedReactions: Array<{
+    emoji: string;
+    emoji_type: 'unicode' | 'custom';
+    custom_emoji_id: string | null;
+  }>;
+}
+
 /**
  * Handle a reaction on a role-reaction message.
- * Returns the role_id if a role was assigned, null otherwise.
+ * Returns assignment result if a role was assigned, null otherwise.
+ * For exclusive groups, removes other roles/reactions from the same group.
  */
 export async function assignRoleFromReaction(
   userId: string,
@@ -269,10 +282,10 @@ export async function assignRoleFromReaction(
   emoji: string,
   messageId: string,
   customEmojiId?: string
-): Promise<string | null> {
+): Promise<RoleAssignmentResult | null> {
   // Check if this message is a role-reaction message
   const [group] = await sql`
-    SELECT rrg.id, rrg.enabled
+    SELECT rrg.id, rrg.enabled, rrg.exclusive
     FROM role_reaction_groups rrg
     WHERE rrg.message_id = ${messageId} AND rrg.enabled = true
   `;
@@ -295,6 +308,73 @@ export async function assignRoleFromReaction(
   }
   if (!mapping) return null;
 
+  const removedRoleIds: string[] = [];
+  const removedReactions: RoleAssignmentResult['removedReactions'] = [];
+
+  // If exclusive, remove other roles and reactions from this group first
+  if (group.exclusive) {
+    // Get all OTHER mappings in this group
+    const otherMappings = await sql`
+      SELECT rrm.role_id, rrm.emoji, rrm.emoji_type, rrm.custom_emoji_id
+      FROM role_reaction_mappings rrm
+      WHERE rrm.group_id = ${group.id} AND rrm.role_id != ${mapping.role_id}
+    `;
+
+    if (otherMappings.length > 0) {
+      const otherRoleIds = otherMappings.map((m: any) => m.role_id);
+
+      // Remove user's other roles from this group
+      const removed = await sql`
+        DELETE FROM member_roles
+        WHERE member_user_id = ${userId}
+          AND member_server_id = ${serverId}
+          AND role_id = ANY(${otherRoleIds})
+        RETURNING role_id
+      `;
+      for (const r of removed) {
+        removedRoleIds.push(r.role_id);
+      }
+
+      // Remove user's reactions for those other mappings on this message
+      const unicodeEmojis = otherMappings
+        .filter((m: any) => m.emoji_type === 'unicode')
+        .map((m: any) => m.emoji);
+      const customEmojiIds = otherMappings
+        .filter((m: any) => m.emoji_type === 'custom' && m.custom_emoji_id)
+        .map((m: any) => m.custom_emoji_id);
+
+      if (unicodeEmojis.length > 0) {
+        await sql`
+          DELETE FROM message_reactions
+          WHERE message_id = ${messageId}
+            AND user_id = ${userId}
+            AND reaction_type = 'unicode'
+            AND unicode_emoji = ANY(${unicodeEmojis})
+        `;
+      }
+      if (customEmojiIds.length > 0) {
+        await sql`
+          DELETE FROM message_reactions
+          WHERE message_id = ${messageId}
+            AND user_id = ${userId}
+            AND reaction_type = 'custom'
+            AND custom_emoji_id = ANY(${customEmojiIds})
+        `;
+      }
+
+      // Track which reactions were removed (only those the user actually had roles for)
+      for (const m of otherMappings) {
+        if (removedRoleIds.includes(m.role_id)) {
+          removedReactions.push({
+            emoji: m.emoji,
+            emoji_type: m.emoji_type,
+            custom_emoji_id: m.custom_emoji_id,
+          });
+        }
+      }
+    }
+  }
+
   // Assign the role (ignore if already assigned)
   await sql`
     INSERT INTO member_roles (member_user_id, member_server_id, role_id)
@@ -302,7 +382,7 @@ export async function assignRoleFromReaction(
     ON CONFLICT (member_user_id, member_server_id, role_id) DO NOTHING
   `;
 
-  return mapping.role_id;
+  return { assignedRoleId: mapping.role_id, removedRoleIds, removedReactions };
 }
 
 /**
@@ -380,8 +460,8 @@ export async function createDefaultGroups(
     for (const groupDef of DEFAULT_ROLE_GROUPS) {
       // Create the group
       const [group] = await tx`
-        INSERT INTO role_reaction_groups (server_id, channel_id, name, description, position, enabled)
-        VALUES (${serverId}, ${channelId}, ${groupDef.name}, ${groupDef.description}, ${groupDef.position}, true)
+        INSERT INTO role_reaction_groups (server_id, channel_id, name, description, position, enabled, exclusive)
+        VALUES (${serverId}, ${channelId}, ${groupDef.name}, ${groupDef.description}, ${groupDef.position}, true, ${groupDef.exclusive ?? false})
         RETURNING *
       `;
 
