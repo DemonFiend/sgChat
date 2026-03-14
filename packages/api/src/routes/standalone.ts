@@ -9,7 +9,7 @@ import { authenticate } from '../middleware/auth.js';
 import { db, sql } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
 import { getDefaultServer } from './server.js';
-import { calculatePermissions, canManageMember, timeoutMember, removeTimeout } from '../services/permissions.js';
+import { calculatePermissions, canManageMember, canManageRole, getUserRoles, timeoutMember, removeTimeout } from '../services/permissions.js';
 import { handleMemberLeave, generateInviteCode } from '../services/server.js';
 import {
   ServerPermissions,
@@ -453,9 +453,21 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
 
       // Update roles
       if (body.roles && hasPermission(perms.server, ServerPermissions.MANAGE_ROLES)) {
+        // Verify all roles exist and check hierarchy
+        for (const roleId of body.roles) {
+          const [role] = await db.sql`SELECT id, name FROM roles WHERE id = ${roleId} AND server_id = ${server.id}`;
+          if (!role) {
+            return badRequest(reply, `Role ${roleId} not found`);
+          }
+          const canManage = await canManageRole(request.user!.id, server.id, roleId);
+          if (!canManage) {
+            return forbidden(reply, `Cannot assign role "${role.name}" - it is at or above your highest role`);
+          }
+        }
+
         // Remove all current roles (except @everyone which isn't in member_roles)
         await db.sql`
-          DELETE FROM member_roles 
+          DELETE FROM member_roles
           WHERE member_user_id = ${userId} AND member_server_id = ${server.id}
         `;
 
@@ -467,18 +479,30 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
             ON CONFLICT DO NOTHING
           `;
         }
+
+        // Audit log
+        await db.sql`
+          INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
+          VALUES (${server.id}, ${request.user!.id}, 'member_role_update', 'member', ${userId}, ${JSON.stringify({ role_ids: body.roles })})
+        `;
       }
 
-      // Return updated member
+      // Return updated member with enriched roles
       const updated = await db.members.findByUserAndServer(userId, server.id);
-      const roles = await db.sql`
-        SELECT role_id FROM member_roles 
-        WHERE member_user_id = ${userId} AND member_server_id = ${server.id}
-      `;
+      const updatedRoles = await getUserRoles(userId, server.id);
+
+      // Broadcast role update if roles were changed
+      if (body.roles) {
+        await emitEncrypted(fastify.io, `server:${server.id}`, 'member.roles.update', {
+          user_id: userId,
+          server_id: server.id,
+          roles: updatedRoles,
+        });
+      }
 
       return {
         ...updated,
-        roles: roles.map((r: any) => r.role_id)
+        roles: updatedRoles,
       };
     },
   });

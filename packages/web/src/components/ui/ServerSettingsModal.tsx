@@ -1242,12 +1242,20 @@ function RolesTab() {
 }
 
 // Members Tab
+interface MemberRole {
+  id: string;
+  name: string;
+  color: string | null;
+  position: number;
+  is_hoisted: boolean;
+}
+
 interface ServerMember {
   id: string;
   username: string;
   display_name?: string | null;
   avatar_url?: string | null;
-  roles: string[];
+  roles: MemberRole[];
   joined_at: string;
   timeout_until?: string | null;
 }
@@ -1255,7 +1263,7 @@ interface ServerMember {
 function MembersTab() {
   const [searchQuery, setSearchQuery] = useState('');
   const [members, setMembers] = useState<ServerMember[]>([]);
-  const [roles, setRoles] = useState<{ id: string; name: string; color: string | null; position?: number }[]>([]);
+  const [roles, setRoles] = useState<{ id: string; name: string; color: string | null; position?: number; is_hoisted?: boolean }[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedMember, setSelectedMember] = useState<ServerMember | null>(null);
@@ -1385,10 +1393,8 @@ function MembersTab() {
     return new Date(dateStr).toLocaleDateString();
   };
 
-  const getRoleById = (roleId: string) => roles.find(r => r.id === roleId);
-
   const startEditingRoles = (member: ServerMember) => {
-    setEditingRoles([...member.roles]);
+    setEditingRoles(member.roles.map((r) => r.id));
     setIsEditingRoles(true);
   };
 
@@ -1411,11 +1417,19 @@ function MembersTab() {
     setSavingRoles(true);
     try {
       await api.patch(`/members/${selectedMember.id}`, { roles: editingRoles });
-      // Update the member in local state
+      // Rebuild role objects from the roles state for local update
+      const updatedRoleObjects: MemberRole[] = editingRoles
+        .map((id) => {
+          const r = roles.find((role) => role.id === id);
+          return r
+            ? { id: r.id, name: r.name, color: r.color, position: r.position ?? 0, is_hoisted: r.is_hoisted ?? false }
+            : null;
+        })
+        .filter((r): r is MemberRole => r !== null);
       setMembers(prev => prev.map(m =>
-        m.id === selectedMember.id ? { ...m, roles: editingRoles } : m
+        m.id === selectedMember.id ? { ...m, roles: updatedRoleObjects } : m
       ));
-      setSelectedMember({ ...selectedMember, roles: editingRoles });
+      setSelectedMember({ ...selectedMember, roles: updatedRoleObjects });
       setIsEditingRoles(false);
     } catch (err: any) {
       alert(err?.message || 'Failed to update roles');
@@ -1488,21 +1502,18 @@ function MembersTab() {
                       )}
                     </div>
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      {member.roles.map((roleId) => {
-                        const role = getRoleById(roleId);
-                        return role ? (
-                          <span
-                            key={roleId}
-                            className="text-xs px-1.5 py-0.5 rounded"
-                            style={{
-                              background: role.color ? `${role.color}20` : 'var(--color-bg-tertiary)',
-                              color: role.color || 'var(--color-text-muted)'
-                            }}
-                          >
-                            {role.name}
-                          </span>
-                        ) : null;
-                      })}
+                      {member.roles.map((role) => (
+                        <span
+                          key={role.id}
+                          className="text-xs px-1.5 py-0.5 rounded"
+                          style={{
+                            background: role.color ? `${role.color}20` : 'var(--color-bg-tertiary)',
+                            color: role.color || 'var(--color-text-muted)'
+                          }}
+                        >
+                          {role.name}
+                        </span>
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -1575,21 +1586,18 @@ function MembersTab() {
                     {selectedMember.roles.length === 0 && (
                       <span className="text-sm text-text-muted">No roles assigned</span>
                     )}
-                    {selectedMember.roles.map((roleId) => {
-                      const role = getRoleById(roleId);
-                      return role ? (
-                        <span
-                          key={roleId}
-                          className="text-xs px-2 py-1 rounded"
-                          style={{
-                            background: role.color ? `${role.color}20` : 'var(--color-bg-tertiary)',
-                            color: role.color || 'var(--color-text-muted)'
-                          }}
-                        >
-                          {role.name}
-                        </span>
-                      ) : null;
-                    })}
+                    {selectedMember.roles.map((role) => (
+                      <span
+                        key={role.id}
+                        className="text-xs px-2 py-1 rounded"
+                        style={{
+                          background: role.color ? `${role.color}20` : 'var(--color-bg-tertiary)',
+                          color: role.color || 'var(--color-text-muted)'
+                        }}
+                      >
+                        {role.name}
+                      </span>
+                    ))}
                   </div>
                 )}
               </div>
