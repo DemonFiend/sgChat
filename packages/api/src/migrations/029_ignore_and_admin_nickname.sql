@@ -44,6 +44,3 @@ ALTER TABLE audit_log ADD CONSTRAINT audit_log_action_check CHECK (action IN (
   -- Nickname actions (new)
   'member_nickname_change', 'member_nickname_override'
 ));
-
--- Track migration
-INSERT INTO _migrations (name) VALUES ('029_ignore_and_admin_nickname') ON CONFLICT (name) DO NOTHING;
