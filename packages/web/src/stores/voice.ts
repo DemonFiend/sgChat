@@ -57,6 +57,7 @@ export interface VoiceState {
     isMuted: boolean;
     isDeafened: boolean;
     isSpeaking: boolean;
+    isVideoOn: boolean;
   };
   screenShare: ScreenShareState;
   connectionQuality: ConnectionQualityState;
@@ -78,6 +79,7 @@ interface VoiceActions {
   setMuted: (muted: boolean) => void;
   setDeafened: (deafened: boolean) => void;
   setSpeaking: (speaking: boolean) => void;
+  setVideoOn: (videoOn: boolean) => void;
   setScreenSharing: (isSharing: boolean) => void;
   setScreenShareQuality: (quality: ScreenShareQuality) => void;
   setConnectionQuality: (quality: ConnectionQualityState) => void;
@@ -97,7 +99,7 @@ export const useVoiceStore = create<VoiceState & VoiceActions>((set, get) => ({
   currentRelayRegion: null,
   participants: {},
   permissions: null,
-  localState: { isMuted: false, isDeafened: false, isSpeaking: false },
+  localState: { isMuted: false, isDeafened: false, isSpeaking: false, isVideoOn: false },
   screenShare: { isSharing: false, quality: 'standard' },
   connectionQuality: { level: 'unknown', ping: null, jitter: null, packetLoss: null },
   error: null,
@@ -114,7 +116,7 @@ export const useVoiceStore = create<VoiceState & VoiceActions>((set, get) => ({
   setConnected: (permissions) => set({ connectionState: 'connected', permissions, error: null }),
   setDisconnected: () => set({
     connectionState: 'idle', currentChannelId: null, currentChannelName: null, currentRelayId: null, currentRelayRegion: null, permissions: null,
-    localState: { isMuted: false, isDeafened: false, isSpeaking: false },
+    localState: { isMuted: false, isDeafened: false, isSpeaking: false, isVideoOn: false },
     screenShare: { isSharing: false, quality: 'standard' },
     connectionQuality: { level: 'unknown', ping: null, jitter: null, packetLoss: null },
     error: null,
@@ -125,6 +127,7 @@ export const useVoiceStore = create<VoiceState & VoiceActions>((set, get) => ({
   setMuted: (muted) => set((s) => ({ localState: { ...s.localState, isMuted: muted } })),
   setDeafened: (deafened) => set((s) => ({ localState: { ...s.localState, isDeafened: deafened, isMuted: deafened ? true : s.localState.isMuted } })),
   setSpeaking: (speaking) => set((s) => ({ localState: { ...s.localState, isSpeaking: speaking } })),
+  setVideoOn: (videoOn) => set((s) => ({ localState: { ...s.localState, isVideoOn: videoOn } })),
   setScreenSharing: (isSharing) => set((s) => ({ screenShare: { ...s.screenShare, isSharing } })),
   setScreenShareQuality: (quality) => set((s) => ({ screenShare: { ...s.screenShare, quality } })),
   setConnectionQuality: (quality) => set({ connectionQuality: quality }),
@@ -209,6 +212,7 @@ export const voiceStore = {
   isMuted: () => useVoiceStore.getState().localState.isMuted,
   isDeafened: () => useVoiceStore.getState().localState.isDeafened,
   isSpeaking: () => useVoiceStore.getState().localState.isSpeaking,
+  isVideoOn: () => useVoiceStore.getState().localState.isVideoOn,
   error: () => useVoiceStore.getState().error,
   permissions: () => useVoiceStore.getState().permissions,
   getParticipants: (channelId: string) => useVoiceStore.getState().getParticipants(channelId),
@@ -224,6 +228,7 @@ export const voiceStore = {
   setMuted: (muted: boolean) => useVoiceStore.getState().setMuted(muted),
   setDeafened: (deafened: boolean) => useVoiceStore.getState().setDeafened(deafened),
   setSpeaking: (speaking: boolean) => useVoiceStore.getState().setSpeaking(speaking),
+  setVideoOn: (videoOn: boolean) => useVoiceStore.getState().setVideoOn(videoOn),
   setScreenSharing: (isSharing: boolean) => useVoiceStore.getState().setScreenSharing(isSharing),
   setScreenShareQuality: (quality: ScreenShareQuality) => useVoiceStore.getState().setScreenShareQuality(quality),
   setConnectionQuality: (quality: ConnectionQualityState) => useVoiceStore.getState().setConnectionQuality(quality),

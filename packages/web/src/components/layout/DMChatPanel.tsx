@@ -35,6 +35,7 @@ interface DMChatPanelProps {
   onTypingStart?: () => void;
   onTypingStop?: () => void;
   isTyping?: boolean;
+  serverId?: string;
 }
 
 export function DMChatPanel({
@@ -47,6 +48,7 @@ export function DMChatPanel({
   onTypingStart,
   onTypingStop,
   isTyping: friendIsTyping,
+  serverId,
 }: DMChatPanelProps) {
   const [messageInput, setMessageInput] = useState('');
   const [friendLocalTime, setFriendLocalTime] = useState<string | null>(null);
@@ -629,6 +631,7 @@ export function DMChatPanel({
                 inputRef.current?.focus();
               }}
               anchorRef={emojiButtonRef.current}
+              serverId={serverId}
             />
 
             <button

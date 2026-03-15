@@ -8,6 +8,7 @@ import { api } from '@/api';
 import { socketService } from '@/lib/socket';
 import { soundService } from '@/lib/soundService';
 import { MentionProvider, type MentionContextValue, type MentionMember } from '@/contexts/MentionContext';
+import { useIgnoredUsersStore } from '@/stores/ignoredUsers';
 
 // API response types
 interface FriendRequestsResponse {
@@ -41,7 +42,11 @@ export interface BlockedUser {
   blocked_at: string;
 }
 
-export function DMPage() {
+interface DMPageProps {
+  serverId?: string;
+}
+
+export function DMPage({ serverId }: DMPageProps) {
   const navigate = useNavigate();
   const [friends, setFriends] = useState<Friend[]>([]);
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
@@ -56,6 +61,10 @@ export function DMPage() {
   const [blockedUsers, setBlockedUsers] = useState<BlockedUser[]>([]);
 
   const currentUserId = authStore.getState().user?.id || '';
+  const ignoredUsers = useIgnoredUsersStore((s) => s.ignoredUsers);
+  const fetchIgnored = useIgnoredUsersStore((s) => s.fetchIgnored);
+  const ignoreUser = useIgnoredUsersStore((s) => s.ignoreUser);
+  const unignoreUser = useIgnoredUsersStore((s) => s.unignoreUser);
 
   const handleBack = async () => {
     try {
@@ -133,7 +142,7 @@ export function DMPage() {
       setIsLoading(true);
       setError(null);
       try {
-        await Promise.all([fetchFriends(), fetchFriendRequests(), fetchBlockedUsers()]);
+        await Promise.all([fetchFriends(), fetchFriendRequests(), fetchBlockedUsers(), fetchIgnored()]);
       } catch (err) {
         console.error('Failed to load DM data:', err);
         setError('Failed to load data');
@@ -142,7 +151,7 @@ export function DMPage() {
       }
     };
     init();
-  }, [fetchFriends, fetchFriendRequests, fetchBlockedUsers]);
+  }, [fetchFriends, fetchFriendRequests, fetchBlockedUsers, fetchIgnored]);
 
   // Socket event handlers
   useEffect(() => {
@@ -462,7 +471,7 @@ export function DMPage() {
                 setError(null);
                 setIsLoading(true);
                 try {
-                  await Promise.all([fetchFriends(), fetchFriendRequests(), fetchBlockedUsers()]);
+                  await Promise.all([fetchFriends(), fetchFriendRequests(), fetchBlockedUsers(), fetchIgnored()]);
                 } catch {
                   setError('Failed to load data');
                 } finally {
@@ -499,6 +508,9 @@ export function DMPage() {
         blockedUsers={blockedUsers}
         onBlockUser={handleBlockUser}
         onUnblockUser={handleUnblockUser}
+        ignoredUsers={ignoredUsers}
+        onIgnoreUser={ignoreUser}
+        onUnignoreUser={unignoreUser}
       />
       <MentionProvider value={dmMentionContext}>
         <DMChatPanel
@@ -511,6 +523,7 @@ export function DMPage() {
           onTypingStart={handleTypingStart}
           onTypingStop={handleTypingStop}
           isTyping={isTyping}
+          serverId={serverId}
         />
       </MentionProvider>
     </div>

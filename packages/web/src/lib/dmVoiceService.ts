@@ -212,6 +212,23 @@ class DMVoiceServiceClass {
     }
   }
 
+  async toggleVideo(): Promise<void> {
+    const currentVideoOn = voiceStore.isVideoOn();
+    await this.setVideoOn(!currentVideoOn);
+  }
+
+  async setVideoOn(enabled: boolean): Promise<void> {
+    if (!this.room) return;
+
+    try {
+      await this.room.localParticipant.setCameraEnabled(enabled);
+      voiceStore.setVideoOn(enabled);
+      console.log('[DMVoiceService] Video state:', enabled);
+    } catch (err) {
+      console.error('[DMVoiceService] Failed to toggle video:', err);
+    }
+  }
+
   async toggleDeafen(): Promise<void> {
     const currentDeafened = voiceStore.isDeafened();
     await this.setDeafened(!currentDeafened);

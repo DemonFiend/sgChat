@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Avatar } from '@/components/ui/Avatar';
+import { api } from '@/api';
 
 export interface Friend {
   id: string;
@@ -46,6 +47,27 @@ export interface BlockedUser {
   blocked_at: string;
 }
 
+export interface IgnoredUser {
+  id: string;
+  username: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  ignored_at: string;
+}
+
+interface AuditLogEntry {
+  id: string;
+  action: string;
+  target_type: string;
+  target_id: string;
+  changes: Record<string, unknown> | null;
+  reason: string | null;
+  created_at: string;
+  actor_username: string;
+}
+
+type SidebarTab = 'all' | 'online' | 'friends' | 'pending' | 'blocked' | 'ignored' | 'history';
+
 interface DMSidebarProps {
   friends: Friend[];
   selectedFriendId: string | null;
@@ -64,7 +86,20 @@ interface DMSidebarProps {
   blockedUsers: BlockedUser[];
   onBlockUser: (userId: string) => void;
   onUnblockUser: (userId: string) => void;
+  ignoredUsers: IgnoredUser[];
+  onIgnoreUser: (userId: string) => void;
+  onUnignoreUser: (userId: string) => void;
 }
+
+const TABS: { id: SidebarTab; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'online', label: 'Online' },
+  { id: 'friends', label: 'Friends' },
+  { id: 'pending', label: 'Pending' },
+  { id: 'blocked', label: 'Blocked' },
+  { id: 'ignored', label: 'Ignored' },
+  { id: 'history', label: 'History' },
+];
 
 export function DMSidebar({
   friends,
@@ -84,9 +119,14 @@ export function DMSidebar({
   blockedUsers,
   onBlockUser,
   onUnblockUser,
+  ignoredUsers,
+  onIgnoreUser,
+  onUnignoreUser,
 }: DMSidebarProps) {
-  const [isSearchMode, setIsSearchMode] = useState(false);
+  const [activeTab, setActiveTab] = useState<SidebarTab>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
 
   const onlineFriends = useMemo(() => friends.filter(f => f.status !== 'offline'), [friends]);
   const offlineFriends = useMemo(() => friends.filter(f => f.status === 'offline'), [friends]);
@@ -98,19 +138,21 @@ export function DMSidebar({
     }
   };
 
-  const handleFindClick = () => {
-    if (isSearchMode) {
-      setIsSearchMode(false);
-      setSearchQuery('');
-    } else {
-      setIsSearchMode(true);
+  // Fetch audit log when history tab is selected
+  useEffect(() => {
+    if (activeTab === 'history' && auditLog.length === 0) {
+      setAuditLoading(true);
+      api.get<{ id: string }>('/server').then(server => {
+        return api.get<AuditLogEntry[]>(`/servers/${server.id}/audit-log?limit=50`);
+      }).then(entries => {
+        setAuditLog(entries || []);
+      }).catch(err => {
+        console.error('Failed to fetch audit log:', err);
+      }).finally(() => {
+        setAuditLoading(false);
+      });
     }
-  };
-
-  const exitSearchMode = () => {
-    setIsSearchMode(false);
-    setSearchQuery('');
-  };
+  }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -120,6 +162,53 @@ export function DMSidebar({
       default: return 'bg-status-offline';
     }
   };
+
+  const formatAuditAction = (action: string) => {
+    return action.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  };
+
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
+
+  const renderFriendItem = (friend: Friend, isOffline = false) => (
+    <button
+      key={friend.id}
+      onClick={() => onSelectFriend(friend)}
+      className={`w-full flex items-center gap-2 p-2 rounded-lg transition-colors ${
+        isOffline ? 'opacity-60' : ''
+      } ${
+        selectedFriendId === friend.id
+          ? 'bg-bg-modifier-selected opacity-100'
+          : 'hover:bg-bg-modifier-hover hover:opacity-100'
+      }`}
+    >
+      <div className="relative flex-shrink-0">
+        <Avatar
+          src={friend.avatar_url}
+          alt={friend.display_name || friend.username}
+          size="sm"
+        />
+        <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-bg-secondary ${getStatusColor(friend.status)}`} />
+      </div>
+      <div className="flex-1 min-w-0 text-left">
+        <div className="text-sm font-medium text-text-primary truncate">
+          {friend.display_name || friend.username}
+        </div>
+        {friend.custom_status && (
+          <div className="text-xs text-text-muted truncate">
+            {friend.custom_status}
+          </div>
+        )}
+      </div>
+      {(friend.unread_count ?? 0) > 0 && (
+        <span className="bg-danger text-white text-xs font-bold px-2 py-0.5 rounded-full">
+          {(friend.unread_count ?? 0) > 9 ? '9+' : friend.unread_count}
+        </span>
+      )}
+    </button>
+  );
 
   return (
     <div className="w-60 bg-bg-secondary flex flex-col h-full border-r border-bg-tertiary">
@@ -136,99 +225,58 @@ export function DMSidebar({
         </button>
       </div>
 
-      {/* Find Button */}
-      <div className="p-3 border-b border-bg-tertiary">
-        <button
-          onClick={handleFindClick}
-          className={`w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-            isSearchMode
-              ? 'bg-brand-primary text-white'
-              : 'bg-bg-tertiary hover:bg-bg-modifier-hover text-text-primary'
-          }`}
-        >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <span className="font-medium">Find</span>
-          {pendingRequestCount > 0 && !isSearchMode && (
-            <span className="ml-auto bg-danger text-white text-xs font-bold px-2 py-0.5 rounded-full">
-              {pendingRequestCount > 9 ? '9+' : pendingRequestCount}
-            </span>
-          )}
-        </button>
+      {/* Tabs */}
+      <div className="border-b border-bg-tertiary">
+        <div className="flex flex-wrap px-2 py-1.5 gap-1">
+          {TABS.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+                activeTab === tab.id
+                  ? 'bg-brand-primary text-white'
+                  : 'text-text-muted hover:text-text-primary hover:bg-bg-modifier-hover'
+              }`}
+            >
+              {tab.label}
+              {tab.id === 'pending' && pendingRequestCount > 0 && (
+                <span className="ml-1 bg-danger text-white text-[10px] font-bold px-1.5 py-0 rounded-full">
+                  {pendingRequestCount > 9 ? '9+' : pendingRequestCount}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Search Mode Content */}
-      {isSearchMode && (
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Search Input */}
-          <div className="p-3 border-b border-bg-tertiary">
-            <div className="relative">
-              <input
-                type="text"
-                name="search-dm-users"
-                placeholder="Search username..."
-                value={searchQuery}
-                onChange={(e) => handleSearchInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Escape' && exitSearchMode()}
-                className="w-full px-3 py-2 bg-bg-tertiary rounded-lg text-text-primary placeholder:text-text-muted outline-none focus:ring-2 focus:ring-brand-primary"
-                autoFocus
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto scrollbar-thin">
-            {/* Incoming Requests */}
-            {incomingRequests.length > 0 && (
-              <div className="p-2">
-                <div className="text-xs font-semibold text-text-muted uppercase px-2 py-1">
-                  Friend Requests — {incomingRequests.length}
-                </div>
-                {incomingRequests.map((request) => (
-                  <div key={request.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-bg-modifier-hover">
-                    <Avatar
-                      src={request.user.avatar_url}
-                      alt={request.user.display_name || request.user.username}
-                      size="sm"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-text-primary truncate">
-                        {request.user.display_name || request.user.username}
-                      </div>
-                      <div className="text-xs text-text-muted">@{request.user.username}</div>
-                    </div>
-                    <button
-                      onClick={() => onAcceptRequest(request.user.id)}
-                      className="p-1.5 rounded bg-status-online/20 text-status-online hover:bg-status-online/30"
-                      title="Accept"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => onRejectRequest(request.user.id)}
-                      className="p-1.5 rounded bg-danger/20 text-danger hover:bg-danger/30"
-                      title="Reject"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
-                ))}
+      {/* Tab Content */}
+      <div className="flex-1 overflow-y-auto scrollbar-thin">
+        {/* ALL Tab — Search + All Friends */}
+        {activeTab === 'all' && (
+          <div className="flex flex-col h-full">
+            {/* Search Input */}
+            <div className="p-2">
+              <div className="relative">
+                <input
+                  type="text"
+                  name="search-dm-users"
+                  placeholder="Search users..."
+                  value={searchQuery}
+                  onChange={(e) => handleSearchInput(e.target.value)}
+                  className="w-full px-3 py-2 bg-bg-tertiary rounded-lg text-text-primary placeholder:text-text-muted outline-none focus:ring-2 focus:ring-brand-primary text-sm"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
               </div>
-            )}
+            </div>
 
             {/* Search Results */}
             {searchQuery.length >= 2 && (
@@ -242,48 +290,24 @@ export function DMSidebar({
                   </div>
                 )}
                 {!isSearching && searchResults.length === 0 && (
-                  <div className="text-center py-4 text-text-muted text-sm">
-                    No users found
-                  </div>
+                  <div className="text-center py-4 text-text-muted text-sm">No users found</div>
                 )}
                 {searchResults.map((user) => (
                   <div key={user.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-bg-modifier-hover">
-                    <Avatar
-                      src={user.avatar_url}
-                      alt={user.display_name || user.username}
-                      size="sm"
-                    />
+                    <Avatar src={user.avatar_url} alt={user.display_name || user.username} size="sm" />
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-text-primary truncate">
-                        {user.display_name || user.username}
-                      </div>
+                      <div className="text-sm font-medium text-text-primary truncate">{user.display_name || user.username}</div>
                       <div className="text-xs text-text-muted">@{user.username}</div>
                     </div>
                     {user.is_blocked ? (
-                      <button
-                        onClick={() => onUnblockUser(user.id)}
-                        className="px-3 py-1 text-xs font-medium bg-danger/20 text-danger rounded hover:bg-danger hover:text-white"
-                      >
-                        Blocked
-                      </button>
+                      <button onClick={() => onUnblockUser(user.id)} className="px-3 py-1 text-xs font-medium bg-danger/20 text-danger rounded hover:bg-danger hover:text-white">Blocked</button>
                     ) : (
                       <>
-                        {user.is_friend && (
-                          <span className="text-xs text-status-online font-medium">Friends</span>
-                        )}
+                        {user.is_friend && <span className="text-xs text-status-online font-medium">Friends</span>}
                         {!user.is_friend && !user.request_pending && (
                           <>
-                            <button
-                              onClick={() => onAddFriend(user.id)}
-                              className="px-3 py-1 text-xs font-medium bg-brand-primary text-white rounded hover:bg-brand-primary/80"
-                            >
-                              Add
-                            </button>
-                            <button
-                              onClick={() => onBlockUser(user.id)}
-                              className="p-1.5 rounded text-text-muted hover:bg-danger/20 hover:text-danger"
-                              title="Block user"
-                            >
+                            <button onClick={() => onAddFriend(user.id)} className="px-3 py-1 text-xs font-medium bg-brand-primary text-white rounded hover:bg-brand-primary/80">Add</button>
+                            <button onClick={() => onBlockUser(user.id)} className="p-1.5 rounded text-text-muted hover:bg-danger/20 hover:text-danger" title="Block user">
                               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
                               </svg>
@@ -291,20 +315,10 @@ export function DMSidebar({
                           </>
                         )}
                         {user.request_pending && user.request_direction === 'outgoing' && (
-                          <button
-                            onClick={() => onCancelRequest(user.id)}
-                            className="px-3 py-1 text-xs font-medium bg-bg-tertiary text-text-muted rounded hover:bg-danger hover:text-white"
-                          >
-                            Pending
-                          </button>
+                          <button onClick={() => onCancelRequest(user.id)} className="px-3 py-1 text-xs font-medium bg-bg-tertiary text-text-muted rounded hover:bg-danger hover:text-white">Pending</button>
                         )}
                         {user.request_pending && user.request_direction === 'incoming' && (
-                          <button
-                            onClick={() => onAcceptRequest(user.id)}
-                            className="px-3 py-1 text-xs font-medium bg-status-online text-white rounded hover:bg-status-online/80"
-                          >
-                            Accept
-                          </button>
+                          <button onClick={() => onAcceptRequest(user.id)} className="px-3 py-1 text-xs font-medium bg-status-online text-white rounded hover:bg-status-online/80">Accept</button>
                         )}
                       </>
                     )}
@@ -313,172 +327,213 @@ export function DMSidebar({
               </div>
             )}
 
-            {/* Outgoing Requests */}
-            {outgoingRequests.length > 0 && searchQuery.length < 2 && (
+            {/* All Friends (when not searching) */}
+            {searchQuery.length < 2 && (
               <div className="p-2">
+                {friends.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-8 text-center">
+                    <div className="w-12 h-12 bg-bg-tertiary rounded-full flex items-center justify-center mb-3">
+                      <svg className="w-6 h-6 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                      </svg>
+                    </div>
+                    <p className="text-text-muted text-sm">No friends yet</p>
+                    <p className="text-text-muted text-xs mt-1">Search above to find users</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="text-xs font-semibold text-text-muted uppercase px-2 py-1">
+                      All Friends — {friends.length}
+                    </div>
+                    {onlineFriends.map(f => renderFriendItem(f))}
+                    {offlineFriends.map(f => renderFriendItem(f, true))}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ONLINE Tab */}
+        {activeTab === 'online' && (
+          <div className="p-2">
+            <div className="text-xs font-semibold text-text-muted uppercase px-2 py-1">
+              Online — {onlineFriends.length}
+            </div>
+            {onlineFriends.length === 0 ? (
+              <div className="text-center py-8 text-text-muted text-sm">No friends online</div>
+            ) : (
+              onlineFriends.map(f => renderFriendItem(f))
+            )}
+          </div>
+        )}
+
+        {/* FRIENDS Tab — same as All but grouped online/offline */}
+        {activeTab === 'friends' && (
+          <div className="p-2">
+            {friends.length === 0 ? (
+              <div className="text-center py-8 text-text-muted text-sm">No friends yet</div>
+            ) : (
+              <>
+                {onlineFriends.length > 0 && (
+                  <>
+                    <div className="text-xs font-semibold text-text-muted uppercase px-2 py-1">
+                      Online — {onlineFriends.length}
+                    </div>
+                    {onlineFriends.map(f => renderFriendItem(f))}
+                  </>
+                )}
+                {offlineFriends.length > 0 && (
+                  <>
+                    <div className="text-xs font-semibold text-text-muted uppercase px-2 py-1 mt-2">
+                      Offline — {offlineFriends.length}
+                    </div>
+                    {offlineFriends.map(f => renderFriendItem(f, true))}
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* PENDING Tab */}
+        {activeTab === 'pending' && (
+          <div className="p-2">
+            {/* Incoming Requests */}
+            {incomingRequests.length > 0 && (
+              <>
                 <div className="text-xs font-semibold text-text-muted uppercase px-2 py-1">
-                  Pending — {outgoingRequests.length}
+                  Incoming — {incomingRequests.length}
+                </div>
+                {incomingRequests.map((request) => (
+                  <div key={request.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-bg-modifier-hover">
+                    <Avatar src={request.user.avatar_url} alt={request.user.display_name || request.user.username} size="sm" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-text-primary truncate">{request.user.display_name || request.user.username}</div>
+                      <div className="text-xs text-text-muted">@{request.user.username}</div>
+                    </div>
+                    <button onClick={() => onAcceptRequest(request.user.id)} className="p-1.5 rounded bg-status-online/20 text-status-online hover:bg-status-online/30" title="Accept">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </button>
+                    <button onClick={() => onRejectRequest(request.user.id)} className="p-1.5 rounded bg-danger/20 text-danger hover:bg-danger/30" title="Reject">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
+
+            {/* Outgoing Requests */}
+            {outgoingRequests.length > 0 && (
+              <>
+                <div className="text-xs font-semibold text-text-muted uppercase px-2 py-1 mt-2">
+                  Outgoing — {outgoingRequests.length}
                 </div>
                 {outgoingRequests.map((request) => (
                   <div key={request.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-bg-modifier-hover">
-                    <Avatar
-                      src={request.user.avatar_url}
-                      alt={request.user.display_name || request.user.username}
-                      size="sm"
-                    />
+                    <Avatar src={request.user.avatar_url} alt={request.user.display_name || request.user.username} size="sm" />
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-text-primary truncate">
-                        {request.user.display_name || request.user.username}
-                      </div>
+                      <div className="text-sm font-medium text-text-primary truncate">{request.user.display_name || request.user.username}</div>
                       <div className="text-xs text-text-muted">@{request.user.username}</div>
                     </div>
-                    <button
-                      onClick={() => onCancelRequest(request.user.id)}
-                      className="px-3 py-1 text-xs font-medium bg-bg-tertiary text-text-muted rounded hover:bg-danger hover:text-white"
-                    >
-                      Cancel
-                    </button>
+                    <button onClick={() => onCancelRequest(request.user.id)} className="px-3 py-1 text-xs font-medium bg-bg-tertiary text-text-muted rounded hover:bg-danger hover:text-white">Cancel</button>
                   </div>
                 ))}
-              </div>
+              </>
             )}
 
-            {/* Blocked Users */}
-            {blockedUsers.length > 0 && searchQuery.length < 2 && (
-              <div className="p-2 border-t border-bg-tertiary">
-                <div className="text-xs font-semibold text-text-muted uppercase px-2 py-1">
-                  Blocked — {blockedUsers.length}
-                </div>
-                {blockedUsers.map((user) => (
-                  <div key={user.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-bg-modifier-hover opacity-60">
-                    <Avatar
-                      src={user.avatar_url}
-                      alt={user.display_name || user.username}
-                      size="sm"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-text-primary truncate">
-                        {user.display_name || user.username}
-                      </div>
-                      <div className="text-xs text-text-muted">@{user.username}</div>
-                    </div>
-                    <button
-                      onClick={() => onUnblockUser(user.id)}
-                      className="px-3 py-1 text-xs font-medium bg-bg-tertiary text-text-muted rounded hover:bg-status-online hover:text-white"
-                    >
-                      Unblock
-                    </button>
-                  </div>
-                ))}
-              </div>
+            {incomingRequests.length === 0 && outgoingRequests.length === 0 && (
+              <div className="text-center py-8 text-text-muted text-sm">No pending requests</div>
             )}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Normal Friend List Mode */}
-      {!isSearchMode && (
-        <div className="flex-1 overflow-y-auto scrollbar-thin">
-          {/* Friends Section */}
+        {/* BLOCKED Tab */}
+        {activeTab === 'blocked' && (
           <div className="p-2">
             <div className="text-xs font-semibold text-text-muted uppercase px-2 py-1">
-              Friends — {onlineFriends.length}
+              Blocked — {blockedUsers.length}
             </div>
-            {onlineFriends.map((friend) => (
-              <button
-                key={friend.id}
-                onClick={() => onSelectFriend(friend)}
-                className={`w-full flex items-center gap-2 p-2 rounded-lg transition-colors ${
-                  selectedFriendId === friend.id
-                    ? 'bg-bg-modifier-selected'
-                    : 'hover:bg-bg-modifier-hover'
-                }`}
-              >
-                <div className="relative flex-shrink-0">
-                  <Avatar
-                    src={friend.avatar_url}
-                    alt={friend.display_name || friend.username}
-                    size="sm"
-                  />
-                  <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-bg-secondary ${getStatusColor(friend.status)}`} />
-                </div>
-                <div className="flex-1 min-w-0 text-left">
-                  <div className="text-sm font-medium text-text-primary truncate">
-                    {friend.display_name || friend.username}
+            {blockedUsers.length === 0 ? (
+              <div className="text-center py-8 text-text-muted text-sm">No blocked users</div>
+            ) : (
+              blockedUsers.map((user) => (
+                <div key={user.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-bg-modifier-hover opacity-60">
+                  <Avatar src={user.avatar_url} alt={user.display_name || user.username} size="sm" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-text-primary truncate">{user.display_name || user.username}</div>
+                    <div className="text-xs text-text-muted">@{user.username}</div>
                   </div>
-                  {friend.custom_status && (
-                    <div className="text-xs text-text-muted truncate">
-                      {friend.custom_status}
-                    </div>
-                  )}
+                  <button onClick={() => onUnblockUser(user.id)} className="px-3 py-1 text-xs font-medium bg-bg-tertiary text-text-muted rounded hover:bg-status-online hover:text-white">Unblock</button>
                 </div>
-                {(friend.unread_count ?? 0) > 0 && (
-                  <span className="bg-danger text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                    {(friend.unread_count ?? 0) > 9 ? '9+' : friend.unread_count}
-                  </span>
-                )}
-              </button>
-            ))}
+              ))
+            )}
           </div>
+        )}
 
-          {/* Offline Section */}
-          {offlineFriends.length > 0 && (
-            <div className="p-2 border-t border-bg-tertiary">
-              <div className="text-xs font-semibold text-text-muted uppercase px-2 py-1">
-                Offline — {offlineFriends.length}
-              </div>
-              {offlineFriends.map((friend) => (
-                <button
-                  key={friend.id}
-                  onClick={() => onSelectFriend(friend)}
-                  className={`w-full flex items-center gap-2 p-2 rounded-lg transition-colors opacity-60 ${
-                    selectedFriendId === friend.id
-                      ? 'bg-bg-modifier-selected opacity-100'
-                      : 'hover:bg-bg-modifier-hover hover:opacity-100'
-                  }`}
-                >
-                  <div className="relative flex-shrink-0">
-                    <Avatar
-                      src={friend.avatar_url}
-                      alt={friend.display_name || friend.username}
-                      size="sm"
-                    />
-                    <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-bg-secondary ${getStatusColor(friend.status)}`} />
+        {/* IGNORED Tab */}
+        {activeTab === 'ignored' && (
+          <div className="p-2">
+            <div className="text-xs font-semibold text-text-muted uppercase px-2 py-1">
+              Ignored — {ignoredUsers.length}
+            </div>
+            {ignoredUsers.length === 0 ? (
+              <div className="text-center py-8 text-text-muted text-sm">No ignored users</div>
+            ) : (
+              ignoredUsers.map((user) => (
+                <div key={user.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-bg-modifier-hover opacity-60">
+                  <Avatar src={user.avatar_url} alt={user.display_name || user.username} size="sm" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-text-primary truncate">{user.display_name || user.username}</div>
+                    <div className="text-xs text-text-muted">@{user.username}</div>
                   </div>
-                  <div className="flex-1 min-w-0 text-left">
-                    <div className="text-sm font-medium text-text-primary truncate">
-                      {friend.display_name || friend.username}
+                  <button onClick={() => onUnignoreUser(user.id)} className="px-3 py-1 text-xs font-medium bg-bg-tertiary text-text-muted rounded hover:bg-status-online hover:text-white">Unignore</button>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {/* HISTORY Tab — Admin Action History */}
+        {activeTab === 'history' && (
+          <div className="p-2">
+            <div className="text-xs font-semibold text-text-muted uppercase px-2 py-1">
+              Admin History
+            </div>
+            {auditLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="w-5 h-5 border-2 border-brand-primary border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : auditLog.length === 0 ? (
+              <div className="text-center py-8 text-text-muted text-sm">No admin actions recorded</div>
+            ) : (
+              auditLog.map((entry) => (
+                <div key={entry.id} className="p-2 rounded-lg hover:bg-bg-modifier-hover mb-1">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <span className="text-sm font-medium text-text-primary">{entry.actor_username}</span>
+                    <span className="text-xs text-text-muted">performed</span>
+                  </div>
+                  <div className="text-xs font-medium text-brand-primary mb-0.5">
+                    {formatAuditAction(entry.action)}
+                  </div>
+                  {entry.reason && (
+                    <div className="text-xs text-text-muted mt-0.5">
+                      Reason: {entry.reason}
                     </div>
-                    {friend.custom_status && (
-                      <div className="text-xs text-text-muted truncate">
-                        {friend.custom_status}
-                      </div>
-                    )}
-                  </div>
-                  {(friend.unread_count ?? 0) > 0 && (
-                    <span className="bg-danger text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                      {(friend.unread_count ?? 0) > 9 ? '9+' : friend.unread_count}
-                    </span>
                   )}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Empty State */}
-          {friends.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-full p-4 text-center">
-              <div className="w-16 h-16 bg-bg-tertiary rounded-full flex items-center justify-center mb-4">
-                <svg className="w-8 h-8 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                </svg>
-              </div>
-              <p className="text-text-muted text-sm mb-2">No friends yet</p>
-              <p className="text-text-muted text-xs">Click Find to search for friends</p>
-            </div>
-          )}
-        </div>
-      )}
+                  <div className="text-[10px] text-text-muted mt-1">
+                    {formatDate(entry.created_at)}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

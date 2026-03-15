@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import { api } from '@/api';
 import { ServerList } from '@/components/layout/ServerList';
 import { DMPage } from '@/components/layout/DMPage';
+import { useEmojiManifestStore } from '@/stores/emojiManifest';
 import { TitleBar } from '@/components/ui/TitleBar';
 import { UserSettingsModal } from '@/components/ui/UserSettingsModal';
 import { CommandPalette } from '@/components/ui/CommandPalette';
@@ -28,6 +29,7 @@ export function DMLayout() {
       try {
         const server = await api.get<ServerData>('/server');
         setServers([server]);
+        useEmojiManifestStore.getState().fetchManifest(server.id);
       } catch (err) {
         console.error('[DMLayout] Failed to fetch server:', err);
         setLoadError(err instanceof Error ? err.message : 'Failed to load server');
@@ -75,9 +77,9 @@ export function DMLayout() {
         style={{ height: 'calc(100vh - var(--title-bar-height))' }}
       >
         <ServerList servers={servers} />
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col h-full flex-1 min-w-0">
           <div className="flex-1 min-h-0">
-            <DMPage />
+            <DMPage serverId={servers[0]?.id} />
           </div>
         </div>
       </div>
