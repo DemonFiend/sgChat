@@ -89,14 +89,14 @@ class DMVoiceServiceClass {
     }
   }
 
-  async join(dmChannelId: string, friendName: string): Promise<void> {
+  async join(dmChannelId: string, friendName: string, isCallee: boolean = false): Promise<void> {
     if (voiceStore.isConnected()) {
       await this.leave();
     }
 
     try {
       voiceStore.setConnecting(dmChannelId, `Call with ${friendName}`);
-      console.log('[DMVoiceService] Joining DM voice call:', dmChannelId);
+      console.log('[DMVoiceService] Joining DM voice call:', dmChannelId, isCallee ? '(callee)' : '(caller)');
 
       const settings = await this.loadVoiceSettings();
 
@@ -121,11 +121,27 @@ class DMVoiceServiceClass {
         },
       });
 
+      // Initialize call phase tracking BEFORE connect to avoid race condition
+      // (ParticipantConnected fires during connect() for existing participants)
+      this.remoteParticipantJoined = false;
+      this.clearCallTimers();
+      if (!isCallee) {
+        voiceStore.setDMCallPhase('notifying');
+      }
+
       this.playSound('join');
       this.setupRoomEventListeners();
       await this.room.connect(url, token);
 
       console.log('[DMVoiceService] Connected to LiveKit room');
+
+      // Check for existing participants (handles case where ParticipantConnected
+      // fired during connect but was overridden, or didn't fire at all)
+      if (this.room.remoteParticipants.size > 0) {
+        this.remoteParticipantJoined = true;
+        this.clearCallTimers();
+        voiceStore.setDMCallPhase('connected');
+      }
 
       this.currentDMChannelId = dmChannelId;
 
@@ -140,24 +156,23 @@ class DMVoiceServiceClass {
       };
       voiceStore.setConnected(voicePermissions);
 
-      // Start call phase tracking
-      this.remoteParticipantJoined = false;
-      voiceStore.setDMCallPhase('notifying');
+      // Start caller timers only if we're the caller and nobody has joined yet
+      if (!isCallee && !this.remoteParticipantJoined) {
+        // After 30s, switch from "Notifying..." to "Waiting..."
+        this.notifyingTimerId = setTimeout(() => {
+          if (!this.remoteParticipantJoined) {
+            voiceStore.setDMCallPhase('waiting');
+          }
+        }, 30_000);
 
-      // After 30s, switch from "Notifying..." to "Waiting..."
-      this.notifyingTimerId = setTimeout(() => {
-        if (!this.remoteParticipantJoined) {
-          voiceStore.setDMCallPhase('waiting');
-        }
-      }, 30_000);
-
-      // After 5min, auto-leave if nobody joined
-      this.autoKickTimerId = setTimeout(() => {
-        if (!this.remoteParticipantJoined) {
-          console.log('[DMVoiceService] Auto-leaving: no one joined after 5 minutes');
-          this.leave();
-        }
-      }, 300_000);
+        // After 5min, auto-leave if nobody joined
+        this.autoKickTimerId = setTimeout(() => {
+          if (!this.remoteParticipantJoined) {
+            console.log('[DMVoiceService] Auto-leaving: no one joined after 5 minutes');
+            this.leave();
+          }
+        }, 300_000);
+      }
 
       if (!voiceStore.isMuted()) {
         await this.room.localParticipant.setMicrophoneEnabled(true);

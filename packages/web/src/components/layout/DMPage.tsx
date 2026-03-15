@@ -10,8 +10,6 @@ import { soundService } from '@/lib/soundService';
 import { MentionProvider, type MentionContextValue, type MentionMember } from '@/contexts/MentionContext';
 import { useIgnoredUsersStore } from '@/stores/ignoredUsers';
 import { useVoiceStore } from '@/stores/voice';
-import { dmVoiceService } from '@/lib/dmVoiceService';
-import { IncomingCallNotification } from '@/components/ui/IncomingCallNotification';
 
 // API response types
 interface FriendRequestsResponse {
@@ -62,17 +60,9 @@ export function DMPage({ serverId }: DMPageProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [blockedUsers, setBlockedUsers] = useState<BlockedUser[]>([]);
-  const [incomingCall, setIncomingCall] = useState<{
-    callerId: string;
-    callerName: string;
-    callerAvatar: string | null;
-    dmChannelId: string;
-  } | null>(null);
 
   const currentUserId = authStore.getState().user?.id || '';
-  const voiceConnectionState = useVoiceStore((s) => s.connectionState);
-  const voiceConnectionStateRef = useRef(voiceConnectionState);
-  voiceConnectionStateRef.current = voiceConnectionState;
+  const pendingDMCallInfo = useVoiceStore((s) => s.pendingDMCallInfo);
   const ignoredUsers = useIgnoredUsersStore((s) => s.ignoredUsers);
   const fetchIgnored = useIgnoredUsersStore((s) => s.fetchIgnored);
   const ignoreUser = useIgnoredUsersStore((s) => s.ignoreUser);
@@ -255,21 +245,6 @@ export function DMPage({ serverId }: DMPageProps) {
       });
     };
 
-    const handleVoiceJoin = (data: { dm_channel_id?: string; is_dm_call?: boolean; user?: { id: string; username: string; display_name?: string | null; avatar_url?: string | null } }) => {
-      // Only handle DM calls
-      if (!data.is_dm_call || !data.dm_channel_id || !data.user) return;
-      // Ignore own joins or if already in a call
-      if (data.user.id === currentUserId) return;
-      if (voiceConnectionStateRef.current === 'connected') return;
-
-      setIncomingCall({
-        callerId: data.user.id,
-        callerName: data.user.display_name || data.user.username,
-        callerAvatar: data.user.avatar_url || null,
-        dmChannelId: data.dm_channel_id,
-      });
-    };
-
     const handleCallMissed = (data: { id?: string; content?: string; sender_id?: string | null; created_at?: string; system_event?: any; dm_channel_id?: string }) => {
       if (data.id && data.dm_channel_id && selectedFriend?.dm_channel_id === data.dm_channel_id) {
         const msg: DMMessage = {
@@ -309,7 +284,6 @@ export function DMPage({ serverId }: DMPageProps) {
     socketService.on('dm.typing.stop', handleDMTypingStop as (data: unknown) => void);
     socketService.on('presence.update', handlePresenceUpdate as (data: unknown) => void);
     socketService.on('user.block', handleUserBlock as (data: unknown) => void);
-    socketService.on('voice.join', handleVoiceJoin as (data: unknown) => void);
     socketService.on('dm.call.missed', handleCallMissed as (data: unknown) => void);
 
     return () => {
@@ -323,7 +297,6 @@ export function DMPage({ serverId }: DMPageProps) {
       socketService.off('dm.typing.stop', handleDMTypingStop as (data: unknown) => void);
       socketService.off('presence.update', handlePresenceUpdate as (data: unknown) => void);
       socketService.off('user.block', handleUserBlock as (data: unknown) => void);
-      socketService.off('voice.join', handleVoiceJoin as (data: unknown) => void);
       socketService.off('dm.call.missed', handleCallMissed as (data: unknown) => void);
     };
   }, [selectedFriend?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -479,24 +452,16 @@ export function DMPage({ serverId }: DMPageProps) {
     };
   }, [selectedFriend, currentUserId]);
 
-  const handleAcceptCall = useCallback(async () => {
-    if (!incomingCall) return;
-    const caller = friends.find(f => f.id === incomingCall.callerId);
-    if (caller) {
-      setSelectedFriend(caller);
-      await fetchMessages(caller.id);
+  // Auto-select friend when accepting a call from the global notification
+  useEffect(() => {
+    if (!pendingDMCallInfo) return;
+    const friend = friends.find(f => f.id === pendingDMCallInfo.friendId);
+    if (friend) {
+      setSelectedFriend(friend);
+      fetchMessages(friend.id);
+      useVoiceStore.getState().setPendingDMCallInfo(null);
     }
-    try {
-      await dmVoiceService.join(incomingCall.dmChannelId, incomingCall.callerName);
-    } catch (err) {
-      console.error('Failed to accept call:', err);
-    }
-    setIncomingCall(null);
-  }, [incomingCall, friends, fetchMessages]);
-
-  const handleDeclineCall = useCallback(() => {
-    setIncomingCall(null);
-  }, []);
+  }, [pendingDMCallInfo, friends, fetchMessages]);
 
   if (isLoading) {
     return (
@@ -556,14 +521,6 @@ export function DMPage({ serverId }: DMPageProps) {
 
   return (
     <div className="flex h-full w-full bg-bg-primary">
-      {incomingCall && (
-        <IncomingCallNotification
-          callerName={incomingCall.callerName}
-          callerAvatar={incomingCall.callerAvatar}
-          onAccept={handleAcceptCall}
-          onDecline={handleDeclineCall}
-        />
-      )}
       <DMSidebar
         friends={friends}
         selectedFriendId={selectedFriend?.id || null}
@@ -585,7 +542,7 @@ export function DMPage({ serverId }: DMPageProps) {
         ignoredUsers={ignoredUsers}
         onIgnoreUser={ignoreUser}
         onUnignoreUser={unignoreUser}
-        incomingCallFromId={incomingCall?.callerId || null}
+        incomingCallFromId={pendingDMCallInfo?.friendId || null}
       />
       <MentionProvider value={dmMentionContext}>
         <DMChatPanel

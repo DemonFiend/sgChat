@@ -603,19 +603,6 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
       // Store call start time for lifecycle tracking (only if initiating, not joining)
       if (!otherUserInCall) {
         await redis.client.setex(`dm_call_start:${id}`, 600, `${request.user!.id}:${Date.now()}`);
-
-        // Create a missed_call notification for the callee (serves as red dot + missed call record)
-        await createNotification({
-          userId: otherUserId,
-          type: 'missed_call',
-          data: {
-            caller_id: user.id,
-            caller_name: user.display_name || user.username,
-            caller_avatar: user.avatar_url,
-            dm_channel_id: id,
-          },
-          priority: 'high',
-        });
       }
 
       // Notify the other user about the call
@@ -720,6 +707,19 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
               system_event: systemMessage.system_event,
               dm_channel_id: id,
             },
+          });
+
+          // Create missed_call notification for the callee (only when call was truly missed)
+          await createNotification({
+            userId: otherUserId,
+            type: 'missed_call',
+            data: {
+              caller_id: user.id,
+              caller_name: user.display_name || user.username,
+              caller_avatar: user.avatar_url,
+              dm_channel_id: id,
+            },
+            priority: 'high',
           });
         }
 
