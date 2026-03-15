@@ -46,4 +46,4 @@ ALTER TABLE audit_log ADD CONSTRAINT audit_log_action_check CHECK (action IN (
 ));
 
 -- Track migration
-INSERT INTO applied_migrations (name) VALUES ('029_ignore_and_admin_nickname') ON CONFLICT (name) DO NOTHING;
+INSERT INTO _migrations (name) VALUES ('029_ignore_and_admin_nickname') ON CONFLICT (name) DO NOTHING;
