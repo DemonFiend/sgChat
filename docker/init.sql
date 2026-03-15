@@ -1502,7 +1502,9 @@ ALTER TABLE audit_log ADD CONSTRAINT audit_log_action_check CHECK (action IN (
   -- Role reaction actions
   'role_reaction_group_create', 'role_reaction_group_update',
   'role_reaction_group_delete', 'role_reaction_group_toggle',
-  'role_reaction_format_channel', 'role_reaction_setup'
+  'role_reaction_format_channel', 'role_reaction_setup',
+  -- Nickname actions
+  'member_nickname_change', 'member_nickname_override'
 ));
 
 -- ============================================================
