@@ -42,6 +42,7 @@ class DMVoiceServiceClass {
   private remoteParticipantJoined = false;
   private notifyingTimerId: ReturnType<typeof setTimeout> | null = null;
   private autoKickTimerId: ReturnType<typeof setTimeout> | null = null;
+  private autoLeaveAfterRemoteLeftTimerId: ReturnType<typeof setTimeout> | null = null;
 
   setAudioContainer(container: HTMLElement) {
     this.audioContainer = container;
@@ -382,6 +383,10 @@ class DMVoiceServiceClass {
       clearTimeout(this.autoKickTimerId);
       this.autoKickTimerId = null;
     }
+    if (this.autoLeaveAfterRemoteLeftTimerId) {
+      clearTimeout(this.autoLeaveAfterRemoteLeftTimerId);
+      this.autoLeaveAfterRemoteLeftTimerId = null;
+    }
   }
 
   private setupRoomEventListeners(): void {
@@ -420,6 +425,7 @@ class DMVoiceServiceClass {
       this.remoteParticipantJoined = true;
       this.clearCallTimers();
       voiceStore.setDMCallPhase('connected');
+      voiceStore.setRemoteParticipantLeft(false);
     });
 
     this.room.on(RoomEvent.ParticipantDisconnected, (participant) => {
@@ -427,6 +433,18 @@ class DMVoiceServiceClass {
       this.detachAudioTrack(participant.identity);
       this.detachVideoTrack(participant.identity);
       this.detachScreenShareTrack(participant.identity);
+
+      if (this.remoteParticipantJoined) {
+        voiceStore.setRemoteParticipantLeft(true);
+
+        // Auto-leave after 60s if remote doesn't rejoin
+        this.autoLeaveAfterRemoteLeftTimerId = setTimeout(() => {
+          if (voiceStore.remoteParticipantLeft()) {
+            console.log('[DMVoiceService] Auto-leaving: remote user left and did not rejoin');
+            this.leave();
+          }
+        }, 60_000);
+      }
     });
 
     this.room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {

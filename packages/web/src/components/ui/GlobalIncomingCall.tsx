@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { useAuthStore } from '@/stores/auth';
 import { useVoiceStore } from '@/stores/voice';
@@ -6,16 +6,9 @@ import { socketService } from '@/lib/socket';
 import { dmVoiceService } from '@/lib/dmVoiceService';
 import { IncomingCallNotification } from './IncomingCallNotification';
 
-interface IncomingCallState {
-  callerId: string;
-  callerName: string;
-  callerAvatar: string | null;
-  dmChannelId: string;
-}
-
 export function GlobalIncomingCall() {
   const navigate = useNavigate();
-  const [incomingCall, setIncomingCall] = useState<IncomingCallState | null>(null);
+  const incomingCall = useVoiceStore((s) => s.incomingDMCall);
   const currentUserId = useAuthStore((s) => s.user?.id);
   const voiceConnectionState = useVoiceStore((s) => s.connectionState);
   const voiceConnectionStateRef = useRef(voiceConnectionState);
@@ -38,7 +31,7 @@ export function GlobalIncomingCall() {
       if (data.user.id === currentUserId) return;
       if (voiceConnectionStateRef.current === 'connected') return;
 
-      setIncomingCall({
+      useVoiceStore.getState().setIncomingDMCall({
         callerId: data.user.id,
         callerName: data.user.display_name || data.user.username,
         callerAvatar: data.user.avatar_url || null,
@@ -46,9 +39,24 @@ export function GlobalIncomingCall() {
       });
     };
 
+    // Detect caller cancellation (caller hangs up before we answer)
+    const handleVoiceLeave = (data: {
+      dm_channel_id?: string;
+      is_dm_call?: boolean;
+      user?: { id: string };
+    }) => {
+      if (!data.is_dm_call || !data.dm_channel_id) return;
+      const incoming = useVoiceStore.getState().incomingDMCall;
+      if (incoming && incoming.dmChannelId === data.dm_channel_id) {
+        useVoiceStore.getState().setIncomingDMCall(null);
+      }
+    };
+
     socketService.on('voice.join', handleVoiceJoin as (data: unknown) => void);
+    socketService.on('voice.leave', handleVoiceLeave as (data: unknown) => void);
     return () => {
       socketService.off('voice.join', handleVoiceJoin as (data: unknown) => void);
+      socketService.off('voice.leave', handleVoiceLeave as (data: unknown) => void);
     };
   }, [currentUserId]);
 
@@ -68,18 +76,18 @@ export function GlobalIncomingCall() {
       console.error('[GlobalIncomingCall] Failed to accept call:', err);
     }
 
-    setIncomingCall(null);
+    useVoiceStore.getState().setIncomingDMCall(null);
     navigate('/channels/@me');
   }, [incomingCall, navigate]);
 
   const handleDecline = useCallback(() => {
-    setIncomingCall(null);
+    useVoiceStore.getState().setIncomingDMCall(null);
   }, []);
 
   // Clear incoming call if user joins a call from elsewhere
   useEffect(() => {
     if (voiceConnectionState === 'connected' && incomingCall) {
-      setIncomingCall(null);
+      useVoiceStore.getState().setIncomingDMCall(null);
     }
   }, [voiceConnectionState, incomingCall]);
 

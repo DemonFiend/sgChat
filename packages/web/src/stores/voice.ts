@@ -66,6 +66,8 @@ export interface VoiceState {
   remoteVideoUsers: string[];
   dmCallPhase: 'notifying' | 'waiting' | 'connected' | null;
   pendingDMCallInfo: { friendId: string; friendName: string; dmChannelId: string } | null;
+  remoteParticipantLeft: boolean;
+  incomingDMCall: { callerId: string; callerName: string; callerAvatar: string | null; dmChannelId: string } | null;
 }
 
 interface VoiceActions {
@@ -92,6 +94,8 @@ interface VoiceActions {
   removeRemoteVideoUser: (userId: string) => void;
   setDMCallPhase: (phase: 'notifying' | 'waiting' | 'connected' | null) => void;
   setPendingDMCallInfo: (info: { friendId: string; friendName: string; dmChannelId: string } | null) => void;
+  setRemoteParticipantLeft: (left: boolean) => void;
+  setIncomingDMCall: (call: { callerId: string; callerName: string; callerAvatar: string | null; dmChannelId: string } | null) => void;
   // Participant management
   addParticipant: (channelId: string, user: { id: string; username: string; display_name?: string | null; avatar_url?: string | null; is_streaming?: boolean }) => void;
   removeParticipant: (channelId: string, userId: string) => void;
@@ -116,6 +120,8 @@ export const useVoiceStore = create<VoiceState & VoiceActions>((set, get) => ({
   remoteVideoUsers: [],
   dmCallPhase: null,
   pendingDMCallInfo: null,
+  remoteParticipantLeft: false,
+  incomingDMCall: null,
 
   isConnected: () => get().connectionState === 'connected',
   isConnecting: () => get().connectionState === 'connecting',
@@ -137,6 +143,8 @@ export const useVoiceStore = create<VoiceState & VoiceActions>((set, get) => ({
     remoteVideoUsers: [],
     dmCallPhase: null,
     pendingDMCallInfo: null,
+    remoteParticipantLeft: false,
+    incomingDMCall: null,
   }),
   setError: (error) => set({ connectionState: 'error', error }),
   setReconnecting: () => set({ connectionState: 'reconnecting' }),
@@ -157,6 +165,8 @@ export const useVoiceStore = create<VoiceState & VoiceActions>((set, get) => ({
   })),
   setDMCallPhase: (phase) => set({ dmCallPhase: phase }),
   setPendingDMCallInfo: (info) => set({ pendingDMCallInfo: info }),
+  setRemoteParticipantLeft: (left) => set({ remoteParticipantLeft: left }),
+  setIncomingDMCall: (call) => set({ incomingDMCall: call }),
 
   addParticipant: (channelId, user) => set((s) => {
     const channelParticipants = [...(s.participants[channelId] || [])];
@@ -270,4 +280,8 @@ export const voiceStore = {
   dmCallPhase: () => useVoiceStore.getState().dmCallPhase,
   setPendingDMCallInfo: (info: { friendId: string; friendName: string; dmChannelId: string } | null) => useVoiceStore.getState().setPendingDMCallInfo(info),
   pendingDMCallInfo: () => useVoiceStore.getState().pendingDMCallInfo,
+  setRemoteParticipantLeft: (left: boolean) => useVoiceStore.getState().setRemoteParticipantLeft(left),
+  remoteParticipantLeft: () => useVoiceStore.getState().remoteParticipantLeft,
+  setIncomingDMCall: (call: { callerId: string; callerName: string; callerAvatar: string | null; dmChannelId: string } | null) => useVoiceStore.getState().setIncomingDMCall(call),
+  incomingDMCall: () => useVoiceStore.getState().incomingDMCall,
 };

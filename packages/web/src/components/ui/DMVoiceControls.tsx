@@ -118,20 +118,23 @@ export function DMCallStatusBar({ dmChannelId, friendName, className }: DMCallSt
   const isScreenSharing = useVoiceStore((s) => s.screenShare.isSharing);
   const error = useVoiceStore((s) => s.error);
   const dmCallPhase = useVoiceStore((s) => s.dmCallPhase);
+  const remoteParticipantLeft = useVoiceStore((s) => s.remoteParticipantLeft);
 
   const isInDMCall = connectionState === 'connected' && currentChannelId === dmChannelId;
 
   if (!isInDMCall) return null;
 
-  const statusText = dmCallPhase === 'notifying'
-    ? `Notifying ${friendName}...`
-    : dmCallPhase === 'waiting'
-      ? `Waiting for ${friendName}...`
-      : `In Call with ${friendName}`;
+  const statusText = remoteParticipantLeft
+    ? `${friendName} left the call`
+    : dmCallPhase === 'notifying'
+      ? `Notifying ${friendName}...`
+      : dmCallPhase === 'waiting'
+        ? `Waiting for ${friendName}...`
+        : `In Call with ${friendName}`;
 
   const isWaiting = dmCallPhase === 'notifying' || dmCallPhase === 'waiting';
-  const dotColor = isWaiting ? 'bg-warning' : 'bg-status-online';
-  const textColor = isWaiting ? 'text-warning' : 'text-status-online';
+  const dotColor = remoteParticipantLeft ? 'bg-danger' : isWaiting ? 'bg-warning' : 'bg-status-online';
+  const textColor = remoteParticipantLeft ? 'text-danger' : isWaiting ? 'text-warning' : 'text-status-online';
 
   return (
     <div className={clsx('bg-bg-tertiary border-t border-bg-modifier-accent p-3', className)}>

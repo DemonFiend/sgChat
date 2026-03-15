@@ -1,13 +1,23 @@
 import { useEffect, useRef } from 'react';
 import { useVoiceStore } from '@/stores/voice';
 import { dmVoiceService } from '@/lib/dmVoiceService';
+import { Avatar } from './Avatar';
 
 interface DMCallAreaProps {
   dmChannelId: string;
   friendName: string;
+  friendAvatarUrl?: string | null;
+  currentUserAvatarUrl?: string | null;
+  currentUserDisplayName?: string | null;
 }
 
-export function DMCallArea({ dmChannelId, friendName }: DMCallAreaProps) {
+export function DMCallArea({
+  dmChannelId,
+  friendName,
+  friendAvatarUrl,
+  currentUserAvatarUrl,
+  currentUserDisplayName,
+}: DMCallAreaProps) {
   const connectionState = useVoiceStore((s) => s.connectionState);
   const currentChannelId = useVoiceStore((s) => s.currentChannelId);
   const isVideoOn = useVoiceStore((s) => s.localState.isVideoOn);
@@ -15,6 +25,7 @@ export function DMCallArea({ dmChannelId, friendName }: DMCallAreaProps) {
   const remoteVideoUsers = useVoiceStore((s) => s.remoteVideoUsers);
   const isScreenSharing = useVoiceStore((s) => s.screenShare.isSharing);
   const dmCallPhase = useVoiceStore((s) => s.dmCallPhase);
+  const remoteParticipantLeft = useVoiceStore((s) => s.remoteParticipantLeft);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLDivElement>(null);
@@ -83,26 +94,93 @@ export function DMCallArea({ dmChannelId, friendName }: DMCallAreaProps) {
   const hasAnyMedia = isVideoOn || hasRemoteVideo || hasRemoteScreenShare || isScreenSharing;
 
   if (!hasAnyMedia) {
-    // Audio-only call indicator
     const isWaiting = dmCallPhase === 'notifying' || dmCallPhase === 'waiting';
-    const callStatusText = dmCallPhase === 'notifying'
-      ? `Notifying ${friendName}...`
-      : dmCallPhase === 'waiting'
-        ? `Waiting for ${friendName}...`
-        : `In call with ${friendName}`;
-    const iconColor = isWaiting ? 'text-warning' : 'text-status-online';
-    const bgColor = isWaiting ? 'bg-warning/20' : 'bg-status-online/20';
-    const textColor = isWaiting ? 'text-warning' : 'text-status-online';
+    const isConnectedWithFriend = dmCallPhase === 'connected' && !remoteParticipantLeft;
+    const friendLeft = remoteParticipantLeft;
+
+    // Determine status text and colors
+    let callStatusText: string;
+    let accentColor: string;
+    let bgAccent: string;
+
+    if (friendLeft) {
+      callStatusText = `${friendName} left the call`;
+      accentColor = 'text-danger';
+      bgAccent = 'bg-danger/20';
+    } else if (dmCallPhase === 'notifying') {
+      callStatusText = `Notifying ${friendName}...`;
+      accentColor = 'text-warning';
+      bgAccent = 'bg-warning/20';
+    } else if (dmCallPhase === 'waiting') {
+      callStatusText = `Waiting for ${friendName}...`;
+      accentColor = 'text-warning';
+      bgAccent = 'bg-warning/20';
+    } else {
+      callStatusText = `In call with ${friendName}`;
+      accentColor = 'text-status-online';
+      bgAccent = 'bg-status-online/20';
+    }
 
     return (
       <div className="flex items-center justify-center py-8 bg-bg-secondary/50 border-b border-bg-tertiary">
-        <div className="flex flex-col items-center gap-2">
-          <div className={`w-16 h-16 rounded-full ${bgColor} flex items-center justify-center animate-pulse`}>
-            <svg className={`w-8 h-8 ${iconColor}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-            </svg>
+        <div className="flex flex-col items-center gap-3">
+          {/* Avatar display */}
+          <div className="flex items-center gap-4">
+            {/* Local user avatar */}
+            <div className="flex flex-col items-center gap-1">
+              <div className={`rounded-full ${isWaiting ? 'ring-2 ring-warning/50 animate-pulse' : ''} ${friendLeft ? '' : ''}`}>
+                <Avatar
+                  src={currentUserAvatarUrl}
+                  alt={currentUserDisplayName || 'You'}
+                  size="lg"
+                />
+              </div>
+              <span className="text-xs text-text-muted">You</span>
+            </div>
+
+            {/* Connection indicator between avatars */}
+            {isConnectedWithFriend && (
+              <div className="flex items-center gap-1">
+                <div className="w-1.5 h-1.5 rounded-full bg-status-online" />
+                <div className="w-1.5 h-1.5 rounded-full bg-status-online" />
+                <div className="w-1.5 h-1.5 rounded-full bg-status-online" />
+              </div>
+            )}
+
+            {isWaiting && (
+              <div className="flex items-center gap-1">
+                <div className="w-1.5 h-1.5 rounded-full bg-warning animate-pulse" />
+                <div className="w-1.5 h-1.5 rounded-full bg-warning animate-pulse" style={{ animationDelay: '0.2s' }} />
+                <div className="w-1.5 h-1.5 rounded-full bg-warning animate-pulse" style={{ animationDelay: '0.4s' }} />
+              </div>
+            )}
+
+            {friendLeft && (
+              <div className="flex items-center gap-1">
+                <div className="w-1.5 h-1.5 rounded-full bg-danger/40" />
+                <div className="w-1.5 h-1.5 rounded-full bg-danger/40" />
+                <div className="w-1.5 h-1.5 rounded-full bg-danger/40" />
+              </div>
+            )}
+
+            {/* Friend avatar */}
+            <div className="flex flex-col items-center gap-1">
+              <div className={`rounded-full transition-opacity ${friendLeft ? 'opacity-40' : ''} ${isConnectedWithFriend ? 'ring-2 ring-status-online/50' : ''}`}>
+                <Avatar
+                  src={friendAvatarUrl}
+                  alt={friendName}
+                  size="lg"
+                />
+              </div>
+              <span className={`text-xs ${friendLeft ? 'text-danger/60' : 'text-text-muted'}`}>{friendName}</span>
+            </div>
           </div>
-          <span className={`text-sm ${textColor} font-medium`}>{callStatusText}</span>
+
+          {/* Status text */}
+          <div className="flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full ${bgAccent} ${isWaiting || isConnectedWithFriend ? 'animate-pulse' : ''}`} />
+            <span className={`text-sm ${accentColor} font-medium`}>{callStatusText}</span>
+          </div>
         </div>
       </div>
     );
