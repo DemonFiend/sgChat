@@ -200,6 +200,20 @@ export function canRSVPEvents(): boolean {
 }
 
 /**
+ * Check if current user can moderate members (warn)
+ */
+export function canModerateMembers(): boolean {
+  return isAdmin() || hasPermission('moderate_members');
+}
+
+/**
+ * Check if current user can change their own nickname
+ */
+export function canChangeNickname(): boolean {
+  return isAdmin() || hasPermission('change_nickname');
+}
+
+/**
  * Check if current user has any admin-level permission (for gear button visibility)
  */
 export function hasAnyAdminPermission(serverOwnerId?: string | null): boolean {

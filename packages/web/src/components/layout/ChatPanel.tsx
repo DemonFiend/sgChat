@@ -26,6 +26,9 @@ import type { SlashCommand } from '@sgchat/shared';
 import { MAX_MESSAGE_LENGTH } from '@sgchat/shared';
 import { api } from '@/api';
 import { useEmojiManifestStore } from '@/stores/emojiManifest';
+import { useBlockedUsersStore } from '@/stores/blockedUsers';
+import { useIgnoredUsersStore } from '@/stores/ignoredUsers';
+import { useChatInputStore } from '@/stores/chatInput';
 
 export interface MessageAuthor {
   id: string;
@@ -135,6 +138,9 @@ export function ChatPanel({
   const [isUploading, setIsUploading] = useState(false);
   const [pendingFile, setPendingFile] = useState<{ file: File; previewUrl: string } | null>(null);
   const [pendingSpoiler, setPendingSpoiler] = useState(false);
+  const [revealedMessages, setRevealedMessages] = useState<Set<string>>(new Set());
+  const ignoredUserIds = useIgnoredUsersStore((s) => s.ignoredUserIds);
+  const blockedUserIds = useBlockedUsersStore((s) => s.blockedUserIds);
   const emojiButtonRef = useRef<HTMLButtonElement>(null);
   const gifButtonRef = useRef<HTMLButtonElement>(null);
   const stickerButtonRef = useRef<HTMLButtonElement>(null);
@@ -156,6 +162,47 @@ export function ChatPanel({
   const [stimePrompt, setStimePrompt] = useState(false);
   const mentionContext = useMentionContext();
 
+  // Watch for mention injection from context menu
+  const pendingMention = useChatInputStore((s) => s.pendingMention);
+
+  useEffect(() => {
+    if (!pendingMention) return;
+
+    const textarea = inputRef.current;
+    if (!textarea) {
+      useChatInputStore.getState().clearPendingMention();
+      return;
+    }
+
+    const mentionDisplay = `@${pendingMention.username}`;
+    const mentionText = mentionDisplay + ' ';
+    const start = textarea.selectionStart ?? messageInput.length;
+    const currentValue = messageInput;
+
+    // Insert mention at cursor position
+    const newValue = currentValue.slice(0, start) + mentionText + currentValue.slice(start);
+
+    // Shift existing mappings and add the new one
+    const shifted = shiftMappings(mentionMappings, start, mentionText.length);
+    shifted.push({
+      displayText: mentionDisplay,
+      wireFormat: `<@${pendingMention.userId}>`,
+      startIndex: start,
+    });
+
+    setMentionMappings(shifted);
+    setMessageInput(newValue);
+
+    // Focus the textarea and set cursor position after the inserted mention
+    requestAnimationFrame(() => {
+      const newPos = start + mentionText.length;
+      textarea.focus();
+      textarea.setSelectionRange(newPos, newPos);
+    });
+
+    useChatInputStore.getState().clearPendingMention();
+  }, [pendingMention]);
+
   // Emoji autocomplete state
   const [emojiTrigger, setEmojiTrigger] = useState<{
     triggerStart: number;
@@ -171,6 +218,18 @@ export function ChatPanel({
     );
     return emojiManifest.emojis.filter((e) => enabledPackIds.has(e.pack_id));
   }, [emojiManifest]);
+
+  const toggleRevealMessage = useCallback((messageId: string) => {
+    setRevealedMessages((prev) => {
+      const next = new Set(prev);
+      if (next.has(messageId)) {
+        next.delete(messageId);
+      } else {
+        next.add(messageId);
+      }
+      return next;
+    });
+  }, []);
 
   // Build combined overlay: emoji images + colored mention highlights
   const inputOverlay = useMemo(() => {
@@ -720,19 +779,12 @@ export function ChatPanel({
               {virtualizer.getVirtualItems().map((virtualRow) => {
                 const message = messages[virtualRow.index];
                 const isEditing = editingMessageId === message.id;
-                return (
-                  <div
-                    key={message.id}
-                    data-index={virtualRow.index}
-                    ref={virtualizer.measureElement}
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: '100%',
-                      transform: `translateY(${virtualRow.start}px)`,
-                    }}
-                  >
+                const authorId = message.author?.id;
+                const isBlocked = authorId ? blockedUserIds.has(authorId) : false;
+                const isIgnored = authorId ? ignoredUserIds.has(authorId) : false;
+                const isRevealed = revealedMessages.has(message.id);
+
+                const messageElement = (
                     <MemoizedMessageItem
                       message={message}
                       showAuthor={shouldShowAuthor(message, virtualRow.index)}
@@ -771,6 +823,58 @@ export function ChatPanel({
                       hasThread={threadMessageIds?.has(message.id)}
                       onOpenThread={onOpenThread ? () => onOpenThread(message.id) : undefined}
                     />
+                );
+
+                return (
+                  <div
+                    key={message.id}
+                    data-index={virtualRow.index}
+                    ref={virtualizer.measureElement}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                  >
+                    {isBlocked ? (
+                      <div
+                        className="px-4 py-1.5 text-xs text-text-muted italic cursor-pointer hover:bg-bg-modifier-hover transition-colors"
+                        onClick={() => toggleRevealMessage(message.id)}
+                      >
+                        {isRevealed ? (
+                          <div className="not-italic">
+                            <span className="text-text-muted font-medium">[Blocked User]</span>
+                            {' '}
+                            <span className="text-text-secondary">{message.content}</span>
+                          </div>
+                        ) : (
+                          'Blocked message \u2014 click to reveal'
+                        )}
+                      </div>
+                    ) : isIgnored ? (
+                      <div
+                        className="relative cursor-pointer group"
+                        onClick={() => toggleRevealMessage(message.id)}
+                      >
+                        <div className={clsx(
+                          'transition-all duration-200',
+                          !isRevealed && 'blur-sm select-none pointer-events-none'
+                        )}>
+                          {messageElement}
+                        </div>
+                        {!isRevealed && (
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <span className="text-xs text-text-muted bg-bg-primary/80 px-3 py-1 rounded-full">
+                              Message from ignored user \u2014 click to reveal
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      messageElement
+                    )}
                   </div>
                 );
               })}

@@ -244,6 +244,7 @@ CREATE TABLE members (
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   server_id UUID NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
   nickname TEXT CHECK (length(nickname) <= 32),
+  admin_nickname TEXT CHECK (length(admin_nickname) <= 32),
   announce_online BOOLEAN DEFAULT false,
   joined_at TIMESTAMPTZ DEFAULT NOW(),
   
@@ -375,7 +376,9 @@ CREATE TABLE audit_log (
     'member_kick', 'member_ban', 'member_unban',
     'invite_create', 'invite_delete',
     'admin_claimed', 'ownership_transferred',
-    'category_create', 'category_update', 'category_delete'
+    'category_create', 'category_update', 'category_delete',
+    'member_timeout', 'member_timeout_remove', 'member_warn',
+    'member_role_update', 'member_nickname_change', 'member_nickname_override'
   )),
   target_type TEXT CHECK (target_type IN ('server', 'channel', 'role', 'member', 'invite')),
   target_id TEXT, -- UUID as text for flexibility
@@ -574,6 +577,20 @@ CREATE TABLE blocked_users (
 
 CREATE INDEX idx_blocked_users_blocker ON blocked_users(blocker_id);
 CREATE INDEX idx_blocked_users_blocked ON blocked_users(blocked_id);
+
+-- ============================================================
+-- IGNORED USERS
+-- ============================================================
+
+CREATE TABLE ignored_users (
+  ignorer_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  ignored_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (ignorer_id, ignored_id),
+  CONSTRAINT ignored_not_self CHECK (ignorer_id != ignored_id)
+);
+
+CREATE INDEX idx_ignored_users_ignorer ON ignored_users(ignorer_id);
 
 -- ============================================================
 -- PINNED MESSAGES
@@ -1805,5 +1822,6 @@ INSERT INTO _migrations (name) VALUES
   ('024_roles_mentionable_default'),
   ('024_relay_servers'),
   ('025_relay_servers'),
-  ('026_relay_draining_status')
+  ('026_relay_draining_status'),
+  ('029_ignore_and_admin_nickname')
 ON CONFLICT (name) DO NOTHING;

@@ -401,7 +401,7 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
         return {
           id: m.user_id,
           username: m.username,
-          display_name: m.nickname || m.username,
+          display_name: m.admin_nickname || m.nickname || m.username,
           avatar_url: m.avatar_url,
           status: effectiveStatus,
           custom_status: m.custom_status || null,

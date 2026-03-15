@@ -611,6 +611,128 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // ============================================================
+  // NICKNAME MANAGEMENT
+  // ============================================================
+
+  // Self nickname change
+  fastify.patch('/:id/members/@me/nickname', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const body = request.body as { nickname?: string | null };
+
+      // Check member exists
+      const member = await db.members.findByUserAndServer(request.user!.id, id);
+      if (!member) return notFound(reply, 'Member');
+
+      // Check permission: CHANGE_NICKNAME or server owner
+      const [server] = await db.sql`SELECT owner_id FROM servers WHERE id = ${id}`;
+      if (!server) return notFound(reply, 'Server');
+
+      if (server.owner_id !== request.user!.id) {
+        const perms = await calculatePermissions(request.user!.id, id);
+        if (!hasPermission(perms.server, ServerPermissions.CHANGE_NICKNAME)) {
+          return forbidden(reply, 'Missing CHANGE_NICKNAME permission');
+        }
+      }
+
+      // Check if admin_nickname is set (user can't override admin nickname)
+      if (member.admin_nickname) {
+        return forbidden(
+          reply,
+          'Your nickname has been set by an administrator and cannot be changed',
+        );
+      }
+
+      const newNickname = body.nickname?.trim() || null;
+      if (newNickname && newNickname.length > 32) {
+        return badRequest(reply, 'Nickname must be 32 characters or less');
+      }
+
+      await db.sql`
+        UPDATE members SET nickname = ${newNickname}
+        WHERE user_id = ${request.user!.id} AND server_id = ${id}
+      `;
+
+      // Audit log
+      await db.sql`
+        INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
+        VALUES (${id}, ${request.user!.id}, 'member_nickname_change', 'member',
+                ${request.user!.id}, ${JSON.stringify({ nickname: newNickname })})
+      `;
+
+      // Emit member update
+      await emitEncrypted(fastify.io, `server:${id}`, 'member.update', {
+        user_id: request.user!.id,
+        server_id: id,
+        nickname: newNickname,
+      });
+
+      return { message: 'Nickname updated', nickname: newNickname };
+    },
+  });
+
+  // Admin nickname override
+  fastify.patch('/:id/members/:userId/admin-nickname', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id, userId } = request.params as { id: string; userId: string };
+      const body = request.body as { admin_nickname?: string | null };
+
+      // Check permission
+      const perms = await calculatePermissions(request.user!.id, id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_NICKNAMES)) {
+        return forbidden(reply, 'Missing MANAGE_NICKNAMES permission');
+      }
+
+      // Check member exists
+      const member = await db.members.findByUserAndServer(userId, id);
+      if (!member) return notFound(reply, 'Member');
+
+      // Can't override server owner's nickname
+      const [server] = await db.sql`SELECT owner_id FROM servers WHERE id = ${id}`;
+      if (server?.owner_id === userId) {
+        return forbidden(reply, 'Cannot override server owner nickname');
+      }
+
+      // Role hierarchy check
+      const canManage = await canManageMember(request.user!.id, userId, id);
+      if (!canManage) {
+        return forbidden(
+          reply,
+          'Cannot manage this member - they have equal or higher roles',
+        );
+      }
+
+      const newAdminNickname = body.admin_nickname?.trim() || null;
+      if (newAdminNickname && newAdminNickname.length > 32) {
+        return badRequest(reply, 'Nickname must be 32 characters or less');
+      }
+
+      await db.sql`
+        UPDATE members SET admin_nickname = ${newAdminNickname}
+        WHERE user_id = ${userId} AND server_id = ${id}
+      `;
+
+      // Audit log
+      await db.sql`
+        INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
+        VALUES (${id}, ${request.user!.id}, 'member_nickname_override', 'member',
+                ${userId}, ${JSON.stringify({ admin_nickname: newAdminNickname })})
+      `;
+
+      // Emit member update
+      await emitEncrypted(fastify.io, `server:${id}`, 'member.update', {
+        user_id: userId,
+        server_id: id,
+        admin_nickname: newAdminNickname,
+      });
+
+      return { message: 'Admin nickname set', admin_nickname: newAdminNickname };
+    },
+  });
+
+  // ============================================================
   // MODERATION (Phase 5)
   // ============================================================
 

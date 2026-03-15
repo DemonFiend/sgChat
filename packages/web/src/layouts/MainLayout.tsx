@@ -57,6 +57,10 @@ import { PinnedMessagesPanel, type PinnedMessage } from '@/components/ui/PinnedM
 import { ThreadPanel, type ThreadInfo } from '@/components/ui/ThreadPanel';
 import { SearchModal } from '@/components/ui/SearchModal';
 import { RolePickerModal } from '@/components/ui/RolePickerModal';
+import { NicknameModal } from '@/components/ui/NicknameModal';
+import { blockedUsersStore } from '@/stores/blockedUsers';
+import { ignoredUsersStore } from '@/stores/ignoredUsers';
+import { chatInputStore } from '@/stores/chatInput';
 import type { Channel, Category } from '@/components/layout/ChannelList';
 
 interface ServerData {
@@ -106,7 +110,7 @@ export function MainLayout() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentChannel, setCurrentChannel] = useState<ChannelInfo | null>(null);
   const [members, setMembers] = useState<MemberData[]>([]);
-  const [allRoles, setAllRoles] = useState<{ id: string; name: string; color: string | null }[]>([]);
+  const [allRoles, setAllRoles] = useState<{ id: string; name: string; color: string | null; position: number }[]>([]);
   const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
   const [isMemberListOpen, setIsMemberListOpen] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -150,6 +154,12 @@ export function MainLayout() {
     id: string;
     username: string;
     display_name?: string | null;
+  } | null>(null);
+  const [nicknameModal, setNicknameModal] = useState<{
+    targetUser: { id: string; username: string; display_name?: string | null };
+    isSelf: boolean;
+    currentNickname: string | null;
+    currentAdminNickname: string | null;
   } | null>(null);
   const [showUserSettings, setShowUserSettings] = useState(false);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
@@ -212,7 +222,7 @@ export function MainLayout() {
         // Fetch members and roles in parallel
         const [membersResponse, rolesResponse] = await Promise.all([
           api.get<MemberData[] | { members: MemberData[] }>('/members'),
-          api.get<{ id: string; name: string; color: string | null }[]>('/roles'),
+          api.get<{ id: string; name: string; color: string | null; position: number }[]>('/roles'),
         ]);
         if (Array.isArray(membersResponse)) {
           setMembers(membersResponse);
@@ -227,6 +237,10 @@ export function MainLayout() {
         if (Array.isArray(rolesResponse)) {
           setAllRoles(rolesResponse);
         }
+
+        // Initialize blocked/ignored user stores
+        blockedUsersStore.fetchBlocked();
+        ignoredUsersStore.fetchIgnored();
 
         // Auto-navigate to first text channel if channelId is missing or invalid
         // (e.g. server ID from ServerList click instead of a channel ID)
@@ -871,7 +885,7 @@ export function MainLayout() {
         else if (res?.members) setMembers(res.members);
       }).catch(() => {});
       // Refetch all roles for mention context
-      api.get<{ id: string; name: string; color: string | null }[]>('/roles').then((res) => {
+      api.get<{ id: string; name: string; color: string | null; position: number }[]>('/roles').then((res) => {
         if (Array.isArray(res)) setAllRoles(res);
       }).catch(() => {});
       // Refetch permissions (role changes may affect current user)
@@ -947,6 +961,11 @@ export function MainLayout() {
     };
     socketService.on('serverEvents.invalidate', handleEventsInvalidate as (data: unknown) => void);
 
+    const handleUserBlock = (data: any) => {
+      blockedUsersStore.addBlockedUserId(data.blocker_id);
+    };
+    socketService.on('user.block', handleUserBlock as (data: unknown) => void);
+
     return () => {
       socketService.off('server.update', handleServerUpdate as (data: unknown) => void);
       socketService.off('server.popup_config.update', handlePopupConfigUpdate as (data: unknown) => void);
@@ -974,6 +993,7 @@ export function MainLayout() {
       socketService.off('server.banned', handleServerBanned as (data: unknown) => void);
       socketService.off('emoji.manifestUpdated', handleEmojiManifestUpdated as (data: unknown) => void);
       socketService.off('serverEvents.invalidate', handleEventsInvalidate as (data: unknown) => void);
+      socketService.off('user.block', handleUserBlock as (data: unknown) => void);
     };
   }, [user?.id]);
 
@@ -1661,6 +1681,22 @@ export function MainLayout() {
               setTimeoutTarget(contextMenu.targetUser);
               setContextMenu(null);
             }}
+            onMention={() => {
+              chatInputStore.insertMention(contextMenu.targetUser.id, contextMenu.targetUser.username);
+            }}
+            onChangeNickname={(isSelf: boolean) => {
+              const member = members.find((m) => m.id === contextMenu.targetUser.id);
+              setNicknameModal({
+                targetUser: contextMenu.targetUser,
+                isSelf,
+                currentNickname: member?.display_name || null,
+                currentAdminNickname: null,
+              });
+            }}
+            targetUserRoles={
+              members.find((m) => m.id === contextMenu.targetUser.id)?.roles || []
+            }
+            allServerRoles={allRoles || []}
           />
         );
       })()}
@@ -1672,6 +1708,19 @@ export function MainLayout() {
           onClose={() => setTimeoutTarget(null)}
           targetUser={timeoutTarget}
           serverId={currentServer.id}
+        />
+      )}
+
+      {/* Nickname Modal */}
+      {nicknameModal && (
+        <NicknameModal
+          isOpen={!!nicknameModal}
+          onClose={() => setNicknameModal(null)}
+          targetUser={nicknameModal.targetUser}
+          serverId={currentServer?.id || ''}
+          isSelf={nicknameModal.isSelf}
+          currentNickname={nicknameModal.currentNickname}
+          currentAdminNickname={nicknameModal.currentAdminNickname}
         />
       )}
 

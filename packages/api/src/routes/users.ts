@@ -1139,6 +1139,110 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
     },
   });
 
+  // ============================================================
+  // IGNORE USERS
+  // ============================================================
+
+  // Get ignored users list
+  fastify.get('/ignored', {
+    onRequest: [authenticate],
+    handler: async (request, _reply) => {
+      const currentUserId = request.user!.id;
+
+      const ignoredUsers = await db.sql`
+        SELECT
+          u.id,
+          u.username,
+          u.display_name,
+          u.avatar_url,
+          i.created_at as ignored_at
+        FROM ignored_users i
+        JOIN users u ON u.id = i.ignored_id
+        WHERE i.ignorer_id = ${currentUserId}
+        ORDER BY i.created_at DESC
+      `;
+
+      return ignoredUsers.map((u: any) => ({
+        id: u.id,
+        username: u.username,
+        display_name: u.display_name || u.username,
+        avatar_url: u.avatar_url,
+        ignored_at: u.ignored_at,
+      }));
+    },
+  });
+
+  // Ignore a user
+  fastify.post('/:userId/ignore', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { userId } = request.params as { userId: string };
+      const currentUserId = request.user!.id;
+
+      // Cannot ignore yourself
+      if (userId === currentUserId) {
+        return badRequest(reply, 'Cannot ignore yourself');
+      }
+
+      // Check if target user exists
+      const targetUser = await db.users.findById(userId);
+      if (!targetUser) {
+        return notFound(reply, 'User');
+      }
+
+      // Insert ignore record (ON CONFLICT DO NOTHING for idempotency)
+      await db.sql`
+        INSERT INTO ignored_users (ignorer_id, ignored_id)
+        VALUES (${currentUserId}, ${userId})
+        ON CONFLICT DO NOTHING
+      `;
+
+      // Get ignore timestamp
+      const [ignoreRecord] = await db.sql`
+        SELECT created_at FROM ignored_users
+        WHERE ignorer_id = ${currentUserId} AND ignored_id = ${userId}
+      `;
+
+      return {
+        message: 'User ignored',
+        ignored_user: {
+          id: targetUser.id,
+          username: targetUser.username,
+          display_name: targetUser.display_name || targetUser.username,
+          avatar_url: targetUser.avatar_url,
+          ignored_at: ignoreRecord.created_at,
+        },
+      };
+    },
+  });
+
+  // Unignore a user
+  fastify.delete('/:userId/ignore', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { userId } = request.params as { userId: string };
+      const currentUserId = request.user!.id;
+
+      // Check if user is ignored
+      const [existingIgnore] = await db.sql`
+        SELECT 1 FROM ignored_users
+        WHERE ignorer_id = ${currentUserId} AND ignored_id = ${userId}
+      `;
+
+      if (!existingIgnore) {
+        return notFound(reply, 'User not ignored');
+      }
+
+      // Remove ignore record
+      await db.sql`
+        DELETE FROM ignored_users
+        WHERE ignorer_id = ${currentUserId} AND ignored_id = ${userId}
+      `;
+
+      return { message: 'User unignored' };
+    },
+  });
+
   // Get another user's profile (limited info)
   fastify.get('/:userId', {
     onRequest: [authenticate],
