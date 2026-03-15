@@ -461,6 +461,25 @@ export function DMPage({ serverId }: DMPageProps) {
     };
   }, [selectedFriend, currentUserId]);
 
+  const handleAcceptCall = useCallback(async () => {
+    if (!incomingCall) return;
+    const caller = friends.find(f => f.id === incomingCall.callerId);
+    if (caller) {
+      setSelectedFriend(caller);
+      await fetchMessages(caller.id);
+    }
+    try {
+      await dmVoiceService.join(incomingCall.dmChannelId, incomingCall.callerName);
+    } catch (err) {
+      console.error('Failed to accept call:', err);
+    }
+    setIncomingCall(null);
+  }, [incomingCall, friends, fetchMessages]);
+
+  const handleDeclineCall = useCallback(() => {
+    setIncomingCall(null);
+  }, []);
+
   if (isLoading) {
     return (
       <div className="flex h-full w-full bg-bg-primary items-center justify-center">
@@ -516,25 +535,6 @@ export function DMPage({ serverId }: DMPageProps) {
       </div>
     );
   }
-
-  const handleAcceptCall = useCallback(async () => {
-    if (!incomingCall) return;
-    const caller = friends.find(f => f.id === incomingCall.callerId);
-    if (caller) {
-      setSelectedFriend(caller);
-      await fetchMessages(caller.id);
-    }
-    try {
-      await dmVoiceService.join(incomingCall.dmChannelId, incomingCall.callerName);
-    } catch (err) {
-      console.error('Failed to accept call:', err);
-    }
-    setIncomingCall(null);
-  }, [incomingCall, friends, fetchMessages]);
-
-  const handleDeclineCall = useCallback(() => {
-    setIncomingCall(null);
-  }, []);
 
   return (
     <div className="flex h-full w-full bg-bg-primary">
