@@ -1697,6 +1697,34 @@ export function MainLayout() {
               members.find((m) => m.id === contextMenu.targetUser.id)?.roles || []
             }
             allServerRoles={allRoles || []}
+            onUpdateMemberRoles={(userId, newRolesSummary) => {
+              // Map summary roles to full MemberRole objects using allRoles for position/is_hoisted
+              const fullRoles = newRolesSummary.map((r) => {
+                const full = (allRoles || []).find((ar) => ar.id === r.id);
+                return {
+                  id: r.id,
+                  name: r.name,
+                  color: r.color,
+                  position: full?.position ?? 0,
+                  is_hoisted: false,
+                };
+              });
+              setMembers((prev) =>
+                prev.map((m) => (m.id === userId ? { ...m, roles: fullRoles } : m)),
+              );
+              // Update role_color on past messages from this user
+              const topColor =
+                [...fullRoles]
+                  .filter((r) => r.color)
+                  .sort((a, b) => b.position - a.position)[0]?.color || null;
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.author?.id === userId
+                    ? { ...msg, author: { ...msg.author, role_color: topColor } }
+                    : msg,
+                ),
+              );
+            }}
           />
         );
       })()}

@@ -51,6 +51,10 @@ export interface UserContextMenuProps {
   // Role data
   targetUserRoles?: { id: string; name: string; color: string | null }[];
   allServerRoles?: { id: string; name: string; color: string | null; position: number }[];
+  onUpdateMemberRoles?: (
+    userId: string,
+    roles: { id: string; name: string; color: string | null }[],
+  ) => void;
 }
 
 // ── Component ──────────────────────────────────────────────────────────
@@ -73,6 +77,7 @@ export function UserContextMenu({
   onChangeNickname,
   targetUserRoles,
   allServerRoles,
+  onUpdateMemberRoles,
 }: UserContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [friendStatus, setFriendStatus] = useState<FriendStatus>('loading');
@@ -86,6 +91,7 @@ export function UserContextMenu({
   const [actionLoading, setActionLoading] = useState(false);
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
   const [roleLoading, setRoleLoading] = useState<string | null>(null);
+  const [optimisticRoles, setOptimisticRoles] = useState(targetUserRoles);
   const [isBlockedState, setIsBlockedState] = useState(false);
   const [isIgnoredState, setIsIgnoredState] = useState(false);
   const [confirmBlock, setConfirmBlock] = useState(false);
@@ -162,6 +168,13 @@ export function UserContextMenu({
       setActionLoading(false);
     }
   }, [isOpen, targetUser.id]);
+
+  // Sync optimistic roles with prop changes
+  useEffect(() => {
+    setOptimisticRoles(targetUserRoles);
+  }, [targetUserRoles]);
+
+  const effectiveRoles = optimisticRoles ?? targetUserRoles;
 
   // Load block/ignore state
   useEffect(() => {
@@ -402,37 +415,48 @@ export function UserContextMenu({
   const handleAddRole = useCallback(
     async (roleId: string) => {
       setRoleLoading(roleId);
+      // Optimistic update
+      const role = (allServerRoles || []).find((r) => r.id === roleId);
+      const prevRoles = optimisticRoles ?? targetUserRoles ?? [];
+      if (role) {
+        const newRoles = [...prevRoles, { id: role.id, name: role.name, color: role.color }];
+        setOptimisticRoles(newRoles);
+        onUpdateMemberRoles?.(targetUser.id, newRoles);
+      }
+
       try {
         await api.post(`/servers/${serverId}/members/${targetUser.id}/roles/${roleId}`, {});
-        toastStore.addToast({
-          type: 'system',
-          title: 'Role Added',
-          message: 'Role has been assigned',
-        });
-      } catch {
-        /* ignored */
+      } catch (err) {
+        // Revert on failure
+        setOptimisticRoles(prevRoles);
+        onUpdateMemberRoles?.(targetUser.id, prevRoles);
+        console.error('[roles] Failed to add role:', err);
       }
       setRoleLoading(null);
     },
-    [serverId, targetUser.id],
+    [serverId, targetUser.id, allServerRoles, optimisticRoles, targetUserRoles, onUpdateMemberRoles],
   );
 
   const handleRemoveRole = useCallback(
     async (roleId: string) => {
       setRoleLoading(roleId);
+      // Optimistic update
+      const prevRoles = optimisticRoles ?? targetUserRoles ?? [];
+      const newRoles = prevRoles.filter((r) => r.id !== roleId);
+      setOptimisticRoles(newRoles);
+      onUpdateMemberRoles?.(targetUser.id, newRoles);
+
       try {
         await api.delete(`/servers/${serverId}/members/${targetUser.id}/roles/${roleId}`);
-        toastStore.addToast({
-          type: 'system',
-          title: 'Role Removed',
-          message: 'Role has been removed',
-        });
-      } catch {
-        /* ignored */
+      } catch (err) {
+        // Revert on failure
+        setOptimisticRoles(prevRoles);
+        onUpdateMemberRoles?.(targetUser.id, prevRoles);
+        console.error('[roles] Failed to remove role:', err);
       }
       setRoleLoading(null);
     },
-    [serverId, targetUser.id],
+    [serverId, targetUser.id, optimisticRoles, targetUserRoles, onUpdateMemberRoles],
   );
 
   if (!isOpen) return null;
@@ -601,12 +625,12 @@ export function UserContextMenu({
             ) : null}
 
             {/* ─── Roles ────────────────────────────────────────────── */}
-            {(targetUserRoles && targetUserRoles.length > 0) || pCanManageRoles ? (
+            {(effectiveRoles && effectiveRoles.length > 0) || pCanManageRoles ? (
               <>
                 <Separator />
                 <SectionLabel text="Roles" />
                 <div className="px-3 py-1.5 flex flex-wrap gap-1">
-                  {(targetUserRoles || []).map((role) => (
+                  {(effectiveRoles || []).map((role) => (
                     <RolePill
                       key={role.id}
                       role={role}
@@ -633,7 +657,7 @@ export function UserContextMenu({
                         .filter(
                           (r) =>
                             r.name !== '@everyone' &&
-                            !(targetUserRoles || []).some((tr) => tr.id === r.id),
+                            !(effectiveRoles || []).some((tr) => tr.id === r.id),
                         )
                         .map((role) => (
                           <button
@@ -657,7 +681,7 @@ export function UserContextMenu({
                       {(allServerRoles || []).filter(
                         (r) =>
                           r.name !== '@everyone' &&
-                          !(targetUserRoles || []).some((tr) => tr.id === r.id),
+                          !(effectiveRoles || []).some((tr) => tr.id === r.id),
                       ).length === 0 && (
                         <div className="px-2 py-1.5 text-xs text-text-muted">
                           No roles to assign

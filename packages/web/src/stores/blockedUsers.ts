@@ -37,38 +37,59 @@ export const useBlockedUsersStore = create<BlockedUsersState>((set, get) => ({
   },
 
   blockUser: async (userId: string) => {
+    // Optimistic update — UI updates immediately
+    const prevIds = get().blockedUserIds;
+    const prevUsers = get().blockedUsers;
+    const newIds = new Set(prevIds);
+    newIds.add(userId);
+    set({
+      blockedUserIds: newIds,
+      blockedUsers: [
+        ...prevUsers,
+        {
+          id: userId,
+          username: '',
+          display_name: null,
+          avatar_url: null,
+          blocked_at: new Date().toISOString(),
+        },
+      ],
+    });
+
     try {
       await api.post(`/users/${userId}/block`, {});
-      const { blockedUserIds, blockedUsers } = get();
-      const newIds = new Set(blockedUserIds);
-      newIds.add(userId);
+    } catch (err) {
+      // Revert on failure
+      const revertIds = new Set(get().blockedUserIds);
+      revertIds.delete(userId);
       set({
-        blockedUserIds: newIds,
-        blockedUsers: [
-          ...blockedUsers,
-          {
-            id: userId,
-            username: '',
-            display_name: null,
-            avatar_url: null,
-            blocked_at: new Date().toISOString(),
-          },
-        ],
+        blockedUserIds: revertIds,
+        blockedUsers: get().blockedUsers.filter((u) => u.id !== userId),
       });
-    } catch {
-      /* handled by caller */
+      console.error('[blockedUsers] Failed to block user:', err);
     }
   },
 
   unblockUser: async (userId: string) => {
+    // Optimistic update — UI updates immediately
+    const prevIds = get().blockedUserIds;
+    const prevUsers = get().blockedUsers;
+    const removedUser = prevUsers.find((u) => u.id === userId);
+    const newIds = new Set(prevIds);
+    newIds.delete(userId);
+    set({ blockedUserIds: newIds, blockedUsers: prevUsers.filter((u) => u.id !== userId) });
+
     try {
       await api.delete(`/users/${userId}/block`);
-      const { blockedUserIds, blockedUsers } = get();
-      const newIds = new Set(blockedUserIds);
-      newIds.delete(userId);
-      set({ blockedUserIds: newIds, blockedUsers: blockedUsers.filter((u) => u.id !== userId) });
-    } catch {
-      /* handled by caller */
+    } catch (err) {
+      // Revert on failure
+      const revertIds = new Set(get().blockedUserIds);
+      revertIds.add(userId);
+      const revertUsers = removedUser
+        ? [...get().blockedUsers, removedUser]
+        : get().blockedUsers;
+      set({ blockedUserIds: revertIds, blockedUsers: revertUsers });
+      console.error('[blockedUsers] Failed to unblock user:', err);
     }
   },
 

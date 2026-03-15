@@ -35,38 +35,59 @@ export const useIgnoredUsersStore = create<IgnoredUsersState>((set, get) => ({
   },
 
   ignoreUser: async (userId: string) => {
+    // Optimistic update — UI updates immediately
+    const prevIds = get().ignoredUserIds;
+    const prevUsers = get().ignoredUsers;
+    const newIds = new Set(prevIds);
+    newIds.add(userId);
+    set({
+      ignoredUserIds: newIds,
+      ignoredUsers: [
+        ...prevUsers,
+        {
+          id: userId,
+          username: '',
+          display_name: null,
+          avatar_url: null,
+          ignored_at: new Date().toISOString(),
+        },
+      ],
+    });
+
     try {
       await api.post(`/users/${userId}/ignore`, {});
-      const { ignoredUserIds, ignoredUsers } = get();
-      const newIds = new Set(ignoredUserIds);
-      newIds.add(userId);
+    } catch (err) {
+      // Revert on failure
+      const revertIds = new Set(get().ignoredUserIds);
+      revertIds.delete(userId);
       set({
-        ignoredUserIds: newIds,
-        ignoredUsers: [
-          ...ignoredUsers,
-          {
-            id: userId,
-            username: '',
-            display_name: null,
-            avatar_url: null,
-            ignored_at: new Date().toISOString(),
-          },
-        ],
+        ignoredUserIds: revertIds,
+        ignoredUsers: get().ignoredUsers.filter((u) => u.id !== userId),
       });
-    } catch {
-      /* handled by caller */
+      console.error('[ignoredUsers] Failed to ignore user:', err);
     }
   },
 
   unignoreUser: async (userId: string) => {
+    // Optimistic update — UI updates immediately
+    const prevIds = get().ignoredUserIds;
+    const prevUsers = get().ignoredUsers;
+    const removedUser = prevUsers.find((u) => u.id === userId);
+    const newIds = new Set(prevIds);
+    newIds.delete(userId);
+    set({ ignoredUserIds: newIds, ignoredUsers: prevUsers.filter((u) => u.id !== userId) });
+
     try {
       await api.delete(`/users/${userId}/ignore`);
-      const { ignoredUserIds, ignoredUsers } = get();
-      const newIds = new Set(ignoredUserIds);
-      newIds.delete(userId);
-      set({ ignoredUserIds: newIds, ignoredUsers: ignoredUsers.filter((u) => u.id !== userId) });
-    } catch {
-      /* handled by caller */
+    } catch (err) {
+      // Revert on failure
+      const revertIds = new Set(get().ignoredUserIds);
+      revertIds.add(userId);
+      const revertUsers = removedUser
+        ? [...get().ignoredUsers, removedUser]
+        : get().ignoredUsers;
+      set({ ignoredUserIds: revertIds, ignoredUsers: revertUsers });
+      console.error('[ignoredUsers] Failed to unignore user:', err);
     }
   },
 
