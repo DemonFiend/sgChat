@@ -95,7 +95,14 @@ class DMVoiceServiceClass {
   }
 
   async join(dmChannelId: string, friendName: string, isCallee: boolean = false): Promise<void> {
-    if (voiceStore.isConnected()) {
+    // If in a server voice channel, disconnect from it first (one call at a time)
+    const { voiceService } = await import('./voiceService');
+    if (voiceService.getRoom()) {
+      await voiceService.leave();
+    }
+
+    // If already in a DM call or connecting, leave first
+    if (voiceStore.isConnected() || voiceStore.isConnecting()) {
       await this.leave();
     }
 
@@ -396,6 +403,10 @@ class DMVoiceServiceClass {
 
   getRoom(): Room | null {
     return this.room;
+  }
+
+  isActive(): boolean {
+    return this.room !== null;
   }
 
   isInDMCall(dmChannelId: string): boolean {

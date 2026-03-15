@@ -29,7 +29,8 @@ export function GlobalIncomingCall() {
     }) => {
       if (!data.is_dm_call || !data.dm_channel_id || !data.user) return;
       if (data.user.id === currentUserId) return;
-      if (voiceConnectionStateRef.current === 'connected') return;
+      // Only suppress if already in a DM call (allow notification while in server voice)
+      if (voiceConnectionStateRef.current === 'connected' && dmVoiceService.isActive()) return;
 
       useVoiceStore.getState().setIncomingDMCall({
         callerId: data.user.id,

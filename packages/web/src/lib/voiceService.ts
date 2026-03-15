@@ -328,7 +328,13 @@ class VoiceServiceClass {
    * Join a voice channel
    */
   async join(channelId: string, channelName: string): Promise<void> {
-    // If already connected or connecting to a channel, leave first
+    // If in a DM call, disconnect from it first (one call at a time)
+    const { dmVoiceService } = await import('./dmVoiceService');
+    if (dmVoiceService.getRoom()) {
+      await dmVoiceService.leave();
+    }
+
+    // If already connected or connecting to a server voice channel, leave first
     if (voiceStore.isConnected() || voiceStore.isConnecting()) {
       await this.leave();
     }

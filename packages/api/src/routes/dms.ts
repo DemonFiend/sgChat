@@ -13,7 +13,7 @@ import { loadArchivedMessages } from '../services/archive.js';
 import { publishEvent } from '../lib/eventBus.js';
 import { generateLiveKitToken, getLiveKitUrl } from '../services/livekit.js';
 import { redis } from '../lib/redis.js';
-import { createNotification } from './notifications.js';
+import { handleDMCallMissed, leaveAnyVoiceSession } from '../services/voiceCleanup.js';
 
 export const dmRoutes: FastifyPluginAsync = async (fastify) => {
   // Get user's DM channels
@@ -575,6 +575,9 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
         return forbidden(reply, 'Cannot call this user');
       }
 
+      // Leave any existing voice session (server voice or other DM call) before joining
+      await leaveAnyVoiceSession(request.user!.id);
+
       const roomName = `dm:${id}`;
 
       // Generate token with full permissions (DMs don't have role-based permissions)
@@ -589,10 +592,7 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       // Track DM voice state in Redis
-      await redis.client.setex(`dm_voice:${id}:${request.user!.id}`, 3600, JSON.stringify({
-        user_id: request.user!.id,
-        joined_at: new Date().toISOString(),
-      })); // 1 hour expiry
+      await redis.joinDMVoiceCall(request.user!.id, id);
 
       // Get user info for notification
       const user = await db.users.findById(request.user!.id);
@@ -656,76 +656,14 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
 
       const otherUserId = dm.user1_id === request.user!.id ? dm.user2_id : dm.user1_id;
 
-      // Check call lifecycle before removing state
-      const callStartData = await redis.client.get(`dm_call_start:${id}`);
-      const otherUserInCall = await redis.client.get(`dm_voice:${id}:${otherUserId}`);
+      // Handle missed call logic before removing state
+      await handleDMCallMissed(request.user!.id, id, otherUserId);
 
       // Remove from Redis voice state
-      await redis.client.del(`dm_voice:${id}:${request.user!.id}`);
+      await redis.leaveDMVoiceCall(request.user!.id);
 
       // Get user info for notification
       const user = await db.users.findById(request.user!.id);
-
-      // Handle missed/unanswered call system messages
-      if (callStartData && !otherUserInCall) {
-        // Caller was alone the entire time — the other user never joined
-        const [callerId, startTimestamp] = callStartData.split(':');
-        const callDurationMs = Date.now() - parseInt(startTimestamp);
-        const callDurationSec = callDurationMs / 1000;
-
-        // Only create missed call messages if the call lasted ≥30 seconds
-        if (callDurationSec >= 30 && callerId === request.user!.id) {
-          const isAutoKick = callDurationSec >= 295; // ~5 minutes (with small tolerance)
-          const content = isAutoKick
-            ? 'Call went unanswered for 5 minutes before ending.'
-            : 'Missed voice call.';
-          const eventType = isAutoKick ? 'dm_call_unanswered' : 'dm_call_missed';
-
-          // Insert system message into DM chat
-          const systemMessage = await db.messages.create({
-            dm_channel_id: id,
-            author_id: null,
-            content,
-            system_event: {
-              type: eventType,
-              user_id: request.user!.id,
-              username: user.username,
-              timestamp: new Date().toISOString(),
-            },
-          });
-
-          // Publish so the chat updates in real-time
-          await publishEvent({
-            type: 'dm.call.missed',
-            actorId: null,
-            resourceId: `dm:${id}`,
-            payload: {
-              id: systemMessage.id,
-              content: systemMessage.content,
-              sender_id: null,
-              created_at: systemMessage.created_at,
-              system_event: systemMessage.system_event,
-              dm_channel_id: id,
-            },
-          });
-
-          // Create missed_call notification for the callee (only when call was truly missed)
-          await createNotification({
-            userId: otherUserId,
-            type: 'missed_call',
-            data: {
-              caller_id: user.id,
-              caller_name: user.display_name || user.username,
-              caller_avatar: user.avatar_url,
-              dm_channel_id: id,
-            },
-            priority: 'high',
-          });
-        }
-
-        // Clean up call start tracking
-        await redis.client.del(`dm_call_start:${id}`);
-      }
 
       // Notify the other user
       await publishEvent({

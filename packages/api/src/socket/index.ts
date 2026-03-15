@@ -21,6 +21,7 @@ import { resolveTextMentions } from '../utils/mentionResolver.js';
 import { encryptPayload, decryptPayload } from '../plugins/cryptoPayload.js';
 import { APP_VERSION } from '../lib/version.js';
 import { parseCommand, executeCommand } from '../services/commands.js';
+import { leaveAnyVoiceSession } from '../services/voiceCleanup.js';
 
 // ── Constants ──────────────────────────────────────────────────
 /** Heartbeat interval sent to client in gateway.hello (ms) */
@@ -1278,36 +1279,8 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       // Cancel any pending temp channel creation
       cancelPendingCreation(userId);
 
-      // Clean up voice state
-      const voiceChannelId = await redis.getUserVoiceChannel(userId);
-      if (voiceChannelId) {
-        const voiceChannel = await db.channels.findById(voiceChannelId);
-        await redis.leaveVoiceChannel(userId);
-        
-        if (voiceChannel) {
-          // Look up custom leave sound for the disconnecting user
-          const leaveSound = await db.userVoiceSounds.findByUserServerType(userId, voiceChannel.server_id, 'leave');
-
-          await publishEvent({
-            type: 'voice.leave',
-            actorId: userId,
-            resourceId: `server:${voiceChannel.server_id}`,
-            payload: {
-              channel_id: voiceChannelId,
-              user_id: userId,
-              custom_sound_url: leaveSound?.sound_url || null,
-            },
-          });
-
-          // Mark temp channel as empty if no participants remain
-          if (voiceChannel.is_temp_channel) {
-            const participants = await redis.getVoiceChannelParticipants(voiceChannelId);
-            if (participants.length === 0) {
-              await markTempChannelEmpty(voiceChannelId);
-            }
-          }
-        }
-      }
+      // Clean up voice state (server voice channels AND DM calls)
+      await leaveAnyVoiceSession(userId);
 
       await db.sql`UPDATE users SET last_seen_at = NOW() WHERE id = ${userId}`;
 

@@ -200,6 +200,30 @@ export const redis = {
     return client.get(`voice:user:${userId}`);
   },
 
+  // DM voice call tracking (mirrors server voice pattern)
+  async joinDMVoiceCall(userId: string, dmChannelId: string) {
+    // Track which DM call the user is in (for cross-type lookup)
+    await client.setex(`dm_voice:user:${userId}`, 3600, dmChannelId);
+    // Track per-channel state
+    await client.setex(`dm_voice:${dmChannelId}:${userId}`, 3600, JSON.stringify({
+      user_id: userId,
+      joined_at: new Date().toISOString(),
+    }));
+  },
+
+  async leaveDMVoiceCall(userId: string): Promise<string | null> {
+    const dmChannelId = await client.get(`dm_voice:user:${userId}`);
+    if (dmChannelId) {
+      await client.del(`dm_voice:${dmChannelId}:${userId}`);
+    }
+    await client.del(`dm_voice:user:${userId}`);
+    return dmChannelId;
+  },
+
+  async getUserDMVoiceCall(userId: string): Promise<string | null> {
+    return client.get(`dm_voice:user:${userId}`);
+  },
+
   async getVoiceState(channelId: string, userId: string): Promise<{
     joined_at: string;
     is_muted: boolean;

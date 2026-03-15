@@ -19,6 +19,7 @@ import {
 } from '../services/tempChannels.js';
 import { scheduleTempChannelCreation, cancelPendingCreation } from '../services/tempChannelTimers.js';
 import { getDefaultServer } from './server.js';
+import { leaveAnyVoiceSession } from '../services/voiceCleanup.js';
 
 /**
  * Resolve the target relay for a voice channel based on its relay policy.
@@ -145,6 +146,9 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
       if (!channel) {
         return notFound(reply, 'Voice channel');
       }
+
+      // Leave any existing voice session (DM call or other server voice) before joining
+      await leaveAnyVoiceSession(request.user!.id);
 
       // Handle temp voice generator - join generator with 5s delay before creating temp channel
       if (channel.type === 'temp_voice_generator') {
@@ -294,6 +298,9 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
       if (!channel) {
         return notFound(reply, 'Channel');
       }
+
+      // Leave any existing voice session (DM call or other server voice) before joining
+      await leaveAnyVoiceSession(request.user!.id);
 
       // Handle temp voice generator - join generator with 5s delay before creating temp channel
       if (channel.type === 'temp_voice_generator') {
