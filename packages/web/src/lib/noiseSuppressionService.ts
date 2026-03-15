@@ -104,7 +104,17 @@ class NoiseSuppressionService {
 
       // Dynamic import of dtln-rs — Vite will handle the module resolution
       const { default: initDTLN } = await import('dtln-rs');
-      this._dtln = await initDTLN();
+
+      // dtln-rs WASM module is broken for browser use (missing Emscripten runtime glue).
+      // initDTLN() returns a promise that never resolves. Add a timeout so we fail
+      // gracefully and fall back to browser noiseSuppression: true.
+      const LOAD_TIMEOUT_MS = 10_000;
+      this._dtln = await Promise.race([
+        initDTLN(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('DTLN WASM load timed out after 10s')), LOAD_TIMEOUT_MS),
+        ),
+      ]);
       this._dtlnReady = true;
 
       this._loadTimeMs = performance.now() - t0;
