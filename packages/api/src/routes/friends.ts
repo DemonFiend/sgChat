@@ -61,15 +61,17 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
           f.created_at as since,
           CASE WHEN us.timezone_public = true THEN us.timezone ELSE NULL END as timezone,
           COALESCE(us.timezone_public, false) as timezone_public,
-          CASE WHEN us.timezone_public = true THEN COALESCE(us.timezone_dst_enabled, true) ELSE NULL END as timezone_dst_enabled
+          CASE WHEN us.timezone_public = true THEN COALESCE(us.timezone_dst_enabled, true) ELSE NULL END as timezone_dst_enabled,
+          dm.id as dm_channel_id
         FROM friendships f
         JOIN users u ON (
-          CASE 
+          CASE
             WHEN f.user1_id = ${userId} THEN f.user2_id = u.id
             ELSE f.user1_id = u.id
           END
         )
         LEFT JOIN user_settings us ON us.user_id = u.id
+        LEFT JOIN dm_channels dm ON dm.user1_id = LEAST(${userId}, u.id) AND dm.user2_id = GREATEST(${userId}, u.id)
         WHERE f.user1_id = ${userId} OR f.user2_id = ${userId}
         ORDER BY 
           CASE u.status 
@@ -94,6 +96,7 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
         timezone: f.timezone || null,
         timezone_public: f.timezone_public || false,
         timezone_dst_enabled: f.timezone_dst_enabled ?? true,
+        dm_channel_id: f.dm_channel_id || null,
       }));
     },
   });
