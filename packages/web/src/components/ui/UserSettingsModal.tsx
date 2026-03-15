@@ -11,6 +11,7 @@ import { AvatarPicker } from './AvatarPicker';
 import { api } from '@/api';
 import { USER_TIMEZONES } from '@/lib/timezones';
 import { isElectron } from '@/lib/electron';
+import { noiseSuppressionService } from '@/lib/noiseSuppressionService';
 
 type SettingsTab = 'account' | 'profile' | 'appearance' | 'notifications' | 'voice' | 'keybinds';
 
@@ -1372,6 +1373,9 @@ function VoiceTab() {
   const [autoGainControl, setAutoGainControl] = useState(true);
   const [echoCancellation, setEchoCancellation] = useState(true);
   const [noiseSuppression, setNoiseSuppression] = useState(true);
+  const [aiNoiseSuppression, setAiNoiseSuppression] = useState(true);
+  const [aiNsSupported, setAiNsSupported] = useState(true);
+  const [aiNsUnsupportedReason, setAiNsUnsupportedReason] = useState<string | null>(null);
   const [voiceActivityDetection, setVoiceActivityDetection] = useState(true);
   const [enableVoiceJoinSounds, setEnableVoiceJoinSounds] = useState(true);
   const [isTesting, setIsTesting] = useState(false);
@@ -1438,7 +1442,13 @@ function VoiceTab() {
           setAutoGainControl(settings.audio_auto_gain_control ?? true);
           setEchoCancellation(settings.audio_echo_cancellation ?? true);
           setNoiseSuppression(settings.audio_noise_suppression ?? true);
+          setAiNoiseSuppression(settings.audio_ai_noise_suppression ?? true);
           setVoiceActivityDetection(settings.voice_activity_detection ?? true);
+
+          // Check AI NS capability
+          const caps = noiseSuppressionService.checkCapabilities();
+          setAiNsSupported(caps.supported);
+          setAiNsUnsupportedReason(caps.reason || null);
           setEnableVoiceJoinSounds(settings.enable_voice_join_sounds ?? true);
         }
       } catch (err) {
@@ -1716,25 +1726,65 @@ function VoiceTab() {
               </button>
             </div>
 
-            {/* Noise Suppression */}
+            {/* AI Noise Suppression */}
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-text-primary font-medium">Noise Suppression</div>
-                <div className="text-sm text-text-muted">Reduces background noise</div>
+                <div className="flex items-center gap-2">
+                  <div className="text-text-primary font-medium">AI Noise Suppression</div>
+                  {aiNoiseSuppression && aiNsSupported && (
+                    <span className={clsx(
+                      "inline-block w-2 h-2 rounded-full",
+                      noiseSuppressionService.cpuLevel === 'low' ? 'bg-success' :
+                      noiseSuppressionService.cpuLevel === 'moderate' ? 'bg-warning' : 'bg-error'
+                    )} title={`CPU usage: ${noiseSuppressionService.cpuLevel}`} />
+                  )}
+                </div>
+                <div className="text-sm text-text-muted">
+                  {aiNsSupported
+                    ? 'AI-powered noise removal using DTLN (processes audio locally)'
+                    : aiNsUnsupportedReason || 'Not supported in this browser'}
+                </div>
               </div>
               <button
-                onClick={() => toggleSetting(noiseSuppression, setNoiseSuppression, 'audio_noise_suppression')}
+                onClick={() => {
+                  if (!aiNsSupported) return;
+                  toggleSetting(aiNoiseSuppression, setAiNoiseSuppression, 'audio_ai_noise_suppression');
+                }}
+                disabled={!aiNsSupported}
                 className={clsx(
                   "relative w-12 h-6 rounded-full transition-colors",
-                  noiseSuppression ? 'bg-success' : 'bg-bg-tertiary'
+                  !aiNsSupported ? 'bg-bg-tertiary opacity-50 cursor-not-allowed' :
+                  aiNoiseSuppression ? 'bg-success' : 'bg-bg-tertiary'
                 )}
               >
                 <div className={clsx(
                   "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
-                  noiseSuppression ? 'left-7' : 'left-1'
+                  aiNoiseSuppression && aiNsSupported ? 'left-7' : 'left-1'
                 )} />
               </button>
             </div>
+
+            {/* Browser Noise Suppression (fallback when AI NS is off) */}
+            {!aiNoiseSuppression && (
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-text-primary font-medium">Browser Noise Suppression</div>
+                  <div className="text-sm text-text-muted">Basic browser-level noise reduction</div>
+                </div>
+                <button
+                  onClick={() => toggleSetting(noiseSuppression, setNoiseSuppression, 'audio_noise_suppression')}
+                  className={clsx(
+                    "relative w-12 h-6 rounded-full transition-colors",
+                    noiseSuppression ? 'bg-success' : 'bg-bg-tertiary'
+                  )}
+                >
+                  <div className={clsx(
+                    "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
+                    noiseSuppression ? 'left-7' : 'left-1'
+                  )} />
+                </button>
+              </div>
+            )}
 
             {/* Auto Gain Control */}
             <div className="flex items-center justify-between">

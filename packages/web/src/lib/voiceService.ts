@@ -7,6 +7,7 @@ import { SCREEN_SHARE_QUALITIES } from '@sgchat/shared';
 import { streamViewerStore } from '@/stores/streamViewer';
 import { isElectron, getElectronAPI } from './electron';
 import { getCachedRelays, getRelayPings } from './relayPing';
+import { noiseSuppressionService } from './noiseSuppressionService';
 
 interface JoinVoiceResponse {
   token: string;
@@ -51,6 +52,7 @@ interface VoiceSettings {
   audio_auto_gain_control: boolean;
   audio_echo_cancellation: boolean;
   audio_noise_suppression: boolean;
+  audio_ai_noise_suppression: boolean;
   voice_activity_detection: boolean;
   enable_voice_join_sounds: boolean;
 }
@@ -233,6 +235,7 @@ class VoiceServiceClass {
         audio_auto_gain_control: settings?.audio_auto_gain_control ?? true,
         audio_echo_cancellation: settings?.audio_echo_cancellation ?? true,
         audio_noise_suppression: settings?.audio_noise_suppression ?? true,
+        audio_ai_noise_suppression: settings?.audio_ai_noise_suppression ?? true,
         voice_activity_detection: settings?.voice_activity_detection ?? true,
         enable_voice_join_sounds: settings?.enable_voice_join_sounds ?? true,
       };
@@ -250,6 +253,7 @@ class VoiceServiceClass {
         audio_auto_gain_control: true,
         audio_echo_cancellation: true,
         audio_noise_suppression: true,
+        audio_ai_noise_suppression: true,
         voice_activity_detection: true,
         enable_voice_join_sounds: true,
       };
@@ -394,6 +398,8 @@ class VoiceServiceClass {
       }
 
       // 3. Create and configure Room with user's audio settings
+      // When AI NS is enabled, disable browser's built-in noiseSuppression (DTLN replaces it)
+      const useAiNs = settings.audio_ai_noise_suppression && noiseSuppressionService.checkCapabilities().supported;
       const channelBitrate = bitrate || 64000;
       this.room = new Room({
         adaptiveStream: true,
@@ -403,7 +409,7 @@ class VoiceServiceClass {
           deviceId: settings.audio_input_device_id || undefined,
           autoGainControl: settings.audio_auto_gain_control,
           echoCancellation: settings.audio_echo_cancellation,
-          noiseSuppression: settings.audio_noise_suppression,
+          noiseSuppression: useAiNs ? false : settings.audio_noise_suppression,
         },
         publishDefaults: {
           audioPreset: { maxBitrate: channelBitrate },
@@ -436,8 +442,32 @@ class VoiceServiceClass {
 
       // 7. Enable microphone if we have speak permission and not muted
       if (voicePermissions.canSpeak && !voiceStore.isMuted()) {
-        await this.room.localParticipant.setMicrophoneEnabled(true);
-        console.log('[VoiceService] Microphone enabled');
+        if (useAiNs) {
+          // AI Noise Suppression: capture mic, process through DTLN, publish clean track
+          try {
+            await noiseSuppressionService.loadModel();
+            const rawStream = await navigator.mediaDevices.getUserMedia({
+              audio: {
+                deviceId: settings.audio_input_device_id || undefined,
+                autoGainControl: settings.audio_auto_gain_control,
+                echoCancellation: settings.audio_echo_cancellation,
+                noiseSuppression: false,
+              },
+            });
+            const cleanStream = await noiseSuppressionService.processOutboundTrack(rawStream);
+            const cleanTrack = cleanStream.getAudioTracks()[0];
+            await this.room!.localParticipant.publishTrack(cleanTrack, {
+              source: Track.Source.Microphone,
+            });
+            console.log('[VoiceService] Microphone enabled with AI noise suppression');
+          } catch (nsErr) {
+            console.warn('[VoiceService] AI NS failed, falling back to browser NS:', nsErr);
+            await this.room!.localParticipant.setMicrophoneEnabled(true);
+          }
+        } else {
+          await this.room.localParticipant.setMicrophoneEnabled(true);
+          console.log('[VoiceService] Microphone enabled');
+        }
       }
 
       // 8. Start connection quality monitoring
@@ -500,6 +530,9 @@ class VoiceServiceClass {
       if (voiceStore.isScreenSharing()) {
         await this.stopScreenShare();
       }
+
+      // Tear down AI noise suppression pipelines
+      await noiseSuppressionService.destroy();
 
       // Play leave sound before disconnecting
       this.playSound('leave');
@@ -1365,6 +1398,7 @@ class VoiceServiceClass {
         socketService.emit('voice:leave', { channel_id: channelId });
       }
     }
+    noiseSuppressionService.destroy();
     voiceStore.setDisconnected();
     this.cleanupAudioElements();
     this.cleanupVideoElements();

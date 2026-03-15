@@ -3,6 +3,7 @@ import { api } from '@/api';
 import { voiceStore, type VoicePermissions, type ConnectionQualityLevel, type ScreenShareQuality } from '@/stores/voice';
 import { socketService } from './socket';
 import { soundService } from './soundService';
+import { noiseSuppressionService } from './noiseSuppressionService';
 
 interface JoinDMVoiceResponse {
   token: string;
@@ -25,6 +26,7 @@ interface VoiceSettings {
   audio_auto_gain_control: boolean;
   audio_echo_cancellation: boolean;
   audio_noise_suppression: boolean;
+  audio_ai_noise_suppression: boolean;
   voice_activity_detection: boolean;
   enable_voice_join_sounds: boolean;
 }
@@ -60,6 +62,7 @@ class DMVoiceServiceClass {
         audio_auto_gain_control: settings?.audio_auto_gain_control ?? true,
         audio_echo_cancellation: settings?.audio_echo_cancellation ?? true,
         audio_noise_suppression: settings?.audio_noise_suppression ?? true,
+        audio_ai_noise_suppression: settings?.audio_ai_noise_suppression ?? true,
         voice_activity_detection: settings?.voice_activity_detection ?? true,
         enable_voice_join_sounds: settings?.enable_voice_join_sounds ?? true,
       };
@@ -76,6 +79,7 @@ class DMVoiceServiceClass {
         audio_auto_gain_control: true,
         audio_echo_cancellation: true,
         audio_noise_suppression: true,
+        audio_ai_noise_suppression: true,
         voice_activity_detection: true,
         enable_voice_join_sounds: true,
       };
@@ -106,6 +110,8 @@ class DMVoiceServiceClass {
 
       console.log('[DMVoiceService] Got token, connecting to LiveKit at:', url);
 
+      // When AI NS is enabled, disable browser's built-in noiseSuppression (DTLN replaces it)
+      const useAiNs = settings.audio_ai_noise_suppression && noiseSuppressionService.checkCapabilities().supported;
       this.room = new Room({
         adaptiveStream: true,
         dynacast: true,
@@ -113,7 +119,7 @@ class DMVoiceServiceClass {
           deviceId: settings.audio_input_device_id || undefined,
           autoGainControl: settings.audio_auto_gain_control,
           echoCancellation: settings.audio_echo_cancellation,
-          noiseSuppression: settings.audio_noise_suppression,
+          noiseSuppression: useAiNs ? false : settings.audio_noise_suppression,
         },
         publishDefaults: {
           audioPreset: { maxBitrate: 64000 },
@@ -176,8 +182,32 @@ class DMVoiceServiceClass {
       }
 
       if (!voiceStore.isMuted()) {
-        await this.room.localParticipant.setMicrophoneEnabled(true);
-        console.log('[DMVoiceService] Microphone enabled');
+        if (useAiNs) {
+          // AI Noise Suppression: capture mic, process through DTLN, publish clean track
+          try {
+            await noiseSuppressionService.loadModel();
+            const rawStream = await navigator.mediaDevices.getUserMedia({
+              audio: {
+                deviceId: settings.audio_input_device_id || undefined,
+                autoGainControl: settings.audio_auto_gain_control,
+                echoCancellation: settings.audio_echo_cancellation,
+                noiseSuppression: false,
+              },
+            });
+            const cleanStream = await noiseSuppressionService.processOutboundTrack(rawStream);
+            const cleanTrack = cleanStream.getAudioTracks()[0];
+            await this.room!.localParticipant.publishTrack(cleanTrack, {
+              source: Track.Source.Microphone,
+            });
+            console.log('[DMVoiceService] Microphone enabled with AI noise suppression');
+          } catch (nsErr) {
+            console.warn('[DMVoiceService] AI NS failed, falling back to browser NS:', nsErr);
+            await this.room!.localParticipant.setMicrophoneEnabled(true);
+          }
+        } else {
+          await this.room.localParticipant.setMicrophoneEnabled(true);
+          console.log('[DMVoiceService] Microphone enabled');
+        }
       }
 
       this.startConnectionQualityMonitoring();
@@ -210,6 +240,9 @@ class DMVoiceServiceClass {
         await this.stopScreenShare();
       }
     } catch {}
+
+    // Tear down AI noise suppression pipelines
+    await noiseSuppressionService.destroy();
 
     this.playSound('leave');
 
@@ -460,6 +493,7 @@ class DMVoiceServiceClass {
         if (this.currentDMChannelId) {
           api.post(`/dms/${this.currentDMChannelId}/voice/leave`, {}).catch(() => {});
         }
+        noiseSuppressionService.destroy();
         this.clearCallTimers();
         this.stopConnectionQualityMonitoring();
         this.cleanupAudioElements();
@@ -476,6 +510,7 @@ class DMVoiceServiceClass {
       if (this.currentDMChannelId) {
         api.post(`/dms/${this.currentDMChannelId}/voice/leave`, {}).catch(() => {});
       }
+      noiseSuppressionService.destroy();
       this.clearCallTimers();
       this.stopConnectionQualityMonitoring();
       this.cleanupAudioElements();
