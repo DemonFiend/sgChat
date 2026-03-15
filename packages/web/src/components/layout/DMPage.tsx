@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import { DMSidebar, type Friend, type FriendRequest, type SearchResult } from './DMSidebar';
 import { DMChatPanel, type DMMessage } from './DMChatPanel';
@@ -71,6 +71,8 @@ export function DMPage({ serverId }: DMPageProps) {
 
   const currentUserId = authStore.getState().user?.id || '';
   const voiceConnectionState = useVoiceStore((s) => s.connectionState);
+  const voiceConnectionStateRef = useRef(voiceConnectionState);
+  voiceConnectionStateRef.current = voiceConnectionState;
   const ignoredUsers = useIgnoredUsersStore((s) => s.ignoredUsers);
   const fetchIgnored = useIgnoredUsersStore((s) => s.fetchIgnored);
   const ignoreUser = useIgnoredUsersStore((s) => s.ignoreUser);
@@ -258,7 +260,7 @@ export function DMPage({ serverId }: DMPageProps) {
       if (!data.is_dm_call || !data.dm_channel_id || !data.user) return;
       // Ignore own joins or if already in a call
       if (data.user.id === currentUserId) return;
-      if (voiceConnectionState === 'connected') return;
+      if (voiceConnectionStateRef.current === 'connected') return;
 
       setIncomingCall({
         callerId: data.user.id,
@@ -306,7 +308,7 @@ export function DMPage({ serverId }: DMPageProps) {
       socketService.off('user.block', handleUserBlock as (data: unknown) => void);
       socketService.off('voice.join', handleVoiceJoin as (data: unknown) => void);
     };
-  }, [selectedFriend?.id, voiceConnectionState, currentUserId, friends]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedFriend?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSelectFriend = useCallback(async (friend: Friend) => {
     setSelectedFriend(friend);
