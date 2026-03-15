@@ -1,4 +1,4 @@
-import { Room, RoomEvent, Track, RemoteTrack, RemoteParticipant, ConnectionState, ConnectionQuality } from 'livekit-client';
+import { Room, RoomEvent, Track, RemoteTrack, RemoteParticipant, ConnectionState, ConnectionQuality, RemoteTrackPublication } from 'livekit-client';
 import { api } from '@/api';
 import { voiceStore, type VoicePermissions, type ConnectionQualityLevel, type ScreenShareQuality } from '@/stores/voice';
 import { socketService } from './socket';
@@ -32,6 +32,8 @@ interface VoiceSettings {
 class DMVoiceServiceClass {
   private room: Room | null = null;
   private audioElements: Map<string, HTMLAudioElement> = new Map();
+  private videoElements: Map<string, HTMLVideoElement> = new Map();
+  private screenShareElements: Map<string, HTMLVideoElement> = new Map();
   private audioContainer: HTMLElement | null = null;
   private voiceSettings: VoiceSettings | null = null;
   private outputVolume: number = 100;
@@ -333,19 +335,31 @@ class DMVoiceServiceClass {
   private setupRoomEventListeners(): void {
     if (!this.room) return;
 
-    this.room.on(RoomEvent.TrackSubscribed, (track, _publication, participant) => {
-      console.log('[DMVoiceService] Track subscribed:', track.kind, 'from', participant.identity);
+    this.room.on(RoomEvent.TrackSubscribed, (track, publication: RemoteTrackPublication, participant) => {
+      console.log('[DMVoiceService] Track subscribed:', track.kind, track.source, 'from', participant.identity);
 
       if (track.kind === Track.Kind.Audio) {
         this.attachAudioTrack(track as RemoteTrack, participant);
+      } else if (track.kind === Track.Kind.Video) {
+        if (track.source === Track.Source.ScreenShare) {
+          this.attachScreenShareTrack(track as RemoteTrack, participant);
+        } else {
+          this.attachVideoTrack(track as RemoteTrack, participant);
+        }
       }
     });
 
-    this.room.on(RoomEvent.TrackUnsubscribed, (track, _publication, participant) => {
-      console.log('[DMVoiceService] Track unsubscribed:', track.kind, 'from', participant.identity);
+    this.room.on(RoomEvent.TrackUnsubscribed, (track, _publication: RemoteTrackPublication, participant) => {
+      console.log('[DMVoiceService] Track unsubscribed:', track.kind, track.source, 'from', participant.identity);
 
       if (track.kind === Track.Kind.Audio) {
         this.detachAudioTrack(participant.identity);
+      } else if (track.kind === Track.Kind.Video) {
+        if (track.source === Track.Source.ScreenShare) {
+          this.detachScreenShareTrack(participant.identity);
+        } else {
+          this.detachVideoTrack(participant.identity);
+        }
       }
     });
 
@@ -356,6 +370,8 @@ class DMVoiceServiceClass {
     this.room.on(RoomEvent.ParticipantDisconnected, (participant) => {
       console.log('[DMVoiceService] Participant disconnected:', participant.identity);
       this.detachAudioTrack(participant.identity);
+      this.detachVideoTrack(participant.identity);
+      this.detachScreenShareTrack(participant.identity);
     });
 
     this.room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
@@ -416,6 +432,66 @@ class DMVoiceServiceClass {
     }
   }
 
+  private attachVideoTrack(track: RemoteTrack, participant: RemoteParticipant): void {
+    const video = document.createElement('video');
+    video.autoplay = true;
+    video.playsInline = true;
+    video.muted = true; // Remote video elements need muted for autoplay
+    track.attach(video);
+    this.videoElements.set(participant.identity, video);
+    voiceStore.addRemoteVideoUser(participant.identity);
+    console.log('[DMVoiceService] Video track attached for:', participant.identity);
+  }
+
+  private detachVideoTrack(participantIdentity: string): void {
+    const video = this.videoElements.get(participantIdentity);
+    if (video) {
+      video.pause();
+      video.srcObject = null;
+      video.remove();
+      this.videoElements.delete(participantIdentity);
+      voiceStore.removeRemoteVideoUser(participantIdentity);
+      console.log('[DMVoiceService] Video track detached for:', participantIdentity);
+    }
+  }
+
+  private attachScreenShareTrack(track: RemoteTrack, participant: RemoteParticipant): void {
+    const video = document.createElement('video');
+    video.autoplay = true;
+    video.playsInline = true;
+    video.muted = true;
+    track.attach(video);
+    this.screenShareElements.set(participant.identity, video);
+    voiceStore.setRemoteScreenShare(participant.identity);
+    console.log('[DMVoiceService] Screen share track attached for:', participant.identity);
+  }
+
+  private detachScreenShareTrack(participantIdentity: string): void {
+    const video = this.screenShareElements.get(participantIdentity);
+    if (video) {
+      video.pause();
+      video.srcObject = null;
+      video.remove();
+      this.screenShareElements.delete(participantIdentity);
+      voiceStore.setRemoteScreenShare(null);
+      console.log('[DMVoiceService] Screen share track detached for:', participantIdentity);
+    }
+  }
+
+  getRemoteVideoElement(userId: string): HTMLVideoElement | null {
+    return this.videoElements.get(userId) || null;
+  }
+
+  getRemoteScreenShareElement(userId: string): HTMLVideoElement | null {
+    return this.screenShareElements.get(userId) || null;
+  }
+
+  getLocalVideoTrack(): MediaStreamTrack | null {
+    if (!this.room?.localParticipant) return null;
+    const pub = this.room.localParticipant.getTrackPublication(Track.Source.Camera);
+    return pub?.track?.mediaStreamTrack || null;
+  }
+
   private cleanupAudioElements(): void {
     this.audioElements.forEach((audio) => {
       audio.pause();
@@ -423,7 +499,20 @@ class DMVoiceServiceClass {
       audio.remove();
     });
     this.audioElements.clear();
-    console.log('[DMVoiceService] All audio elements cleaned up');
+    this.videoElements.forEach((video) => {
+      video.pause();
+      video.srcObject = null;
+      video.remove();
+    });
+    this.videoElements.clear();
+    this.screenShareElements.forEach((video) => {
+      video.pause();
+      video.srcObject = null;
+      video.remove();
+    });
+    this.screenShareElements.clear();
+    voiceStore.setRemoteScreenShare(null);
+    console.log('[DMVoiceService] All media elements cleaned up');
   }
 
   private startConnectionQualityMonitoring(): void {

@@ -1,6 +1,6 @@
 import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/auth.js';
-import { db } from '../lib/db.js';
+import { db, sql } from '../lib/db.js';
 import { createServer, handleMemberJoin, handleMemberLeave, createRoleFromTemplate, generateInviteCode } from '../services/server.js';
 import {
   calculatePermissions,
@@ -1031,36 +1031,42 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
     onRequest: [authenticate],
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
-      const { limit = '50', before } = request.query as { limit?: string; before?: string };
+      const { limit = '50', before, target_id, target_type, actions } = request.query as {
+        limit?: string;
+        before?: string;
+        target_id?: string;
+        target_type?: string;
+        actions?: string;
+      };
 
-      const perms = await calculatePermissions(request.user!.id, id);
-      if (!hasPermission(perms.server, ServerPermissions.VIEW_AUDIT_LOG)) {
-        return forbidden(reply, 'Missing VIEW_AUDIT_LOG permission');
+      // Allow users to view their own audit history without VIEW_AUDIT_LOG permission
+      const isSelfQuery = target_id === request.user!.id;
+      if (!isSelfQuery) {
+        const perms = await calculatePermissions(request.user!.id, id);
+        if (!hasPermission(perms.server, ServerPermissions.VIEW_AUDIT_LOG)) {
+          return forbidden(reply, 'Missing VIEW_AUDIT_LOG permission');
+        }
       }
 
       const limitNum = Math.min(parseInt(limit, 10) || 50, 100);
+      const actionsArr = actions ? actions.split(',').map(a => a.trim()) : null;
 
-      let entries;
-      if (before) {
-        entries = await db.sql`
-          SELECT al.*, u.username as actor_username
-          FROM audit_log al
-          LEFT JOIN users u ON u.id = al.user_id
-          WHERE al.server_id = ${id}
-            AND al.created_at < ${new Date(before)}
-          ORDER BY al.created_at DESC
-          LIMIT ${limitNum}
-        `;
-      } else {
-        entries = await db.sql`
-          SELECT al.*, u.username as actor_username
-          FROM audit_log al
-          LEFT JOIN users u ON u.id = al.user_id
-          WHERE al.server_id = ${id}
-          ORDER BY al.created_at DESC
-          LIMIT ${limitNum}
-        `;
-      }
+      const conditions = [sql`al.server_id = ${id}`];
+      if (before) conditions.push(sql`al.created_at < ${new Date(before)}`);
+      if (target_id) conditions.push(sql`al.target_id = ${target_id}`);
+      if (target_type) conditions.push(sql`al.target_type = ${target_type}`);
+      if (actionsArr) conditions.push(sql`al.action = ANY(${actionsArr})`);
+
+      const whereClause = conditions.reduce((acc, cond, i) => i === 0 ? cond : sql`${acc} AND ${cond}`);
+
+      const entries = await sql`
+        SELECT al.*, u.username as actor_username
+        FROM audit_log al
+        LEFT JOIN users u ON u.id = al.user_id
+        WHERE ${whereClause}
+        ORDER BY al.created_at DESC
+        LIMIT ${limitNum}
+      `;
 
       return entries;
     },

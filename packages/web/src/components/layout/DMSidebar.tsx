@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Avatar } from '@/components/ui/Avatar';
 import { api } from '@/api';
+import { authStore } from '@/stores/auth';
 
 export interface Friend {
   id: string;
@@ -138,12 +139,17 @@ export function DMSidebar({
     }
   };
 
-  // Fetch audit log when history tab is selected
+  // Fetch audit log when history tab is selected (only actions against current user)
   useEffect(() => {
     if (activeTab === 'history' && auditLog.length === 0) {
+      const currentUserId = authStore.getState().user?.id;
+      if (!currentUserId) return;
       setAuditLoading(true);
+      const actions = 'member_warn,member_timeout,member_kick,member_ban';
       api.get<{ id: string }>('/server').then(server => {
-        return api.get<AuditLogEntry[]>(`/servers/${server.id}/audit-log?limit=50`);
+        return api.get<AuditLogEntry[]>(
+          `/servers/${server.id}/audit-log?limit=50&target_id=${currentUserId}&target_type=member&actions=${actions}`,
+        );
       }).then(entries => {
         setAuditLog(entries || []);
       }).catch(err => {
@@ -502,7 +508,7 @@ export function DMSidebar({
         {activeTab === 'history' && (
           <div className="p-2">
             <div className="text-xs font-semibold text-text-muted uppercase px-2 py-1">
-              Admin History
+              Actions Against You
             </div>
             {auditLoading ? (
               <div className="flex items-center justify-center py-8">

@@ -4,7 +4,9 @@ import { MessageContent } from '@/components/ui/MessageContent';
 import { BendyLine } from '@/components/ui/BendyLine';
 import { GifPicker } from '@/components/ui/GifPicker';
 import { ReactionPicker } from '@/components/ui/ReactionPicker';
-import { DMVoiceControls } from '@/components/ui/DMVoiceControls';
+import { DMVoiceControls, DMCallStatusBar } from '@/components/ui/DMVoiceControls';
+import { DMCallArea } from '@/components/ui/DMCallArea';
+import { useVoiceStore } from '@/stores/voice';
 import {
   MentionAutocomplete,
   buildAtItems,
@@ -50,6 +52,10 @@ export function DMChatPanel({
   isTyping: friendIsTyping,
   serverId,
 }: DMChatPanelProps) {
+  const connectionState = useVoiceStore((s) => s.connectionState);
+  const currentChannelId = useVoiceStore((s) => s.currentChannelId);
+  const isInDMCall = connectionState === 'connected' && currentChannelId === (friend?.dm_channel_id || '');
+
   const [messageInput, setMessageInput] = useState('');
   const [friendLocalTime, setFriendLocalTime] = useState<string | null>(null);
   const [showTimeTooltip, setShowTimeTooltip] = useState(false);
@@ -392,6 +398,22 @@ export function DMChatPanel({
         </header>
         <BendyLine variant="horizontal" direction="down" className="absolute bottom-0 left-0 right-0 translate-y-1/2" />
       </div>
+
+      {/* Call Area (video/screen share/audio indicator) */}
+      {isInDMCall && friend && (
+        <DMCallArea
+          dmChannelId={friend.dm_channel_id || ''}
+          friendName={friend.display_name || friend.username}
+        />
+      )}
+
+      {/* In-Call Controls Bar */}
+      {isInDMCall && friend && (
+        <DMCallStatusBar
+          dmChannelId={friend.dm_channel_id || ''}
+          friendName={friend.display_name || friend.username}
+        />
+      )}
 
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto scrollbar-thin p-4 mt-2">

@@ -62,6 +62,8 @@ export interface VoiceState {
   screenShare: ScreenShareState;
   connectionQuality: ConnectionQualityState;
   error: string | null;
+  remoteScreenShareUserId: string | null;
+  remoteVideoUsers: string[];
 }
 
 interface VoiceActions {
@@ -83,6 +85,9 @@ interface VoiceActions {
   setScreenSharing: (isSharing: boolean) => void;
   setScreenShareQuality: (quality: ScreenShareQuality) => void;
   setConnectionQuality: (quality: ConnectionQualityState) => void;
+  setRemoteScreenShare: (userId: string | null) => void;
+  addRemoteVideoUser: (userId: string) => void;
+  removeRemoteVideoUser: (userId: string) => void;
   // Participant management
   addParticipant: (channelId: string, user: { id: string; username: string; display_name?: string | null; avatar_url?: string | null; is_streaming?: boolean }) => void;
   removeParticipant: (channelId: string, userId: string) => void;
@@ -103,6 +108,8 @@ export const useVoiceStore = create<VoiceState & VoiceActions>((set, get) => ({
   screenShare: { isSharing: false, quality: 'standard' },
   connectionQuality: { level: 'unknown', ping: null, jitter: null, packetLoss: null },
   error: null,
+  remoteScreenShareUserId: null,
+  remoteVideoUsers: [],
 
   isConnected: () => get().connectionState === 'connected',
   isConnecting: () => get().connectionState === 'connecting',
@@ -120,6 +127,8 @@ export const useVoiceStore = create<VoiceState & VoiceActions>((set, get) => ({
     screenShare: { isSharing: false, quality: 'standard' },
     connectionQuality: { level: 'unknown', ping: null, jitter: null, packetLoss: null },
     error: null,
+    remoteScreenShareUserId: null,
+    remoteVideoUsers: [],
   }),
   setError: (error) => set({ connectionState: 'error', error }),
   setReconnecting: () => set({ connectionState: 'reconnecting' }),
@@ -131,6 +140,13 @@ export const useVoiceStore = create<VoiceState & VoiceActions>((set, get) => ({
   setScreenSharing: (isSharing) => set((s) => ({ screenShare: { ...s.screenShare, isSharing } })),
   setScreenShareQuality: (quality) => set((s) => ({ screenShare: { ...s.screenShare, quality } })),
   setConnectionQuality: (quality) => set({ connectionQuality: quality }),
+  setRemoteScreenShare: (userId) => set({ remoteScreenShareUserId: userId }),
+  addRemoteVideoUser: (userId) => set((s) => ({
+    remoteVideoUsers: s.remoteVideoUsers.includes(userId) ? s.remoteVideoUsers : [...s.remoteVideoUsers, userId],
+  })),
+  removeRemoteVideoUser: (userId) => set((s) => ({
+    remoteVideoUsers: s.remoteVideoUsers.filter((id) => id !== userId),
+  })),
 
   addParticipant: (channelId, user) => set((s) => {
     const channelParticipants = [...(s.participants[channelId] || [])];
@@ -232,6 +248,9 @@ export const voiceStore = {
   setScreenSharing: (isSharing: boolean) => useVoiceStore.getState().setScreenSharing(isSharing),
   setScreenShareQuality: (quality: ScreenShareQuality) => useVoiceStore.getState().setScreenShareQuality(quality),
   setConnectionQuality: (quality: ConnectionQualityState) => useVoiceStore.getState().setConnectionQuality(quality),
+  setRemoteScreenShare: (userId: string | null) => useVoiceStore.getState().setRemoteScreenShare(userId),
+  addRemoteVideoUser: (userId: string) => useVoiceStore.getState().addRemoteVideoUser(userId),
+  removeRemoteVideoUser: (userId: string) => useVoiceStore.getState().removeRemoteVideoUser(userId),
   addParticipant: (channelId: string, user: { id: string; username: string; display_name?: string | null; avatar_url?: string | null; is_streaming?: boolean }) => useVoiceStore.getState().addParticipant(channelId, user),
   removeParticipant: (channelId: string, userId: string) => useVoiceStore.getState().removeParticipant(channelId, userId),
   updateParticipantState: (channelId: string, userId: string, updates: { isMuted?: boolean; isDeafened?: boolean; isSpeaking?: boolean; isStreaming?: boolean; isServerMuted?: boolean; isServerDeafened?: boolean; voiceStatus?: string }) => useVoiceStore.getState().updateParticipantState(channelId, userId, updates),

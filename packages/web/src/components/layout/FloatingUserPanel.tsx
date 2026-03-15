@@ -147,7 +147,7 @@ export function FloatingUserPanel({
   };
 
   return (
-    <div className="fixed bottom-4 right-4 z-40">
+    <div className="fixed bottom-4 left-4 z-40">
       <div className="bg-bg-secondary rounded-2xl shadow-xl border border-bg-tertiary p-3">
         {/* Action buttons row */}
         <div className="flex justify-end gap-1.5 mb-2">
@@ -189,7 +189,7 @@ export function FloatingUserPanel({
                 </svg>
               </button>
               {showTimeTooltip === 'local' && (
-                <div className="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-bg-floating text-text-primary text-sm px-3 py-2 rounded-lg shadow-lg whitespace-nowrap border border-bg-tertiary">
+                <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 bg-bg-floating text-text-primary text-sm px-3 py-2 rounded-lg shadow-lg whitespace-nowrap border border-bg-tertiary">
                   <div className="text-text-muted text-xs mb-1">Local Time</div>
                   <div className="font-mono font-medium">{formatTimeForZone(userTimezone)}</div>
                 </div>
@@ -209,7 +209,7 @@ export function FloatingUserPanel({
                 </svg>
               </button>
               {showTimeTooltip === 'server' && (
-                <div className="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-bg-floating text-text-primary text-sm px-3 py-2 rounded-lg shadow-lg whitespace-nowrap border border-bg-tertiary">
+                <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 bg-bg-floating text-text-primary text-sm px-3 py-2 rounded-lg shadow-lg whitespace-nowrap border border-bg-tertiary">
                   <div className="text-text-muted text-xs mb-1">Server Time</div>
                   <div className="font-mono font-medium">{formatTimeForZone(serverTimezone)}</div>
                 </div>
@@ -238,7 +238,7 @@ export function FloatingUserPanel({
       {showStatusPicker && createPortal(
         <div className="fixed inset-0 z-50" onClick={() => setShowStatusPicker(false)}>
           <div
-            className="fixed bottom-24 right-4 w-72 bg-bg-secondary rounded-lg shadow-xl border border-bg-tertiary overflow-hidden"
+            className="fixed bottom-24 left-4 w-72 bg-bg-secondary rounded-lg shadow-xl border border-bg-tertiary overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}

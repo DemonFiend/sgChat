@@ -23,9 +23,10 @@ class SoundServiceClass {
     enable_voice_join_sounds: true,
     audio_output_volume: 100,
   };
-  
+
   private audioCache: Map<SoundType, HTMLAudioElement> = new Map();
   private settingsLoaded: boolean = false;
+  private ringtoneAudio: HTMLAudioElement | null = null;
 
   /**
    * Load user's sound settings from the server
@@ -129,6 +130,38 @@ class SoundServiceClass {
    */
   playNotification(): void {
     this.play('notification');
+  }
+
+  /**
+   * Play a looping ringtone for incoming calls
+   */
+  async playRingtone(): Promise<void> {
+    this.stopRingtone();
+    if (!this.settingsLoaded) {
+      await this.loadSettings();
+    }
+    if (!this.settings.enable_sounds) return;
+
+    try {
+      // Use notification sound as ringtone, looped
+      this.ringtoneAudio = new Audio(SOUNDS.notification);
+      this.ringtoneAudio.loop = true;
+      this.ringtoneAudio.volume = (this.settings.audio_output_volume / 100) * 0.7;
+      await this.ringtoneAudio.play();
+    } catch (err) {
+      console.debug('[SoundService] Could not play ringtone:', err);
+    }
+  }
+
+  /**
+   * Stop the ringtone
+   */
+  stopRingtone(): void {
+    if (this.ringtoneAudio) {
+      this.ringtoneAudio.pause();
+      this.ringtoneAudio.currentTime = 0;
+      this.ringtoneAudio = null;
+    }
   }
 
   /**
