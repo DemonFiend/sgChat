@@ -198,45 +198,40 @@ class DMVoiceServiceClass {
       return;
     }
 
+    console.log('[DMVoiceService] Leaving DM voice call:', dmChannelId);
+
+    // Clean up timers and state immediately
+    this.stopConnectionQualityMonitoring();
+    this.clearCallTimers();
+    this.remoteParticipantJoined = false;
+
     try {
-      console.log('[DMVoiceService] Leaving DM voice call:', dmChannelId);
-
-      this.stopConnectionQualityMonitoring();
-      this.clearCallTimers();
-      this.remoteParticipantJoined = false;
-
       if (voiceStore.isScreenSharing()) {
         await this.stopScreenShare();
       }
+    } catch {}
 
-      this.playSound('leave');
+    this.playSound('leave');
 
-      if (dmChannelId) {
-        socketService.emit('dm:voice:leave', { dm_channel_id: dmChannelId });
-        try {
-          await api.post(`/dms/${dmChannelId}/voice/leave`, {});
-        } catch (err) {
-          console.warn('[DMVoiceService] Failed to notify server of leave:', err);
-        }
-      }
+    // Disconnect from LiveKit
+    try {
+      this.room.disconnect();
+    } catch {}
 
-      await this.room.disconnect();
-      this.room = null;
-      this.currentDMChannelId = null;
+    this.room = null;
+    this.currentDMChannelId = null;
+    this.cleanupAudioElements();
+    voiceStore.setDisconnected();
 
-      this.cleanupAudioElements();
-      voiceStore.setDisconnected();
-
-      console.log('[DMVoiceService] Disconnected from DM voice call');
-    } catch (err) {
-      console.error('[DMVoiceService] Error leaving DM voice call:', err);
-      this.room = null;
-      this.currentDMChannelId = null;
-      this.stopConnectionQualityMonitoring();
-      this.clearCallTimers();
-      this.remoteParticipantJoined = false;
-      voiceStore.setDisconnected();
+    // API call is best-effort (after UI is already cleaned up)
+    if (dmChannelId) {
+      socketService.emit('dm:voice:leave', { dm_channel_id: dmChannelId });
+      api.post(`/dms/${dmChannelId}/voice/leave`, {}).catch((err) => {
+        console.warn('[DMVoiceService] Failed to notify server of leave:', err);
+      });
     }
+
+    console.log('[DMVoiceService] Disconnected from DM voice call');
   }
 
   async toggleMute(): Promise<void> {
@@ -437,13 +432,13 @@ class DMVoiceServiceClass {
       if (this.remoteParticipantJoined) {
         voiceStore.setRemoteParticipantLeft(true);
 
-        // Auto-leave after 60s if remote doesn't rejoin
+        // Auto-leave after 5 minutes if remote doesn't rejoin
         this.autoLeaveAfterRemoteLeftTimerId = setTimeout(() => {
           if (voiceStore.remoteParticipantLeft()) {
-            console.log('[DMVoiceService] Auto-leaving: remote user left and did not rejoin');
+            console.log('[DMVoiceService] Auto-leaving: remote user left 5 minutes ago');
             this.leave();
           }
-        }, 60_000);
+        }, 300_000);
       }
     });
 
@@ -461,15 +456,33 @@ class DMVoiceServiceClass {
       if (state === ConnectionState.Reconnecting) {
         voiceStore.setReconnecting();
       } else if (state === ConnectionState.Disconnected) {
-        voiceStore.setDisconnected();
+        // Notify server to clean up Redis state
+        if (this.currentDMChannelId) {
+          api.post(`/dms/${this.currentDMChannelId}/voice/leave`, {}).catch(() => {});
+        }
+        this.clearCallTimers();
+        this.stopConnectionQualityMonitoring();
         this.cleanupAudioElements();
+        voiceStore.setDisconnected();
+        this.currentDMChannelId = null;
+        this.remoteParticipantJoined = false;
+        this.room = null;
       }
     });
 
     this.room.on(RoomEvent.Disconnected, (reason) => {
       console.log('[DMVoiceService] Disconnected:', reason);
-      voiceStore.setDisconnected();
+      // Notify server to clean up Redis state
+      if (this.currentDMChannelId) {
+        api.post(`/dms/${this.currentDMChannelId}/voice/leave`, {}).catch(() => {});
+      }
+      this.clearCallTimers();
+      this.stopConnectionQualityMonitoring();
       this.cleanupAudioElements();
+      voiceStore.setDisconnected();
+      this.currentDMChannelId = null;
+      this.remoteParticipantJoined = false;
+      this.room = null;
     });
   }
 

@@ -8,6 +8,7 @@ import { DMVoiceControls, DMCallStatusBar } from '@/components/ui/DMVoiceControl
 import { DMCallArea } from '@/components/ui/DMCallArea';
 import { useVoiceStore } from '@/stores/voice';
 import { dmVoiceService } from '@/lib/dmVoiceService';
+import { socketService } from '@/lib/socket';
 import {
   MentionAutocomplete,
   buildAtItems,
@@ -58,23 +59,72 @@ export function DMChatPanel({
   const currentChannelId = useVoiceStore((s) => s.currentChannelId);
   const incomingDMCall = useVoiceStore((s) => s.incomingDMCall);
   const isInDMCall = connectionState === 'connected' && currentChannelId === (friend?.dm_channel_id || '');
-  const showIncomingCallBanner = !!incomingDMCall && incomingDMCall.dmChannelId === (friend?.dm_channel_id || '') && !isInDMCall;
+  const [friendInCall, setFriendInCall] = useState(false);
+
+  // Check if friend is already in a DM voice call when switching to this DM
+  useEffect(() => {
+    if (!friend?.dm_channel_id) { setFriendInCall(false); return; }
+    setFriendInCall(false);
+    api.get<{ is_active: boolean; participants: Array<{ user_id: string }> }>(
+      `/dms/${friend.dm_channel_id}/voice/status`
+    ).then(res => {
+      const otherInCall = res.participants.some(p => p.user_id !== currentUserId);
+      setFriendInCall(otherInCall);
+    }).catch(() => {});
+  }, [friend?.dm_channel_id, currentUserId]);
+
+  // Listen for real-time voice join/leave to update banner
+  useEffect(() => {
+    if (!friend?.dm_channel_id) return;
+    const handleVoiceJoin = (data: { is_dm_call?: boolean; dm_channel_id?: string; user?: { id: string } }) => {
+      if (data.is_dm_call && data.dm_channel_id === friend.dm_channel_id && data.user?.id !== currentUserId) {
+        setFriendInCall(true);
+      }
+    };
+    const handleVoiceLeave = (data: { is_dm_call?: boolean; dm_channel_id?: string }) => {
+      if (data.is_dm_call && data.dm_channel_id === friend.dm_channel_id) {
+        setFriendInCall(false);
+      }
+    };
+    socketService.on('voice.join', handleVoiceJoin as (data: unknown) => void);
+    socketService.on('voice.leave', handleVoiceLeave as (data: unknown) => void);
+    return () => {
+      socketService.off('voice.join', handleVoiceJoin as (data: unknown) => void);
+      socketService.off('voice.leave', handleVoiceLeave as (data: unknown) => void);
+    };
+  }, [friend?.dm_channel_id, currentUserId]);
+
+  // Clear friendInCall when user joins the call
+  useEffect(() => {
+    if (isInDMCall) setFriendInCall(false);
+  }, [isInDMCall]);
+
+  const showIncomingCallBanner = !isInDMCall && (
+    (!!incomingDMCall && incomingDMCall.dmChannelId === (friend?.dm_channel_id || '')) ||
+    friendInCall
+  );
 
   const handleJoinFromBanner = useCallback(async () => {
     const incoming = useVoiceStore.getState().incomingDMCall;
-    if (!incoming) return;
-    useVoiceStore.getState().setPendingDMCallInfo({
-      friendId: incoming.callerId,
-      friendName: incoming.callerName,
-      dmChannelId: incoming.dmChannelId,
-    });
+    const dmChannelId = incoming?.dmChannelId || friend?.dm_channel_id;
+    const callerName = incoming?.callerName || friend?.display_name || friend?.username || '';
+    if (!dmChannelId) return;
+
+    if (incoming) {
+      useVoiceStore.getState().setPendingDMCallInfo({
+        friendId: incoming.callerId,
+        friendName: incoming.callerName,
+        dmChannelId: incoming.dmChannelId,
+      });
+    }
     try {
-      await dmVoiceService.join(incoming.dmChannelId, incoming.callerName, true);
+      await dmVoiceService.join(dmChannelId, callerName, true);
     } catch (err) {
       console.error('[DMChatPanel] Failed to join call from banner:', err);
     }
     useVoiceStore.getState().setIncomingDMCall(null);
-  }, []);
+    setFriendInCall(false);
+  }, [friend]);
 
   const [messageInput, setMessageInput] = useState('');
   const [friendLocalTime, setFriendLocalTime] = useState<string | null>(null);
@@ -420,14 +470,14 @@ export function DMChatPanel({
       </div>
 
       {/* Incoming Call Banner */}
-      {showIncomingCallBanner && incomingDMCall && (
+      {showIncomingCallBanner && (
         <div className="flex items-center justify-between px-4 py-3 bg-warning/10 border-b border-warning/30">
           <div className="flex items-center gap-2">
             <svg className="w-5 h-5 text-warning animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
             </svg>
             <span className="text-sm font-medium text-warning">
-              {incomingDMCall.callerName} is calling you
+              {incomingDMCall ? `${incomingDMCall.callerName} is calling you` : `${friend?.display_name || friend?.username} is in a call`}
             </span>
           </div>
           <button
