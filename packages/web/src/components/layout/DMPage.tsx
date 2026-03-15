@@ -270,6 +270,22 @@ export function DMPage({ serverId }: DMPageProps) {
       });
     };
 
+    const handleCallMissed = (data: { id?: string; content?: string; sender_id?: string | null; created_at?: string; system_event?: any; dm_channel_id?: string }) => {
+      if (data.id && data.dm_channel_id && selectedFriend?.dm_channel_id === data.dm_channel_id) {
+        const msg: DMMessage = {
+          id: data.id,
+          content: data.content || '',
+          sender_id: data.sender_id || null,
+          created_at: data.created_at || new Date().toISOString(),
+          system_event: data.system_event || null,
+        };
+        setMessages(prev => {
+          if (prev.some(m => m.id === msg.id)) return prev;
+          return [...prev, msg];
+        });
+      }
+    };
+
     const handleUserBlock = (data: { user_id: string }) => {
       setFriends(prev => prev.filter(f => f.id !== data.user_id));
       setIncomingRequests(prev => prev.filter(r => r.user.id !== data.user_id));
@@ -294,6 +310,7 @@ export function DMPage({ serverId }: DMPageProps) {
     socketService.on('presence.update', handlePresenceUpdate as (data: unknown) => void);
     socketService.on('user.block', handleUserBlock as (data: unknown) => void);
     socketService.on('voice.join', handleVoiceJoin as (data: unknown) => void);
+    socketService.on('dm.call.missed', handleCallMissed as (data: unknown) => void);
 
     return () => {
       socketService.off('friend.request.new', handleFriendRequest as (data: unknown) => void);
@@ -307,6 +324,7 @@ export function DMPage({ serverId }: DMPageProps) {
       socketService.off('presence.update', handlePresenceUpdate as (data: unknown) => void);
       socketService.off('user.block', handleUserBlock as (data: unknown) => void);
       socketService.off('voice.join', handleVoiceJoin as (data: unknown) => void);
+      socketService.off('dm.call.missed', handleCallMissed as (data: unknown) => void);
     };
   }, [selectedFriend?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -567,6 +585,7 @@ export function DMPage({ serverId }: DMPageProps) {
         ignoredUsers={ignoredUsers}
         onIgnoreUser={ignoreUser}
         onUnignoreUser={unignoreUser}
+        incomingCallFromId={incomingCall?.callerId || null}
       />
       <MentionProvider value={dmMentionContext}>
         <DMChatPanel

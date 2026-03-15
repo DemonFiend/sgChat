@@ -13,7 +13,7 @@ JWT_SECRET=<REPLACE_WITH_64_CHAR_RANDOM_STRING>
 JWT_REFRESH_SECRET=<REPLACE_WITH_ANOTHER_64_CHAR_RANDOM_STRING>
 
 # Multiple origins: localhost for dev, domain for production
-CORS_ORIGIN=http://localhost:5174,https://chat.sosiagaming.com
+CORS_ORIGIN=http://localhost:5174,https://chat.yourdomain.com
 
 # Database - Use a strong password
 DATABASE_URL=postgresql://voxcord:<YOUR_DB_PASSWORD>@postgres:5432/voxcord
@@ -26,7 +26,7 @@ REDIS_URL=redis://redis:6379
 # LiveKit - Generate with: openssl rand -hex 16 and openssl rand -base64 32
 LIVEKIT_API_KEY=<YOUR_LIVEKIT_KEY>
 LIVEKIT_API_SECRET=<YOUR_LIVEKIT_SECRET>
-LIVEKIT_URL=wss://chat.sosiagaming.com:3045
+LIVEKIT_URL=wss://chat.yourdomain.com:3045
 
 # MinIO S3 Storage - Use a strong password
 MINIO_ENDPOINT=minio:9000
@@ -34,4 +34,4 @@ MINIO_ACCESS_KEY=voxcord_admin
 MINIO_SECRET_KEY=<YOUR_MINIO_PASSWORD>
 
 # Push Notifications
-NTFY_BASE_URL=http://192.168.2.23:3048
+NTFY_BASE_URL=http://lanip:3048

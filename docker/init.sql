@@ -674,7 +674,7 @@ CREATE TABLE IF NOT EXISTS notifications (
   type TEXT NOT NULL CHECK (type IN (
     'mention', 'reaction', 'role_change', 'invite',
     'announcement', 'friend_request', 'friend_accept',
-    'dm_message', 'system'
+    'dm_message', 'system', 'event_start', 'missed_call'
   )),
   data JSONB NOT NULL DEFAULT '{}',
   priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('low', 'normal', 'high')),

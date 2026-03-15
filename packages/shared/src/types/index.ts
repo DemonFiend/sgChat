@@ -16,7 +16,7 @@ export type MessageStatus = 'sending' | 'sent' | 'received' | 'failed';
 export type ChannelType = 'text' | 'voice' | 'announcement' | 'music' | 'temp_voice_generator' | 'temp_voice';
 
 // System event types
-export type SystemEventType = 'member_join' | 'member_leave' | 'member_online' | 'role_reaction' | 'event_start';
+export type SystemEventType = 'member_join' | 'member_leave' | 'member_online' | 'role_reaction' | 'event_start' | 'dm_call_missed' | 'dm_call_unanswered';
 
 export interface User {
   id: UUID;
@@ -264,7 +264,8 @@ export type NotificationType =
   | 'friend_accept'
   | 'dm_message'
   | 'system'
-  | 'event_start';
+  | 'event_start'
+  | 'missed_call';
 
 export type NotificationPriority = 'low' | 'normal' | 'high';
 
@@ -579,6 +580,7 @@ export type EventType =
   // Voice
   | 'voice.join'
   | 'voice.leave'
+  | 'dm.call.missed'
   | 'voice.state_update'
   | 'voice.force_move'
   | 'voice.force_disconnect'

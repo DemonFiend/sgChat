@@ -90,6 +90,7 @@ interface DMSidebarProps {
   ignoredUsers: IgnoredUser[];
   onIgnoreUser: (userId: string) => void;
   onUnignoreUser: (userId: string) => void;
+  incomingCallFromId?: string | null;
 }
 
 const TABS: { id: SidebarTab; label: string }[] = [
@@ -123,6 +124,7 @@ export function DMSidebar({
   ignoredUsers,
   onIgnoreUser,
   onUnignoreUser,
+  incomingCallFromId,
 }: DMSidebarProps) {
   const [activeTab, setActiveTab] = useState<SidebarTab>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -208,6 +210,13 @@ export function DMSidebar({
           </div>
         )}
       </div>
+      {friend.id === incomingCallFromId && (
+        <div className="flex-shrink-0 animate-pulse" title="Incoming call">
+          <svg className="w-4 h-4 text-status-online" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+          </svg>
+        </div>
+      )}
       {(friend.unread_count ?? 0) > 0 && (
         <span className="bg-danger text-white text-xs font-bold px-2 py-0.5 rounded-full">
           {(friend.unread_count ?? 0) > 9 ? '9+' : friend.unread_count}

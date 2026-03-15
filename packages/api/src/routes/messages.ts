@@ -217,6 +217,7 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
         FROM message_reactions
         WHERE message_id = ${id}
         GROUP BY reaction_type, unicode_emoji, custom_emoji_id
+        ORDER BY MIN(created_at) ASC
       `;
       const reactions = await enrichReactions(rawReactions);
 
@@ -270,6 +271,7 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
                   COUNT(*)::int as count, BOOL_OR(user_id = ${request.user!.id}) as me
                 FROM message_reactions WHERE message_id = ${id}
                 GROUP BY reaction_type, unicode_emoji, custom_emoji_id
+                ORDER BY MIN(created_at) ASC
               `;
               const enrichedReactions = await enrichReactions(updatedReactions);
               await publishEvent({
@@ -322,6 +324,7 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
         FROM message_reactions
         WHERE message_id = ${id}
         GROUP BY reaction_type, unicode_emoji, custom_emoji_id
+        ORDER BY MIN(created_at) ASC
       `;
       const reactions = await enrichReactions(rawReactions2);
 
@@ -399,6 +402,7 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
         FROM message_reactions
         WHERE message_id = ${id}
         GROUP BY reaction_type, unicode_emoji, custom_emoji_id
+        ORDER BY MIN(created_at) ASC
       `;
 
       return enrichReactions(rawReactions3);
@@ -474,6 +478,7 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
         FROM message_reactions mr
         WHERE mr.message_id = ${id}
         GROUP BY mr.reaction_type, mr.unicode_emoji, mr.custom_emoji_id
+        ORDER BY MIN(mr.created_at) ASC
       `;
       const reactions = await enrichReactions(rawReactions4);
 
@@ -512,6 +517,7 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
                   COUNT(*)::int as count, BOOL_OR(user_id = ${request.user!.id}) as me
                 FROM message_reactions WHERE message_id = ${id}
                 GROUP BY reaction_type, unicode_emoji, custom_emoji_id
+                ORDER BY MIN(created_at) ASC
               `;
               const enrichedReactions = await enrichReactions(updatedReactions);
               await publishEvent({
@@ -569,6 +575,7 @@ export const messageRoutes: FastifyPluginAsync = async (fastify) => {
           COUNT(*)::int as count, BOOL_OR(mr.user_id = ${request.user!.id}) as me
         FROM message_reactions mr WHERE mr.message_id = ${id}
         GROUP BY mr.reaction_type, mr.unicode_emoji, mr.custom_emoji_id
+        ORDER BY MIN(mr.created_at) ASC
       `;
       const reactions = await enrichReactions(rawReactions5);
 

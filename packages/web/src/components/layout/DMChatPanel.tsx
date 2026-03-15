@@ -22,9 +22,10 @@ import type { Friend } from './DMSidebar';
 export interface DMMessage {
   id: string;
   content: string;
-  sender_id: string;
+  sender_id: string | null;
   created_at: string;
   edited_at?: string | null;
+  system_event?: { type: string; user_id?: string; username?: string; timestamp?: string } | null;
 }
 
 interface DMChatPanelProps {
@@ -446,6 +447,32 @@ export function DMChatPanel({
 
         {/* Messages */}
         {messages.map((message, index) => {
+          // System messages (missed calls, etc.)
+          if (message.system_event) {
+            const isMissedCall = message.system_event.type === 'dm_call_missed' || message.system_event.type === 'dm_call_unanswered';
+            return (
+              <div key={message.id} className="flex items-center justify-center py-2 gap-2">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-bg-tertiary">
+                  {isMissedCall ? (
+                    <svg className="w-4 h-4 text-danger" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M5 3a2 2 0 00-2 2v1c0 8.284 6.716 15 15 15h1a2 2 0 002-2v-3.28a1 1 0 00-.684-.948l-4.493-1.498a1 1 0 00-1.21.502l-1.13 2.257a11.042 11.042 0 01-5.516-5.517l2.257-1.128a1 1 0 00.502-1.21L9.228 3.683A1 1 0 008.279 3H5z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  )}
+                  <span className={`text-xs italic ${isMissedCall ? 'text-danger' : 'text-text-muted'}`}>
+                    {message.content}
+                  </span>
+                  <span className="text-[10px] text-text-muted">
+                    {formatTime(message.created_at)}
+                  </span>
+                </div>
+              </div>
+            );
+          }
+
           const isMe = message.sender_id === currentUserId;
           const senderName = isMe
             ? (currentUserDisplayName || 'You')

@@ -39,6 +39,9 @@ class DMVoiceServiceClass {
   private outputVolume: number = 100;
   private connectionQualityInterval: ReturnType<typeof setInterval> | null = null;
   private currentDMChannelId: string | null = null;
+  private remoteParticipantJoined = false;
+  private notifyingTimerId: ReturnType<typeof setTimeout> | null = null;
+  private autoKickTimerId: ReturnType<typeof setTimeout> | null = null;
 
   setAudioContainer(container: HTMLElement) {
     this.audioContainer = container;
@@ -137,6 +140,25 @@ class DMVoiceServiceClass {
       };
       voiceStore.setConnected(voicePermissions);
 
+      // Start call phase tracking
+      this.remoteParticipantJoined = false;
+      voiceStore.setDMCallPhase('notifying');
+
+      // After 30s, switch from "Notifying..." to "Waiting..."
+      this.notifyingTimerId = setTimeout(() => {
+        if (!this.remoteParticipantJoined) {
+          voiceStore.setDMCallPhase('waiting');
+        }
+      }, 30_000);
+
+      // After 5min, auto-leave if nobody joined
+      this.autoKickTimerId = setTimeout(() => {
+        if (!this.remoteParticipantJoined) {
+          console.log('[DMVoiceService] Auto-leaving: no one joined after 5 minutes');
+          this.leave();
+        }
+      }, 300_000);
+
       if (!voiceStore.isMuted()) {
         await this.room.localParticipant.setMicrophoneEnabled(true);
         console.log('[DMVoiceService] Microphone enabled');
@@ -164,6 +186,8 @@ class DMVoiceServiceClass {
       console.log('[DMVoiceService] Leaving DM voice call:', dmChannelId);
 
       this.stopConnectionQualityMonitoring();
+      this.clearCallTimers();
+      this.remoteParticipantJoined = false;
 
       if (voiceStore.isScreenSharing()) {
         await this.stopScreenShare();
@@ -193,6 +217,8 @@ class DMVoiceServiceClass {
       this.room = null;
       this.currentDMChannelId = null;
       this.stopConnectionQualityMonitoring();
+      this.clearCallTimers();
+      this.remoteParticipantJoined = false;
       voiceStore.setDisconnected();
     }
   }
@@ -332,6 +358,17 @@ class DMVoiceServiceClass {
     return voiceStore.isConnected() && this.currentDMChannelId === dmChannelId;
   }
 
+  private clearCallTimers(): void {
+    if (this.notifyingTimerId) {
+      clearTimeout(this.notifyingTimerId);
+      this.notifyingTimerId = null;
+    }
+    if (this.autoKickTimerId) {
+      clearTimeout(this.autoKickTimerId);
+      this.autoKickTimerId = null;
+    }
+  }
+
   private setupRoomEventListeners(): void {
     if (!this.room) return;
 
@@ -365,6 +402,9 @@ class DMVoiceServiceClass {
 
     this.room.on(RoomEvent.ParticipantConnected, (participant) => {
       console.log('[DMVoiceService] Participant connected:', participant.identity);
+      this.remoteParticipantJoined = true;
+      this.clearCallTimers();
+      voiceStore.setDMCallPhase('connected');
     });
 
     this.room.on(RoomEvent.ParticipantDisconnected, (participant) => {

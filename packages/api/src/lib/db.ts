@@ -219,7 +219,7 @@ export const db = {
     async create(data: {
       channel_id?: string;
       dm_channel_id?: string;
-      author_id: string;
+      author_id: string | null;
       content: string;
       reply_to_id?: string;
       attachments?: any[];

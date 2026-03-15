@@ -64,6 +64,7 @@ export interface VoiceState {
   error: string | null;
   remoteScreenShareUserId: string | null;
   remoteVideoUsers: string[];
+  dmCallPhase: 'notifying' | 'waiting' | 'connected' | null;
 }
 
 interface VoiceActions {
@@ -88,6 +89,7 @@ interface VoiceActions {
   setRemoteScreenShare: (userId: string | null) => void;
   addRemoteVideoUser: (userId: string) => void;
   removeRemoteVideoUser: (userId: string) => void;
+  setDMCallPhase: (phase: 'notifying' | 'waiting' | 'connected' | null) => void;
   // Participant management
   addParticipant: (channelId: string, user: { id: string; username: string; display_name?: string | null; avatar_url?: string | null; is_streaming?: boolean }) => void;
   removeParticipant: (channelId: string, userId: string) => void;
@@ -110,6 +112,7 @@ export const useVoiceStore = create<VoiceState & VoiceActions>((set, get) => ({
   error: null,
   remoteScreenShareUserId: null,
   remoteVideoUsers: [],
+  dmCallPhase: null,
 
   isConnected: () => get().connectionState === 'connected',
   isConnecting: () => get().connectionState === 'connecting',
@@ -129,6 +132,7 @@ export const useVoiceStore = create<VoiceState & VoiceActions>((set, get) => ({
     error: null,
     remoteScreenShareUserId: null,
     remoteVideoUsers: [],
+    dmCallPhase: null,
   }),
   setError: (error) => set({ connectionState: 'error', error }),
   setReconnecting: () => set({ connectionState: 'reconnecting' }),
@@ -147,6 +151,7 @@ export const useVoiceStore = create<VoiceState & VoiceActions>((set, get) => ({
   removeRemoteVideoUser: (userId) => set((s) => ({
     remoteVideoUsers: s.remoteVideoUsers.filter((id) => id !== userId),
   })),
+  setDMCallPhase: (phase) => set({ dmCallPhase: phase }),
 
   addParticipant: (channelId, user) => set((s) => {
     const channelParticipants = [...(s.participants[channelId] || [])];
@@ -256,4 +261,6 @@ export const voiceStore = {
   updateParticipantState: (channelId: string, userId: string, updates: { isMuted?: boolean; isDeafened?: boolean; isSpeaking?: boolean; isStreaming?: boolean; isServerMuted?: boolean; isServerDeafened?: boolean; voiceStatus?: string }) => useVoiceStore.getState().updateParticipantState(channelId, userId, updates),
   setChannelParticipants: (channelId: string, participants: VoiceParticipant[]) => useVoiceStore.getState().setChannelParticipants(channelId, participants),
   clearChannelParticipants: (channelId: string) => useVoiceStore.getState().clearChannelParticipants(channelId),
+  setDMCallPhase: (phase: 'notifying' | 'waiting' | 'connected' | null) => useVoiceStore.getState().setDMCallPhase(phase),
+  dmCallPhase: () => useVoiceStore.getState().dmCallPhase,
 };

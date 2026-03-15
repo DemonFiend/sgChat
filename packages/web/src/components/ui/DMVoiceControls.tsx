@@ -117,17 +117,28 @@ export function DMCallStatusBar({ dmChannelId, friendName, className }: DMCallSt
   const isVideoOn = useVoiceStore((s) => s.localState.isVideoOn);
   const isScreenSharing = useVoiceStore((s) => s.screenShare.isSharing);
   const error = useVoiceStore((s) => s.error);
+  const dmCallPhase = useVoiceStore((s) => s.dmCallPhase);
 
   const isInDMCall = connectionState === 'connected' && currentChannelId === dmChannelId;
 
   if (!isInDMCall) return null;
 
+  const statusText = dmCallPhase === 'notifying'
+    ? `Notifying ${friendName}...`
+    : dmCallPhase === 'waiting'
+      ? `Waiting for ${friendName}...`
+      : `In Call with ${friendName}`;
+
+  const isWaiting = dmCallPhase === 'notifying' || dmCallPhase === 'waiting';
+  const dotColor = isWaiting ? 'bg-warning' : 'bg-status-online';
+  const textColor = isWaiting ? 'text-warning' : 'text-status-online';
+
   return (
     <div className={clsx('bg-bg-tertiary border-t border-bg-modifier-accent p-3', className)}>
       <div className="flex items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${isSpeaking ? 'bg-status-online animate-pulse' : 'bg-status-online'}`} />
-          <span className="text-xs text-status-online font-medium">In Call with {friendName}</span>
+          <div className={`w-2 h-2 rounded-full ${isWaiting || isSpeaking ? 'animate-pulse' : ''} ${dotColor}`} />
+          <span className={`text-xs font-medium ${textColor}`}>{statusText}</span>
         </div>
         <PingIndicator size="sm" showLabel showTooltip />
       </div>
