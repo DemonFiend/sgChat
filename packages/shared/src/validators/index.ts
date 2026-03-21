@@ -123,6 +123,7 @@ export const createInviteSchema = z.object({
 export const createRoleSchema = z.object({
   name: z.string().min(1).max(100),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).nullable().optional(),
+  position: z.number().int().min(1).max(999).optional(),
   // Accept both string and number for bigint compatibility
   server_permissions: z.union([z.string(), z.number()]).optional(),
   text_permissions: z.union([z.string(), z.number()]).optional(),
@@ -139,7 +140,7 @@ export const createRoleSchema = z.object({
 export const updateRoleSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).nullable().optional(),
-  position: z.number().min(0).optional(),
+  position: z.number().int().min(1).max(999).optional(),
   server_permissions: z.union([z.string(), z.number()]).optional(),
   text_permissions: z.union([z.string(), z.number()]).optional(),
   voice_permissions: z.union([z.string(), z.number()]).optional(),

@@ -2,7 +2,7 @@ import { sql } from '../lib/db.js';
 import { db } from '../lib/db.js';
 import { nanoid } from 'nanoid';
 import { getDefaultPermissions } from './permissions.js';
-import { permissionToString, RoleTemplates, TextPermissions } from '@sgchat/shared';
+import { permissionToString, RoleTemplates, TextPermissions, getNextAvailablePosition } from '@sgchat/shared';
 import { emitEncrypted } from '../lib/socketEmit.js';
 import { createDefaultGroups } from './roleReactions.js';
 
@@ -25,7 +25,7 @@ export async function createServer(
     // 2. Get default permissions from instance settings
     const defaultPerms = await getDefaultPermissions();
 
-    // 3. Create @everyone role (position 0 - lowest)
+    // 3. Create @everyone role (position 1 - lowest band)
     const [everyoneRole] = await tx`
       INSERT INTO roles (
         server_id, name, position, color,
@@ -35,7 +35,7 @@ export async function createServer(
       VALUES (
         ${server.id},
         '@everyone',
-        0,
+        1,
         NULL,
         ${permissionToString(defaultPerms.server)},
         ${permissionToString(defaultPerms.text)},
@@ -47,7 +47,7 @@ export async function createServer(
       RETURNING *
     `;
 
-    // 4. Create default Admin role (highest position)
+    // 4. Create default Admin role (band 900-998)
     const [adminRole] = await tx`
       INSERT INTO roles (
         server_id, name, position, color,
@@ -57,7 +57,7 @@ export async function createServer(
       VALUES (
         ${server.id},
         ${RoleTemplates.ADMIN.name},
-        100,
+        900,
         ${RoleTemplates.ADMIN.color},
         ${permissionToString(RoleTemplates.ADMIN.server)},
         ${permissionToString(RoleTemplates.ADMIN.text)},
@@ -69,7 +69,7 @@ export async function createServer(
       RETURNING *
     `;
 
-    // 5. Create default Moderator role
+    // 5. Create default Moderator role (band 800-899)
     const [moderatorRole] = await tx`
       INSERT INTO roles (
         server_id, name, position, color,
@@ -79,7 +79,7 @@ export async function createServer(
       VALUES (
         ${server.id},
         ${RoleTemplates.MODERATOR.name},
-        50,
+        800,
         ${RoleTemplates.MODERATOR.color},
         ${permissionToString(RoleTemplates.MODERATOR.server)},
         ${permissionToString(RoleTemplates.MODERATOR.text)},
@@ -91,7 +91,7 @@ export async function createServer(
       RETURNING *
     `;
 
-    // 6. Create default Member role
+    // 6. Create default Member role (band 600-799)
     const [memberRole] = await tx`
       INSERT INTO roles (
         server_id, name, position, color,
@@ -101,7 +101,7 @@ export async function createServer(
       VALUES (
         ${server.id},
         ${RoleTemplates.MEMBER.name},
-        10,
+        600,
         ${RoleTemplates.MEMBER.color},
         ${permissionToString(RoleTemplates.MEMBER.server)},
         ${permissionToString(RoleTemplates.MEMBER.text)},
@@ -531,12 +531,14 @@ export async function createRoleFromTemplate(
   // Get the next available position if not specified
   let rolePosition: number = position ?? 0;
   if (position === undefined) {
-    const [maxPos] = await sql`
-      SELECT COALESCE(MAX(position), 0) + 1 as next_position
-      FROM roles
+    const existingRows = await sql`
+      SELECT position FROM roles
       WHERE server_id = ${serverId}
+      AND position >= 276 AND position <= 599
     `;
-    rolePosition = Number(maxPos.next_position) || 0;
+    const existing = new Set(existingRows.map((r: any) => Number(r.position)));
+    const nextPos = getNextAvailablePosition('FREE', existing);
+    rolePosition = nextPos ?? 276;
   }
 
   const [role] = await sql`

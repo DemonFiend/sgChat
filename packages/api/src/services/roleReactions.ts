@@ -1,4 +1,4 @@
-import { ROLES_USER_ID } from '@sgchat/shared';
+import { ROLES_USER_ID, GROUP_NAME_TO_BAND, ROLE_BANDS } from '@sgchat/shared';
 import type { RolePickerGroup } from '@sgchat/shared';
 import { sql } from '../lib/db.js';
 import { publishEvent } from '../lib/eventBus.js';
@@ -476,10 +476,15 @@ export async function createDefaultGroups(
 
       const mappings = [];
 
+      // Determine band-based position start for this group
+      const bandKey = GROUP_NAME_TO_BAND[groupDef.name];
+      const bandStart = bandKey ? ROLE_BANDS[bandKey].min : 1;
+
       for (let i = 0; i < groupDef.mappings.length; i++) {
         const m = groupDef.mappings[i];
+        const rolePosition = bandStart + i;
 
-        // Create the role (position 1, cosmetic only, no permissions)
+        // Create the role (band-based position, cosmetic only, no permissions)
         const [role] = await tx`
           INSERT INTO roles (
             server_id, name, position, color,
@@ -489,12 +494,12 @@ export async function createDefaultGroups(
           VALUES (
             ${serverId},
             ${m.label},
-            1,
+            ${rolePosition},
             ${m.color},
             '0', '0', '0',
             false, false, NULL
           )
-          ON CONFLICT (server_id, name) DO UPDATE SET name = roles.name
+          ON CONFLICT (server_id, name) DO UPDATE SET position = EXCLUDED.position, color = EXCLUDED.color
           RETURNING *
         `;
 

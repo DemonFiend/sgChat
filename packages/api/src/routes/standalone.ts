@@ -19,6 +19,8 @@ import {
   createRoleSchema,
   createInviteSchema,
   type PermissionState,
+  ROLE_BANDS,
+  getNextAvailablePosition,
 } from '@sgchat/shared';
 import { notFound, forbidden, badRequest, conflict, sendError } from '../utils/errors.js';
 import { emitEncrypted } from '../lib/socketEmit.js';
@@ -27,7 +29,7 @@ import { z } from 'zod';
 const updateRoleSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).nullable().optional(),
-  position: z.number().min(0).optional(),
+  position: z.number().int().min(1).max(999).optional(),
   permissions: z.union([
     z.object({
       server: z.number().optional(),
@@ -126,11 +128,41 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
 
       const body = createRoleSchema.parse(request.body);
 
+      // Determine position
+      let rolePosition: number;
+      if (body.position !== undefined) {
+        if (body.position === 1) {
+          return badRequest(reply, 'Position 1 is reserved for @everyone');
+        }
+        if (body.position === 999) {
+          return badRequest(reply, 'Position 999 is reserved');
+        }
+        const [existing] = await db.sql`
+          SELECT 1 FROM roles WHERE server_id = ${server.id} AND position = ${body.position}
+        `;
+        if (existing) {
+          return reply.status(409).send({ error: `Position ${body.position} is already taken` });
+        }
+        rolePosition = body.position;
+      } else {
+        const existingRows = await db.sql`
+          SELECT position FROM roles
+          WHERE server_id = ${server.id} AND position >= ${ROLE_BANDS.FREE.min} AND position <= ${ROLE_BANDS.FREE.max}
+        `;
+        const existing = new Set(existingRows.map((r: any) => Number(r.position)));
+        const nextPos = getNextAvailablePosition('FREE', existing);
+        if (nextPos === null) {
+          return badRequest(reply, 'No available positions in the FREE band (276-599)');
+        }
+        rolePosition = nextPos;
+      }
+
       const [role] = await db.sql`
-        INSERT INTO roles (server_id, name, color, server_permissions, text_permissions, voice_permissions)
+        INSERT INTO roles (server_id, name, position, color, server_permissions, text_permissions, voice_permissions)
         VALUES (
-          ${server.id}, 
-          ${body.name}, 
+          ${server.id},
+          ${body.name},
+          ${rolePosition},
           ${body.color || null},
           ${String(body.server_permissions || 0)},
           ${String(body.text_permissions || 0)},
@@ -182,9 +214,26 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
         if (body.name && body.name !== '@everyone') {
           return badRequest(reply, 'Cannot rename @everyone role');
         }
+        if (body.position !== undefined) {
+          return badRequest(reply, 'Cannot change position of @everyone role');
+        }
       }
 
       const body = updateRoleSchema.parse(request.body);
+
+      // Validate position uniqueness when changing position
+      if (body.position !== undefined) {
+        if (body.position === 999) {
+          return badRequest(reply, 'Position 999 is reserved');
+        }
+        const [existing] = await db.sql`
+          SELECT 1 FROM roles WHERE server_id = ${server.id} AND position = ${body.position} AND id != ${roleId}
+        `;
+        if (existing) {
+          return reply.status(409).send({ error: `Position ${body.position} is already taken` });
+        }
+      }
+
       const updates: Record<string, any> = {};
 
       if (body.name !== undefined) updates.name = body.name;
@@ -287,17 +336,60 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
         return forbidden(reply, 'Missing MANAGE_ROLES permission');
       }
 
-      const { role_ids } = request.body as { role_ids: string[] };
-      if (!role_ids || !Array.isArray(role_ids)) {
-        return badRequest(reply, 'role_ids array required');
-      }
+      const body = request.body as { role_ids?: string[]; roles?: { id: string; position: number }[] };
 
-      // Update positions based on array order (highest position = first in array)
-      for (let i = 0; i < role_ids.length; i++) {
-        await db.sql`
-          UPDATE roles SET position = ${role_ids.length - i}
-          WHERE id = ${role_ids[i]} AND server_id = ${server.id}
-        `;
+      // Support new format: { roles: [{ id, position }] } with explicit positions
+      if (body.roles && Array.isArray(body.roles)) {
+        // Validate no duplicate positions in batch
+        const batchPositions = new Set<number>();
+        for (const roleUpdate of body.roles) {
+          if (batchPositions.has(roleUpdate.position)) {
+            return badRequest(reply, `Duplicate position ${roleUpdate.position} in reorder batch`);
+          }
+          if (roleUpdate.position < 1 || roleUpdate.position > 998) {
+            return badRequest(reply, 'Position must be between 1 and 998');
+          }
+          if (roleUpdate.position === 999) {
+            return badRequest(reply, 'Position 999 is reserved');
+          }
+          batchPositions.add(roleUpdate.position);
+        }
+
+        for (const roleUpdate of body.roles) {
+          const [role] = await db.sql`SELECT * FROM roles WHERE id = ${roleUpdate.id} AND server_id = ${server.id}`;
+          if (!role) return badRequest(reply, `Role ${roleUpdate.id} not found`);
+          if (role.name === '@everyone' && roleUpdate.position !== 1) {
+            return badRequest(reply, '@everyone role must stay at position 1');
+          }
+          // Check for conflicts with roles not in the batch
+          const [conflictRole] = await db.sql`
+            SELECT 1 FROM roles
+            WHERE server_id = ${server.id} AND position = ${roleUpdate.position} AND id != ${roleUpdate.id}
+          `;
+          if (conflictRole) {
+            const batchIds = new Set(body.roles.map((r) => r.id));
+            if (!batchIds.has(roleUpdate.id)) {
+              return reply.status(409).send({ error: `Position ${roleUpdate.position} is already taken` });
+            }
+          }
+        }
+
+        for (const roleUpdate of body.roles) {
+          await db.sql`
+            UPDATE roles SET position = ${roleUpdate.position}
+            WHERE id = ${roleUpdate.id} AND server_id = ${server.id}
+          `;
+        }
+      } else if (body.role_ids && Array.isArray(body.role_ids)) {
+        // Legacy format: { role_ids: string[] } — assign positions based on array order
+        for (let i = 0; i < body.role_ids.length; i++) {
+          await db.sql`
+            UPDATE roles SET position = ${body.role_ids.length - i}
+            WHERE id = ${body.role_ids[i]} AND server_id = ${server.id}
+          `;
+        }
+      } else {
+        return badRequest(reply, 'Either roles array or role_ids array required');
       }
 
       const roles = await db.sql`SELECT * FROM roles WHERE server_id = ${server.id} ORDER BY position DESC`;
@@ -1093,8 +1185,11 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
         ORDER BY position ASC, created_at ASC
       `;
 
-      return {
-        channels: channels.map((c: any) => ({
+      // Enrich voice-type channels with current participants from Redis
+      const { redis } = await import('../lib/redis.js');
+      const voiceTypes = ['voice', 'temp_voice', 'music', 'stage'];
+      const enrichedChannels = await Promise.all(channels.map(async (c: any) => {
+        const base = {
           id: c.id,
           name: c.name,
           type: c.type,
@@ -1107,7 +1202,32 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
           is_temp_channel: c.is_temp_channel || false,
           voice_relay_policy: c.voice_relay_policy || 'master',
           preferred_relay_id: c.preferred_relay_id || null,
-        })),
+        };
+
+        if (!voiceTypes.includes(c.type)) return base;
+
+        const participantIds = await redis.getVoiceChannelParticipants(c.id);
+        if (participantIds.length === 0) return { ...base, voice_participants: [] };
+
+        const voiceParticipants = await Promise.all(participantIds.map(async (uid: string) => {
+          const user = await db.users.findById(uid);
+          const voiceState = await redis.getVoiceState(c.id, uid);
+          return {
+            id: uid,
+            username: user?.username || 'Unknown',
+            display_name: user?.display_name || null,
+            avatar_url: user?.avatar_url || null,
+            is_muted: voiceState?.is_muted || false,
+            is_deafened: voiceState?.is_deafened || false,
+            is_streaming: voiceState?.is_streaming || false,
+          };
+        }));
+
+        return { ...base, voice_participants: voiceParticipants };
+      }));
+
+      return {
+        channels: enrichedChannels,
         categories: categories.map((cat: any) => ({
           id: cat.id,
           name: cat.name,

@@ -338,13 +338,13 @@ export async function getUserHighestRolePosition(
   serverId: string
 ): Promise<number> {
   const [result] = await sql`
-    SELECT COALESCE(MAX(r.position), 0) as max_position
+    SELECT COALESCE(MAX(r.position), 1) as max_position
     FROM roles r
     INNER JOIN member_roles mr ON r.id = mr.role_id
     WHERE mr.member_user_id = ${userId} AND mr.member_server_id = ${serverId}
   `;
 
-  return result?.max_position || 0;
+  return result?.max_position || 1;
 }
 
 /**

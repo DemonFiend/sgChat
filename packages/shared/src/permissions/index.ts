@@ -1052,3 +1052,13 @@ export const VoicePermissionMetadata: Record<keyof typeof VoicePermissions, Perm
     category: 'voice',
   },
 };
+
+// Role band system
+export {
+  ROLE_BANDS,
+  DEFAULT_ROLE_POSITIONS,
+  GROUP_NAME_TO_BAND,
+  getNextAvailablePosition,
+  getBandForPosition,
+} from './roleBands.js';
+export type { RoleBandKey } from './roleBands.js';

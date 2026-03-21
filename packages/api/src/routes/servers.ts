@@ -21,6 +21,8 @@ import {
   toNamedPermissions,
   toNamedPermissionStates,
   permissionToString,
+  ROLE_BANDS,
+  getNextAvailablePosition,
 } from '@sgchat/shared';
 import { notFound, forbidden, conflict, badRequest, sendError } from '../utils/errors.js';
 import { z } from 'zod';
@@ -135,7 +137,34 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       const channels = await db.channels.findByServerId(id);
-      return channels;
+
+      // Enrich voice-type channels with current participants from Redis
+      const { redis } = await import('../lib/redis.js');
+      const voiceTypes = ['voice', 'temp_voice', 'music', 'stage'];
+      const enriched = await Promise.all(channels.map(async (channel: any) => {
+        if (!voiceTypes.includes(channel.type)) return channel;
+
+        const participantIds = await redis.getVoiceChannelParticipants(channel.id);
+        if (participantIds.length === 0) return { ...channel, voice_participants: [] };
+
+        const voiceParticipants = await Promise.all(participantIds.map(async (userId: string) => {
+          const user = await db.users.findById(userId);
+          const voiceState = await redis.getVoiceState(channel.id, userId);
+          return {
+            id: userId,
+            username: user?.username || 'Unknown',
+            display_name: user?.display_name || null,
+            avatar_url: user?.avatar_url || null,
+            is_muted: voiceState?.is_muted || false,
+            is_deafened: voiceState?.is_deafened || false,
+            is_streaming: voiceState?.is_streaming || false,
+          };
+        }));
+
+        return { ...channel, voice_participants: voiceParticipants };
+      }));
+
+      return enriched;
     },
   });
 
@@ -440,6 +469,19 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
         }
         if (body.position !== undefined) {
           return badRequest(reply, 'Cannot change position of @everyone role');
+        }
+      }
+
+      // Validate position uniqueness when changing position
+      if (body.position !== undefined) {
+        if (body.position === 999) {
+          return badRequest(reply, 'Position 999 is reserved');
+        }
+        const [existing] = await db.sql`
+          SELECT 1 FROM roles WHERE server_id = ${id} AND position = ${body.position} AND id != ${roleId}
+        `;
+        if (existing) {
+          return reply.status(409).send({ error: `Position ${body.position} is already taken` });
         }
       }
 
@@ -1257,12 +1299,37 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
         return forbidden(reply, 'Missing MANAGE_ROLES permission');
       }
 
-      // Get the next position
-      const [maxPos] = await db.sql`
-        SELECT COALESCE(MAX(position), 0) + 1 as next_position
-        FROM roles
-        WHERE server_id = ${id}
-      `;
+      // Determine position
+      let rolePosition: number;
+      if (body.position !== undefined) {
+        // Validate reserved positions
+        if (body.position === 1) {
+          return badRequest(reply, 'Position 1 is reserved for @everyone');
+        }
+        if (body.position === 999) {
+          return badRequest(reply, 'Position 999 is reserved');
+        }
+        // Check uniqueness
+        const [existing] = await db.sql`
+          SELECT 1 FROM roles WHERE server_id = ${id} AND position = ${body.position}
+        `;
+        if (existing) {
+          return reply.status(409).send({ error: `Position ${body.position} is already taken` });
+        }
+        rolePosition = body.position;
+      } else {
+        // Auto-assign to FREE band (276-599)
+        const existingRows = await db.sql`
+          SELECT position FROM roles
+          WHERE server_id = ${id} AND position >= ${ROLE_BANDS.FREE.min} AND position <= ${ROLE_BANDS.FREE.max}
+        `;
+        const existing = new Set(existingRows.map((r: any) => Number(r.position)));
+        const nextPos = getNextAvailablePosition('FREE', existing);
+        if (nextPos === null) {
+          return badRequest(reply, 'No available positions in the FREE band (276-599)');
+        }
+        rolePosition = nextPos;
+      }
 
       const [role] = await db.sql`
         INSERT INTO roles (
@@ -1273,7 +1340,7 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
         VALUES (
           ${id},
           ${body.name},
-          ${maxPos.next_position},
+          ${rolePosition},
           ${body.color || null},
           ${String(body.server_permissions || 0)},
           ${String(body.text_permissions || 0)},
@@ -1309,22 +1376,53 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
         return forbidden(reply, 'Missing MANAGE_ROLES permission');
       }
 
+      // Check for duplicate positions in the batch
+      const batchPositions = new Set<number>();
+      for (const roleUpdate of roles) {
+        if (batchPositions.has(roleUpdate.position)) {
+          return badRequest(reply, `Duplicate position ${roleUpdate.position} in reorder batch`);
+        }
+        batchPositions.add(roleUpdate.position);
+      }
+
       // Verify all roles belong to this server and check hierarchy
+      const batchRoleIds = new Set(roles.map((r) => r.id));
       for (const roleUpdate of roles) {
         const [role] = await db.sql`SELECT * FROM roles WHERE id = ${roleUpdate.id} AND server_id = ${id}`;
         if (!role) {
           return badRequest(reply, `Role ${roleUpdate.id} not found in this server`);
         }
 
-        // @everyone role must stay at position 0
-        if (role.name === '@everyone' && roleUpdate.position !== 0) {
-          return badRequest(reply, '@everyone role must stay at position 0');
+        // @everyone role must stay at position 1
+        if (role.name === '@everyone' && roleUpdate.position !== 1) {
+          return badRequest(reply, '@everyone role must stay at position 1');
+        }
+
+        // Cannot use reserved position 999
+        if (roleUpdate.position === 999) {
+          return badRequest(reply, 'Position 999 is reserved');
+        }
+
+        // Validate position range
+        if (roleUpdate.position < 1 || roleUpdate.position > 998) {
+          return badRequest(reply, `Position must be between 1 and 998`);
         }
 
         // Check if user can manage this role
         const canManage = await canManageRole(request.user!.id, id, roleUpdate.id);
         if (!canManage) {
           return forbidden(reply, `Cannot reorder role "${role.name}" - it is at or above your highest role`);
+        }
+      }
+
+      // Check for conflicts with existing roles not in the batch
+      for (const roleUpdate of roles) {
+        const [conflict_role] = await db.sql`
+          SELECT 1 FROM roles
+          WHERE server_id = ${id} AND position = ${roleUpdate.position} AND id != ${roleUpdate.id}
+        `;
+        if (conflict_role && !batchRoleIds.has(roleUpdate.id)) {
+          return reply.status(409).send({ error: `Position ${roleUpdate.position} is already taken by another role` });
         }
       }
 

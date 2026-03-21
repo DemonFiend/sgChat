@@ -82,7 +82,7 @@ export async function bootstrapServer(): Promise<void> {
   // CREATE DEFAULT ROLES
   // ============================================================
 
-  // Create @everyone role with default permissions (position 0 - lowest)
+  // Create @everyone role with default permissions (position 1 - lowest band)
   await db.sql`
     INSERT INTO roles (
       server_id, name, position, color,
@@ -91,7 +91,7 @@ export async function bootstrapServer(): Promise<void> {
     ) VALUES (
       ${server.id},
       '@everyone',
-      0,
+      1,
       NULL,
       ${permissionToString(DEFAULT_EVERYONE_PERMISSIONS.server)},
       ${permissionToString(DEFAULT_EVERYONE_PERMISSIONS.text)},
@@ -104,7 +104,7 @@ export async function bootstrapServer(): Promise<void> {
 
   console.log(`✅ Created @everyone role`);
 
-  // Create Admin role (highest position - for when ownership is claimed)
+  // Create Admin role (band 900-998)
   await db.sql`
     INSERT INTO roles (
       server_id, name, position, color,
@@ -113,7 +113,7 @@ export async function bootstrapServer(): Promise<void> {
     ) VALUES (
       ${server.id},
       ${RoleTemplates.ADMIN.name},
-      100,
+      900,
       ${RoleTemplates.ADMIN.color},
       ${permissionToString(RoleTemplates.ADMIN.server)},
       ${permissionToString(RoleTemplates.ADMIN.text)},
@@ -126,7 +126,7 @@ export async function bootstrapServer(): Promise<void> {
 
   console.log(`✅ Created Admin role`);
 
-  // Create Moderator role
+  // Create Moderator role (band 800-899)
   await db.sql`
     INSERT INTO roles (
       server_id, name, position, color,
@@ -135,7 +135,7 @@ export async function bootstrapServer(): Promise<void> {
     ) VALUES (
       ${server.id},
       ${RoleTemplates.MODERATOR.name},
-      50,
+      800,
       ${RoleTemplates.MODERATOR.color},
       ${permissionToString(RoleTemplates.MODERATOR.server)},
       ${permissionToString(RoleTemplates.MODERATOR.text)},
@@ -148,7 +148,7 @@ export async function bootstrapServer(): Promise<void> {
 
   console.log(`✅ Created Moderator role`);
 
-  // Create Member role
+  // Create Member role (band 600-799)
   await db.sql`
     INSERT INTO roles (
       server_id, name, position, color,
@@ -157,7 +157,7 @@ export async function bootstrapServer(): Promise<void> {
     ) VALUES (
       ${server.id},
       ${RoleTemplates.MEMBER.name},
-      10,
+      600,
       ${RoleTemplates.MEMBER.color},
       ${permissionToString(RoleTemplates.MEMBER.server)},
       ${permissionToString(RoleTemplates.MEMBER.text)},

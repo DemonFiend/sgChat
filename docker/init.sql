@@ -263,16 +263,17 @@ CREATE TABLE roles (
   server_id UUID NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
   name TEXT NOT NULL CHECK (length(name) >= 1 AND length(name) <= 100),
   color TEXT CHECK (color ~ '^#[0-9A-Fa-f]{6}$'),
-  position INTEGER DEFAULT 0,
-  
+  position INTEGER NOT NULL CHECK (position >= 1 AND position <= 999),
+
   -- Permissions (bigint stored as text)
   server_permissions TEXT DEFAULT '0',
   text_permissions TEXT DEFAULT '0',
   voice_permissions TEXT DEFAULT '0',
-  
+
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  
-  UNIQUE (server_id, name)
+
+  UNIQUE (server_id, name),
+  UNIQUE (server_id, position)
 );
 
 CREATE INDEX idx_roles_server ON roles(server_id, position DESC);
@@ -771,7 +772,7 @@ RETURNS INTEGER AS $$
 DECLARE
   max_position INTEGER;
 BEGIN
-  SELECT COALESCE(MAX(r.position), 0) INTO max_position
+  SELECT COALESCE(MAX(r.position), 1) INTO max_position
   FROM roles r
   INNER JOIN member_roles mr ON r.id = mr.role_id
   WHERE mr.member_user_id = p_user_id 
@@ -800,7 +801,7 @@ BEGIN
   SELECT position INTO target_position FROM roles WHERE id = p_role_id;
   
   -- User can only manage roles below their highest role
-  RETURN user_position > COALESCE(target_position, 0);
+  RETURN user_position > COALESCE(target_position, 1);
 END;
 $$ LANGUAGE plpgsql;
 
