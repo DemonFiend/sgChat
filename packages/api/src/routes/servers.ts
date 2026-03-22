@@ -4,6 +4,7 @@ import { db, sql } from '../lib/db.js';
 import { createServer, handleMemberJoin, handleMemberLeave, createRoleFromTemplate, generateInviteCode } from '../services/server.js';
 import {
   calculatePermissions,
+  calculatePermissionsForRoles,
   canManageMember,
   canManageRole,
   timeoutMember,
@@ -12,6 +13,8 @@ import {
 } from '../services/permissions.js';
 import {
   ServerPermissions,
+  TextPermissions,
+  VoicePermissions,
   hasPermission,
   createServerSchema,
   createChannelSchema,
@@ -1902,6 +1905,121 @@ export const serverRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       return { message: 'Permission override removed' };
+    },
+  });
+
+  // ============================================================
+  // ROLE IMPERSONATION — Permission Preview
+  // ============================================================
+
+  const permissionPreviewSchema = z.object({
+    role_ids: z.array(z.string().uuid()).max(50),
+  });
+
+  fastify.post('/:id/permissions/preview', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const { id } = request.params as { id: string };
+
+      // Verify caller has ADMINISTRATOR or is server owner
+      const [server] = await db.sql`
+        SELECT owner_id FROM servers WHERE id = ${id}
+      `;
+      if (!server) {
+        return notFound(reply, 'Server');
+      }
+
+      const isOwner = server.owner_id === request.user!.id;
+      if (!isOwner) {
+        const callerPerms = await calculatePermissions(request.user!.id, id);
+        if (!hasPermission(callerPerms.server, ServerPermissions.ADMINISTRATOR)) {
+          return forbidden(reply, 'Requires ADMINISTRATOR permission or server owner');
+        }
+      }
+
+      // Validate request body
+      const parsed = permissionPreviewSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return badRequest(reply, parsed.error.message);
+      }
+      const { role_ids } = parsed.data;
+
+      // Validate all role_ids belong to this server
+      if (role_ids.length > 0) {
+        const validRoles = await db.sql`
+          SELECT id FROM roles WHERE id = ANY(${role_ids}) AND server_id = ${id}
+        `;
+        const validIds = new Set(validRoles.map((r: any) => r.id));
+        const invalidIds = role_ids.filter((rid) => !validIds.has(rid));
+        if (invalidIds.length > 0) {
+          return badRequest(reply, `Role IDs not found in this server: ${invalidIds.join(', ')}`);
+        }
+      }
+
+      // Fetch all channels and categories
+      const channels = await db.sql`
+        SELECT id, name, type, category_id, position, topic
+        FROM channels WHERE server_id = ${id}
+        ORDER BY position ASC
+      `;
+      const categories = await db.sql`
+        SELECT id, name, position
+        FROM categories WHERE server_id = ${id}
+        ORDER BY position ASC
+      `;
+
+      // Compute server-level permissions
+      const serverLevelPerms = await calculatePermissionsForRoles(id, role_ids);
+      const serverPermissions = toNamedPermissions(
+        serverLevelPerms.server,
+        serverLevelPerms.text,
+        serverLevelPerms.voice
+      );
+
+      // Compute per-channel visibility
+      const channelResults = await Promise.all(
+        channels.map(async (ch: any) => {
+          const chPerms = await calculatePermissionsForRoles(id, role_ids, ch.id);
+
+          const isTextBased = ch.type === 'text' || ch.type === 'announcement';
+          const isVoice = ch.type === 'voice' || ch.type === 'music' || ch.type === 'temp_voice' || ch.type === 'temp_voice_generator';
+
+          const visible = isTextBased
+            ? hasPermission(chPerms.text, TextPermissions.VIEW_CHANNEL)
+            : isVoice
+              ? hasPermission(chPerms.voice, VoicePermissions.VIEW_CHANNEL)
+              : true;
+
+          const can_send = isTextBased
+            ? hasPermission(chPerms.text, TextPermissions.SEND_MESSAGES)
+            : false;
+
+          const can_connect = isVoice
+            ? hasPermission(chPerms.voice, VoicePermissions.CONNECT)
+            : false;
+
+          return {
+            id: ch.id,
+            name: ch.name,
+            type: ch.type,
+            category_id: ch.category_id,
+            position: ch.position,
+            visible,
+            can_send,
+            can_connect,
+          };
+        })
+      );
+
+      return {
+        server_permissions: serverPermissions,
+        channels: channelResults,
+        categories: categories.map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          position: c.position,
+        })),
+      };
     },
   });
 };

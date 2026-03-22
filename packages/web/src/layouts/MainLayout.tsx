@@ -61,6 +61,9 @@ import { NicknameModal } from '@/components/ui/NicknameModal';
 import { blockedUsersStore } from '@/stores/blockedUsers';
 import { ignoredUsersStore } from '@/stores/ignoredUsers';
 import { chatInputStore } from '@/stores/chatInput';
+import { useImpersonationStore } from '@/stores/impersonation';
+import { ImpersonationBanner } from '@/components/ui/ImpersonationBanner';
+import { ImpersonationControlPanel } from '@/components/ui/ImpersonationControlPanel';
 import type { Channel, Category } from '@/components/layout/ChannelList';
 
 interface ServerData {
@@ -101,6 +104,9 @@ export function MainLayout() {
   const activeStream = useStreamViewerStore((s) => s.activeStream);
   const streamVideoElement = useStreamViewerStore((s) => s.videoElement);
   const voiceConnected = useVoiceStore((s) => s.connectionState === 'connected');
+  const isImpersonating = useImpersonationStore((s) => s.isActive);
+  const impChannels = useImpersonationStore((s) => s.channels);
+  const impCategories = useImpersonationStore((s) => s.categories);
 
   // Core state
   const [servers, setServers] = useState<ServerData[]>([]);
@@ -180,6 +186,17 @@ export function MainLayout() {
     }).catch(() => {});
   }, []);
 
+  // Deactivate impersonation on unmount (e.g., navigating to DMs)
+  useEffect(() => {
+    return () => {
+      useImpersonationStore.getState().deactivate();
+    };
+  }, []);
+
+  // Compute display channels/categories: use impersonation data when active
+  const displayChannels = isImpersonating ? (impChannels as unknown as Channel[]) : channels;
+  const displayCategories = isImpersonating ? impCategories : categories;
+
   // Ref to track loaded channels for auto-redirect logic
   const channelsRef = useRef<Channel[]>([]);
   channelsRef.current = channels;
@@ -236,6 +253,34 @@ export function MainLayout() {
         }
         if (Array.isArray(rolesResponse)) {
           setAllRoles(rolesResponse);
+        }
+
+        // Fetch current voice participants so users already in voice channels appear immediately
+        try {
+          const voiceData = await api.get<{ channels: Record<string, Array<{
+            user_id: string; username: string; display_name: string | null;
+            avatar_url: string | null; is_muted: boolean; is_deafened: boolean;
+            is_streaming?: boolean; voice_status?: string;
+          }>> }>('/voice/participants');
+
+          if (voiceData.channels) {
+            const voiceState = useVoiceStore.getState();
+            for (const [chId, parts] of Object.entries(voiceData.channels)) {
+              voiceState.setChannelParticipants(chId, parts.map(p => ({
+                userId: p.user_id,
+                username: p.username,
+                displayName: p.display_name,
+                avatarUrl: p.avatar_url,
+                isMuted: p.is_muted,
+                isDeafened: p.is_deafened,
+                isSpeaking: false,
+                isStreaming: p.is_streaming,
+                voiceStatus: p.voice_status,
+              })));
+            }
+          }
+        } catch (err) {
+          console.warn('[MainLayout] Could not fetch voice participants:', err);
         }
 
         // Initialize blocked/ignored user stores
@@ -1299,7 +1344,10 @@ export function MainLayout() {
   );
 
   return (
-    <div className="flex flex-col h-screen bg-bg-primary text-text-primary overflow-hidden">
+    <div className={`flex flex-col h-screen bg-bg-primary text-text-primary overflow-hidden ${isImpersonating ? 'pt-10' : ''}`}>
+      {/* Role impersonation banner */}
+      {isImpersonating && <ImpersonationBanner />}
+
       {/* Electron title bar — renders nothing in browser */}
       <TitleBar />
 
@@ -1340,8 +1388,9 @@ export function MainLayout() {
                   }
                 : null
             }
-            channels={channels}
-            categories={categories}
+            channels={displayChannels}
+            categories={displayCategories}
+            isImpersonating={isImpersonating}
             onGearClick={(pos) => setGearMenuPosition(pos)}
             onAdminClick={(pos) => setAdminMenuPosition(pos)}
             onRolePickerClick={() => setShowRolePicker(true)}
@@ -1398,7 +1447,7 @@ export function MainLayout() {
           <ChatPanel
             channel={currentChannel}
             messages={messages}
-            onSendMessage={handleSendMessage}
+            onSendMessage={isImpersonating ? async () => { /* blocked during impersonation */ } : handleSendMessage}
             onReactionAdd={handleReactionAdd}
             onReactionClick={handleReactionClick}
             onEditMessage={handleEditMessage}
@@ -1783,6 +1832,9 @@ export function MainLayout() {
 
       {/* Version Mismatch Modal */}
       <VersionMismatchHandler />
+
+      {/* Role impersonation control panel */}
+      {isImpersonating && <ImpersonationControlPanel />}
     </div>
   );
 }

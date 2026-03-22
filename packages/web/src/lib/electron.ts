@@ -33,7 +33,7 @@ export interface ElectronAPI {
 
   // Screen share
   screenShare: {
-    getSources: () => Promise<Array<{ id: string; name: string; thumbnail: string }>>;
+    getSources: () => Promise<Array<{ id: string; name: string; thumbnail: string; appIcon?: string | null; display_id?: string; isMinimized?: boolean }>>;
     onPickRequest: (callback: () => void) => () => void;
     selectSource: (id: string, audioMode: 'system' | 'app' | 'none') => void;
     onAudioModeSelected: (callback: (mode: 'system' | 'app' | 'none') => void) => () => void;

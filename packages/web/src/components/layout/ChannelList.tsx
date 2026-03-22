@@ -35,16 +35,23 @@ export interface Category {
 }
 
 interface ChannelListProps {
-  channels: Channel[];
+  channels: (Channel & { visible?: boolean; can_send?: boolean; can_connect?: boolean })[];
   categories: Category[];
   serverId: string;
   onChannelSettingsClick?: (channel: Channel) => void;
   onCreateChannel?: () => void;
   onChannelDoubleClick?: (channelId: string) => void;
+  isImpersonating?: boolean;
 }
 
 const VOICE_TYPES: ChannelType[] = ['voice', 'temp_voice', 'temp_voice_generator', 'music'];
 const isVoiceType = (type: ChannelType) => VOICE_TYPES.includes(type);
+
+const lockIcon = (
+  <svg className="w-5 h-5 shrink-0 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+  </svg>
+);
 
 const channelIcon = (type: ChannelType) => {
   switch (type) {
@@ -110,7 +117,7 @@ const collapseArrow = (collapsed: boolean) => (
   </svg>
 );
 
-export function ChannelList({ channels, categories, serverId, onChannelSettingsClick, onCreateChannel, onChannelDoubleClick }: ChannelListProps) {
+export function ChannelList({ channels, categories, serverId, onChannelSettingsClick, onCreateChannel, onChannelDoubleClick, isImpersonating }: ChannelListProps) {
   const { channelId } = useParams<{ channelId?: string }>();
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
 
@@ -167,16 +174,23 @@ export function ChannelList({ channels, categories, serverId, onChannelSettingsC
                       </button>
                     )}
                   </div>
-                  {!collapsedSections.has(category.id) && categoryChannels.map((channel) => (
-                    <ChannelItem
-                      key={channel.id}
-                      channel={channel}
-                      isActive={channelId === channel.id}
-                      serverId={serverId}
-                      onSettingsClick={onChannelSettingsClick}
-                      onDoubleClick={onChannelDoubleClick}
-                    />
-                  ))}
+                  {!collapsedSections.has(category.id) && categoryChannels.map((channel) =>
+                    isImpersonating && channel.visible === false ? (
+                      <HiddenChannelRow key={channel.id} channel={channel} />
+                    ) : (
+                      <div key={channel.id} className="relative">
+                        <ChannelItem
+                          channel={channel}
+                          isActive={channelId === channel.id}
+                          serverId={serverId}
+                          onSettingsClick={isImpersonating ? undefined : onChannelSettingsClick}
+                          onDoubleClick={isImpersonating ? undefined : onChannelDoubleClick}
+                          isImpersonating={isImpersonating}
+                        />
+                        {isImpersonating && <ImpersonationBadge channel={channel} />}
+                      </div>
+                    )
+                  )}
                 </div>
               );
             })}
@@ -210,16 +224,23 @@ export function ChannelList({ channels, categories, serverId, onChannelSettingsC
                     </button>
                   )}
                 </div>
-                {!collapsedSections.has('uncategorized') && uncategorized.map((channel) => (
-                  <ChannelItem
-                    key={channel.id}
-                    channel={channel}
-                    isActive={channelId === channel.id}
-                    serverId={serverId}
-                    onSettingsClick={onChannelSettingsClick}
-                    onDoubleClick={onChannelDoubleClick}
-                  />
-                ))}
+                {!collapsedSections.has('uncategorized') && uncategorized.map((channel) =>
+                  isImpersonating && channel.visible === false ? (
+                    <HiddenChannelRow key={channel.id} channel={channel} />
+                  ) : (
+                    <div key={channel.id} className="relative">
+                      <ChannelItem
+                        channel={channel}
+                        isActive={channelId === channel.id}
+                        serverId={serverId}
+                        onSettingsClick={isImpersonating ? undefined : onChannelSettingsClick}
+                        onDoubleClick={isImpersonating ? undefined : onChannelDoubleClick}
+                        isImpersonating={isImpersonating}
+                      />
+                      {isImpersonating && <ImpersonationBadge channel={channel} />}
+                    </div>
+                  )
+                )}
               </div>
             );
           })()}
@@ -247,9 +268,16 @@ export function ChannelList({ channels, categories, serverId, onChannelSettingsC
                 </button>
               )}
             </div>
-            {!collapsedSections.has('text') && textChannels.map((channel) => (
-              <ChannelItem key={channel.id} channel={channel} isActive={channelId === channel.id} serverId={serverId} onSettingsClick={onChannelSettingsClick} onDoubleClick={onChannelDoubleClick} />
-            ))}
+            {!collapsedSections.has('text') && textChannels.map((channel) =>
+              isImpersonating && channel.visible === false ? (
+                <HiddenChannelRow key={channel.id} channel={channel} />
+              ) : (
+                <div key={channel.id} className="relative">
+                  <ChannelItem channel={channel} isActive={channelId === channel.id} serverId={serverId} onSettingsClick={isImpersonating ? undefined : onChannelSettingsClick} onDoubleClick={isImpersonating ? undefined : onChannelDoubleClick} isImpersonating={isImpersonating} />
+                  {isImpersonating && <ImpersonationBadge channel={channel} />}
+                </div>
+              )
+            )}
           </div>
 
           <div className="px-2 pt-3">
@@ -273,14 +301,58 @@ export function ChannelList({ channels, categories, serverId, onChannelSettingsC
                 </button>
               )}
             </div>
-            {!collapsedSections.has('voice') && voiceChannels.map((channel) => (
-              <ChannelItem key={channel.id} channel={channel} isActive={channelId === channel.id} serverId={serverId} onSettingsClick={onChannelSettingsClick} onDoubleClick={onChannelDoubleClick} />
-            ))}
+            {!collapsedSections.has('voice') && voiceChannels.map((channel) =>
+              isImpersonating && channel.visible === false ? (
+                <HiddenChannelRow key={channel.id} channel={channel} />
+              ) : (
+                <div key={channel.id} className="relative">
+                  <ChannelItem channel={channel} isActive={channelId === channel.id} serverId={serverId} onSettingsClick={isImpersonating ? undefined : onChannelSettingsClick} onDoubleClick={isImpersonating ? undefined : onChannelDoubleClick} isImpersonating={isImpersonating} />
+                  {isImpersonating && <ImpersonationBadge channel={channel} />}
+                </div>
+              )
+            )}
           </div>
         </>
       )}
     </div>
   );
+}
+
+// ── Impersonation Helpers ──
+
+function HiddenChannelRow({ channel }: { channel: Channel }) {
+  return (
+    <div className="flex items-center gap-2 px-2 py-1.5 mx-1 my-0.5 rounded opacity-40 cursor-not-allowed select-none">
+      {lockIcon}
+      <span className="text-sm text-text-muted line-through truncate">{channel.name}</span>
+      <span className="ml-auto text-[10px] text-red-400/70 font-medium">HIDDEN</span>
+    </div>
+  );
+}
+
+function ImpersonationBadge({ channel }: { channel: Channel & { visible?: boolean; can_send?: boolean; can_connect?: boolean } }) {
+  if (channel.visible === false) return null;
+
+  const isTextBased = channel.type === 'text' || channel.type === 'announcement';
+  const isVoice = VOICE_TYPES.includes(channel.type);
+
+  if (isTextBased && channel.can_send === false) {
+    return (
+      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-amber-400/70 font-medium uppercase tracking-wider">
+        read-only
+      </span>
+    );
+  }
+
+  if (isVoice && channel.can_connect === false) {
+    return (
+      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-red-400/70 font-medium uppercase tracking-wider">
+        no access
+      </span>
+    );
+  }
+
+  return null;
 }
 
 // ── Channel Context Menu (voice channels — Copy ID only) ──
@@ -365,10 +437,11 @@ interface ChannelItemProps {
   serverId: string;
   onSettingsClick?: (channel: Channel) => void;
   onDoubleClick?: (channelId: string) => void;
+  isImpersonating?: boolean;
 }
 
-const ChannelItem = memo(function ChannelItem({ channel, isActive, serverId: _serverId, onSettingsClick, onDoubleClick: onDblClick }: ChannelItemProps) {
-  const hasUnread = (channel.unread_count ?? 0) > 0;
+const ChannelItem = memo(function ChannelItem({ channel, isActive, serverId: _serverId, onSettingsClick, onDoubleClick: onDblClick, isImpersonating }: ChannelItemProps) {
+  const hasUnread = !isImpersonating && (channel.unread_count ?? 0) > 0;
   const voice = isVoiceType(channel.type);
   const currentVoiceChannelId = useVoiceStore((s) => s.currentChannelId);
   const relayRegion = useVoiceStore((s) => s.currentRelayRegion);
@@ -386,8 +459,8 @@ const ChannelItem = memo(function ChannelItem({ channel, isActive, serverId: _se
       <div role="treeitem">
         <motion.div whileHover={{ x: 2 }} transition={{ duration: 0.1 }}>
           <div
-            onClick={() => voiceService.join(channel.id, channel.name)}
-            onContextMenu={handleContextMenu}
+            onClick={() => { if (!isImpersonating) voiceService.join(channel.id, channel.name); }}
+            onContextMenu={isImpersonating ? undefined : handleContextMenu}
             className={clsx(
               'group/channel relative flex items-center gap-1.5 px-2 py-1.5 mb-0.5 rounded text-sm transition-colors cursor-pointer',
               isInThisVoice

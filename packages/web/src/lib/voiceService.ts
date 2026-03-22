@@ -38,6 +38,7 @@ interface VoiceParticipantResponse {
     avatar_url: string | null;
     is_muted: boolean;
     is_deafened: boolean;
+    is_streaming?: boolean;
     joined_at: string;
     voice_status?: string;
   }>;
@@ -395,6 +396,7 @@ class VoiceServiceClass {
             isMuted: p.is_muted,
             isDeafened: p.is_deafened,
             isSpeaking: false,
+            isStreaming: p.is_streaming,
             voiceStatus: p.voice_status,
           }));
           voiceStore.setChannelParticipants(targetChannelId, participants);
@@ -1039,21 +1041,38 @@ class VoiceServiceClass {
     }
 
     // Get video track via Electron's desktopCapturer
-    const videoStream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: {
-        mandatory: {
-          chromeMediaSource: 'desktop',
-          chromeMediaSourceId: selection.sourceId,
-          maxWidth: quality === 'native' ? undefined : qualityConfig.width,
-          maxHeight: quality === 'native' ? undefined : qualityConfig.height,
-          maxFrameRate: qualityConfig.fps,
-        },
-      } as any,
-    });
+    let videoTrack: MediaStreamTrack;
+    try {
+      const videoStream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          mandatory: {
+            chromeMediaSource: 'desktop',
+            chromeMediaSourceId: selection.sourceId,
+            maxWidth: quality === 'native' ? undefined : qualityConfig.width,
+            maxHeight: quality === 'native' ? undefined : qualityConfig.height,
+            maxFrameRate: qualityConfig.fps,
+          },
+        } as any,
+      });
+      videoTrack = videoStream.getVideoTracks()[0];
+    } catch {
+      // Minimized window — Chromium can't capture, create black canvas fallback
+      const canvas = document.createElement('canvas');
+      canvas.width = qualityConfig.width;
+      canvas.height = qualityConfig.height;
+      const ctx = canvas.getContext('2d')!;
+      ctx.fillStyle = '#1a1a2e';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#666';
+      ctx.font = '24px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Window is minimized', canvas.width / 2, canvas.height / 2);
+      const stream = canvas.captureStream(1); // 1 fps — static frame
+      videoTrack = stream.getVideoTracks()[0];
+    }
 
-    const videoTrack = videoStream.getVideoTracks()[0];
-    if (!videoTrack) {
+    if (!videoTrack!) {
       voiceStore.setError('Failed to capture screen video');
       return;
     }
@@ -1112,9 +1131,18 @@ class VoiceServiceClass {
         audioContext.close();
       };
     } else if (selection.audioMode === 'system') {
-      // System audio via getDisplayMedia (standard browser path)
+      // System audio via loopback capture for Electron
+      // Use getUserMedia with chromeMediaSource: 'desktop' instead of getDisplayMedia,
+      // since getDisplayMedia with video: false fails in Electron's Chromium
       try {
-        const audioStream = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: false });
+        const audioStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            mandatory: {
+              chromeMediaSource: 'desktop',
+            },
+          } as any,
+          video: false,
+        });
         const audioTrack = audioStream.getAudioTracks()[0];
         if (audioTrack) {
           await this.room.localParticipant.publishTrack(audioTrack, {
@@ -1122,8 +1150,8 @@ class VoiceServiceClass {
             name: 'screen_share_audio',
           });
         }
-      } catch {
-        console.warn('[VoiceService] System audio capture not available, sharing without audio');
+      } catch (err) {
+        console.warn('[VoiceService] System audio capture not available, sharing without audio:', err);
       }
     }
     // audioMode === 'none': no audio track published

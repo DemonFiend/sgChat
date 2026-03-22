@@ -1290,3 +1290,28 @@ export interface ServerEventRSVP {
   username?: string;
   avatar_url?: string | null;
 }
+
+// ============================================================
+// ROLE IMPERSONATION — Permission Preview
+// ============================================================
+
+export interface PermissionPreviewRequest {
+  role_ids: string[];
+}
+
+export interface PermissionPreviewChannel {
+  id: UUID;
+  name: string;
+  type: ChannelType;
+  category_id: UUID | null;
+  position: number;
+  visible: boolean;
+  can_send: boolean;
+  can_connect: boolean;
+}
+
+export interface PermissionPreviewResponse {
+  server_permissions: Record<string, boolean>;
+  channels: PermissionPreviewChannel[];
+  categories: { id: UUID; name: string; position: number }[];
+}

@@ -35,9 +35,10 @@ interface ServerSidebarProps {
   onLogout?: () => void;
   showGearButton?: boolean;
   showAdminButton?: boolean;
+  isImpersonating?: boolean;
 }
 
-export function ServerSidebar({ server, channels, categories, onServerSettingsClick, onGearClick, onAdminClick, onEventsClick, onRolePickerClick, onChannelSettingsClick, onCreateChannel, onChannelDoubleClick, showGearButton, showAdminButton }: ServerSidebarProps) {
+export function ServerSidebar({ server, channels, categories, onServerSettingsClick, onGearClick, onAdminClick, onEventsClick, onRolePickerClick, onChannelSettingsClick, onCreateChannel, onChannelDoubleClick, showGearButton, showAdminButton, isImpersonating }: ServerSidebarProps) {
   const { channelId: _channelId } = useParams<{ channelId?: string }>();
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
@@ -204,7 +205,7 @@ export function ServerSidebar({ server, channels, categories, onServerSettingsCl
       </div>
 
       {/* Channel List */}
-      <ChannelList channels={channels} categories={categories} serverId={server?.id || ''} onChannelSettingsClick={onChannelSettingsClick} onCreateChannel={onCreateChannel} onChannelDoubleClick={onChannelDoubleClick} />
+      <ChannelList channels={channels} categories={categories} serverId={server?.id || ''} onChannelSettingsClick={onChannelSettingsClick} onCreateChannel={onCreateChannel} onChannelDoubleClick={onChannelDoubleClick} isImpersonating={isImpersonating} />
     </div>
   );
 }

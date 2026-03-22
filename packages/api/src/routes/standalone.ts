@@ -9,11 +9,14 @@ import { authenticate } from '../middleware/auth.js';
 import { db, sql } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
 import { getDefaultServer } from './server.js';
-import { calculatePermissions, canManageMember, canManageRole, getUserRoles, timeoutMember, removeTimeout } from '../services/permissions.js';
+import { calculatePermissions, calculatePermissionsForRoles, canManageMember, canManageRole, getUserRoles, timeoutMember, removeTimeout } from '../services/permissions.js';
 import { handleMemberLeave, generateInviteCode } from '../services/server.js';
 import {
   ServerPermissions,
+  TextPermissions,
+  VoicePermissions,
   hasPermission,
+  toNamedPermissions,
   toNamedPermissionStates,
   namedStatesToBitfields,
   createRoleSchema,
@@ -1321,6 +1324,112 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // Note: DELETE /channels/:id is handled by channelRoutes in channels.ts
+
+  // ============================================================
+  // ROLE IMPERSONATION — Permission Preview (standalone)
+  // ============================================================
+
+  const permissionPreviewSchema = z.object({
+    role_ids: z.array(z.string().uuid()).max(50),
+  });
+
+  fastify.post('/permissions/preview', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) return notFound(reply, 'Server');
+
+      const serverId = server.id;
+
+      // Verify caller has ADMINISTRATOR or is server owner
+      const isOwner = server.owner_id === request.user!.id;
+      if (!isOwner) {
+        const callerPerms = await calculatePermissions(request.user!.id, serverId);
+        if (!hasPermission(callerPerms.server, ServerPermissions.ADMINISTRATOR)) {
+          return forbidden(reply, 'Requires ADMINISTRATOR permission or server owner');
+        }
+      }
+
+      const parsed = permissionPreviewSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return badRequest(reply, parsed.error.message);
+      }
+      const { role_ids } = parsed.data;
+
+      // Validate all role_ids belong to this server
+      if (role_ids.length > 0) {
+        const validRoles = await db.sql`
+          SELECT id FROM roles WHERE id = ANY(${role_ids}) AND server_id = ${serverId}
+        `;
+        const validIds = new Set(validRoles.map((r: any) => r.id));
+        const invalidIds = role_ids.filter((rid) => !validIds.has(rid));
+        if (invalidIds.length > 0) {
+          return badRequest(reply, `Role IDs not found in this server: ${invalidIds.join(', ')}`);
+        }
+      }
+
+      // Fetch all channels and categories
+      const channels = await db.sql`
+        SELECT id, name, type, category_id, position, topic
+        FROM channels WHERE server_id = ${serverId}
+        ORDER BY position ASC
+      `;
+      const categories = await db.sql`
+        SELECT id, name, position
+        FROM categories WHERE server_id = ${serverId}
+        ORDER BY position ASC
+      `;
+
+      // Compute server-level permissions
+      const serverLevelPerms = await calculatePermissionsForRoles(serverId, role_ids);
+      const serverPermissions = toNamedPermissions(
+        serverLevelPerms.server,
+        serverLevelPerms.text,
+        serverLevelPerms.voice
+      );
+
+      // Compute per-channel visibility
+      const channelResults = await Promise.all(
+        channels.map(async (ch: any) => {
+          const chPerms = await calculatePermissionsForRoles(serverId, role_ids, ch.id);
+
+          const isTextBased = ch.type === 'text' || ch.type === 'announcement';
+          const isVoice =
+            ch.type === 'voice' || ch.type === 'music' || ch.type === 'temp_voice' || ch.type === 'temp_voice_generator';
+
+          const visible = isTextBased
+            ? hasPermission(chPerms.text, TextPermissions.VIEW_CHANNEL)
+            : isVoice
+              ? hasPermission(chPerms.voice, VoicePermissions.VIEW_CHANNEL)
+              : true;
+
+          const can_send = isTextBased ? hasPermission(chPerms.text, TextPermissions.SEND_MESSAGES) : false;
+          const can_connect = isVoice ? hasPermission(chPerms.voice, VoicePermissions.CONNECT) : false;
+
+          return {
+            id: ch.id,
+            name: ch.name,
+            type: ch.type,
+            category_id: ch.category_id,
+            position: ch.position,
+            visible,
+            can_send,
+            can_connect,
+          };
+        })
+      );
+
+      return {
+        server_permissions: serverPermissions,
+        channels: channelResults,
+        categories: categories.map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          position: c.position,
+        })),
+      };
+    },
+  });
 };
 
 // Helper function to check server permissions

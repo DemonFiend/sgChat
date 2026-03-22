@@ -200,7 +200,7 @@ async function applyCategoryOverrides(
   categoryId: string,
   everyoneRoleId: string,
   userRoles: any[],
-  userId: string,
+  userId: string | null,
   textPerms: bigint,
   voicePerms: bigint
 ): Promise<{ text: bigint; voice: bigint }> {
@@ -233,17 +233,19 @@ async function applyCategoryOverrides(
     }
   }
 
-  // Apply user-specific override (highest priority)
-  const [userOverride] = await sql`
-    SELECT * FROM category_permission_overrides
-    WHERE category_id = ${categoryId} AND user_id = ${userId}
-  `;
+  // Apply user-specific override (highest priority) — skip if no userId (role impersonation)
+  if (userId) {
+    const [userOverride] = await sql`
+      SELECT * FROM category_permission_overrides
+      WHERE category_id = ${categoryId} AND user_id = ${userId}
+    `;
 
-  if (userOverride) {
-    textPerms &= ~stringToPermission(userOverride.text_deny || '0');
-    textPerms |= stringToPermission(userOverride.text_allow || '0');
-    voicePerms &= ~stringToPermission(userOverride.voice_deny || '0');
-    voicePerms |= stringToPermission(userOverride.voice_allow || '0');
+    if (userOverride) {
+      textPerms &= ~stringToPermission(userOverride.text_deny || '0');
+      textPerms |= stringToPermission(userOverride.text_allow || '0');
+      voicePerms &= ~stringToPermission(userOverride.voice_deny || '0');
+      voicePerms |= stringToPermission(userOverride.voice_allow || '0');
+    }
   }
 
   return { text: textPerms, voice: voicePerms };
@@ -256,7 +258,7 @@ async function applyChannelOverrides(
   channelId: string,
   everyoneRoleId: string,
   userRoles: any[],
-  userId: string,
+  userId: string | null,
   textPerms: bigint,
   voicePerms: bigint
 ): Promise<{ text: bigint; voice: bigint }> {
@@ -289,20 +291,128 @@ async function applyChannelOverrides(
     }
   }
 
-  // Apply user-specific override (highest priority)
-  const [userOverride] = await sql`
-    SELECT * FROM channel_permission_overrides
-    WHERE channel_id = ${channelId} AND user_id = ${userId}
-  `;
+  // Apply user-specific override (highest priority) — skip if no userId (role impersonation)
+  if (userId) {
+    const [userOverride] = await sql`
+      SELECT * FROM channel_permission_overrides
+      WHERE channel_id = ${channelId} AND user_id = ${userId}
+    `;
 
-  if (userOverride) {
-    textPerms &= ~stringToPermission(userOverride.text_deny || '0');
-    textPerms |= stringToPermission(userOverride.text_allow || '0');
-    voicePerms &= ~stringToPermission(userOverride.voice_deny || '0');
-    voicePerms |= stringToPermission(userOverride.voice_allow || '0');
+    if (userOverride) {
+      textPerms &= ~stringToPermission(userOverride.text_deny || '0');
+      textPerms |= stringToPermission(userOverride.text_allow || '0');
+      voicePerms &= ~stringToPermission(userOverride.voice_deny || '0');
+      voicePerms |= stringToPermission(userOverride.voice_allow || '0');
+    }
   }
 
   return { text: textPerms, voice: voicePerms };
+}
+
+/**
+ * Calculate permissions for an arbitrary set of role IDs (role impersonation preview).
+ * Unlike calculatePermissions, this does NOT check user membership, owner status, or timeouts.
+ * Always includes @everyone as the base layer regardless of whether it's in roleIds.
+ */
+export async function calculatePermissionsForRoles(
+  serverId: string,
+  roleIds: string[],
+  channelId?: string
+): Promise<PermissionSet> {
+  // Get @everyone role (always the base layer)
+  const [everyoneRole] = await sql`
+    SELECT * FROM roles WHERE server_id = ${serverId} AND name = '@everyone'
+  `;
+
+  if (!everyoneRole) {
+    throw new Error('@everyone role not found');
+  }
+
+  // Start with @everyone permissions (allow, then remove deny)
+  let serverPerms = stringToPermission(everyoneRole.server_permissions || '0');
+  let textPerms = stringToPermission(everyoneRole.text_permissions || '0');
+  let voicePerms = stringToPermission(everyoneRole.voice_permissions || '0');
+  serverPerms &= ~stringToPermission(everyoneRole.server_permissions_deny || '0');
+  textPerms &= ~stringToPermission(everyoneRole.text_permissions_deny || '0');
+  voicePerms &= ~stringToPermission(everyoneRole.voice_permissions_deny || '0');
+
+  // Fetch the specified roles (exclude @everyone since it's already applied)
+  const filteredRoleIds = roleIds.filter((id) => id !== everyoneRole.id);
+  let selectedRoles: any[] = [];
+  if (filteredRoleIds.length > 0) {
+    selectedRoles = await sql`
+      SELECT * FROM roles
+      WHERE id = ANY(${filteredRoleIds}) AND server_id = ${serverId}
+      ORDER BY position ASC
+    `;
+  }
+
+  // Apply role permissions with deny support (same logic as calculatePermissions)
+  for (const role of selectedRoles) {
+    const deny_s = stringToPermission(role.server_permissions_deny || '0');
+    const deny_t = stringToPermission(role.text_permissions_deny || '0');
+    const deny_v = stringToPermission(role.voice_permissions_deny || '0');
+    serverPerms &= ~deny_s;
+    textPerms &= ~deny_t;
+    voicePerms &= ~deny_v;
+    serverPerms |= stringToPermission(role.server_permissions || '0');
+    textPerms |= stringToPermission(role.text_permissions || '0');
+    voicePerms |= stringToPermission(role.voice_permissions || '0');
+  }
+
+  // If role set has Administrator, grant all permissions
+  if (serverPerms & ServerPermissions.ADMINISTRATOR) {
+    return {
+      server: ALL_PERMISSIONS.server,
+      text: ALL_PERMISSIONS.text,
+      voice: ALL_PERMISSIONS.voice,
+      isOwner: false,
+      isTimedOut: false,
+    };
+  }
+
+  // Apply channel-specific overrides if channelId provided
+  if (channelId) {
+    const [channel] = await sql`
+      SELECT id, category_id, sync_permissions_with_category
+      FROM channels
+      WHERE id = ${channelId}
+    `;
+
+    if (channel) {
+      if (channel.category_id && channel.sync_permissions_with_category !== false) {
+        const categoryOverrides = await applyCategoryOverrides(
+          channel.category_id,
+          everyoneRole.id,
+          selectedRoles,
+          null, // no user-specific overrides for role impersonation
+          textPerms,
+          voicePerms
+        );
+        textPerms = categoryOverrides.text;
+        voicePerms = categoryOverrides.voice;
+      }
+
+      const channelOverrides = await applyChannelOverrides(
+        channelId,
+        everyoneRole.id,
+        selectedRoles,
+        null, // no user-specific overrides for role impersonation
+        textPerms,
+        voicePerms
+      );
+      textPerms = channelOverrides.text;
+      voicePerms = channelOverrides.voice;
+    }
+  }
+
+  return {
+    server: serverPerms,
+    text: textPerms,
+    voice: voicePerms,
+    isOwner: false,
+    isTimedOut: false,
+  };
 }
 
 /**

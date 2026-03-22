@@ -805,6 +805,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
           avatar_url: user?.avatar_url || null,
           is_muted: voiceState?.is_muted || false,
           is_deafened: voiceState?.is_deafened || false,
+          is_streaming: voiceState?.is_streaming || false,
           joined_at: voiceState?.joined_at || new Date().toISOString(),
           voice_status: voiceState?.voice_status || undefined,
         };
