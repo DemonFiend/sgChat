@@ -17,8 +17,6 @@
 --   51-100    Region Roles
 --   1-50      @everyone
 
-BEGIN;
-
 -- ============================================================
 -- 1. Remap core roles by name
 -- ============================================================
@@ -121,11 +119,17 @@ WHERE roles.id = cr.id;
 -- 4. Add constraints
 -- ============================================================
 
--- Add CHECK constraint for valid range
-ALTER TABLE roles ADD CONSTRAINT roles_position_range CHECK (position >= 1 AND position <= 999);
+-- Add CHECK constraint for valid range (idempotent)
+DO $$ BEGIN
+  ALTER TABLE roles ADD CONSTRAINT roles_position_range CHECK (position >= 1 AND position <= 999);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- Add UNIQUE constraint (will fail if any duplicates remain)
-ALTER TABLE roles ADD CONSTRAINT roles_server_position_unique UNIQUE (server_id, position);
+-- Add UNIQUE constraint (idempotent, will fail if any duplicates remain)
+DO $$ BEGIN
+  ALTER TABLE roles ADD CONSTRAINT roles_server_position_unique UNIQUE (server_id, position);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- Update SQL functions to use position 1 as minimum
 CREATE OR REPLACE FUNCTION get_user_highest_role_position(p_user_id UUID, p_server_id UUID)
@@ -162,4 +166,4 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMIT;
+-- end of migration
