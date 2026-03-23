@@ -25,6 +25,10 @@ export async function initRedis() {
     console.error('❌ Redis connection failed:', error);
     throw error;
   }
+
+  // Clear stale presence/voice data from previous server instance.
+  // On startup no sockets are connected, so anything in Redis is guaranteed stale.
+  await redis.clearAllPresence();
 }
 
 // Session data structure for cookie-based auth
@@ -160,6 +164,24 @@ export const redis = {
 
   async getOnlineUsers(): Promise<string[]> {
     return client.smembers('online_users');
+  },
+
+  async clearAllPresence(): Promise<void> {
+    await client.del('online_users');
+
+    const patterns = [
+      'user_sessions:*', 'presence:*', 'gw:session:*', 'gw:user_sessions:*',
+      'voice:channel:*', 'voice:user:*',
+    ];
+    for (const pattern of patterns) {
+      let cursor = '0';
+      do {
+        const [next, keys] = await client.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+        cursor = next;
+        if (keys.length > 0) await client.del(...keys);
+      } while (cursor !== '0');
+    }
+    console.log('🧹 Cleared stale presence data from Redis');
   },
 
   // Voice channel participant tracking

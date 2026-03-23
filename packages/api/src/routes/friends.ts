@@ -1,6 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
+import { redis } from '../lib/redis.js';
 import { publishEvent } from '../lib/eventBus.js';
 import { createNotification } from './notifications.js';
 import { notFound, badRequest, forbidden } from '../utils/errors.js';
@@ -84,20 +85,38 @@ export const friendRoutes: FastifyPluginAsync = async (fastify) => {
           u.username ASC
       `;
 
-      return friends.map((f: any) => ({
-        id: f.id,
-        username: f.username,
-        display_name: f.display_name || f.username,
-        avatar_url: f.avatar_url,
-        status: f.status,
-        custom_status: f.custom_status || null,
-        since: f.since,
-        last_seen_at: f.last_seen_at || null,
-        timezone: f.timezone || null,
-        timezone_public: f.timezone_public || false,
-        timezone_dst_enabled: f.timezone_dst_enabled ?? true,
-        dm_channel_id: f.dm_channel_id || null,
-      }));
+      // Cross-reference with Redis to get real-time effective status
+      const onlineUserIds = await redis.getOnlineUsers();
+      const onlineSet = new Set(onlineUserIds);
+
+      return friends.map((f: any) => {
+        const isConnected = onlineSet.has(f.id);
+        const dbStatus = f.status || 'offline';
+        let effectiveStatus: string;
+        if (!isConnected) {
+          effectiveStatus = 'offline';
+        } else if (dbStatus === 'offline') {
+          // User chose invisible — respect their choice
+          effectiveStatus = 'offline';
+        } else {
+          effectiveStatus = dbStatus;
+        }
+
+        return {
+          id: f.id,
+          username: f.username,
+          display_name: f.display_name || f.username,
+          avatar_url: f.avatar_url,
+          status: effectiveStatus,
+          custom_status: f.custom_status || null,
+          since: f.since,
+          last_seen_at: f.last_seen_at || null,
+          timezone: f.timezone || null,
+          timezone_public: f.timezone_public || false,
+          timezone_dst_enabled: f.timezone_dst_enabled ?? true,
+          dm_channel_id: f.dm_channel_id || null,
+        };
+      });
     },
   });
 
