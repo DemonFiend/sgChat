@@ -47,11 +47,6 @@ interface ChannelListProps {
 const VOICE_TYPES: ChannelType[] = ['voice', 'temp_voice', 'temp_voice_generator', 'music'];
 const isVoiceType = (type: ChannelType) => VOICE_TYPES.includes(type);
 
-const lockIcon = (
-  <svg className="w-5 h-5 shrink-0 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-  </svg>
-);
 
 const channelIcon = (type: ChannelType) => {
   switch (type) {
@@ -175,9 +170,7 @@ export function ChannelList({ channels, categories, serverId, onChannelSettingsC
                     )}
                   </div>
                   {!collapsedSections.has(category.id) && categoryChannels.map((channel) =>
-                    isImpersonating && channel.visible === false ? (
-                      <HiddenChannelRow key={channel.id} channel={channel} />
-                    ) : (
+                    isImpersonating && channel.visible === false ? null : (
                       <div key={channel.id} className="relative">
                         <ChannelItem
                           channel={channel}
@@ -225,9 +218,7 @@ export function ChannelList({ channels, categories, serverId, onChannelSettingsC
                   )}
                 </div>
                 {!collapsedSections.has('uncategorized') && uncategorized.map((channel) =>
-                  isImpersonating && channel.visible === false ? (
-                    <HiddenChannelRow key={channel.id} channel={channel} />
-                  ) : (
+                  isImpersonating && channel.visible === false ? null : (
                     <div key={channel.id} className="relative">
                       <ChannelItem
                         channel={channel}
@@ -269,9 +260,7 @@ export function ChannelList({ channels, categories, serverId, onChannelSettingsC
               )}
             </div>
             {!collapsedSections.has('text') && textChannels.map((channel) =>
-              isImpersonating && channel.visible === false ? (
-                <HiddenChannelRow key={channel.id} channel={channel} />
-              ) : (
+              isImpersonating && channel.visible === false ? null : (
                 <div key={channel.id} className="relative">
                   <ChannelItem channel={channel} isActive={channelId === channel.id} serverId={serverId} onSettingsClick={isImpersonating ? undefined : onChannelSettingsClick} onDoubleClick={isImpersonating ? undefined : onChannelDoubleClick} isImpersonating={isImpersonating} />
                   {isImpersonating && <ImpersonationBadge channel={channel} />}
@@ -302,9 +291,7 @@ export function ChannelList({ channels, categories, serverId, onChannelSettingsC
               )}
             </div>
             {!collapsedSections.has('voice') && voiceChannels.map((channel) =>
-              isImpersonating && channel.visible === false ? (
-                <HiddenChannelRow key={channel.id} channel={channel} />
-              ) : (
+              isImpersonating && channel.visible === false ? null : (
                 <div key={channel.id} className="relative">
                   <ChannelItem channel={channel} isActive={channelId === channel.id} serverId={serverId} onSettingsClick={isImpersonating ? undefined : onChannelSettingsClick} onDoubleClick={isImpersonating ? undefined : onChannelDoubleClick} isImpersonating={isImpersonating} />
                   {isImpersonating && <ImpersonationBadge channel={channel} />}
@@ -320,15 +307,6 @@ export function ChannelList({ channels, categories, serverId, onChannelSettingsC
 
 // ── Impersonation Helpers ──
 
-function HiddenChannelRow({ channel }: { channel: Channel }) {
-  return (
-    <div className="flex items-center gap-2 px-2 py-1.5 mx-1 my-0.5 rounded opacity-40 cursor-not-allowed select-none">
-      {lockIcon}
-      <span className="text-sm text-text-muted line-through truncate">{channel.name}</span>
-      <span className="ml-auto text-[10px] text-red-400/70 font-medium">HIDDEN</span>
-    </div>
-  );
-}
 
 function ImpersonationBadge({ channel }: { channel: Channel & { visible?: boolean; can_send?: boolean; can_connect?: boolean } }) {
   if (channel.visible === false) return null;
