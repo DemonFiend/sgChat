@@ -119,9 +119,15 @@ export const globalServerRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       // Check if user has admin permission to see full settings
-      const perms = await calculatePermissions(request.user!.id, server.id);
-      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) || 
-                      server.owner_id === request.user!.id;
+      // Pending-approval users are authenticated but not yet members — handle gracefully
+      let isAdmin = false;
+      try {
+        const perms = await calculatePermissions(request.user!.id, server.id);
+        isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) ||
+                        server.owner_id === request.user!.id;
+      } catch {
+        // User is not a member (e.g. pending approval) — return base info only
+      }
 
       // Base response for all users
       const response: any = {

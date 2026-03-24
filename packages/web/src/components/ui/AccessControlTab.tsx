@@ -28,7 +28,9 @@ interface Approval {
   id: string;
   user_id: string;
   username: string;
+  email?: string;
   avatar_url: string | null;
+  user_created_at?: string;
   status: 'pending' | 'approved' | 'denied';
   responses: Record<string, string | boolean>;
   invite_code: string | null;
@@ -427,14 +429,40 @@ function MemberApprovalsPanel({ serverId }: { serverId: string }) {
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'pending' | 'approved' | 'denied'>('pending');
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [selectedApproval, setSelectedApproval] = useState<Approval | null>(null);
   const [denyReason, setDenyReason] = useState('');
+  const [showDenyInput, setShowDenyInput] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [intakeQuestions, setIntakeQuestions] = useState<Record<string, string>>({});
+
+  // Fetch intake form config for question label mapping
+  useEffect(() => {
+    api
+      .get<{ questions: { id: string; label: string }[] }>('/server/intake-form')
+      .then((form) => {
+        const map: Record<string, string> = {};
+        for (const q of form.questions) map[q.id] = q.label;
+        setIntakeQuestions(map);
+      })
+      .catch(() => {});
+  }, []);
 
   const fetchApprovals = useCallback(async () => {
     try {
-      const data = await api.get<{ approvals: Approval[]; total_pending: number }>(`/server/approvals?status=${filter}`);
-      setApprovals(Array.isArray(data) ? data : data.approvals ?? []);
+      const data = await api.get<{ approvals: any[]; total_pending: number }>(
+        `/server/approvals?status=${filter}`,
+      );
+      const raw = Array.isArray(data) ? data : data.approvals ?? [];
+      // Flatten nested user object from API response
+      const flattened = raw.map((a: any) => ({
+        ...a,
+        username: a.user?.username ?? a.username,
+        avatar_url: a.user?.avatar_url ?? a.avatar_url,
+        user_id: a.user?.id ?? a.user_id,
+        email: a.user?.email ?? a.email,
+        user_created_at: a.user?.created_at ?? a.user_created_at,
+      }));
+      setApprovals(flattened);
     } catch {
       // error
     } finally {
@@ -463,6 +491,7 @@ function MemberApprovalsPanel({ serverId }: { serverId: string }) {
     try {
       await api.post(`/server/approvals/${id}/approve`);
       setApprovals((prev) => prev.filter((a) => a.id !== id));
+      setSelectedApproval(null);
     } catch {
       // error
     } finally {
@@ -478,7 +507,8 @@ function MemberApprovalsPanel({ serverId }: { serverId: string }) {
       });
       setApprovals((prev) => prev.filter((a) => a.id !== id));
       setDenyReason('');
-      setExpandedId(null);
+      setShowDenyInput(false);
+      setSelectedApproval(null);
     } catch {
       // error
     } finally {
@@ -491,11 +521,18 @@ function MemberApprovalsPanel({ serverId }: { serverId: string }) {
     try {
       await api.delete(`/server/approvals/${id}`);
       setApprovals((prev) => prev.filter((a) => a.id !== id));
+      setSelectedApproval(null);
     } catch {
       // error
     } finally {
       setActionLoading(null);
     }
+  };
+
+  const closeModal = () => {
+    setSelectedApproval(null);
+    setDenyReason('');
+    setShowDenyInput(false);
   };
 
   return (
@@ -526,131 +563,226 @@ function MemberApprovalsPanel({ serverId }: { serverId: string }) {
           No {filter} applications.
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {approvals.map((approval) => (
-            <div key={approval.id} className="p-4 bg-bg-secondary rounded-lg">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  {/* Avatar */}
-                  <div className="w-10 h-10 rounded-full bg-bg-tertiary flex items-center justify-center text-text-muted text-sm font-medium overflow-hidden">
-                    {approval.avatar_url ? (
-                      <img
-                        src={approval.avatar_url}
-                        alt=""
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      approval.username?.charAt(0).toUpperCase()
+            <button
+              key={approval.id}
+              type="button"
+              onClick={() => {
+                setSelectedApproval(approval);
+                setShowDenyInput(false);
+                setDenyReason('');
+              }}
+              className="w-full p-3 bg-bg-secondary rounded-lg hover:bg-bg-tertiary transition-colors cursor-pointer text-left"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-bg-tertiary flex items-center justify-center text-text-muted text-sm font-medium overflow-hidden shrink-0">
+                  {approval.avatar_url ? (
+                    <img
+                      src={approval.avatar_url}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    approval.username?.charAt(0)?.toUpperCase() || '?'
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium text-text-primary truncate">
+                    {approval.username || 'Unknown User'}
+                  </div>
+                  <div className="text-xs text-text-muted">
+                    {approval.submitted_at
+                      ? `Submitted ${new Date(approval.submitted_at).toLocaleDateString()}`
+                      : `Registered ${new Date(approval.created_at).toLocaleDateString()}`}
+                    {approval.invite_code && (
+                      <span className="ml-2 text-accent-primary">
+                        invite: {approval.invite_code}
+                      </span>
                     )}
                   </div>
-                  <div>
-                    <div className="text-sm font-medium text-text-primary">
-                      {approval.username}
-                    </div>
-                    <div className="text-xs text-text-muted">
-                      {approval.submitted_at
-                        ? `Submitted ${new Date(approval.submitted_at).toLocaleDateString()}`
-                        : `Registered ${new Date(approval.created_at).toLocaleDateString()}`}
-                      {approval.invite_code && (
-                        <span className="ml-2 text-accent-primary">
-                          invite: {approval.invite_code}
-                        </span>
-                      )}
-                    </div>
-                  </div>
                 </div>
+                {approval.status === 'denied' && (
+                  <span className="text-xs text-red-400 font-medium">Denied</span>
+                )}
+                {approval.status === 'approved' && (
+                  <span className="text-xs text-green-400 font-medium">Approved</span>
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
 
-                <div className="flex items-center gap-2">
-                  {/* View Responses */}
-                  {approval.responses && Object.keys(approval.responses).length > 0 && (
-                    <button
-                      onClick={() =>
-                        setExpandedId(expandedId === approval.id ? null : approval.id)
-                      }
-                      className="px-2 py-1 text-xs text-text-link hover:underline"
-                    >
-                      {expandedId === approval.id ? 'Hide' : 'Responses'}
-                    </button>
+      {/* Approval Detail Modal */}
+      {selectedApproval && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+          onClick={closeModal}
+        >
+          <div
+            className="bg-bg-primary rounded-lg shadow-high w-full max-w-md mx-4 max-h-[80vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-border-primary">
+              <h3 className="text-base font-semibold text-text-primary">
+                Application — {selectedApproval.username || 'Unknown User'}
+              </h3>
+              <button
+                onClick={closeModal}
+                className="text-text-muted hover:text-text-primary transition-colors p-1"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+
+            {/* User Info */}
+            <div className="p-4">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 rounded-full bg-bg-tertiary flex items-center justify-center text-text-muted text-lg font-medium overflow-hidden shrink-0">
+                  {selectedApproval.avatar_url ? (
+                    <img
+                      src={selectedApproval.avatar_url}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    selectedApproval.username?.charAt(0)?.toUpperCase() || '?'
                   )}
-
-                  {filter === 'pending' && (
-                    <>
-                      <button
-                        onClick={() => handleApprove(approval.id)}
-                        disabled={actionLoading === approval.id}
-                        className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-medium disabled:opacity-50 transition-colors"
-                      >
-                        Approve
-                      </button>
-                      <button
-                        onClick={() =>
-                          setExpandedId(
-                            expandedId === `deny-${approval.id}` ? null : `deny-${approval.id}`,
-                          )
-                        }
-                        disabled={actionLoading === approval.id}
-                        className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded text-xs font-medium disabled:opacity-50 transition-colors"
-                      >
-                        Deny
-                      </button>
-                    </>
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-text-primary">
+                    {selectedApproval.username || 'Unknown User'}
+                  </div>
+                  {selectedApproval.email && (
+                    <div className="text-xs text-text-muted">{selectedApproval.email}</div>
                   )}
-
-                  {filter === 'denied' && (
-                    <button
-                      onClick={() => handleDelete(approval.id)}
-                      disabled={actionLoading === approval.id}
-                      className="px-3 py-1.5 bg-bg-tertiary hover:bg-bg-modifier-hover text-text-muted rounded text-xs font-medium disabled:opacity-50 transition-colors"
-                    >
-                      Delete
-                    </button>
+                  <div className="text-xs text-text-muted">
+                    Registered{' '}
+                    {new Date(
+                      selectedApproval.user_created_at || selectedApproval.created_at,
+                    ).toLocaleDateString()}
+                  </div>
+                  {selectedApproval.invite_code && (
+                    <div className="text-xs text-accent-primary mt-0.5">
+                      Invite: {selectedApproval.invite_code}
+                    </div>
                   )}
                 </div>
               </div>
 
-              {/* Expanded: Responses */}
-              {expandedId === approval.id && (
-                <div className="mt-3 pt-3 border-t border-border-primary space-y-2">
-                  {Object.entries(approval.responses).map(([key, value]) => (
-                    <div key={key}>
-                      <span className="text-xs font-semibold uppercase text-text-muted">
-                        {key}
-                      </span>
-                      <p className="text-sm text-text-primary">{String(value)}</p>
+              {/* Responses */}
+              {selectedApproval.responses &&
+                Object.keys(selectedApproval.responses).length > 0 && (
+                  <div className="mb-4">
+                    <div className="text-xs font-semibold uppercase text-text-muted mb-2">
+                      Application Responses
                     </div>
-                  ))}
+                    <div className="space-y-3 bg-bg-secondary rounded-lg p-3">
+                      {Object.entries(selectedApproval.responses).map(([key, value]) => (
+                        <div key={key}>
+                          <div className="text-xs font-medium text-text-muted mb-0.5">
+                            {intakeQuestions[key] || key}
+                          </div>
+                          <div className="text-sm text-text-primary">{String(value)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+              {/* No responses */}
+              {(!selectedApproval.responses ||
+                Object.keys(selectedApproval.responses).length === 0) && (
+                <div className="mb-4 text-sm text-text-muted italic">
+                  No application responses submitted.
                 </div>
               )}
 
-              {/* Expanded: Deny reason input */}
-              {expandedId === `deny-${approval.id}` && (
-                <div className="mt-3 pt-3 border-t border-border-primary flex gap-2">
+              {/* Denial reason for denied items */}
+              {selectedApproval.status === 'denied' && selectedApproval.denial_reason && (
+                <div className="mb-4 p-3 rounded bg-red-500/10 border border-red-500/30">
+                  <div className="text-xs font-semibold uppercase text-red-400 mb-1">
+                    Denial Reason
+                  </div>
+                  <div className="text-sm text-text-primary">
+                    {selectedApproval.denial_reason}
+                  </div>
+                </div>
+              )}
+
+              {/* Deny reason input */}
+              {showDenyInput && (
+                <div className="mb-4">
                   <input
                     type="text"
                     placeholder="Denial reason (optional)"
                     value={denyReason}
                     onChange={(e) => setDenyReason(e.target.value)}
                     maxLength={500}
-                    className="flex-1 px-3 py-2 bg-bg-tertiary border border-border-primary rounded text-text-primary text-sm focus:outline-none focus:border-accent-primary"
+                    autoFocus
+                    className="w-full px-3 py-2 bg-bg-tertiary border border-border-primary rounded text-text-primary text-sm focus:outline-none focus:border-accent-primary"
                   />
-                  <button
-                    onClick={() => handleDeny(approval.id)}
-                    disabled={actionLoading === approval.id}
-                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm font-medium disabled:opacity-50 transition-colors"
-                  >
-                    Confirm Deny
-                  </button>
                 </div>
               )}
 
-              {/* Show denial reason for denied items */}
-              {filter === 'denied' && approval.denial_reason && (
-                <div className="mt-2 text-xs text-text-muted">
-                  Reason: {approval.denial_reason}
-                </div>
-              )}
+              {/* Action Buttons */}
+              <div className="flex gap-2 justify-end pt-2 border-t border-border-primary">
+                {filter === 'pending' && !showDenyInput && (
+                  <>
+                    <button
+                      onClick={() => handleApprove(selectedApproval.id)}
+                      disabled={actionLoading === selectedApproval.id}
+                      className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm font-medium disabled:opacity-50 transition-colors"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      onClick={() => setShowDenyInput(true)}
+                      disabled={actionLoading === selectedApproval.id}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm font-medium disabled:opacity-50 transition-colors"
+                    >
+                      Deny
+                    </button>
+                  </>
+                )}
+                {filter === 'pending' && showDenyInput && (
+                  <>
+                    <button
+                      onClick={() => setShowDenyInput(false)}
+                      className="px-4 py-2 bg-bg-tertiary hover:bg-bg-modifier-hover text-text-muted rounded text-sm font-medium transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => handleDeny(selectedApproval.id)}
+                      disabled={actionLoading === selectedApproval.id}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm font-medium disabled:opacity-50 transition-colors"
+                    >
+                      Confirm Deny
+                    </button>
+                  </>
+                )}
+                {filter === 'denied' && (
+                  <button
+                    onClick={() => handleDelete(selectedApproval.id)}
+                    disabled={actionLoading === selectedApproval.id}
+                    className="px-4 py-2 bg-bg-tertiary hover:bg-bg-modifier-hover text-text-muted rounded text-sm font-medium disabled:opacity-50 transition-colors"
+                  >
+                    Delete
+                  </button>
+                )}
+              </div>
             </div>
-          ))}
+          </div>
         </div>
       )}
     </div>
