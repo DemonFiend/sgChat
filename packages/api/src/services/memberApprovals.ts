@@ -66,7 +66,11 @@ export async function getAccessControlSettings(): Promise<AccessControlSettings>
     member_approvals_enabled: false,
     approvals_skip_for_invited: false,
   };
-  const value = setting?.value ?? defaults;
+  let value = setting?.value ?? defaults;
+  // Defensive: if JSONB was double-encoded as a string, parse it
+  if (typeof value === 'string') {
+    try { value = JSON.parse(value); } catch { value = defaults; }
+  }
 
   // Cache in Redis
   await redis.client.setex(CACHE_KEY_ACCESS_CONTROL, CACHE_TTL_ACCESS_CONTROL, JSON.stringify(value));
@@ -120,7 +124,11 @@ export async function getIntakeFormConfig(): Promise<IntakeFormConfig> {
   }
 
   const setting = await db.instanceSettings.get('intake_form_config');
-  const value: IntakeFormConfig = setting?.value ?? { questions: [] };
+  let value: IntakeFormConfig = setting?.value ?? { questions: [] };
+  // Defensive: if JSONB was double-encoded as a string, parse it
+  if (typeof value === 'string') {
+    try { value = JSON.parse(value); } catch { value = { questions: [] }; }
+  }
 
   await redis.client.setex(CACHE_KEY_INTAKE_FORM, CACHE_TTL_INTAKE_FORM, JSON.stringify(value));
   return value;

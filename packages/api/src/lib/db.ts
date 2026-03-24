@@ -487,8 +487,8 @@ export const db = {
     async set(key: string, value: any) {
       await sql`
         INSERT INTO instance_settings (key, value)
-        VALUES (${key}, ${JSON.stringify(value)})
-        ON CONFLICT (key) DO UPDATE SET value = ${JSON.stringify(value)}, updated_at = NOW()
+        VALUES (${key}, ${sql.json(value)})
+        ON CONFLICT (key) DO UPDATE SET value = ${sql.json(value)}, updated_at = NOW()
       `;
     },
   },

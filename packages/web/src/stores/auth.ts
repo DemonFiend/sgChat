@@ -327,6 +327,22 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => {
         const user = (await decryptResponseJson(response)) as User;
         set({ user, isAuthenticated: true, isLoading: false });
         startProactiveRefresh();
+
+        // Check if user is pending approval
+        try {
+          const approvalRes = await encryptedFetch(`${apiUrl}/server/approval-status`, {
+            headers: { Authorization: `Bearer ${token}` }, credentials: 'include',
+          });
+          if (approvalRes.ok) {
+            const approvalData = (await decryptResponseJson(approvalRes)) as { status: string };
+            if (approvalData.status === 'pending') {
+              set({ isPendingApproval: true });
+            }
+          }
+        } catch {
+          // Non-critical — if this fails, user proceeds normally
+        }
+
         return true;
       } catch {
         set({ user: null, isAuthenticated: false, isPendingApproval: false, isLoading: false });
