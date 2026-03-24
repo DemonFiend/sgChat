@@ -831,13 +831,22 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       const body = createInviteSchema.parse(request.body || {});
+
+      // Check BYPASS_SIGNUP_RESTRICTION permission if bypass flag is set
+      const bypassFlag = body.bypasses_signup_restriction === true;
+      if (bypassFlag) {
+        if (!hasPermission(perms.server, ServerPermissions.BYPASS_SIGNUP_RESTRICTION)) {
+          return forbidden(reply, 'Missing BYPASS_SIGNUP_RESTRICTION permission');
+        }
+      }
+
       const code = await generateInviteCode();
 
       const expiresAt = body.expires_at ? new Date(body.expires_at) : null;
 
       const [invite] = await db.sql`
-        INSERT INTO invites (code, server_id, creator_id, max_uses, expires_at)
-        VALUES (${code}, ${server.id}, ${request.user!.id}, ${body.max_uses || null}, ${expiresAt})
+        INSERT INTO invites (code, server_id, creator_id, max_uses, expires_at, bypasses_signup_restriction)
+        VALUES (${code}, ${server.id}, ${request.user!.id}, ${body.max_uses || null}, ${expiresAt}, ${bypassFlag})
         RETURNING *
       `;
 
@@ -899,22 +908,48 @@ export const standaloneRoutes: FastifyPluginAsync = async (fastify) => {
         return sendError(reply, 410, 'Invite has reached maximum uses', 'Gone');
       }
 
+      // Check if banned
+      const [ban] = await db.sql`
+        SELECT 1 FROM bans WHERE server_id = ${invite.server_id} AND user_id = ${request.user!.id}
+      `;
+      if (ban) {
+        return forbidden(reply, 'You are banned from this server');
+      }
+
       const existing = await db.members.findByUserAndServer(request.user!.id, invite.server_id);
       if (existing) {
         return conflict(reply, 'Already a member of this server');
       }
 
-      // Import and use handleMemberJoin
-      const { handleMemberJoin } = await import('../services/server.js');
-      await handleMemberJoin(request.user!.id, invite.server_id);
+      // Track invite usage
       await db.invites.incrementUses(code);
-
-      // Track who used this invite
       await db.sql`
         INSERT INTO invite_uses (invite_code, user_id)
         VALUES (${code}, ${request.user!.id})
         ON CONFLICT (invite_code, user_id) DO NOTHING
       `;
+
+      // Check if member approvals are enabled
+      const { getAccessControlSettings, createApproval } = await import('../services/memberApprovals.js');
+      const accessSettings = await getAccessControlSettings();
+
+      if (accessSettings.member_approvals_enabled) {
+        // Check if invited users can skip approval
+        if (accessSettings.approvals_skip_for_invited) {
+          // Invited users bypass approval queue
+          const { handleMemberJoin } = await import('../services/server.js');
+          await handleMemberJoin(request.user!.id, invite.server_id);
+        } else {
+          // Create approval record — user enters pending state
+          await createApproval(request.user!.id, invite.server_id, code);
+          const server = await db.servers.findById(invite.server_id);
+          return { message: 'Your membership application has been submitted', server, pending_approval: true };
+        }
+      } else {
+        // No approvals — join immediately
+        const { handleMemberJoin } = await import('../services/server.js');
+        await handleMemberJoin(request.user!.id, invite.server_id);
+      }
 
       const server = await db.servers.findById(invite.server_id);
       return { message: 'Joined server successfully', server };

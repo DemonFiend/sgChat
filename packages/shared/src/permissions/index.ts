@@ -63,7 +63,11 @@ export const ServerPermissions = {
   // Events (continued)
   RSVP_EVENTS: 1n << 25n, // RSVP to server events
 
-  // Reserved for future use (26-63)
+  // Access control
+  BYPASS_SIGNUP_RESTRICTION: 1n << 26n, // Create invites that bypass signup restrictions
+  APPROVE_MEMBERS: 1n << 27n, // Review and approve/deny pending member applications
+
+  // Reserved for future use (28-63)
 } as const;
 
 // ============================================================
@@ -423,6 +427,8 @@ export interface NamedPermissions {
   view_server_members: boolean;
   moderate_members: boolean;
   rsvp_events: boolean;
+  bypass_signup_restriction: boolean;
+  approve_members: boolean;
 
   // Text permissions
   view_channel: boolean;
@@ -513,6 +519,9 @@ export function toNamedPermissions(
     view_server_members: isAdmin || (server & ServerPermissions.VIEW_SERVER_MEMBERS) !== 0n,
     moderate_members: isAdmin || (server & ServerPermissions.MODERATE_MEMBERS) !== 0n,
     rsvp_events: isAdmin || (server & ServerPermissions.RSVP_EVENTS) !== 0n,
+    bypass_signup_restriction:
+      isAdmin || (server & ServerPermissions.BYPASS_SIGNUP_RESTRICTION) !== 0n,
+    approve_members: isAdmin || (server & ServerPermissions.APPROVE_MEMBERS) !== 0n,
 
     // Text permissions
     view_channel: isAdmin || (text & TextPermissions.VIEW_CHANNEL) !== 0n,
@@ -848,6 +857,16 @@ export const ServerPermissionMetadata: Record<keyof typeof ServerPermissions, Pe
       name: 'RSVP to Events',
       description: 'Allow members to RSVP to server events',
       category: 'general',
+    },
+    BYPASS_SIGNUP_RESTRICTION: {
+      name: 'Bypass Signup Restriction',
+      description: 'Create invite links that allow registration even when signups are closed',
+      category: 'membership',
+    },
+    APPROVE_MEMBERS: {
+      name: 'Approve Members',
+      description: 'Review and approve or deny pending member applications',
+      category: 'membership',
     },
   };
 

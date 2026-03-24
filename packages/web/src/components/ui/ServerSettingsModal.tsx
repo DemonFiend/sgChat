@@ -8,6 +8,7 @@ import { useImpersonationStore } from '@/stores/impersonation';
 import { ServerPopupConfigForm } from './ServerPopupConfigForm';
 import { RoleReactionsTab } from './RoleReactionsTab';
 import { StorageTab } from './StorageTab';
+import { AccessControlTab } from './AccessControlTab';
 import {
   ServerPermissionMetadata,
   TextPermissionMetadata,
@@ -162,7 +163,7 @@ for (const [metaKey, meta] of Object.entries(VoicePermissionMetadata)) {
 
 // ── End permission groups ────────────────────────────────────────────
 
-type ServerSettingsTab = 'general' | 'roles' | 'role-reactions' | 'members' | 'channels' | 'soundboard' | 'stickers' | 'emoji-packs' | 'webhooks' | 'afk' | 'invites' | 'bans' | 'audit-log' | 'storage' | 'relays' | 'crash-reports' | 'releases';
+type ServerSettingsTab = 'general' | 'roles' | 'role-reactions' | 'members' | 'channels' | 'soundboard' | 'stickers' | 'emoji-packs' | 'webhooks' | 'afk' | 'invites' | 'bans' | 'audit-log' | 'storage' | 'relays' | 'crash-reports' | 'releases' | 'access-control';
 
 interface ServerSettings {
   motd: string;
@@ -246,6 +247,16 @@ const tabs: { id: ServerSettingsTab; label: string; icon: ReactNode; permission?
       </svg>
     ),
     permission: 'manage_members',
+  },
+  {
+    id: 'access-control',
+    label: 'Access Control',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+      </svg>
+    ),
+    permission: 'manage_server',
   },
   {
     id: 'channels',
@@ -558,6 +569,9 @@ export function ServerSettingsModal({ isOpen, onClose, serverName, serverIcon: _
                 {activeTab === 'relays' && <RelayServersTab />}
                 {activeTab === 'crash-reports' && <CrashReportsTab />}
                 {activeTab === 'releases' && <ReleasesTab />}
+                {activeTab === 'access-control' && (
+                  <AccessControlTab serverId={serverData?.id || ''} />
+                )}
               </>
             )}
           </div>

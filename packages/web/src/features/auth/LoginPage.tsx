@@ -49,7 +49,12 @@ export function LoginPage() {
 
     try {
       await loginWithRememberMe(email, password, rememberMe);
-      navigate('/channels/@me');
+      const { isPendingApproval } = useAuthStore.getState();
+      if (isPendingApproval) {
+        navigate('/pending-approval');
+      } else {
+        navigate('/channels/@me');
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {

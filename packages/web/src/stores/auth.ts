@@ -118,6 +118,7 @@ async function decryptResponseJson(response: Response): Promise<unknown> {
 interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
+  isPendingApproval: boolean;
   isLoading: boolean;
   authError: AuthErrorReason | null;
 }
@@ -126,7 +127,8 @@ interface AuthActions {
   getAccessToken: () => string | null;
   login: (email: string, password: string) => Promise<User>;
   loginWithRememberMe: (email: string, password: string, rememberMe: boolean) => Promise<User>;
-  register: (email: string, username: string, password: string) => Promise<User>;
+  register: (email: string, username: string, password: string, inviteCode?: string) => Promise<User>;
+  setIsPendingApproval: (pending: boolean) => void;
   logout: (forgetDevice?: boolean) => Promise<void>;
   refreshAccessToken: () => Promise<string>;
   checkAuth: () => Promise<boolean>;
@@ -175,6 +177,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => {
   return {
     user: null,
     isAuthenticated: false,
+    isPendingApproval: false,
     isLoading: true,
     authError: null,
 
@@ -205,7 +208,12 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => {
       const data = (await decryptResponseJson(response)) as any;
       setTokens(data.access_token, 900);
       startProactiveRefresh();
-      set({ user: data.user, isAuthenticated: true, isLoading: false });
+      set({
+        user: data.user,
+        isAuthenticated: true,
+        isPendingApproval: data.pending_approval === true,
+        isLoading: false,
+      });
       return data.user;
     },
 
@@ -221,15 +229,17 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => {
       return user;
     },
 
-    register: async (email, username, password) => {
+    register: async (email, username, password, inviteCode?) => {
       const apiUrl = getApiUrl();
       if (!apiUrl) throw new Error('No network selected');
       const hashedPassword = await hashPasswordForTransit(password);
+      const bodyPayload: Record<string, string> = { email, username, password: hashedPassword };
+      if (inviteCode) bodyPayload.invite_code = inviteCode;
       const response = await encryptedFetch(`${apiUrl}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ email, username, password: hashedPassword }),
+        body: JSON.stringify(bodyPayload),
       });
       if (!response.ok) {
         const error = await decryptResponseJson(response);
@@ -238,10 +248,17 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => {
       const data = (await decryptResponseJson(response)) as any;
       setTokens(data.access_token, 900);
       startProactiveRefresh();
-      set({ user: data.user, isAuthenticated: true, isLoading: false });
+      set({
+        user: data.user,
+        isAuthenticated: true,
+        isPendingApproval: data.pending_approval === true,
+        isLoading: false,
+      });
       networkStore.saveAccountForNetwork(apiUrl, email, undefined);
       return data.user;
     },
+
+    setIsPendingApproval: (pending) => set({ isPendingApproval: pending }),
 
     refreshAccessToken: async () => {
       // Short-circuit if auth error is already set
@@ -259,13 +276,13 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => {
           response = await encryptedFetch(`${apiUrl}/auth/refresh`, { method: 'POST', credentials: 'include' });
         } catch {
           clearTokens();
-          set({ user: null, isAuthenticated: false, isLoading: false });
+          set({ user: null, isAuthenticated: false, isPendingApproval: false, isLoading: false });
           if (wasAuthenticated) get().triggerAuthError('server_unreachable');
           throw new Error('Server unreachable');
         }
         if (!response.ok) {
           clearTokens();
-          set({ user: null, isAuthenticated: false, isLoading: false });
+          set({ user: null, isAuthenticated: false, isPendingApproval: false, isLoading: false });
           if (wasAuthenticated) get().triggerAuthError('session_expired');
           throw new Error('Session expired');
         }
@@ -294,12 +311,12 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => {
         networkStore.clearStoredCredentials(apiUrl, currentUser.email);
       }
       clearTokens();
-      set({ user: null, isAuthenticated: false, isLoading: false });
+      set({ user: null, isAuthenticated: false, isPendingApproval: false, isLoading: false });
     },
 
     checkAuth: async () => {
       const apiUrl = getApiUrl();
-      if (!apiUrl) { set({ user: null, isAuthenticated: false, isLoading: false }); return false; }
+      if (!apiUrl) { set({ user: null, isAuthenticated: false, isPendingApproval: false, isLoading: false }); return false; }
       set((s) => ({ ...s, isLoading: true }));
       try {
         const token = await get().refreshAccessToken();
@@ -312,7 +329,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => {
         startProactiveRefresh();
         return true;
       } catch {
-        set({ user: null, isAuthenticated: false, isLoading: false });
+        set({ user: null, isAuthenticated: false, isPendingApproval: false, isLoading: false });
         return false;
       }
     },
@@ -375,15 +392,15 @@ export const authStore = {
   getState: () => useAuthStore.getState(),
   state: () => {
     const s = useAuthStore.getState();
-    return { user: s.user, isAuthenticated: s.isAuthenticated, isLoading: s.isLoading };
+    return { user: s.user, isAuthenticated: s.isAuthenticated, isPendingApproval: s.isPendingApproval, isLoading: s.isLoading };
   },
   authError: () => useAuthStore.getState().authError,
   getAccessToken: () => useAuthStore.getState().getAccessToken(),
   refreshAccessToken: () => useAuthStore.getState().refreshAccessToken(),
   loginWithRememberMe: (email: string, password: string, rememberMe: boolean) =>
     useAuthStore.getState().loginWithRememberMe(email, password, rememberMe),
-  register: (email: string, username: string, password: string) =>
-    useAuthStore.getState().register(email, username, password),
+  register: (email: string, username: string, password: string, inviteCode?: string) =>
+    useAuthStore.getState().register(email, username, password, inviteCode),
   logout: (forgetDevice?: boolean) => useAuthStore.getState().logout(forgetDevice),
   checkAuth: () => useAuthStore.getState().checkAuth(),
   attemptAutoLogin: () => useAuthStore.getState().attemptAutoLogin(),

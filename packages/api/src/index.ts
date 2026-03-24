@@ -249,12 +249,16 @@ async function start() {
 
     // Health check with server info for client network discovery
     api.get('/health', async () => {
+      const { getAccessControlSettings } = await import('./services/memberApprovals.js');
+      const accessControl = await getAccessControlSettings();
       return {
         status: 'ok',
         name: process.env.SERVER_NAME || 'sgChat Server',
         version: APP_VERSION,
         commit: process.env.GIT_COMMIT || 'dev',
         timestamp: new Date().toISOString(),
+        signups_disabled: accessControl.signups_disabled,
+        member_approvals_enabled: accessControl.member_approvals_enabled,
       };
     });
 
@@ -274,12 +278,16 @@ async function start() {
 
   // Also keep /health at root for backward compatibility and Docker health checks
   fastify.get('/health', async () => {
+    const { getAccessControlSettings } = await import('./services/memberApprovals.js');
+    const accessControl = await getAccessControlSettings();
     return {
       status: 'ok',
       name: process.env.SERVER_NAME || 'sgChat Server',
       version: APP_VERSION,
       commit: process.env.GIT_COMMIT || 'dev',
       timestamp: new Date().toISOString(),
+      signups_disabled: accessControl.signups_disabled,
+      member_approvals_enabled: accessControl.member_approvals_enabled,
     };
   });
 

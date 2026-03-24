@@ -27,6 +27,7 @@ export const registerSchema = z.object({
   username: usernameSchema,
   email: emailSchema,
   password: passwordSchema,
+  invite_code: z.string().min(6).max(16).optional(),
 });
 
 export const loginSchema = z.object({
@@ -117,6 +118,7 @@ export const updateCustomStatusSchema = z.object({
 export const createInviteSchema = z.object({
   max_uses: z.number().min(0).max(1000).nullable().optional(),
   expires_at: z.string().datetime().nullable().optional(),
+  bypasses_signup_restriction: z.boolean().optional(),
 });
 
 // Role validators

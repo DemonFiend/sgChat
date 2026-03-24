@@ -13,6 +13,7 @@ const LoginPage = lazy(() => import('@/features/auth/LoginPage').then((m) => ({ 
 const RegisterPage = lazy(() => import('@/features/auth/RegisterPage').then((m) => ({ default: m.RegisterPage })));
 const ForgotPasswordPage = lazy(() => import('@/features/auth/ForgotPasswordPage').then((m) => ({ default: m.ForgotPasswordPage })));
 const ResetPasswordPage = lazy(() => import('@/features/auth/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage })));
+const PendingApprovalPage = lazy(() => import('@/features/auth/PendingApprovalPage').then((m) => ({ default: m.PendingApprovalPage })));
 const MainLayout = lazy(() => import('@/layouts/MainLayout').then((m) => ({ default: m.MainLayout })));
 const DMLayout = lazy(() => import('@/layouts/DMLayout').then((m) => ({ default: m.DMLayout })));
 
@@ -74,9 +75,11 @@ function LoadingScreen() {
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const isPendingApproval = useAuthStore((s) => s.isPendingApproval);
   const isLoading = useAuthStore((s) => s.isLoading);
   if (isLoading) return <LoadingScreen />;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (isPendingApproval) return <Navigate to="/pending-approval" replace />;
   return <>{children}</>;
 }
 
@@ -164,6 +167,7 @@ function AppRoutes() {
         <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
         <Route path="/forgot-password" element={<PublicRoute><ForgotPasswordPage /></PublicRoute>} />
         <Route path="/reset-password" element={<PublicRoute><ResetPasswordPage /></PublicRoute>} />
+        <Route path="/pending-approval" element={<PendingApprovalPage />} />
         <Route path="/channels/@me" element={<ProtectedRoute><DMLayout /></ProtectedRoute>} />
         <Route path="/channels/:channelId" element={<ProtectedRoute><MainLayout /></ProtectedRoute>} />
         <Route path="/channels" element={<ProtectedRoute><MainLayout /></ProtectedRoute>} />

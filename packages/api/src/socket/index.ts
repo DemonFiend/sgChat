@@ -229,6 +229,16 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
     const currentUser = await db.users.findById(userId);
     const storedStatus = currentUser?.status || 'offline';
 
+    // Check if user has a pending approval (for access control)
+    let pendingApproval = false;
+    if (servers.length === 0) {
+      const { isPendingApproval } = await import('../services/memberApprovals.js');
+      const [defaultServer] = await db.sql`SELECT id FROM servers ORDER BY created_at ASC LIMIT 1`;
+      if (defaultServer) {
+        pendingApproval = await isPendingApproval(userId, defaultServer.id);
+      }
+    }
+
     const readyPayload: GatewayReady = {
       user: {
         id: userId,
@@ -237,7 +247,8 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
       },
       sequences,
       subscriptions,
-    };
+      pending_approval: pendingApproval,
+    } as any;
     await socketEmit(socket, 'gateway.ready', readyPayload);
 
     // ── Persist gateway session for resume support ────────────

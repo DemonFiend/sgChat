@@ -7,6 +7,11 @@ import { db } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
 import { sendPasswordResetEmail } from '../lib/email.js';
 import { handleMemberJoin } from '../services/server.js';
+import {
+  getAccessControlSettings,
+  createApproval,
+  getUserApprovalStatus,
+} from '../services/memberApprovals.js';
 import { emitEncrypted } from '../lib/socketEmit.js';
 import {
   registerSchema,
@@ -67,6 +72,66 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
+      // ── Access Control Gate ──────────────────────────────
+      const accessSettings = await getAccessControlSettings();
+      let validBypassInvite: any = null;
+
+      if (accessSettings.signups_disabled) {
+        if (!body.invite_code) {
+          return reply.status(403).send({
+            statusCode: 403,
+            error: 'Forbidden',
+            message: 'Registration is currently closed',
+            code: 'SIGNUPS_DISABLED',
+          });
+        }
+
+        // Validate the invite code
+        const [invite] = await db.sql`
+          SELECT * FROM invites WHERE code = ${body.invite_code}
+        `;
+        if (!invite) {
+          return reply.status(403).send({
+            statusCode: 403,
+            error: 'Forbidden',
+            message: 'Invalid invite code',
+            code: 'INVALID_INVITE',
+          });
+        }
+        if (invite.expires_at && new Date(invite.expires_at) < new Date()) {
+          return reply.status(410).send({
+            statusCode: 410,
+            error: 'Gone',
+            message: 'This invite has expired',
+          });
+        }
+        if (invite.max_uses && invite.uses >= invite.max_uses) {
+          return reply.status(410).send({
+            statusCode: 410,
+            error: 'Gone',
+            message: 'This invite has reached its maximum uses',
+          });
+        }
+        if (!invite.bypasses_signup_restriction) {
+          return reply.status(403).send({
+            statusCode: 403,
+            error: 'Forbidden',
+            message: 'This invite does not grant registration access',
+            code: 'INVITE_NO_BYPASS',
+          });
+        }
+        validBypassInvite = invite;
+      } else if (body.invite_code) {
+        // Signups are open but invite_code was provided — validate it for tracking
+        const [invite] = await db.sql`
+          SELECT * FROM invites WHERE code = ${body.invite_code}
+        `;
+        if (invite && (!invite.expires_at || new Date(invite.expires_at) >= new Date()) &&
+            (!invite.max_uses || invite.uses < invite.max_uses)) {
+          validBypassInvite = invite;
+        }
+      }
+
       // Check if username or email already exists
       const existingUser = await db.users.findByUsername(body.username);
       if (existingUser) {
@@ -101,12 +166,44 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         INSERT INTO user_settings (user_id) VALUES (${user.id})
       `;
 
-      // Single-tenant: Auto-join user to the server
+      // Single-tenant: Auto-join user to the server (with access control checks)
       const [server] = await db.sql`
         SELECT id FROM servers ORDER BY created_at ASC LIMIT 1
       `;
+
+      let pendingApproval = false;
+
       if (server) {
-        await handleMemberJoin(user.id, server.id, fastify.io);
+        // Track invite usage if an invite was provided
+        if (validBypassInvite) {
+          await db.sql`
+            UPDATE invites SET uses = uses + 1 WHERE code = ${validBypassInvite.code}
+          `;
+          await db.sql`
+            INSERT INTO invite_uses (invite_code, user_id)
+            VALUES (${validBypassInvite.code}, ${user.id})
+            ON CONFLICT (invite_code, user_id) DO NOTHING
+          `;
+        }
+
+        if (accessSettings.member_approvals_enabled) {
+          // Check if invited users can skip approval
+          if (accessSettings.approvals_skip_for_invited && validBypassInvite) {
+            // Invited user bypasses approval queue
+            await handleMemberJoin(user.id, server.id, fastify.io);
+          } else {
+            // Create an approval record — user enters pending state
+            await createApproval(user.id, server.id, validBypassInvite?.code || null);
+            pendingApproval = true;
+            fastify.log.info(
+              { userId: user.id, inviteCode: validBypassInvite?.code },
+              '[AccessControl] Member approval submitted',
+            );
+          }
+        } else {
+          // No approvals needed — auto-join immediately
+          await handleMemberJoin(user.id, server.id, fastify.io);
+        }
       }
 
       // Generate tokens
@@ -129,6 +226,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         access_token,
         refresh_token,
         user,
+        pending_approval: pendingApproval,
       };
     },
   });
@@ -188,16 +286,43 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       // Update last seen
       await db.users.updateStatus(userWithPassword.id, 'online');
 
-      // Single-tenant: Ensure user is a member of the server
+      // Single-tenant: Ensure user is a member of the server (with access control checks)
       const [server] = await db.sql`
         SELECT id FROM servers ORDER BY created_at ASC LIMIT 1
       `;
+
+      let pendingApproval = false;
+
       if (server) {
         const [existingMember] = await db.sql`
           SELECT 1 FROM members WHERE user_id = ${userWithPassword.id} AND server_id = ${server.id}
         `;
         if (!existingMember) {
-          await handleMemberJoin(userWithPassword.id, server.id, fastify.io);
+          // Check for existing approval record
+          const approvalStatus = await getUserApprovalStatus(userWithPassword.id, server.id);
+
+          if (approvalStatus?.status === 'pending') {
+            // User is still pending — do NOT auto-join
+            pendingApproval = true;
+          } else if (approvalStatus?.status === 'denied') {
+            return reply.status(403).send({
+              statusCode: 403,
+              error: 'Forbidden',
+              message: approvalStatus.denial_reason || 'Your membership application was denied',
+              code: 'APPLICATION_DENIED',
+            });
+          } else {
+            // No approval record — check if approvals are enabled
+            const accessSettings = await getAccessControlSettings();
+            if (accessSettings.member_approvals_enabled) {
+              // Create a new approval record
+              await createApproval(userWithPassword.id, server.id);
+              pendingApproval = true;
+            } else {
+              // Auto-join normally
+              await handleMemberJoin(userWithPassword.id, server.id, fastify.io);
+            }
+          }
         }
       }
 
@@ -214,6 +339,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         access_token,
         refresh_token,
         user: safeUser,
+        pending_approval: pendingApproval,
       };
     },
   });

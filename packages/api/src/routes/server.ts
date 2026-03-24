@@ -10,8 +10,26 @@ import { db } from '../lib/db.js';
 import { ServerPermissions, hasPermission, DEFAULT_AVATAR_LIMITS } from '@sgchat/shared';
 import type { AvatarLimits } from '@sgchat/shared';
 import { calculatePermissions } from '../services/permissions.js';
-import { forbidden, notFound, badRequest } from '../utils/errors.js';
+import { forbidden, notFound, badRequest, conflict } from '../utils/errors.js';
 import { z } from 'zod';
+import {
+  getAccessControlSettings,
+  setAccessControlSettings,
+  getIntakeFormConfig,
+  setIntakeFormConfig,
+  getUserApprovalStatus,
+  getApprovalQueue,
+  getApprovalById,
+  approveApplicant,
+  denyApplicant,
+  deleteApproval,
+  submitResponses,
+  getPendingCount,
+  ValidationError,
+  NotFoundError,
+  ForbiddenError,
+  type IntakeFormQuestion,
+} from '../services/memberApprovals.js';
 import { nanoid } from 'nanoid';
 import { emitEncrypted } from '../lib/socketEmit.js';
 import { extractFileData } from './upload.js';
@@ -121,6 +139,11 @@ export const globalServerRoutes: FastifyPluginAsync = async (fastify) => {
         server_time: new Date().toISOString(),
         timezone: server.timezone || 'UTC',
       };
+
+      // Include access control status (public — needed by register/login pages)
+      const accessControl = await getAccessControlSettings();
+      response.signups_disabled = accessControl.signups_disabled;
+      response.member_approvals_enabled = accessControl.member_approvals_enabled;
 
       // Include MOTD if enabled
       if (server.motd_enabled && server.motd) {
@@ -1059,6 +1082,348 @@ export const globalServerRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       return runAutoPurge(server.id);
+    },
+  });
+
+  // ============================================================
+  // ACCESS CONTROL (Private Server Mode)
+  // ============================================================
+
+  const accessControlSchema = z.object({
+    signups_disabled: z.boolean().optional(),
+    member_approvals_enabled: z.boolean().optional(),
+    approvals_skip_for_invited: z.boolean().optional(),
+  });
+
+  const intakeFormSchema = z.object({
+    questions: z.array(z.object({
+      id: z.string().min(1),
+      label: z.string().min(1).max(200),
+      type: z.enum(['text', 'textarea', 'select', 'checkbox']),
+      required: z.boolean(),
+      max_length: z.number().int().min(1).max(2000).optional(),
+      placeholder: z.string().max(200).optional(),
+      options: z.array(z.string().min(1).max(100)).max(20).optional(),
+    })).max(10),
+  });
+
+  /**
+   * GET /server/settings/access-control
+   * Get current access control settings
+   */
+  fastify.get('/settings/access-control', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) return notFound(reply, 'Server');
+
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) ||
+                      server.owner_id === request.user!.id;
+      if (!isAdmin) return forbidden(reply, 'Only administrators can view access control settings');
+
+      return getAccessControlSettings();
+    },
+  });
+
+  /**
+   * PATCH /server/settings/access-control
+   * Update access control settings
+   */
+  fastify.patch('/settings/access-control', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) return notFound(reply, 'Server');
+
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) ||
+                      server.owner_id === request.user!.id;
+      if (!isAdmin) return forbidden(reply, 'Only administrators can modify access control settings');
+
+      const body = accessControlSchema.parse(request.body);
+      const updated = await setAccessControlSettings(body, request.user!.id, server.id, fastify.io);
+
+      fastify.log.info(
+        { updatedBy: request.user!.id, ...updated },
+        '[AccessControl] Settings updated',
+      );
+
+      return updated;
+    },
+  });
+
+  /**
+   * GET /server/intake-form
+   * Get intake form configuration (public — shown to pending users)
+   */
+  fastify.get('/intake-form', {
+    handler: async (_request, _reply) => {
+      return getIntakeFormConfig();
+    },
+  });
+
+  /**
+   * PATCH /server/intake-form
+   * Update intake form configuration
+   */
+  fastify.patch('/intake-form', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) return notFound(reply, 'Server');
+
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      if (!hasPermission(perms.server, ServerPermissions.MANAGE_SERVER) &&
+          server.owner_id !== request.user!.id) {
+        return forbidden(reply, 'Missing MANAGE_SERVER permission');
+      }
+
+      const body = intakeFormSchema.parse(request.body);
+      const updated = await setIntakeFormConfig(
+        body as { questions: IntakeFormQuestion[] },
+        request.user!.id,
+        server.id,
+      );
+
+      fastify.log.info(
+        { updatedBy: request.user!.id, questionCount: updated.questions.length },
+        '[AccessControl] Intake form updated',
+      );
+
+      return updated;
+    },
+  });
+
+  /**
+   * GET /server/approval-status
+   * Get the current user's own approval status
+   */
+  fastify.get('/approval-status', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) return notFound(reply, 'Server');
+
+      const status = await getUserApprovalStatus(request.user!.id, server.id);
+      if (!status) {
+        return { status: 'none' };
+      }
+
+      return {
+        id: status.id,
+        status: status.status,
+        denial_reason: status.denial_reason,
+        submitted_at: status.submitted_at,
+        reviewed_at: status.reviewed_at,
+        created_at: status.created_at,
+      };
+    },
+  });
+
+  /**
+   * POST /server/approvals/submit
+   * Submit intake form responses (pending user only)
+   */
+  fastify.post('/approvals/submit', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) return notFound(reply, 'Server');
+
+      const body = z.object({
+        responses: z.record(z.string(), z.string()),
+      }).parse(request.body);
+
+      try {
+        const approval = await submitResponses(request.user!.id, server.id, body.responses);
+        return approval;
+      } catch (err) {
+        if (err instanceof ValidationError) {
+          return badRequest(reply, err.message);
+        }
+        if (err instanceof NotFoundError) {
+          return notFound(reply, err.message);
+        }
+        throw err;
+      }
+    },
+  });
+
+  /**
+   * GET /server/approvals
+   * List approval queue (requires APPROVE_MEMBERS)
+   */
+  fastify.get('/approvals', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) return notFound(reply, 'Server');
+
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      if (!hasPermission(perms.server, ServerPermissions.APPROVE_MEMBERS) &&
+          server.owner_id !== request.user!.id) {
+        return forbidden(reply, 'Missing APPROVE_MEMBERS permission');
+      }
+
+      const query = request.query as { status?: string; limit?: string; before?: string };
+      return getApprovalQueue(server.id, {
+        status: (query.status as any) || 'pending',
+        limit: query.limit ? parseInt(query.limit, 10) : 50,
+        before: query.before,
+      });
+    },
+  });
+
+  /**
+   * GET /server/approvals/:id
+   * Get a single approval with full details (requires APPROVE_MEMBERS)
+   */
+  fastify.get('/approvals/:id', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) return notFound(reply, 'Server');
+
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      if (!hasPermission(perms.server, ServerPermissions.APPROVE_MEMBERS) &&
+          server.owner_id !== request.user!.id) {
+        return forbidden(reply, 'Missing APPROVE_MEMBERS permission');
+      }
+
+      const { id } = request.params as { id: string };
+      const approval = await getApprovalById(id);
+      if (!approval || approval.server_id !== server.id) {
+        return notFound(reply, 'Approval');
+      }
+
+      // Fetch user info
+      const [user] = await db.sql`
+        SELECT id, username, email, avatar_url, created_at FROM users WHERE id = ${approval.user_id}
+      `;
+
+      return { ...approval, user };
+    },
+  });
+
+  /**
+   * POST /server/approvals/:id/approve
+   * Approve a pending member (requires APPROVE_MEMBERS)
+   */
+  fastify.post('/approvals/:id/approve', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) return notFound(reply, 'Server');
+
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      if (!hasPermission(perms.server, ServerPermissions.APPROVE_MEMBERS) &&
+          server.owner_id !== request.user!.id) {
+        return forbidden(reply, 'Missing APPROVE_MEMBERS permission');
+      }
+
+      const { id } = request.params as { id: string };
+
+      try {
+        const approval = await approveApplicant(id, request.user!.id, server.id, fastify.io);
+        fastify.log.info(
+          { approvalId: id, userId: approval.user_id, approvedBy: request.user!.id },
+          '[AccessControl] Member approved',
+        );
+        return { message: 'Member approved', approval };
+      } catch (err) {
+        if (err instanceof NotFoundError) {
+          return conflict(reply, 'Approval not found or already processed');
+        }
+        if (err instanceof ForbiddenError) {
+          return forbidden(reply, err.message);
+        }
+        throw err;
+      }
+    },
+  });
+
+  /**
+   * POST /server/approvals/:id/deny
+   * Deny a pending member (requires APPROVE_MEMBERS)
+   */
+  fastify.post('/approvals/:id/deny', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) return notFound(reply, 'Server');
+
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      if (!hasPermission(perms.server, ServerPermissions.APPROVE_MEMBERS) &&
+          server.owner_id !== request.user!.id) {
+        return forbidden(reply, 'Missing APPROVE_MEMBERS permission');
+      }
+
+      const { id } = request.params as { id: string };
+      const body = z.object({
+        reason: z.string().max(500).optional(),
+      }).parse(request.body || {});
+
+      try {
+        const approval = await denyApplicant(id, request.user!.id, server.id, body.reason, fastify.io);
+        fastify.log.info(
+          { approvalId: id, userId: approval.user_id, deniedBy: request.user!.id },
+          '[AccessControl] Member denied',
+        );
+        return { message: 'Member denied', approval };
+      } catch (err) {
+        if (err instanceof NotFoundError) {
+          return conflict(reply, 'Approval not found or already processed');
+        }
+        if (err instanceof ForbiddenError) {
+          return forbidden(reply, err.message);
+        }
+        throw err;
+      }
+    },
+  });
+
+  /**
+   * DELETE /server/approvals/:id
+   * Delete an approval record (requires ADMINISTRATOR)
+   */
+  fastify.delete('/approvals/:id', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) return notFound(reply, 'Server');
+
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) ||
+                      server.owner_id === request.user!.id;
+      if (!isAdmin) return forbidden(reply, 'Only administrators can delete approval records');
+
+      const { id } = request.params as { id: string };
+      const deleted = await deleteApproval(id);
+      if (!deleted) return notFound(reply, 'Approval');
+
+      return { message: 'Approval record deleted' };
+    },
+  });
+
+  /**
+   * GET /server/approvals/count
+   * Get pending approval count (for badge)
+   */
+  fastify.get('/approvals/count', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) return notFound(reply, 'Server');
+
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      if (!hasPermission(perms.server, ServerPermissions.APPROVE_MEMBERS) &&
+          server.owner_id !== request.user!.id) {
+        return forbidden(reply, 'Missing APPROVE_MEMBERS permission');
+      }
+
+      const count = await getPendingCount(server.id);
+      return { count };
     },
   });
 };
