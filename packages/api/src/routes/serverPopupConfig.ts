@@ -63,7 +63,7 @@ export const serverPopupConfigRoutes: FastifyPluginAsync = async (fastify) => {
                 timezone: server.timezone || 'UTC',
                 welcomeChannelId: server.welcome_channel_id ?? null,
                 welcomeMessage: popupConfig.welcomeMessage !== undefined ? popupConfig.welcomeMessage : server.welcome_message,
-                events: popupConfig.events || [],
+                events: Array.isArray(popupConfig.events) ? popupConfig.events : [],
             };
 
             return response;
@@ -220,7 +220,7 @@ export const serverPopupConfigRoutes: FastifyPluginAsync = async (fastify) => {
                 motd: popupConfig.motd !== undefined ? popupConfig.motd : server.motd,
                 welcomeMessage: popupConfig.welcomeMessage !== undefined ? popupConfig.welcomeMessage : server.welcome_message,
                 timezone: server.timezone || 'UTC',
-                events: popupConfig.events || [],
+                events: Array.isArray(popupConfig.events) ? popupConfig.events : [],
             };
         },
     });

@@ -297,7 +297,7 @@ export function ServerWelcomePopup() {
                             </div>
 
                             {/* Events Section */}
-                            {serverData.events && serverData.events.filter(e => e.enabled).length > 0 && (
+                            {Array.isArray(serverData.events) && serverData.events.filter(e => e.enabled).length > 0 && (
                                 <div className="px-6 pb-6">
                                     <h3 className="text-xs font-bold uppercase text-text-muted mb-2 tracking-wide">
                                         Events
