@@ -70,6 +70,3 @@ ALTER TABLE audit_log ADD CONSTRAINT audit_log_action_check CHECK (action IN (
   -- Access control actions
   'signup_settings_update', 'member_approved', 'member_denied', 'intake_form_updated'
 ));
-
--- Mark migration as applied
-INSERT INTO _migrations (name) VALUES ('033_access_control') ON CONFLICT (name) DO NOTHING;
