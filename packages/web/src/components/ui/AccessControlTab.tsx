@@ -433,8 +433,8 @@ function MemberApprovalsPanel({ serverId }: { serverId: string }) {
 
   const fetchApprovals = useCallback(async () => {
     try {
-      const data = await api.get<Approval[]>(`/server/approvals?status=${filter}`);
-      setApprovals(data);
+      const data = await api.get<{ approvals: Approval[]; total_pending: number }>(`/server/approvals?status=${filter}`);
+      setApprovals(Array.isArray(data) ? data : data.approvals ?? []);
     } catch {
       // error
     } finally {
