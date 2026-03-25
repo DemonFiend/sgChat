@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { Button, Input, NetworkSelector } from '@/components/ui';
-import { useAuthStore } from '@/stores/auth';
+import { useAuthStore, LoginError } from '@/stores/auth';
 import { useNetworkStore } from '@/stores/network';
 
 export function LoginPage() {
@@ -10,6 +10,7 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
+  const [retryAfter, setRetryAfter] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showNetworkSelector, setShowNetworkSelector] = useState(false);
 
@@ -56,7 +57,13 @@ export function LoginPage() {
         navigate('/channels/@me');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      if (err instanceof LoginError && err.code === 'APPLICATION_DENIED') {
+        setError(err.message);
+        setRetryAfter(err.retry_after || null);
+      } else {
+        setError(err instanceof Error ? err.message : 'Login failed');
+        setRetryAfter(null);
+      }
     } finally {
       setLoading(false);
     }
@@ -99,7 +106,21 @@ export function LoginPage() {
 
           {error && (
             <div className="mb-4 p-3 rounded bg-danger/10 border border-danger/50 text-danger text-sm">
-              {error}
+              <p>{error}</p>
+              {retryAfter && (
+                <p className="mt-1 text-text-muted">
+                  You may re-apply after{' '}
+                  <span className="font-medium text-text-primary">
+                    {new Date(retryAfter).toLocaleDateString(undefined, {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                      hour: 'numeric',
+                      minute: '2-digit',
+                    })}
+                  </span>
+                </p>
+              )}
             </div>
           )}
 

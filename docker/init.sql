@@ -1832,6 +1832,20 @@ INSERT INTO instance_settings (key, value) VALUES
   ('intake_form_config', '{"questions": []}'::jsonb)
 ON CONFLICT (key) DO NOTHING;
 
+-- Registration blacklist (email/IP bans)
+CREATE TABLE IF NOT EXISTS registration_blacklist (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  type        TEXT NOT NULL CHECK (type IN ('email', 'ip')),
+  value       TEXT NOT NULL,
+  reason      TEXT,
+  created_by  UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (type, value)
+);
+
+CREATE INDEX IF NOT EXISTS idx_registration_blacklist_lookup
+  ON registration_blacklist(type, lower(value));
+
 -- Update audit_log constraint to include access control actions
 ALTER TABLE audit_log DROP CONSTRAINT IF EXISTS audit_log_action_check;
 ALTER TABLE audit_log ADD CONSTRAINT audit_log_action_check CHECK (action IN (
@@ -1865,7 +1879,9 @@ ALTER TABLE audit_log ADD CONSTRAINT audit_log_action_check CHECK (action IN (
   -- Nickname actions
   'member_nickname_change', 'member_nickname_override',
   -- Access control actions
-  'signup_settings_update', 'member_approved', 'member_denied', 'intake_form_updated'
+  'signup_settings_update', 'member_approved', 'member_denied', 'intake_form_updated',
+  -- Blacklist actions
+  'blacklist_add', 'blacklist_remove', 'blacklist_from_approval'
 ));
 
 INSERT INTO _migrations (name) VALUES
@@ -1899,5 +1915,6 @@ INSERT INTO _migrations (name) VALUES
   ('025_relay_servers'),
   ('026_relay_draining_status'),
   ('029_ignore_and_admin_nickname'),
-  ('033_access_control')
+  ('033_access_control'),
+  ('034_registration_blacklist')
 ON CONFLICT (name) DO NOTHING;

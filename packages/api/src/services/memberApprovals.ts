@@ -10,6 +10,7 @@ export interface AccessControlSettings {
   signups_disabled: boolean;
   member_approvals_enabled: boolean;
   approvals_skip_for_invited: boolean;
+  denial_cooldown_hours: number; // 0 = never allow re-apply, default 24
 }
 
 export interface IntakeFormQuestion {
@@ -65,6 +66,7 @@ export async function getAccessControlSettings(): Promise<AccessControlSettings>
     signups_disabled: false,
     member_approvals_enabled: false,
     approvals_skip_for_invited: false,
+    denial_cooldown_hours: 24,
   };
   let value = setting?.value ?? defaults;
   // Defensive: if JSONB was double-encoded as a string, parse it
@@ -203,7 +205,7 @@ export async function submitResponses(
 
   const [approval] = await sql`
     UPDATE member_approvals
-    SET responses = ${JSON.stringify(responses)},
+    SET responses = ${sql.json(responses)},
         submitted_at = NOW()
     WHERE user_id = ${userId}
       AND server_id = ${serverId}
@@ -476,6 +478,34 @@ export async function isPendingApproval(userId: string, serverId: string): Promi
     WHERE user_id = ${userId} AND server_id = ${serverId} AND status = 'pending'
   `;
   return !!approval;
+}
+
+export async function resetDeniedApproval(
+  userId: string,
+  serverId: string,
+): Promise<MemberApproval> {
+  const [approval] = await sql`
+    UPDATE member_approvals
+    SET status = 'pending',
+        responses = '{}',
+        submitted_at = NULL,
+        reviewed_by = NULL,
+        reviewed_at = NULL,
+        denial_reason = NULL,
+        created_at = NOW()
+    WHERE user_id = ${userId}
+      AND server_id = ${serverId}
+      AND status = 'denied'
+    RETURNING *
+  `;
+  if (!approval) {
+    throw new NotFoundError('No denied approval found');
+  }
+
+  // Invalidate pending count cache
+  await redis.client.del(`pending_approval_count:${serverId}`);
+
+  return approval as MemberApproval;
 }
 
 // ── Error Types ──────────────────────────────────────────────

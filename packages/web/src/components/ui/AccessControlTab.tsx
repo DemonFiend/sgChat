@@ -8,6 +8,17 @@ interface AccessControlSettings {
   signups_disabled: boolean;
   member_approvals_enabled: boolean;
   approvals_skip_for_invited: boolean;
+  denial_cooldown_hours: number;
+}
+
+interface BlacklistEntry {
+  id: string;
+  type: 'email' | 'ip';
+  value: string;
+  reason: string | null;
+  created_by: string | null;
+  created_by_username: string | null;
+  created_at: string;
 }
 
 interface IntakeQuestion {
@@ -52,13 +63,14 @@ export function AccessControlTab({ serverId }: AccessControlTabProps) {
     signups_disabled: false,
     member_approvals_enabled: false,
     approvals_skip_for_invited: false,
+    denial_cooldown_hours: 24,
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [activeSection, setActiveSection] = useState<'settings' | 'intake-form' | 'approvals'>(
-    'settings',
-  );
+  const [activeSection, setActiveSection] = useState<
+    'settings' | 'intake-form' | 'approvals' | 'blacklist'
+  >('settings');
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -105,7 +117,7 @@ export function AccessControlTab({ serverId }: AccessControlTabProps) {
 
       {/* Section Tabs */}
       <div className="flex gap-1 mb-6 border-b border-border-primary">
-        {(['settings', 'intake-form', 'approvals'] as const).map((section) => (
+        {(['settings', 'intake-form', 'approvals', 'blacklist'] as const).map((section) => (
           <button
             key={section}
             onClick={() => setActiveSection(section)}
@@ -119,7 +131,9 @@ export function AccessControlTab({ serverId }: AccessControlTabProps) {
               ? 'Settings'
               : section === 'intake-form'
                 ? 'Intake Form'
-                : 'Pending Approvals'}
+                : section === 'approvals'
+                  ? 'Pending Approvals'
+                  : 'Blacklist'}
           </button>
         ))}
       </div>
@@ -202,6 +216,37 @@ export function AccessControlTab({ serverId }: AccessControlTabProps) {
             </label>
           )}
 
+          {/* Denial Re-apply Cooldown */}
+          {settings.member_approvals_enabled && (
+            <div className="p-3 bg-bg-secondary rounded-lg ml-4">
+              <div className="text-sm font-medium text-text-primary mb-1">
+                Denial Re-apply Cooldown
+              </div>
+              <div className="text-xs text-text-secondary mb-2">
+                How long denied users must wait before they can re-apply. &quot;Never&quot; means
+                denied users cannot re-apply.
+              </div>
+              <select
+                value={settings.denial_cooldown_hours}
+                onChange={(e) =>
+                  setSettings((prev) => ({
+                    ...prev,
+                    denial_cooldown_hours: parseInt(e.target.value),
+                  }))
+                }
+                className="px-3 py-2 bg-bg-tertiary border border-border-primary rounded text-text-primary text-sm focus:outline-none focus:border-accent-primary"
+              >
+                <option value={0}>Never (permanent denial)</option>
+                <option value={1}>1 hour</option>
+                <option value={6}>6 hours</option>
+                <option value={12}>12 hours</option>
+                <option value={24}>24 hours</option>
+                <option value={48}>48 hours</option>
+                <option value={168}>7 days</option>
+              </select>
+            </div>
+          )}
+
           {/* Save Button */}
           <div className="flex items-center gap-3 pt-2">
             <button
@@ -219,6 +264,8 @@ export function AccessControlTab({ serverId }: AccessControlTabProps) {
       {activeSection === 'intake-form' && <IntakeFormBuilder />}
 
       {activeSection === 'approvals' && <MemberApprovalsPanel serverId={serverId} />}
+
+      {activeSection === 'blacklist' && <BlacklistPanel />}
     </div>
   );
 }
@@ -434,6 +481,7 @@ function MemberApprovalsPanel({ serverId }: { serverId: string }) {
   const [showDenyInput, setShowDenyInput] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [intakeQuestions, setIntakeQuestions] = useState<Record<string, string>>({});
+  const [showBlacklistConfirm, setShowBlacklistConfirm] = useState(false);
 
   // Fetch intake form config for question label mapping
   useEffect(() => {
@@ -529,10 +577,29 @@ function MemberApprovalsPanel({ serverId }: { serverId: string }) {
     }
   };
 
+  const handleBlacklist = async (id: string) => {
+    setActionLoading(id);
+    try {
+      await api.post(`/server/approvals/${id}/blacklist`, {
+        reason: denyReason.trim() || undefined,
+      });
+      setApprovals((prev) => prev.filter((a) => a.id !== id));
+      setDenyReason('');
+      setShowDenyInput(false);
+      setShowBlacklistConfirm(false);
+      setSelectedApproval(null);
+    } catch {
+      // error
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const closeModal = () => {
     setSelectedApproval(null);
     setDenyReason('');
     setShowDenyInput(false);
+    setShowBlacklistConfirm(false);
   };
 
   return (
@@ -734,10 +801,45 @@ function MemberApprovalsPanel({ serverId }: { serverId: string }) {
                 </div>
               )}
 
+              {/* Blacklist confirmation */}
+              {showBlacklistConfirm && (
+                <div className="mb-4 p-3 rounded bg-red-500/10 border border-red-500/30">
+                  <div className="text-sm font-medium text-red-400 mb-1">
+                    Blacklist this user?
+                  </div>
+                  <div className="text-xs text-text-muted mb-2">
+                    This will deny their application and prevent their email from registering again.
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setShowBlacklistConfirm(false)}
+                      className="px-3 py-1.5 bg-bg-tertiary hover:bg-bg-modifier-hover text-text-muted rounded text-xs font-medium transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => handleBlacklist(selectedApproval.id)}
+                      disabled={actionLoading === selectedApproval.id}
+                      className="px-3 py-1.5 bg-red-700 hover:bg-red-800 text-white rounded text-xs font-medium disabled:opacity-50 transition-colors"
+                    >
+                      Confirm Blacklist
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Action Buttons */}
               <div className="flex gap-2 justify-end pt-2 border-t border-border-primary">
-                {filter === 'pending' && !showDenyInput && (
+                {filter === 'pending' && !showDenyInput && !showBlacklistConfirm && (
                   <>
+                    <button
+                      onClick={() => setShowBlacklistConfirm(true)}
+                      disabled={actionLoading === selectedApproval.id}
+                      className="px-3 py-2 bg-red-900/50 hover:bg-red-900/80 text-red-300 rounded text-sm font-medium disabled:opacity-50 transition-colors mr-auto"
+                      title="Deny and prevent this email from registering again"
+                    >
+                      Blacklist
+                    </button>
                     <button
                       onClick={() => handleApprove(selectedApproval.id)}
                       disabled={actionLoading === selectedApproval.id}
@@ -783,6 +885,155 @@ function MemberApprovalsPanel({ serverId }: { serverId: string }) {
               </div>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Blacklist Panel ─────────────────────────────────────────────────
+
+function BlacklistPanel() {
+  const [entries, setEntries] = useState<BlacklistEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newType, setNewType] = useState<'email' | 'ip'>('email');
+  const [newValue, setNewValue] = useState('');
+  const [newReason, setNewReason] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [error, setError] = useState('');
+
+  const fetchEntries = useCallback(async () => {
+    try {
+      const data = await api.get<{ entries: BlacklistEntry[] }>('/server/blacklist');
+      setEntries(data.entries ?? []);
+    } catch {
+      // error
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchEntries();
+  }, [fetchEntries]);
+
+  const handleAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newValue.trim()) return;
+    setAdding(true);
+    setError('');
+    try {
+      await api.post('/server/blacklist', {
+        type: newType,
+        value: newValue.trim(),
+        reason: newReason.trim() || undefined,
+      });
+      setNewValue('');
+      setNewReason('');
+      fetchEntries();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add entry');
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleRemove = async (id: string) => {
+    try {
+      await api.delete(`/server/blacklist/${id}`);
+      setEntries((prev) => prev.filter((e) => e.id !== id));
+    } catch {
+      // error
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-32">
+        <div className="text-text-muted">Loading...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <p className="text-sm text-text-muted mb-4">
+        Blacklisted emails and IPs are blocked from registering new accounts.
+      </p>
+
+      {/* Add Form */}
+      <form onSubmit={handleAdd} className="mb-6 p-4 bg-bg-secondary rounded-lg space-y-3">
+        <div className="text-xs font-semibold uppercase text-text-muted">Add to Blacklist</div>
+        <div className="flex gap-2">
+          <select
+            value={newType}
+            onChange={(e) => setNewType(e.target.value as 'email' | 'ip')}
+            className="px-3 py-2 bg-bg-tertiary border border-border-primary rounded text-text-primary text-sm focus:outline-none focus:border-accent-primary"
+          >
+            <option value="email">Email</option>
+            <option value="ip">IP Address</option>
+          </select>
+          <input
+            type="text"
+            placeholder={newType === 'email' ? 'user@example.com' : '192.168.1.1'}
+            value={newValue}
+            onChange={(e) => setNewValue(e.target.value)}
+            className="flex-1 px-3 py-2 bg-bg-tertiary border border-border-primary rounded text-text-primary text-sm focus:outline-none focus:border-accent-primary"
+          />
+        </div>
+        <input
+          type="text"
+          placeholder="Reason (optional)"
+          value={newReason}
+          onChange={(e) => setNewReason(e.target.value)}
+          maxLength={500}
+          className="w-full px-3 py-2 bg-bg-tertiary border border-border-primary rounded text-text-primary text-sm focus:outline-none focus:border-accent-primary"
+        />
+        {error && <div className="text-xs text-danger">{error}</div>}
+        <button
+          type="submit"
+          disabled={adding || !newValue.trim()}
+          className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm font-medium disabled:opacity-50 transition-colors"
+        >
+          {adding ? 'Adding...' : 'Add to Blacklist'}
+        </button>
+      </form>
+
+      {/* Entries List */}
+      {entries.length === 0 ? (
+        <div className="text-center py-8 text-text-muted text-sm">No blacklisted entries.</div>
+      ) : (
+        <div className="space-y-2">
+          {entries.map((entry) => (
+            <div
+              key={entry.id}
+              className="flex items-center justify-between p-3 bg-bg-secondary rounded-lg"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium uppercase px-1.5 py-0.5 rounded bg-bg-tertiary text-text-muted">
+                    {entry.type}
+                  </span>
+                  <span className="text-sm font-medium text-text-primary truncate">
+                    {entry.value}
+                  </span>
+                </div>
+                <div className="text-xs text-text-muted mt-0.5">
+                  {entry.reason && <span>{entry.reason} &middot; </span>}
+                  Added {new Date(entry.created_at).toLocaleDateString()}
+                  {entry.created_by_username && (
+                    <span> by {entry.created_by_username}</span>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => handleRemove(entry.id)}
+                className="text-xs text-danger hover:underline shrink-0 ml-2"
+              >
+                Remove
+              </button>
+            </div>
+          ))}
         </div>
       )}
     </div>

@@ -63,6 +63,17 @@ export interface UserPermissions {
 
 export type AuthErrorReason = 'session_expired' | 'server_unreachable' | 'token_invalid';
 
+export class LoginError extends Error {
+  code?: string;
+  retry_after?: string;
+  constructor(message: string, code?: string, retry_after?: string) {
+    super(message);
+    this.name = 'LoginError';
+    this.code = code;
+    this.retry_after = retry_after;
+  }
+}
+
 // Memory-only token storage (secure — not in localStorage)
 let accessToken: string | null = null;
 let tokenExpiresAt: number = 0;
@@ -202,8 +213,12 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => {
         body: JSON.stringify({ email, password: hashedPassword }),
       });
       if (!response.ok) {
-        const error = await decryptResponseJson(response);
-        throw new Error((error as any).message || 'Login failed');
+        const error = await decryptResponseJson(response) as any;
+        throw new LoginError(
+          error.message || 'Login failed',
+          error.code,
+          error.retry_after,
+        );
       }
       const data = (await decryptResponseJson(response)) as any;
       setTokens(data.access_token, 900);

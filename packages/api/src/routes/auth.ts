@@ -11,6 +11,7 @@ import {
   getAccessControlSettings,
   createApproval,
   getUserApprovalStatus,
+  resetDeniedApproval,
 } from '../services/memberApprovals.js';
 import { emitEncrypted } from '../lib/socketEmit.js';
 import {
@@ -54,7 +55,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post('/register', {
     config: {
       rateLimit: {
-        max: 3,
+        max: 10,
         timeWindow: '1 hour',
         keyGenerator: (req) => req.ip,
       },
@@ -69,6 +70,21 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
           error: 'Bad Request',
           message: 'Password must be pre-hashed (sha256:<hex>). Plaintext passwords are not accepted.',
           code: 'PASSWORD_NOT_HASHED',
+        });
+      }
+
+      // ── Blacklist Check ─────────────────────────────────
+      const [blacklisted] = await db.sql`
+        SELECT 1 FROM registration_blacklist
+        WHERE (type = 'email' AND lower(value) = lower(${body.email}))
+           OR (type = 'ip' AND value = ${request.ip})
+      `;
+      if (blacklisted) {
+        return reply.status(403).send({
+          statusCode: 403,
+          error: 'Forbidden',
+          message: 'Registration is not available',
+          code: 'BLACKLISTED',
         });
       }
 
@@ -305,12 +321,34 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
             // User is still pending — do NOT auto-join
             pendingApproval = true;
           } else if (approvalStatus?.status === 'denied') {
-            return reply.status(403).send({
-              statusCode: 403,
-              error: 'Forbidden',
-              message: approvalStatus.denial_reason || 'Your membership application was denied',
-              code: 'APPLICATION_DENIED',
-            });
+            const accessSettings = await getAccessControlSettings();
+            const cooldownHours = accessSettings.denial_cooldown_hours ?? 24;
+
+            if (cooldownHours === 0) {
+              // Never allow re-apply
+              return reply.status(403).send({
+                statusCode: 403,
+                error: 'Forbidden',
+                message: approvalStatus.denial_reason || 'Your membership application was denied',
+                code: 'APPLICATION_DENIED',
+              });
+            }
+
+            const deniedAt = new Date(approvalStatus.reviewed_at || approvalStatus.created_at);
+            const cooldownMs = cooldownHours * 60 * 60 * 1000;
+            if (Date.now() - deniedAt.getTime() < cooldownMs) {
+              return reply.status(403).send({
+                statusCode: 403,
+                error: 'Forbidden',
+                message: approvalStatus.denial_reason || 'Your membership application was denied',
+                code: 'APPLICATION_DENIED',
+                retry_after: new Date(deniedAt.getTime() + cooldownMs).toISOString(),
+              });
+            }
+
+            // Cooldown passed — reset to pending for re-application
+            await resetDeniedApproval(userWithPassword.id, server.id);
+            pendingApproval = true;
           } else {
             // No approval record — check if approvals are enabled
             const accessSettings = await getAccessControlSettings();

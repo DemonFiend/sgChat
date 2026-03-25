@@ -1432,6 +1432,174 @@ export const globalServerRoutes: FastifyPluginAsync = async (fastify) => {
       return { count };
     },
   });
+
+  // ── Registration Blacklist ──────────────────────────────────
+
+  /**
+   * GET /server/blacklist
+   * List all blacklisted entries (requires ADMINISTRATOR)
+   */
+  fastify.get('/blacklist', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) return notFound(reply, 'Server');
+
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) ||
+                      server.owner_id === request.user!.id;
+      if (!isAdmin) return forbidden(reply, 'Only administrators can manage the blacklist');
+
+      const entries = await db.sql`
+        SELECT bl.*, u.username as created_by_username
+        FROM registration_blacklist bl
+        LEFT JOIN users u ON u.id = bl.created_by
+        ORDER BY bl.created_at DESC
+      `;
+      return { entries };
+    },
+  });
+
+  /**
+   * POST /server/blacklist
+   * Add an entry to the blacklist (requires ADMINISTRATOR)
+   */
+  fastify.post('/blacklist', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) return notFound(reply, 'Server');
+
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) ||
+                      server.owner_id === request.user!.id;
+      if (!isAdmin) return forbidden(reply, 'Only administrators can manage the blacklist');
+
+      const body = z.object({
+        type: z.enum(['email', 'ip']),
+        value: z.string().min(1).max(255),
+        reason: z.string().max(500).optional(),
+      }).parse(request.body);
+
+      try {
+        const [entry] = await db.sql`
+          INSERT INTO registration_blacklist (type, value, reason, created_by)
+          VALUES (${body.type}, ${body.value.toLowerCase()}, ${body.reason || null}, ${request.user!.id})
+          RETURNING *
+        `;
+
+        // Audit log
+        await db.sql`
+          INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
+          VALUES (${server.id}, ${request.user!.id}, 'blacklist_add', 'server', ${server.id},
+            ${JSON.stringify({ type: body.type, value: body.value, reason: body.reason })})
+        `.catch(() => {});
+
+        return { message: 'Entry added to blacklist', entry };
+      } catch (err: any) {
+        if (err.code === '23505') {
+          return conflict(reply, 'This entry is already blacklisted');
+        }
+        throw err;
+      }
+    },
+  });
+
+  /**
+   * DELETE /server/blacklist/:id
+   * Remove a blacklist entry (requires ADMINISTRATOR)
+   */
+  fastify.delete('/blacklist/:id', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) return notFound(reply, 'Server');
+
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) ||
+                      server.owner_id === request.user!.id;
+      if (!isAdmin) return forbidden(reply, 'Only administrators can manage the blacklist');
+
+      const { id } = request.params as { id: string };
+      const result = await db.sql`
+        DELETE FROM registration_blacklist WHERE id = ${id} RETURNING *
+      `;
+      if (result.length === 0) return notFound(reply, 'Blacklist entry');
+
+      // Audit log
+      await db.sql`
+        INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
+        VALUES (${server.id}, ${request.user!.id}, 'blacklist_remove', 'server', ${server.id},
+          ${JSON.stringify({ type: result[0].type, value: result[0].value })})
+      `.catch(() => {});
+
+      return { message: 'Blacklist entry removed' };
+    },
+  });
+
+  /**
+   * POST /server/approvals/:id/blacklist
+   * Deny application and blacklist the user's email (requires ADMINISTRATOR)
+   */
+  fastify.post('/approvals/:id/blacklist', {
+    onRequest: [authenticate],
+    handler: async (request, reply) => {
+      const server = await getDefaultServer();
+      if (!server) return notFound(reply, 'Server');
+
+      const perms = await calculatePermissions(request.user!.id, server.id);
+      const isAdmin = hasPermission(perms.server, ServerPermissions.ADMINISTRATOR) ||
+                      server.owner_id === request.user!.id;
+      if (!isAdmin) return forbidden(reply, 'Only administrators can blacklist users');
+
+      const { id } = request.params as { id: string };
+      const body = z.object({
+        reason: z.string().max(500).optional(),
+      }).parse(request.body || {});
+
+      // Get the approval to find the user
+      const approval = await getApprovalById(id);
+      if (!approval) return notFound(reply, 'Approval');
+
+      // Get user email
+      const [user] = await db.sql`SELECT email FROM users WHERE id = ${approval.user_id}`;
+      if (!user) return notFound(reply, 'User');
+
+      // Deny the application
+      try {
+        await denyApplicant(id, request.user!.id, server.id, body.reason || 'Blacklisted', fastify.io);
+      } catch (err) {
+        if (err instanceof NotFoundError) {
+          return conflict(reply, 'Approval not found or already processed');
+        }
+        if (err instanceof ForbiddenError) {
+          return forbidden(reply, err.message);
+        }
+        throw err;
+      }
+
+      // Add email to blacklist
+      await db.sql`
+        INSERT INTO registration_blacklist (type, value, reason, created_by)
+        VALUES ('email', ${user.email.toLowerCase()}, ${body.reason || 'Blacklisted via approval'}, ${request.user!.id})
+        ON CONFLICT (type, value) DO NOTHING
+      `;
+
+      // Audit log
+      await db.sql`
+        INSERT INTO audit_log (server_id, user_id, action, target_type, target_id, changes)
+        VALUES (${server.id}, ${request.user!.id}, 'blacklist_from_approval', 'member', ${approval.user_id},
+          ${JSON.stringify({ approval_id: id, email: user.email, reason: body.reason })})
+      `.catch(() => {});
+
+      fastify.log.info(
+        { approvalId: id, userId: approval.user_id, blacklistedBy: request.user!.id },
+        '[AccessControl] User blacklisted from approval',
+      );
+
+      return { message: 'User denied and blacklisted' };
+    },
+  });
 };
 
 // Export helper for other routes to use
