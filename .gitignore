@@ -73,7 +73,7 @@ markdown/
 # Relay config (contains secrets)
 relay-config.json
 
-# Beads local files and agent docs
+# AI tools, MCP servers, and agent artifacts
 AGENTS.md
 .beads/
 beads/
@@ -82,3 +82,10 @@ features/
 .cursor/rules
 .claude/
 CLAUDE.md
+.playwright-mcp/
+qa-screenshots/
+docs/
+
+# AI-generated markdown docs in subfolders
+docker/LOCAL_DEV_GUIDE.md
+docker/RELAY-README.md
