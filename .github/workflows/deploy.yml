@@ -1,0 +1,38 @@
+name: Build & Push to DockerHub
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          dockerfile: docker/Dockerfile.api
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/sgchat-api:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/sgchat-api:${{ github.sha }}
+
+      - name: Build and push Postgres image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./docker
+          dockerfile: docker/Dockerfile.postgres
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/sgchat-postgres:latest
