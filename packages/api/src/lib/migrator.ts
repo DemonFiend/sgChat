@@ -52,7 +52,7 @@ export async function runMigrations(): Promise<void> {
     try {
       await sql.begin(async (tx: any) => {
         await tx.unsafe(content);
-        await tx`INSERT INTO _migrations (name) VALUES (${name})`;
+        await tx`INSERT INTO _migrations (name) VALUES (${name}) ON CONFLICT DO NOTHING`;
       });
       count++;
       console.log(`  ✅ Applied migration: ${name}`);
