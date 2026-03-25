@@ -22,7 +22,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          dockerfile: docker/Dockerfile.api
+          file: docker/Dockerfile.api
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/sgchat-api:latest
@@ -32,7 +32,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./docker
-          dockerfile: docker/Dockerfile.postgres
+          file: docker/Dockerfile.postgres
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/sgchat-postgres:latest
