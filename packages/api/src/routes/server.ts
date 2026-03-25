@@ -1238,7 +1238,7 @@ export const globalServerRoutes: FastifyPluginAsync = async (fastify) => {
       if (!server) return notFound(reply, 'Server');
 
       const body = z.object({
-        responses: z.record(z.string(), z.string()),
+        responses: z.record(z.string(), z.union([z.string(), z.boolean()]).transform(String)),
       }).parse(request.body);
 
       try {
