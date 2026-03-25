@@ -13,6 +13,18 @@ build/
 .env.local
 .env.*.local
 
+# LiveKit config (contains API keys)
+docker/livekit.yaml
+
+# Web environment files (may contain API keys or public URLs)
+packages/web/.env.development
+packages/web/.env.production
+packages/web/.env
+
+# Docker local config
+docker/.env.local
+docker/.env
+
 # IDE
 .vscode/*
 !.vscode/settings.json
