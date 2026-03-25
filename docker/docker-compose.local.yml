@@ -1,0 +1,107 @@
+# LOCAL DEV — sgChat
+# Run this on your Windows machine to test before pushing to prod.
+# Your app will be at http://localhost:3124
+
+services:
+
+  api:
+    # Builds from YOUR local code instead of pulling from DockerHub
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    ports:
+      - "3124:3000"
+    env_file:
+      - .env.local
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      ntfy:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - sgchat-local
+
+  postgres:
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres-local
+    env_file:
+      - .env.local
+    volumes:
+      - postgres_local:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    command: >
+      postgres -c shared_preload_libraries=pg_cron -c cron.database_name=sgchat_local
+    restart: unless-stopped
+    networks:
+      - sgchat-local
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sgchat -d sgchat_local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_local:/data
+    restart: unless-stopped
+    networks:
+      - sgchat-local
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - "3043:9000"
+      - "3044:9001"
+    env_file:
+      - .env.local
+    environment:
+      - MINIO_ROOT_USER=local_admin
+      - MINIO_ROOT_PASSWORD=local_minio_secret
+    volumes:
+      - minio_local:/data
+    restart: unless-stopped
+    networks:
+      - sgchat-local
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  ntfy:
+    image: binwiederhier/ntfy:latest
+    command: serve --cache-file /var/lib/ntfy/cache.db
+    ports:
+      - "3048:80"
+    environment:
+      - NTFY_BASE_URL=http://localhost:3048
+      - NTFY_AUTH_DEFAULT_ACCESS=deny-all
+    volumes:
+      - ntfy_local:/var/lib/ntfy
+    restart: unless-stopped
+    networks:
+      - sgchat-local
+
+networks:
+  sgchat-local:
+    driver: bridge
+
+volumes:
+  postgres_local:
+  redis_local:
+  minio_local:
+  ntfy_local:

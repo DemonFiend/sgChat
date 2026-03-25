@@ -2,7 +2,7 @@ FROM node:20-alpine AS base
 
 # Cache bust arg - increment to force rebuild
 ARG CACHE_BUST=3
-# Git commit hash for version tracking (pass --build-arg GIT_COMMIT=$(git rev-parse --short HEAD))
+# Git commit hash for version tracking
 ARG GIT_COMMIT=unknown
 ENV GIT_COMMIT=$GIT_COMMIT
 
@@ -14,9 +14,9 @@ COPY packages/shared/package.json ./packages/shared/package.json
 COPY packages/api/package.json ./packages/api/package.json
 COPY packages/web/package.json ./packages/web/package.json
 
-# Install pnpm and dependencies with retry logic for EAGAIN errors
+# Install pnpm and dependencies
 RUN npm install -g pnpm@9
-RUN pnpm install --prefer-offline || pnpm install || pnpm install
+RUN pnpm install --prefer-offline --shamefully-hoist || pnpm install --shamefully-hoist || pnpm install --shamefully-hoist
 
 # Copy source code
 COPY packages/shared ./packages/shared
@@ -24,14 +24,14 @@ COPY packages/api ./packages/api
 COPY packages/web ./packages/web
 COPY tsconfig.json ./tsconfig.json
 
-# Build shared types first
-RUN pnpm --filter @sgchat/shared build
+# Build shared types first (call tsc directly)
+RUN node_modules/.bin/tsc -p packages/shared/tsconfig.json
 
-# Build the web client (produces packages/web/dist/)
-RUN pnpm --filter @sgchat/web build
+# Build the web client (call vite directly)
+RUN cd packages/web && ../../node_modules/.bin/vite build
 
-# Build the API server
-RUN pnpm --filter @sgchat/api build
+# Build the API server (call tsc directly)
+RUN cd packages/api && ../../node_modules/.bin/tsc -p tsconfig.json
 
 # Copy migration SQL files to dist (tsc only compiles .ts files)
 RUN cp -r /app/packages/api/src/migrations /app/packages/api/dist/migrations
