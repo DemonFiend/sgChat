@@ -10,6 +10,8 @@
  *   Inbound:  Remote audio element → AudioWorklet (buffer) → Main thread DTLN → clean output
  */
 
+import { isElectron } from './electron';
+
 const DTLN_BLOCK = 512;
 const DTLN_RATE = 16000;
 const MAX_INBOUND_PIPELINES = 8;
@@ -61,6 +63,14 @@ class NoiseSuppressionService {
   checkCapabilities(): { supported: boolean; reason?: string } {
     if (this._supported !== null) {
       return { supported: this._supported, reason: this._unsupportedReason || undefined };
+    }
+
+    // DTLN WASM module requires Emscripten runtime glue only available in Electron.
+    // In the browser it hangs indefinitely, causing a 10s timeout delay on voice join.
+    if (!isElectron()) {
+      this._supported = false;
+      this._unsupportedReason = 'AI noise suppression is only available in the desktop app';
+      return { supported: false, reason: this._unsupportedReason };
     }
 
     // Check AudioWorklet support
