@@ -226,7 +226,7 @@ export function DMSidebar({
   );
 
   return (
-    <div className="w-60 bg-bg-secondary flex flex-col h-full border-r border-bg-tertiary">
+    <div className="w-full md:w-60 bg-bg-secondary flex flex-col h-full border-r border-bg-tertiary">
       {/* Back Button */}
       <div className="p-3 border-b border-bg-tertiary">
         <button

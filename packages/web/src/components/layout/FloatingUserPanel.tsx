@@ -147,7 +147,7 @@ export function FloatingUserPanel({
   };
 
   return (
-    <div className="fixed bottom-4 left-4 z-40">
+    <div className="fixed bottom-4 left-4 z-40 pointer-events-none [&>*]:pointer-events-auto">
       <div className="bg-bg-secondary rounded-2xl shadow-xl border border-bg-tertiary p-3">
         {/* Action buttons row */}
         <div className="flex justify-end gap-1.5 mb-2">

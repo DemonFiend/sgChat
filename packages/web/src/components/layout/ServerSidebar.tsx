@@ -109,7 +109,7 @@ export function ServerSidebar({ server, channels, categories, onServerSettingsCl
       </div>
 
       {/* Header with Server Info and Settings */}
-      <div className="flex items-center gap-2 p-3 border-b border-bg-tertiary">
+      <div className="flex items-center gap-2 p-3 border-b border-bg-tertiary relative z-20">
         {/* Server Icon & Name */}
         <button
           onClick={() => serverPopupStore.reopenPopup()}

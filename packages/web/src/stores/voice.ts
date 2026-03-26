@@ -83,7 +83,7 @@ interface VoiceActions {
   setError: (error: string) => void;
   setReconnecting: () => void;
   setMuted: (muted: boolean) => void;
-  setDeafened: (deafened: boolean) => void;
+  setDeafened: (deafened: boolean, wasMutedBeforeDeafen?: boolean) => void;
   setSpeaking: (speaking: boolean) => void;
   setVideoOn: (videoOn: boolean) => void;
   setScreenSharing: (isSharing: boolean) => void;
@@ -150,7 +150,7 @@ export const useVoiceStore = create<VoiceState & VoiceActions>((set, get) => ({
   setReconnecting: () => set({ connectionState: 'reconnecting' }),
 
   setMuted: (muted) => set((s) => ({ localState: { ...s.localState, isMuted: muted } })),
-  setDeafened: (deafened) => set((s) => ({ localState: { ...s.localState, isDeafened: deafened, isMuted: deafened ? true : s.localState.isMuted } })),
+  setDeafened: (deafened, wasMutedBeforeDeafen) => set((s) => ({ localState: { ...s.localState, isDeafened: deafened, isMuted: deafened ? true : (wasMutedBeforeDeafen ?? s.localState.isMuted) } })),
   setSpeaking: (speaking) => set((s) => ({ localState: { ...s.localState, isSpeaking: speaking } })),
   setVideoOn: (videoOn) => set((s) => ({ localState: { ...s.localState, isVideoOn: videoOn } })),
   setScreenSharing: (isSharing) => set((s) => ({ screenShare: { ...s.screenShare, isSharing } })),
@@ -262,7 +262,7 @@ export const voiceStore = {
   setError: (error: string) => useVoiceStore.getState().setError(error),
   setReconnecting: () => useVoiceStore.getState().setReconnecting(),
   setMuted: (muted: boolean) => useVoiceStore.getState().setMuted(muted),
-  setDeafened: (deafened: boolean) => useVoiceStore.getState().setDeafened(deafened),
+  setDeafened: (deafened: boolean, wasMutedBeforeDeafen?: boolean) => useVoiceStore.getState().setDeafened(deafened, wasMutedBeforeDeafen),
   setSpeaking: (speaking: boolean) => useVoiceStore.getState().setSpeaking(speaking),
   setVideoOn: (videoOn: boolean) => useVoiceStore.getState().setVideoOn(videoOn),
   setScreenSharing: (isSharing: boolean) => useVoiceStore.getState().setScreenSharing(isSharing),

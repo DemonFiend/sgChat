@@ -23,8 +23,69 @@ export interface MessageContentProps {
   serverId?: string;
 }
 
+// Non-image file extensions that should render as file cards
+const FILE_EXTENSIONS = ['pdf', 'txt', 'zip', 'mp3', 'wav', 'ogg', 'mp4', 'webm', 'json', 'md'];
+
+/**
+ * Check if a URL points to a non-image uploaded file (e.g. MinIO uploads path).
+ * Matches URLs containing /uploads/ with a non-image file extension.
+ */
+function isFileUrl(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed || trimmed.includes('\n') || trimmed.includes(' ')) return false;
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+    // Must be an uploads path
+    if (!url.pathname.includes('/uploads/')) return false;
+    // Must NOT be an image (images are handled separately)
+    if (isImageUrl(trimmed)) return false;
+    // Check for known file extensions
+    const extMatch = url.pathname.match(/\.([a-z0-9]+)$/i);
+    if (extMatch && FILE_EXTENSIONS.includes(extMatch[1].toLowerCase())) return true;
+    // Even without a recognized extension, if it's in /uploads/ and not an image, treat as file
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Parse filename from a MinIO upload URL.
+ * URL format: .../uploads/{userId}/{nanoid}-{filename}
+ * Returns the original filename (after the nanoid hash prefix).
+ */
+function parseFilenameFromUrl(url: string): string {
+  try {
+    const urlObj = new URL(url);
+    const pathParts = urlObj.pathname.split('/');
+    const lastPart = pathParts[pathParts.length - 1];
+    // Format: {nanoid12chars}-{original_filename}
+    // nanoid is 12 chars, followed by a dash, then the sanitized filename
+    const dashIndex = lastPart.indexOf('-');
+    if (dashIndex > 0 && dashIndex <= 20) {
+      return decodeURIComponent(lastPart.substring(dashIndex + 1));
+    }
+    return decodeURIComponent(lastPart);
+  } catch {
+    return 'Unknown file';
+  }
+}
+
+/**
+ * Get a file type icon category from extension.
+ */
+function getFileIconType(filename: string): 'audio' | 'video' | 'document' | 'archive' | 'code' {
+  const ext = filename.split('.').pop()?.toLowerCase();
+  if (['mp3', 'wav', 'ogg', 'flac', 'aac'].includes(ext || '')) return 'audio';
+  if (['mp4', 'webm', 'avi', 'mkv', 'mov'].includes(ext || '')) return 'video';
+  if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext || '')) return 'archive';
+  if (['json', 'md', 'js', 'ts', 'py', 'html', 'css'].includes(ext || '')) return 'code';
+  return 'document';
+}
+
 interface ParsedSegment {
-  type: 'text' | 'image' | 'spoilerImage' | 'mention' | 'messageLink';
+  type: 'text' | 'image' | 'spoilerImage' | 'mention' | 'messageLink' | 'file';
   value: string;
   mention?: ParsedMention;
   link?: ParsedMessageLink;
@@ -48,22 +109,43 @@ function parseContentSegments(content: string): ParsedSegment[] {
     return [{ type: 'image', value: content }];
   }
 
-  // First, split by image URLs
-  const imageUrls = extractImageUrls(content);
-  const rawSegments: { type: 'text' | 'image'; value: string }[] = [];
+  // If entire content is a single file URL, render as file card only
+  if (isFileUrl(content)) {
+    return [{ type: 'file', value: content }];
+  }
 
-  if (imageUrls.length === 0) {
+  // First, split by image URLs and file URLs
+  const imageUrls = extractImageUrls(content);
+  const rawSegments: { type: 'text' | 'image' | 'file'; value: string }[] = [];
+
+  // Also extract file URLs from content
+  const fileUrlRegex = /https?:\/\/[^\s]+/g;
+  const allFileUrls: string[] = [];
+  let fileMatch;
+  while ((fileMatch = fileUrlRegex.exec(content)) !== null) {
+    if (isFileUrl(fileMatch[0])) {
+      allFileUrls.push(fileMatch[0]);
+    }
+  }
+
+  // Combine image and file URLs, sorted by position in content
+  const allMediaUrls: { url: string; type: 'image' | 'file' }[] = [
+    ...imageUrls.map((url) => ({ url, type: 'image' as const })),
+    ...allFileUrls.map((url) => ({ url, type: 'file' as const })),
+  ].sort((a, b) => content.indexOf(a.url) - content.indexOf(b.url));
+
+  if (allMediaUrls.length === 0) {
     rawSegments.push({ type: 'text', value: content });
   } else {
     let remaining = content;
-    for (const url of imageUrls) {
-      const urlIndex = remaining.indexOf(url);
+    for (const media of allMediaUrls) {
+      const urlIndex = remaining.indexOf(media.url);
       if (urlIndex > 0) {
         const textBefore = remaining.substring(0, urlIndex).trim();
         if (textBefore) rawSegments.push({ type: 'text', value: textBefore });
       }
-      rawSegments.push({ type: 'image', value: url });
-      remaining = remaining.substring(urlIndex + url.length);
+      rawSegments.push({ type: media.type, value: media.url });
+      remaining = remaining.substring(urlIndex + media.url.length);
     }
     const trimmedRemaining = remaining.trim();
     if (trimmedRemaining) rawSegments.push({ type: 'text', value: trimmedRemaining });
@@ -75,6 +157,10 @@ function parseContentSegments(content: string): ParsedSegment[] {
   for (const seg of rawSegments) {
     if (seg.type === 'image') {
       segments.push({ type: 'image', value: seg.value });
+      continue;
+    }
+    if (seg.type === 'file') {
+      segments.push({ type: 'file', value: seg.value });
       continue;
     }
 
@@ -119,6 +205,98 @@ function parseContentSegments(content: string): ParsedSegment[] {
   return segments;
 }
 
+function FileCard({ url }: { url: string }) {
+  const filename = parseFilenameFromUrl(url);
+  const iconType = getFileIconType(filename);
+
+  const iconPath = {
+    audio: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z',
+    video: 'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z',
+    archive: 'M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4',
+    code: 'M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4',
+    document: 'M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z',
+  }[iconType];
+
+  return (
+    <div className="my-1 max-w-[400px]">
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center gap-3 px-3 py-2.5 bg-bg-tertiary rounded-lg border border-border hover:border-brand-primary/50 hover:bg-bg-tertiary/80 transition-colors group"
+      >
+        <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-brand-primary/10 flex items-center justify-center">
+          <svg className="w-5 h-5 text-brand-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d={iconPath} />
+          </svg>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium text-brand-primary group-hover:underline truncate">
+            {filename}
+          </div>
+          <div className="text-xs text-text-muted">
+            Click to download
+          </div>
+        </div>
+        <svg className="w-4 h-4 text-text-muted flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+        </svg>
+      </a>
+    </div>
+  );
+}
+
+/**
+ * Render an attachment from the message's attachments array.
+ * Exported for use in ChatPanel and DMChatPanel.
+ */
+export function AttachmentCard({ attachment }: { attachment: { url: string; filename: string; size: number; type: string } }) {
+  const filename = attachment.filename || parseFilenameFromUrl(attachment.url);
+  const iconType = getFileIconType(filename);
+
+  const iconPath = {
+    audio: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z',
+    video: 'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z',
+    archive: 'M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4',
+    code: 'M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4',
+    document: 'M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z',
+  }[iconType];
+
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  return (
+    <div className="my-1 max-w-[400px]">
+      <a
+        href={attachment.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center gap-3 px-3 py-2.5 bg-bg-secondary rounded-lg border border-border hover:border-brand-primary/50 hover:bg-bg-secondary/80 transition-colors group"
+      >
+        <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-brand-primary/10 flex items-center justify-center">
+          <svg className="w-5 h-5 text-brand-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d={iconPath} />
+          </svg>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium text-brand-primary group-hover:underline truncate">
+            {filename}
+          </div>
+          <div className="text-xs text-text-muted">
+            {attachment.size ? formatSize(attachment.size) : 'Click to download'}
+          </div>
+        </div>
+        <svg className="w-4 h-4 text-text-muted flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+        </svg>
+      </a>
+    </div>
+  );
+}
+
 function MentionRenderer({ mention }: { mention: ParsedMention }) {
   switch (mention.type) {
     case 'user':
@@ -156,6 +334,8 @@ export function MessageContent({ content, isOwnMessage, compact, serverId }: Mes
             return (
               <ImageRenderer key={i} src={segment.value} isOwnMessage={isOwnMessage} compact={compact} />
             );
+          case 'file':
+            return <FileCard key={i} url={segment.value} />;
           case 'mention':
             return <MentionRenderer key={i} mention={segment.mention!} />;
           case 'messageLink':

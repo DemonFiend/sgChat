@@ -22,6 +22,8 @@ services:
         condition: service_healthy
       ntfy:
         condition: service_started
+      livekit:
+        condition: service_started
     restart: unless-stopped
     networks:
       - sgchat-local
@@ -92,6 +94,23 @@ services:
       - NTFY_AUTH_DEFAULT_ACCESS=deny-all
     volumes:
       - ntfy_local:/var/lib/ntfy
+    restart: unless-stopped
+    networks:
+      - sgchat-local
+
+  livekit:
+    image: livekit/livekit-server:latest
+    command: --config /etc/livekit.yaml --node-ip=0.0.0.0
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "3478:3478/udp"
+      - "50000-50100:50000-50100/udp"
+    volumes:
+      - ./livekit-local.yaml:/etc/livekit.yaml
+    depends_on:
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - sgchat-local

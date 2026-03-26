@@ -9,6 +9,7 @@ import { socketService } from '@/lib/socket';
 import { soundService } from '@/lib/soundService';
 import { MentionProvider, type MentionContextValue, type MentionMember } from '@/contexts/MentionContext';
 import { useIgnoredUsersStore } from '@/stores/ignoredUsers';
+import { useBlockedUsersStore } from '@/stores/blockedUsers';
 import { useVoiceStore } from '@/stores/voice';
 
 // API response types
@@ -45,9 +46,10 @@ export interface BlockedUser {
 
 interface DMPageProps {
   serverId?: string;
+  onMobileSidebarToggle?: () => void;
 }
 
-export function DMPage({ serverId }: DMPageProps) {
+export function DMPage({ serverId, onMobileSidebarToggle }: DMPageProps) {
   const navigate = useNavigate();
   const [friends, setFriends] = useState<Friend[]>([]);
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
@@ -63,6 +65,7 @@ export function DMPage({ serverId }: DMPageProps) {
 
   const currentUserId = authStore.getState().user?.id || '';
   const pendingDMCallInfo = useVoiceStore((s) => s.pendingDMCallInfo);
+  const blockedUserIds = useBlockedUsersStore((s) => s.blockedUserIds);
   const ignoredUsers = useIgnoredUsersStore((s) => s.ignoredUsers);
   const fetchIgnored = useIgnoredUsersStore((s) => s.fetchIgnored);
   const ignoreUser = useIgnoredUsersStore((s) => s.ignoreUser);
@@ -262,16 +265,13 @@ export function DMPage({ serverId }: DMPageProps) {
     };
 
     const handleUserBlock = (data: { user_id: string }) => {
+      // Someone blocked us — remove them from friends/requests but keep conversation visible
       setFriends(prev => prev.filter(f => f.id !== data.user_id));
       setIncomingRequests(prev => prev.filter(r => r.user.id !== data.user_id));
       setOutgoingRequests(prev => prev.filter(r => r.user.id !== data.user_id));
-      setSelectedFriend(prev => {
-        if (prev?.id === data.user_id) {
-          setMessages([]);
-          return null;
-        }
-        return prev;
-      });
+      // Refresh blocked users list from server
+      fetchBlockedUsers();
+      useBlockedUsersStore.getState().fetchBlocked();
     };
 
     socketService.on('friend.request.new', handleFriendRequest as (data: unknown) => void);
@@ -385,14 +385,12 @@ export function DMPage({ serverId }: DMPageProps) {
       setSearchResults(prev => prev.map(u =>
         u.id === userId ? { ...u, is_blocked: true } : u
       ));
-      if (selectedFriend?.id === userId) {
-        setSelectedFriend(null);
-        setMessages([]);
-      }
+      // Sync global blocked users store (optimistic)
+      useBlockedUsersStore.getState().addBlockedUserId(userId);
     } catch (err) {
       console.error('Failed to block user:', err);
     }
-  }, [selectedFriend?.id]);
+  }, []);
 
   const handleUnblockUser = useCallback(async (userId: string) => {
     try {
@@ -401,20 +399,12 @@ export function DMPage({ serverId }: DMPageProps) {
       setSearchResults(prev => prev.map(u =>
         u.id === userId ? { ...u, is_blocked: false } : u
       ));
+      // Sync global blocked users store
+      useBlockedUsersStore.getState().removeBlockedUserId(userId);
     } catch (err) {
       console.error('Failed to unblock user:', err);
     }
   }, []);
-
-  const handleSendMessage = useCallback(async (content: string) => {
-    if (!selectedFriend || !content.trim()) return;
-    try {
-      const newMessage = await api.post<DMMessage>(`/dms/user/${selectedFriend.id}/messages`, { content });
-      setMessages(prev => [...prev, newMessage]);
-    } catch (err) {
-      console.error('Failed to send message:', err);
-    }
-  }, [selectedFriend]);
 
   const handleTypingStart = useCallback(() => {
     if (!selectedFriend) return;
@@ -425,6 +415,64 @@ export function DMPage({ serverId }: DMPageProps) {
     if (!selectedFriend) return;
     socketService.emit('dm.typing.stop', { user_id: selectedFriend.id });
   }, [selectedFriend]);
+
+  // Edit message handler
+  const handleEditMessage = useCallback(async (messageId: string, newContent: string) => {
+    try {
+      await api.patch(`/messages/${messageId}`, { content: newContent });
+      setMessages(prev => prev.map(msg =>
+        msg.id === messageId ? { ...msg, content: newContent, edited_at: new Date().toISOString() } : msg
+      ));
+    } catch (err) {
+      console.error('Failed to edit DM message:', err);
+    }
+  }, []);
+
+  // Delete message handler
+  const handleDeleteMessage = useCallback(async (messageId: string) => {
+    try {
+      await api.delete(`/messages/${messageId}`);
+      setMessages(prev => prev.filter(msg => msg.id !== messageId));
+    } catch (err) {
+      console.error('Failed to delete DM message:', err);
+    }
+  }, []);
+
+  // Reply handling
+  const [replyingTo, setReplyingTo] = useState<DMMessage | null>(null);
+
+  const handleReplyClick = useCallback((message: DMMessage) => {
+    setReplyingTo(message);
+  }, []);
+
+  const handleCancelReply = useCallback(() => {
+    setReplyingTo(null);
+  }, []);
+
+  // Wrap handleSendMessage to include reply_to_id
+  const handleSendMessageWithReply = useCallback(async (content: string) => {
+    if (!selectedFriend || !content.trim()) return;
+    try {
+      const body: any = { content };
+      if (replyingTo) {
+        body.reply_to_id = replyingTo.id;
+      }
+      const newMessage = await api.post<DMMessage>(`/dms/user/${selectedFriend.id}/messages`, body);
+      setMessages(prev => [...prev, newMessage]);
+      setReplyingTo(null);
+    } catch (err) {
+      console.error('Failed to send message:', err);
+    }
+  }, [selectedFriend, replyingTo]);
+
+  // Reaction add handler
+  const handleReactionAdd = useCallback(async (messageId: string, emoji: string) => {
+    try {
+      await api.put(`/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`, {});
+    } catch (err) {
+      console.error('Failed to add reaction:', err);
+    }
+  }, []);
 
   // Build a lightweight MentionContext for DMs (friend + current user only)
   const dmMentionContext = useMemo<MentionContextValue>(() => {
@@ -521,43 +569,58 @@ export function DMPage({ serverId }: DMPageProps) {
 
   return (
     <div className="flex h-full w-full bg-bg-primary">
-      <DMSidebar
-        friends={friends}
-        selectedFriendId={selectedFriend?.id || null}
-        onSelectFriend={handleSelectFriend}
-        pendingRequestCount={incomingRequests.length}
-        incomingRequests={incomingRequests}
-        outgoingRequests={outgoingRequests}
-        onSearch={handleSearch}
-        searchResults={searchResults}
-        onAddFriend={handleAddFriend}
-        onCancelRequest={handleCancelRequest}
-        onAcceptRequest={handleAcceptRequest}
-        onRejectRequest={handleRejectRequest}
-        isSearching={isSearching}
-        onBack={handleBack}
-        blockedUsers={blockedUsers}
-        onBlockUser={handleBlockUser}
-        onUnblockUser={handleUnblockUser}
-        ignoredUsers={ignoredUsers}
-        onIgnoreUser={ignoreUser}
-        onUnignoreUser={unignoreUser}
-        incomingCallFromId={pendingDMCallInfo?.friendId || null}
-      />
-      <MentionProvider value={dmMentionContext}>
-        <DMChatPanel
-          friend={selectedFriend}
-          messages={messages}
-          currentUserId={currentUserId}
-          currentUserAvatar={authStore.getState().user?.avatar_url}
-          currentUserDisplayName={authStore.getState().user?.display_name || authStore.getState().user?.username}
-          onSendMessage={handleSendMessage}
-          onTypingStart={handleTypingStart}
-          onTypingStop={handleTypingStop}
-          isTyping={isTyping}
-          serverId={serverId}
+      {/* DM Sidebar — hidden on mobile when a friend is selected */}
+      <div className={`flex-shrink-0 ${selectedFriend ? 'hidden md:block' : 'w-full md:w-auto'}`}>
+        <DMSidebar
+          friends={friends}
+          selectedFriendId={selectedFriend?.id || null}
+          onSelectFriend={handleSelectFriend}
+          pendingRequestCount={incomingRequests.length}
+          incomingRequests={incomingRequests}
+          outgoingRequests={outgoingRequests}
+          onSearch={handleSearch}
+          searchResults={searchResults}
+          onAddFriend={handleAddFriend}
+          onCancelRequest={handleCancelRequest}
+          onAcceptRequest={handleAcceptRequest}
+          onRejectRequest={handleRejectRequest}
+          isSearching={isSearching}
+          onBack={handleBack}
+          blockedUsers={blockedUsers}
+          onBlockUser={handleBlockUser}
+          onUnblockUser={handleUnblockUser}
+          ignoredUsers={ignoredUsers}
+          onIgnoreUser={ignoreUser}
+          onUnignoreUser={unignoreUser}
+          incomingCallFromId={pendingDMCallInfo?.friendId || null}
         />
-      </MentionProvider>
+      </div>
+      {/* Chat panel — hidden on mobile when no friend selected */}
+      <div className={`flex-1 min-w-0 ${!selectedFriend ? 'hidden md:flex' : 'flex'}`}>
+        <MentionProvider value={dmMentionContext}>
+          <DMChatPanel
+            friend={selectedFriend}
+            messages={messages}
+            currentUserId={currentUserId}
+            currentUserAvatar={authStore.getState().user?.avatar_url}
+            currentUserDisplayName={authStore.getState().user?.display_name || authStore.getState().user?.username}
+            onSendMessage={handleSendMessageWithReply}
+            onEditMessage={handleEditMessage}
+            onDeleteMessage={handleDeleteMessage}
+            onReplyClick={handleReplyClick}
+            onReactionAdd={handleReactionAdd}
+            replyingTo={replyingTo}
+            onCancelReply={handleCancelReply}
+            onTypingStart={handleTypingStart}
+            onTypingStop={handleTypingStop}
+            isTyping={isTyping}
+            serverId={serverId}
+            isPartnerBlocked={selectedFriend ? (blockedUserIds.has(selectedFriend.id) || blockedUsers.some(u => u.id === selectedFriend.id)) : false}
+            onMobileBack={() => setSelectedFriend(null)}
+            onMobileSidebarToggle={onMobileSidebarToggle}
+          />
+        </MentionProvider>
+      </div>
     </div>
   );
 }

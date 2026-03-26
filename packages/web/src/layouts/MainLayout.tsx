@@ -58,6 +58,7 @@ import { ThreadPanel, type ThreadInfo } from '@/components/ui/ThreadPanel';
 import { SearchModal } from '@/components/ui/SearchModal';
 import { RolePickerModal } from '@/components/ui/RolePickerModal';
 import { NicknameModal } from '@/components/ui/NicknameModal';
+import { Modal } from '@/components/ui/Modal';
 import { blockedUsersStore } from '@/stores/blockedUsers';
 import { ignoredUsersStore } from '@/stores/ignoredUsers';
 import { chatInputStore } from '@/stores/chatInput';
@@ -119,6 +120,7 @@ export function MainLayout() {
   const [allRoles, setAllRoles] = useState<{ id: string; name: string; color: string | null; position: number }[]>([]);
   const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
   const [isMemberListOpen, setIsMemberListOpen] = useState(true);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   // Pinned messages state
@@ -178,6 +180,7 @@ export function MainLayout() {
   const [showEventsPanel, setShowEventsPanel] = useState(false);
   const [showStorageDashboard, setShowStorageDashboard] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<string | undefined>(undefined);
+  const [pendingDeleteMessageId, setPendingDeleteMessageId] = useState<string | null>(null);
 
   // Fetch user timezone from settings on mount
   useEffect(() => {
@@ -192,6 +195,11 @@ export function MainLayout() {
       useImpersonationStore.getState().deactivate();
     };
   }, []);
+
+  // Close mobile sidebar when navigating to a new channel
+  useEffect(() => {
+    setIsMobileSidebarOpen(false);
+  }, [channelId]);
 
   // Compute display channels/categories: use impersonation data when active
   const displayChannels = isImpersonating ? (impChannels as unknown as Channel[]) : channels;
@@ -381,9 +389,13 @@ export function MainLayout() {
 
   // ── Fetch pinned messages when channel changes ───────────────
   useEffect(() => {
-    if (!channelId) {
+    if (!channelId || !channelsLoaded) {
       setPinnedMessages([]);
       setPinnedMessageIds(new Set());
+      return;
+    }
+    // Skip fetch if channelId doesn't match a known channel (e.g. server ID from ServerList click)
+    if (!channelsRef.current.find((c) => c.id === channelId)) {
       return;
     }
     api.get<PinnedMessage[]>(`/channels/${channelId}/pinned`)
@@ -395,7 +407,7 @@ export function MainLayout() {
         setPinnedMessages([]);
         setPinnedMessageIds(new Set());
       });
-  }, [channelId]);
+  }, [channelId, channelsLoaded]);
 
   // Pin/unpin handlers
   const handlePinMessage = useCallback(async (messageId: string) => {
@@ -417,7 +429,7 @@ export function MainLayout() {
     if (!channelId) return;
     try {
       const threadName = message.content.slice(0, 50) || 'New Thread';
-      const thread = await api.post<ThreadInfo>('/api/threads', {
+      const thread = await api.post<ThreadInfo>('/threads', {
         name: threadName,
         channel_id: channelId,
         parent_message_id: message.id,
@@ -444,7 +456,11 @@ export function MainLayout() {
 
   // Load thread message IDs when channel changes
   useEffect(() => {
-    if (!channelId) return;
+    if (!channelId || !channelsLoaded) return;
+    // Skip fetch if channelId doesn't match a known channel (e.g. server ID from ServerList click)
+    if (!channelsRef.current.find((c) => c.id === channelId)) {
+      return;
+    }
     setActiveThread(null);
     const loadThreads = async () => {
       try {
@@ -459,7 +475,7 @@ export function MainLayout() {
       }
     };
     loadThreads();
-  }, [channelId]);
+  }, [channelId, channelsLoaded]);
 
   // ── Wire up real-time message events (correct event names) ─────
   useEffect(() => {
@@ -1134,9 +1150,16 @@ export function MainLayout() {
   );
 
   const handleDeleteMessage = useCallback((messageId: string) => {
-    // Backend expects 'message:delete' (colon separator)
-    socketService.emit('message:delete', { message_id: messageId });
+    setPendingDeleteMessageId(messageId);
   }, []);
+
+  const confirmDeleteMessage = useCallback(() => {
+    if (pendingDeleteMessageId) {
+      // Backend expects 'message:delete' (colon separator)
+      socketService.emit('message:delete', { message_id: pendingDeleteMessageId });
+      setPendingDeleteMessageId(null);
+    }
+  }, [pendingDeleteMessageId]);
 
   const handleAuthorClick = useCallback(
     (author: MessageAuthor, rect: DOMRect) => {
@@ -1280,12 +1303,10 @@ export function MainLayout() {
   // Wire up Electron global shortcuts for mute/deafen
   useGlobalShortcuts({
     onMuteToggle: useCallback(() => {
-      const { localState, setMuted } = useVoiceStore.getState();
-      setMuted(!localState.isMuted);
+      voiceService.toggleMute();
     }, []),
     onDeafenToggle: useCallback(() => {
-      const { localState, setDeafened } = useVoiceStore.getState();
-      setDeafened(!localState.isDeafened);
+      voiceService.toggleDeafen();
     }, []),
   });
 
@@ -1316,8 +1337,8 @@ export function MainLayout() {
   );
   const paletteActions = useMemo(() => [
     { id: 'settings', label: 'User Settings', sublabel: 'Open your settings', icon: 'settings' as const, action: () => setShowUserSettings(true) },
-    { id: 'toggle-mute', label: 'Toggle Mute', sublabel: 'Mute or unmute your microphone', icon: 'mute' as const, action: () => { const s = useVoiceStore.getState(); s.setMuted(!s.localState.isMuted); } },
-    { id: 'toggle-deafen', label: 'Toggle Deafen', sublabel: 'Deafen or undeafen audio', icon: 'deafen' as const, action: () => { const s = useVoiceStore.getState(); s.setDeafened(!s.localState.isDeafened); } },
+    { id: 'toggle-mute', label: 'Toggle Mute', sublabel: 'Mute or unmute your microphone', icon: 'mute' as const, action: () => voiceService.toggleMute() },
+    { id: 'toggle-deafen', label: 'Toggle Deafen', sublabel: 'Deafen or undeafen audio', icon: 'deafen' as const, action: () => voiceService.toggleDeafen() },
     { id: 'dms', label: 'Direct Messages', sublabel: 'Open your DMs', icon: 'dm' as const, action: () => navigate('/channels/@me') },
     ...(voiceConnected ? [{ id: 'disconnect-voice', label: 'Disconnect Voice', sublabel: 'Leave the current voice channel', icon: 'disconnect' as const, action: () => voiceService.leave() }] : []),
   ], [navigate, voiceConnected]);
@@ -1370,11 +1391,30 @@ export function MainLayout() {
         className="flex flex-1 min-h-0"
         style={{ height: 'calc(100vh - var(--title-bar-height))' }}
       >
+        {/* Mobile sidebar backdrop */}
+        {isMobileSidebarOpen && (
+          <div
+            className="fixed inset-0 bg-black/60 z-40 lg:hidden"
+            onClick={() => setIsMobileSidebarOpen(false)}
+          />
+        )}
+
+        {/* Server List + Sidebar wrapper — overlay on mobile, static on desktop */}
+        <div
+          className={`
+            fixed inset-y-0 left-0 z-50 flex
+            transition-transform duration-200 ease-in-out
+            lg:relative lg:z-10 lg:translate-x-0
+            ${isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+          `}
+          style={{ height: '100%' }}
+        >
+
         {/* Server List (leftmost column) */}
         <ServerList servers={servers} />
 
         {/* Server Sidebar (channels + voice bar + user panel) */}
-        <div className="flex flex-col h-full flex-shrink-0">
+        <div className="flex flex-col h-full flex-shrink-0 relative z-10">
           <ServerSidebar
             server={
               currentServer
@@ -1428,9 +1468,12 @@ export function MainLayout() {
           <VoiceConnectedBar />
         </div>
 
+        </div>{/* end mobile sidebar wrapper */}
+
         {/* Chat Panel / Events Panel + Member List — wrapped with MentionProvider */}
         <MentionProvider value={mentionContextValue}>
         <div className="flex-1 flex h-full min-w-0">
+          <h1 className="sr-only">{currentChannel?.name ? `#${currentChannel.name}` : 'Chat'}</h1>
           {showStorageDashboard && currentServer ? (
             <StorageDashboardPanel
               onClose={() => setShowStorageDashboard(false)}
@@ -1476,6 +1519,7 @@ export function MainLayout() {
             onCreateThread={handleCreateThread}
             threadMessageIds={threadMessageIds}
             onOpenThread={handleOpenThread}
+            onMobileSidebarToggle={() => setIsMobileSidebarOpen((v) => !v)}
           />
           )}
 
@@ -1530,7 +1574,7 @@ export function MainLayout() {
                 animate="animate"
                 exit="exit"
                 transition={easeTransition}
-                className="h-full overflow-hidden flex-shrink-0"
+                className="h-full overflow-hidden flex-shrink-0 hidden lg:block"
               >
                 <MemberList
                   groups={memberGroups}
@@ -1835,6 +1879,25 @@ export function MainLayout() {
 
       {/* Role impersonation control panel */}
       {isImpersonating && <ImpersonationControlPanel />}
+
+      {/* Delete message confirmation modal */}
+      <Modal isOpen={!!pendingDeleteMessageId} onClose={() => setPendingDeleteMessageId(null)} title="Delete Message">
+        <p className="text-text-secondary">Are you sure you want to delete this message?</p>
+        <div className="flex justify-end gap-3 mt-4">
+          <button
+            className="px-4 py-2 rounded text-text-primary hover:bg-bg-modifier-hover transition-colors"
+            onClick={() => setPendingDeleteMessageId(null)}
+          >
+            Cancel
+          </button>
+          <button
+            className="px-4 py-2 rounded bg-danger text-white hover:bg-danger/80 transition-colors"
+            onClick={confirmDeleteMessage}
+          >
+            Delete
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }

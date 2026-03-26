@@ -7,6 +7,7 @@ import {
   decryptFromTransport,
 } from '@/lib/transportCrypto';
 import { startRelayPingService, stopRelayPingService } from '@/lib/relayPing';
+import { useToastStore } from '@/stores/toastNotifications';
 
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
 
@@ -119,6 +120,13 @@ function connect() {
   socket.on('gateway.ready', (data: { sequences?: Record<string, number> }) => {
     lastSequences = data.sequences || {};
     startRelayPingService();
+
+    // Attempt to rejoin voice channel after page refresh
+    import('./voiceService').then(({ voiceService }) => {
+      voiceService.attemptAutoRejoin().catch((err) => {
+        console.warn('[Socket] Voice auto-rejoin failed:', err);
+      });
+    });
   });
 
   socket.on('gateway.resumed', (data: { session_id?: string; missed_events?: any[]; sequences?: Record<string, number> }) => {
@@ -178,6 +186,15 @@ function connect() {
 
   socket.on('reconnect_attempt', (attempt: number) => {
     useSocketStore.setState({ connectionState: 'reconnecting', reconnectAttempts: attempt });
+  });
+
+  socket.on('error', (data: { message?: string }) => {
+    useToastStore.getState().addToast({
+      type: 'warning',
+      title: 'Error',
+      message: data?.message || 'An error occurred',
+      duration: 5000,
+    });
   });
 
   socket.on('connect_error', async (error) => {

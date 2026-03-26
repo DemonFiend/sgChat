@@ -499,3 +499,41 @@ a:hover {
 .no-theme-transition * {
   transition: none !important;
 }
+
+/* ============================================
+   Chat Font Size (user settings slider)
+   ============================================ */
+.message-content {
+  font-size: var(--chat-font-size, 14px);
+}
+
+/* ============================================
+   Compact Density Mode (user settings toggle)
+   ============================================ */
+
+/* Reduce padding on full messages (with avatar) */
+[data-density="compact"] .group.relative {
+  padding-top: 2px;
+  padding-bottom: 0;
+}
+
+/* Shrink avatars */
+[data-density="compact"] .group.relative .flex-shrink-0 img {
+  width: 24px;
+  height: 24px;
+}
+
+/* Match the spacer column in continuation messages to shrunken avatar */
+[data-density="compact"] .group.relative .w-10.flex-shrink-0 {
+  width: 24px;
+}
+
+/* Tighten the gap between avatar and content */
+[data-density="compact"] .group.relative > .flex.gap-4 {
+  gap: 0.5rem;
+}
+
+/* Reduce line-height in message text */
+[data-density="compact"] .message-content {
+  line-height: 1.25;
+}

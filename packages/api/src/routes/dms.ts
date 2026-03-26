@@ -111,7 +111,11 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/:id/messages/search', {
     onRequest: [authenticate],
     config: {
-      rateLimit: { max: 10, timeWindow: '60 seconds' },
+      rateLimit: {
+        max: 10,
+        timeWindow: '60 seconds',
+        keyGenerator: (req: any) => req.user?.id || req.ip,
+      },
     },
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
@@ -186,7 +190,7 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
           dm_channel_id: r.dm_channel_id,
           created_at: r.created_at,
           edited_at: r.edited_at,
-          attachments: r.attachments,
+          attachments: Array.isArray(r.attachments) ? r.attachments : [],
           author: {
             id: r.author_id,
             username: r.username,
@@ -204,7 +208,11 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post('/:id/messages', {
     onRequest: [authenticate],
     config: {
-      rateLimit: { max: 5, timeWindow: '5 seconds' },
+      rateLimit: {
+        max: 5,
+        timeWindow: '5 seconds',
+        keyGenerator: (req: any) => req.user?.id || req.ip,
+      },
     },
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
@@ -236,11 +244,17 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
       // Sanitize message content (strip HTML tags — defense-in-depth)
       body.content = sanitizeMessage(body.content);
 
+      // Reject messages that become empty after sanitization (e.g. pure HTML tags)
+      if (!body.content.trim() && (!body.attachments || body.attachments.length === 0)) {
+        return badRequest(reply, 'Message content cannot be empty');
+      }
+
       const message = await db.messages.create({
         dm_channel_id: id,
         author_id: request.user!.id,
         content: body.content,
         attachments: body.attachments,
+        reply_to_id: body.reply_to_id,
         queued_at: body.queued_at ? new Date(body.queued_at) : undefined,
       });
 
@@ -268,7 +282,7 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
         },
         created_at: message.created_at,
         edited_at: message.edited_at,
-        attachments: message.attachments || [],
+        attachments: Array.isArray(message.attachments) ? message.attachments : [],
         reply_to_id: message.reply_to_id,
         status: message.status,
       };
@@ -341,6 +355,8 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
         sender_id: m.author_id,
         created_at: m.created_at,
         edited_at: m.edited_at,
+        reply_to_id: m.reply_to_id || null,
+        attachments: Array.isArray(m.attachments) ? m.attachments : [],
         system_event: m.system_event || null,
       }));
     },
@@ -350,7 +366,11 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post('/user/:userId/messages', {
     onRequest: [authenticate],
     config: {
-      rateLimit: { max: 5, timeWindow: '5 seconds' },
+      rateLimit: {
+        max: 5,
+        timeWindow: '5 seconds',
+        keyGenerator: (req: any) => req.user?.id || req.ip,
+      },
     },
     handler: async (request, reply) => {
       const { userId } = request.params as { userId: string };
@@ -383,11 +403,17 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
       // Sanitize message content (strip HTML tags — defense-in-depth)
       body.content = sanitizeMessage(body.content);
 
+      // Reject messages that become empty after sanitization (e.g. pure HTML tags)
+      if (!body.content.trim() && (!body.attachments || body.attachments.length === 0)) {
+        return badRequest(reply, 'Message content cannot be empty');
+      }
+
       const message = await db.messages.create({
         dm_channel_id: dm.id,
         author_id: request.user!.id,
         content: body.content,
         attachments: body.attachments,
+        reply_to_id: body.reply_to_id,
         queued_at: body.queued_at ? new Date(body.queued_at) : undefined,
       });
 
@@ -415,7 +441,7 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
         },
         created_at: message.created_at,
         edited_at: message.edited_at,
-        attachments: message.attachments || [],
+        attachments: Array.isArray(message.attachments) ? message.attachments : [],
         reply_to_id: message.reply_to_id,
         status: message.status,
       };

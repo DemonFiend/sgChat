@@ -639,6 +639,12 @@ export const voiceRoutes: FastifyPluginAsync = async (fastify) => {
   // Leave voice channel
   fastify.post('/leave/:channelId', {
     onRequest: [authenticate],
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: '10 seconds',
+      },
+    },
     handler: async (request, reply) => {
       const { channelId } = request.params as { channelId: string };
 

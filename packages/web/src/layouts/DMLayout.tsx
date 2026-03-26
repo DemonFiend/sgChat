@@ -22,6 +22,7 @@ export function DMLayout() {
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [userTimezone, setUserTimezone] = useState<string | undefined>(undefined);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   // Fetch server info via REST (not socket events)
   useEffect(() => {
@@ -76,10 +77,33 @@ export function DMLayout() {
         className="flex flex-1 min-h-0"
         style={{ height: 'calc(100vh - var(--title-bar-height))' }}
       >
-        <ServerList servers={servers} />
+        {/* Mobile sidebar backdrop */}
+        {isMobileSidebarOpen && (
+          <div
+            className="fixed inset-0 bg-black/60 z-40 md:hidden"
+            onClick={() => setIsMobileSidebarOpen(false)}
+          />
+        )}
+
+        {/* Server List — overlay on mobile, static on desktop */}
+        <div
+          className={`
+            fixed inset-y-0 left-0 z-50 flex
+            transition-transform duration-200 ease-in-out
+            md:relative md:z-10 md:translate-x-0
+            ${isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+          `}
+          style={{ height: '100%' }}
+        >
+          <ServerList servers={servers} />
+        </div>
+
         <div className="flex flex-col h-full flex-1 min-w-0">
           <div className="flex-1 min-h-0">
-            <DMPage serverId={servers[0]?.id} />
+            <DMPage
+              serverId={servers[0]?.id}
+              onMobileSidebarToggle={() => setIsMobileSidebarOpen((v) => !v)}
+            />
           </div>
         </div>
       </div>

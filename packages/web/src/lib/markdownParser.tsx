@@ -299,9 +299,29 @@ function renderToken(
   const renderLeafText = (content: string) =>
     hasEmoji && serverId ? renderCustomEmojis(content, serverId) : content;
 
+  const renderTextWithLinks = (content: string): React.ReactNode => {
+    const parts = content.split(/(https?:\/\/[^\s<>]+)/g);
+    if (parts.length === 1) return renderLeafText(content);
+    return parts.map((part, idx) =>
+      /^https?:\/\//.test(part) ? (
+        <a
+          key={idx}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-text-link hover:underline"
+        >
+          {part}
+        </a>
+      ) : (
+        <React.Fragment key={idx}>{renderLeafText(part)}</React.Fragment>
+      ),
+    );
+  };
+
   switch (token.type) {
     case 'text':
-      return <React.Fragment key={key}>{renderLeafText(token.content)}</React.Fragment>;
+      return <React.Fragment key={key}>{renderTextWithLinks(token.content)}</React.Fragment>;
 
     case 'newline':
       return <br key={key} />;

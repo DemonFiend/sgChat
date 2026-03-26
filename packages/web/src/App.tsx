@@ -172,7 +172,15 @@ function AppRoutes() {
         <Route path="/channels/:channelId" element={<ProtectedRoute><MainLayout /></ProtectedRoute>} />
         <Route path="/channels" element={<ProtectedRoute><MainLayout /></ProtectedRoute>} />
         <Route path="/" element={<Navigate to="/channels/@me" replace />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        <Route path="*" element={
+          <div className="min-h-screen flex items-center justify-center bg-bg-tertiary">
+            <div className="text-center">
+              <h1 className="text-6xl font-bold text-text-muted">404</h1>
+              <p className="mt-2 text-text-secondary">Page not found</p>
+              <a href="/channels/@me" className="mt-4 inline-block text-text-link hover:underline">Go home</a>
+            </div>
+          </div>
+        } />
       </Routes>
     </RootLayout>
   );

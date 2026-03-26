@@ -28,13 +28,15 @@ export function LoginPage() {
 
   const handleNetworkReady = useCallback((url: string) => {
     const accounts = getAccountsForNetwork(url);
-    if (accounts.length > 0) {
+    const remembered = accounts.find((a) => a.rememberMe && a.encryptedPassword && !isCredentialExpired(a));
+    if (remembered) {
+      setEmail(remembered.email);
+      setRememberMe(true);
+    } else if (accounts.length > 0) {
+      // Only pre-fill email (not password) for non-remembered accounts
       setEmail(accounts[0].email);
-      if (accounts[0].rememberMe && accounts[0].encryptedPassword) {
-        setRememberMe(true);
-      }
     }
-  }, [getAccountsForNetwork]);
+  }, [getAccountsForNetwork, isCredentialExpired]);
 
   // Auto-populate saved credentials when already connected on mount
   useEffect(() => {
@@ -130,14 +132,14 @@ export function LoginPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
             <Input
               type="email"
               label="Email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              autoComplete="email"
+              autoComplete="off"
               disabled={isFormDisabled}
             />
 
@@ -147,7 +149,7 @@ export function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              autoComplete="current-password"
+              autoComplete="off"
               disabled={isFormDisabled}
             />
 

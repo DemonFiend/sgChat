@@ -45,8 +45,8 @@ export function RegisterPage() {
       errors.username = 'Username must be between 2 and 32 characters';
     }
 
-    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
-      errors.username = 'Username can only contain letters, numbers, and underscores';
+    if (!/^[a-zA-Z0-9_-]+$/.test(username)) {
+      errors.username = 'Username can only contain letters, numbers, underscores, and hyphens';
     }
 
     if (password.length < 8) {

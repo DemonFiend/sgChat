@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Avatar } from '@/components/ui/Avatar';
-import { MessageContent } from '@/components/ui/MessageContent';
+import { MessageContent, AttachmentCard } from '@/components/ui/MessageContent';
+import { Modal } from '@/components/ui/Modal';
 import { BendyLine } from '@/components/ui/BendyLine';
 import { GifPicker } from '@/components/ui/GifPicker';
 import { ReactionPicker } from '@/components/ui/ReactionPicker';
@@ -27,6 +28,19 @@ export interface DMMessage {
   sender_id: string | null;
   created_at: string;
   edited_at?: string | null;
+  reply_to_id?: string | null;
+  reactions?: Array<{
+    emoji?: string;
+    type?: 'unicode' | 'custom';
+    emojiId?: string;
+    shortcode?: string;
+    url?: string;
+    is_animated?: boolean;
+    count: number;
+    users?: string[];
+    me: boolean;
+  }>;
+  attachments?: any[];
   system_event?: { type: string; user_id?: string; username?: string; timestamp?: string } | null;
 }
 
@@ -37,10 +51,19 @@ interface DMChatPanelProps {
   currentUserAvatar?: string | null;
   currentUserDisplayName?: string | null;
   onSendMessage: (content: string) => void;
+  onEditMessage?: (messageId: string, newContent: string) => void;
+  onDeleteMessage?: (messageId: string) => void;
+  onReplyClick?: (message: DMMessage) => void;
+  onReactionAdd?: (messageId: string, emoji: string) => void;
+  replyingTo?: DMMessage | null;
+  onCancelReply?: () => void;
   onTypingStart?: () => void;
   onTypingStop?: () => void;
   isTyping?: boolean;
   serverId?: string;
+  isPartnerBlocked?: boolean;
+  onMobileBack?: () => void;
+  onMobileSidebarToggle?: () => void;
 }
 
 export function DMChatPanel({
@@ -50,10 +73,19 @@ export function DMChatPanel({
   currentUserAvatar,
   currentUserDisplayName,
   onSendMessage,
+  onEditMessage,
+  onDeleteMessage,
+  onReplyClick,
+  onReactionAdd,
+  replyingTo,
+  onCancelReply,
   onTypingStart,
   onTypingStop,
   isTyping: friendIsTyping,
   serverId,
+  isPartnerBlocked,
+  onMobileBack,
+  onMobileSidebarToggle,
 }: DMChatPanelProps) {
   const connectionState = useVoiceStore((s) => s.connectionState);
   const currentChannelId = useVoiceStore((s) => s.currentChannelId);
@@ -127,6 +159,10 @@ export function DMChatPanel({
   }, [friend]);
 
   const [messageInput, setMessageInput] = useState('');
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState('');
+  const [pendingDeleteMessageId, setPendingDeleteMessageId] = useState<string | null>(null);
+  const [reactionPickerMsg, setReactionPickerMsg] = useState<{ id: string; anchor: HTMLElement } | null>(null);
   const [friendLocalTime, setFriendLocalTime] = useState<string | null>(null);
   const [showTimeTooltip, setShowTimeTooltip] = useState(false);
   const [showGifPicker, setShowGifPicker] = useState(false);
@@ -410,8 +446,33 @@ export function DMChatPanel({
       {/* Header with Bendy Line */}
       <div className="relative">
         <header className="h-16 px-4 flex items-center gap-4 bg-bg-primary border-b border-bg-tertiary">
+          {/* Mobile: hamburger for server list + back arrow to DM sidebar */}
+          <div className="flex items-center gap-1 md:hidden flex-shrink-0">
+            {onMobileSidebarToggle && (
+              <button
+                onClick={onMobileSidebarToggle}
+                className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-bg-modifier-hover transition-colors"
+                title="Toggle server list"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+            )}
+            {onMobileBack && (
+              <button
+                onClick={onMobileBack}
+                className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-bg-modifier-hover transition-colors"
+                title="Back to conversations"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+            )}
+          </div>
           {/* Friend Info */}
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <h2 className="text-lg font-semibold text-text-primary">
               {friend.display_name || friend.username}
             </h2>
@@ -566,6 +627,7 @@ export function DMChatPanel({
           }
 
           const isMe = message.sender_id === currentUserId;
+          const isEditing = editingMessageId === message.id;
           const senderName = isMe
             ? (currentUserDisplayName || 'You')
             : (friend.display_name || friend.username);
@@ -577,9 +639,150 @@ export function DMChatPanel({
             || prev.sender_id !== message.sender_id
             || new Date(message.created_at).getTime() - new Date(prev.created_at).getTime() > 5 * 60 * 1000;
 
+          // Reply indicator
+          const replyToMessage = message.reply_to_id ? messages.find((m) => m.id === message.reply_to_id) : undefined;
+          const replyIndicator = replyToMessage ? (
+            <div className="flex items-center gap-1.5 text-xs text-text-muted mb-0.5 ml-10 truncate">
+              <span className="flex-shrink-0">&#8617;</span>
+              <span className="font-medium">
+                @{replyToMessage.sender_id === currentUserId
+                  ? (currentUserDisplayName || 'You')
+                  : (friend.display_name || friend.username)}
+              </span>
+              <span className="truncate opacity-70">
+                {replyToMessage.content.length > 80
+                  ? replyToMessage.content.slice(0, 80) + '...'
+                  : replyToMessage.content}
+              </span>
+            </div>
+          ) : null;
+
+          // Message content (editable or read-only)
+          const messageBody = isEditing ? (
+            <div className="mt-1">
+              <textarea
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (editContent.trim() && onEditMessage) {
+                      onEditMessage(message.id, editContent.trim());
+                    }
+                    setEditingMessageId(null);
+                    setEditContent('');
+                  }
+                  if (e.key === 'Escape') {
+                    setEditingMessageId(null);
+                    setEditContent('');
+                  }
+                }}
+                className="w-full bg-bg-tertiary rounded p-2 text-text-primary outline-none resize-none text-sm"
+                rows={2}
+                autoFocus
+              />
+              <div className="text-xs text-text-muted mt-1">
+                escape to <button onClick={() => { setEditingMessageId(null); setEditContent(''); }} className="text-text-link hover:underline">cancel</button>
+                {' \u2022 '}enter to <button onClick={() => { if (editContent.trim() && onEditMessage) { onEditMessage(message.id, editContent.trim()); } setEditingMessageId(null); setEditContent(''); }} className="text-text-link hover:underline">save</button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="text-text-primary">
+                <MessageContent content={message.content} isOwnMessage={isMe} />
+                {message.edited_at && (
+                  <span className="text-[10px] text-text-muted ml-1" title={new Date(message.edited_at).toLocaleString()}>(edited)</span>
+                )}
+              </div>
+              {Array.isArray(message.attachments) && message.attachments.length > 0 && (
+                <div className="mt-1">
+                  {message.attachments.map((att: any, idx: number) => (
+                    <AttachmentCard key={idx} attachment={att} />
+                  ))}
+                </div>
+              )}
+              {/* Reactions */}
+              {message.reactions && message.reactions.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {message.reactions.map((r) => {
+                    const key = r.type === 'custom' ? `custom:${r.emojiId}` : `unicode:${r.emoji}`;
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => onReactionAdd?.(message.id, r.emoji || '')}
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-colors ${
+                          r.me
+                            ? 'bg-accent/20 border-accent text-accent'
+                            : 'bg-bg-tertiary border-transparent text-text-muted hover:border-border'
+                        }`}
+                      >
+                        {r.type === 'custom' && r.url ? (
+                          <img src={r.url} alt={r.shortcode ? `:${r.shortcode}:` : 'emoji'} className="w-4 h-4 object-contain" loading="lazy" />
+                        ) : (
+                          <span>{r.emoji}</span>
+                        )}
+                        <span>{r.count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          );
+
+          // Action toolbar (hover)
+          const actionToolbar = !isEditing && (
+            <div className="absolute -top-3 right-4 opacity-0 group-hover:opacity-100 flex items-center gap-0.5 bg-bg-secondary rounded border border-border shadow-md p-0.5 z-10">
+              {onReplyClick && (
+                <button
+                  className="p-1 rounded hover:bg-bg-modifier-active text-text-muted hover:text-text-primary transition-colors"
+                  title="Reply"
+                  onClick={() => onReplyClick(message)}
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                  </svg>
+                </button>
+              )}
+              <button
+                className="p-1 rounded hover:bg-bg-modifier-active text-text-muted hover:text-text-primary transition-colors"
+                title="Add Reaction"
+                onClick={(e) => setReactionPickerMsg({ id: message.id, anchor: e.currentTarget })}
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </button>
+              {isMe && onEditMessage && (
+                <button
+                  className="p-1 rounded hover:bg-bg-modifier-active text-text-muted hover:text-text-primary transition-colors"
+                  title="Edit"
+                  onClick={() => { setEditingMessageId(message.id); setEditContent(message.content); }}
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                </button>
+              )}
+              {isMe && onDeleteMessage && (
+                <button
+                  className="p-1 rounded hover:bg-bg-modifier-active text-text-muted hover:text-danger transition-colors"
+                  title="Delete"
+                  onClick={() => setPendingDeleteMessageId(message.id)}
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          );
+
           if (showAuthor) {
             return (
-              <div key={message.id} className="flex pt-4 pb-0.5 justify-start">
+              <div key={message.id} className={`flex pt-4 pb-0.5 justify-start hover:bg-bg-modifier-hover group relative ${isEditing ? 'bg-bg-modifier-hover' : ''}`}>
+                {actionToolbar}
+                {replyIndicator}
                 <div className="flex-shrink-0 mr-2">
                   <Avatar
                     src={senderAvatar}
@@ -596,9 +799,7 @@ export function DMChatPanel({
                       {formatTime(message.created_at)}
                     </span>
                   </div>
-                  <div className="text-text-primary">
-                    <MessageContent content={message.content} isOwnMessage={isMe} />
-                  </div>
+                  {messageBody}
                 </div>
               </div>
             );
@@ -606,22 +807,60 @@ export function DMChatPanel({
 
           // Compact continuation message
           return (
-            <div key={message.id} className="flex py-px justify-start group">
+            <div key={message.id} className={`flex py-px justify-start hover:bg-bg-modifier-hover group relative ${isEditing ? 'bg-bg-modifier-hover' : ''}`}>
+              {actionToolbar}
+              {replyIndicator}
               <div className="w-8 flex-shrink-0 mr-2 flex items-start justify-end pt-0.5">
                 <span className="text-[10px] text-text-muted opacity-0 group-hover:opacity-100">
                   {formatTime(message.created_at)}
                 </span>
               </div>
               <div className="max-w-[85%]">
-                <div className="text-text-primary">
-                  <MessageContent content={message.content} isOwnMessage={isMe} />
-                </div>
+                {messageBody}
               </div>
             </div>
           );
         })}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Reaction Picker Portal */}
+      {reactionPickerMsg && (
+        <ReactionPicker
+          isOpen={true}
+          onClose={() => setReactionPickerMsg(null)}
+          onSelect={(emoji) => {
+            onReactionAdd?.(reactionPickerMsg.id, emoji);
+            setReactionPickerMsg(null);
+          }}
+          anchorRef={reactionPickerMsg.anchor}
+          serverId={serverId}
+        />
+      )}
+
+      {/* Delete Message Confirmation Modal */}
+      <Modal isOpen={!!pendingDeleteMessageId} onClose={() => setPendingDeleteMessageId(null)} title="Delete Message">
+        <p className="text-text-secondary">Are you sure you want to delete this message?</p>
+        <div className="flex justify-end gap-3 mt-4">
+          <button
+            className="px-4 py-2 rounded text-text-primary hover:bg-bg-modifier-hover transition-colors"
+            onClick={() => setPendingDeleteMessageId(null)}
+          >
+            Cancel
+          </button>
+          <button
+            className="px-4 py-2 rounded bg-danger text-white hover:bg-danger/80 transition-colors"
+            onClick={() => {
+              if (pendingDeleteMessageId && onDeleteMessage) {
+                onDeleteMessage(pendingDeleteMessageId);
+              }
+              setPendingDeleteMessageId(null);
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      </Modal>
 
       {/* Bottom Section with Bendy Line and Actions */}
       <div className="relative">
@@ -678,8 +917,34 @@ export function DMChatPanel({
           </div>
         )}
 
+        {/* Blocked User Indicator */}
+        {isPartnerBlocked && (
+          <div className="px-4 py-3 flex items-center justify-center gap-2 bg-bg-secondary border-t border-bg-tertiary">
+            <svg className="w-5 h-5 text-danger shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+            </svg>
+            <span className="text-sm text-text-muted">You have blocked this user. You cannot send them messages.</span>
+          </div>
+        )}
+
+        {/* Reply Indicator */}
+        {replyingTo && (
+          <div className="flex items-center gap-2 mx-4 mt-1 px-3 py-2 bg-bg-tertiary rounded-t-lg text-sm text-text-muted">
+            <span>Replying to <strong className="text-text-primary">
+              {replyingTo.sender_id === currentUserId
+                ? (currentUserDisplayName || 'You')
+                : (friend?.display_name || friend?.username)}
+            </strong></span>
+            <button onClick={onCancelReply} className="ml-auto text-text-muted hover:text-text-primary">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
+
         {/* Message Input */}
-        <div className="p-4 flex items-end gap-3">
+        {!isPartnerBlocked && <div className="p-4 flex items-end gap-3">
           <div className="flex-1 flex flex-col relative">
             {/* Mention Autocomplete */}
             {mentionTrigger && (
@@ -814,7 +1079,7 @@ export function DMChatPanel({
               anchorRef={gifButtonRef.current}
             />
           </div>
-        </div>
+        </div>}
       </div>
     </div>
   );

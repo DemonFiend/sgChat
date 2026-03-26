@@ -1,21 +1,24 @@
-import { FastifyPluginAsync } from 'fastify';
+import fp from 'fastify-plugin';
 import rateLimit from '@fastify/rate-limit';
 import { redis } from '../lib/redis.js';
 import { RATE_LIMITS } from '@sgchat/shared';
 
-export const rateLimitPlugin: FastifyPluginAsync = async (fastify) => {
-  // Global rate limit
+/** Shared key generator: user ID if authenticated, otherwise IP */
+const rateLimitKeyGenerator = (req: any) => {
+  return req.user?.id || req.ip;
+};
+
+// Use fastify-plugin to break encapsulation so the onRoute hook
+// propagates to all sibling and child contexts (e.g. apiRoutes)
+export const rateLimitPlugin = fp(async (fastify) => {
   await fastify.register(rateLimit, {
     global: true,
     max: RATE_LIMITS.API_READ.max,
     timeWindow: `${RATE_LIMITS.API_READ.window} seconds`,
     redis: redis.client,
     nameSpace: 'rl:',
-    keyGenerator: (req) => {
-      // Use user ID if authenticated, otherwise IP
-      return (req.user as any)?.id || req.ip;
-    },
-    errorResponseBuilder: (req, context) => ({
+    keyGenerator: rateLimitKeyGenerator,
+    errorResponseBuilder: (_req, context) => ({
       statusCode: 429,
       error: 'Too Many Requests',
       message: `Rate limit exceeded. Retry after ${context.after}`,
@@ -33,4 +36,6 @@ export const rateLimitPlugin: FastifyPluginAsync = async (fastify) => {
       'retry-after': true,
     },
   });
-};
+
+  fastify.decorate('rateLimitKeyGenerator', rateLimitKeyGenerator);
+});

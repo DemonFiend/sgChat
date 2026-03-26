@@ -270,7 +270,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
         },
         created_at: m.created_at,
         edited_at: m.edited_at,
-        attachments: m.attachments || [],
+        attachments: Array.isArray(m.attachments) ? m.attachments : [],
         reply_to_id: m.reply_to_id,
         reactions: reactionsMap.get(m.id) || [],
         type: m.author_id === null ? 'system' : 'default',
@@ -340,6 +340,11 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
 
       // Sanitize message content (strip HTML tags — defense-in-depth)
       body.content = sanitizeMessage(body.content);
+
+      // Reject messages that become empty after sanitization (e.g. pure HTML tags)
+      if (!body.content.trim() && (!body.attachments || body.attachments.length === 0)) {
+        return badRequest(reply, 'Message content cannot be empty');
+      }
 
       // Auto-resolve plain @RoleName text into wire format <@&uuid>
       body.content = await resolveTextMentions(body.content, channel.server_id);
@@ -420,7 +425,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
         },
         created_at: message.created_at,
         edited_at: message.edited_at,
-        attachments: message.attachments || [],
+        attachments: Array.isArray(message.attachments) ? message.attachments : [],
         reactions: [],
         reply_to_id: message.reply_to_id || null,
         is_tts: message.is_tts || false,
@@ -1165,7 +1170,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
           channel_id: r.channel_id,
           created_at: r.created_at,
           edited_at: r.edited_at,
-          attachments: r.attachments,
+          attachments: Array.isArray(r.attachments) ? r.attachments : [],
           author: {
             id: r.author_id,
             username: r.username,
@@ -1190,6 +1195,10 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
     onRequest: [authenticate],
     handler: async (request, reply) => {
       const { id } = request.params;
+
+      if (!UUID_REGEX.test(id)) {
+        return badRequest(reply, 'Invalid channel ID format');
+      }
 
       const canAccess = await canAccessChannel(request.user!.id, id);
       if (!canAccess) {
@@ -1234,7 +1243,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
         },
         created_at: pm.created_at,
         edited_at: pm.edited_at,
-        attachments: pm.attachments || [],
+        attachments: Array.isArray(pm.attachments) ? pm.attachments : [],
         pinned: true,
         pinned_at: pm.pinned_at,
         pinned_by: {

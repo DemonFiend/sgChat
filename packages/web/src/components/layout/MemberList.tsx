@@ -149,6 +149,7 @@ function MemberSearch({
         <input
           type="text"
           name="search-members"
+          aria-label="Search members"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search members"

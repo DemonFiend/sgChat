@@ -64,21 +64,27 @@ export function GlobalIncomingCall() {
   const handleAccept = useCallback(async () => {
     if (!incomingCall) return;
 
+    // Capture call info before clearing (in case state changes during async ops)
+    const { callerId, callerName, dmChannelId } = incomingCall;
+
     // Store pending info so DMPage can auto-select the friend
     useVoiceStore.getState().setPendingDMCallInfo({
-      friendId: incomingCall.callerId,
-      friendName: incomingCall.callerName,
-      dmChannelId: incomingCall.dmChannelId,
+      friendId: callerId,
+      friendName: callerName,
+      dmChannelId,
     });
 
+    // Clear the notification immediately so the user can't double-tap
+    useVoiceStore.getState().setIncomingDMCall(null);
+
     try {
-      await dmVoiceService.join(incomingCall.dmChannelId, incomingCall.callerName, true);
+      await dmVoiceService.join(dmChannelId, callerName, true);
+      navigate('/channels/@me');
     } catch (err) {
       console.error('[GlobalIncomingCall] Failed to accept call:', err);
+      // Clear pending info on failure so the DM page doesn't show stale call state
+      useVoiceStore.getState().setPendingDMCallInfo(null);
     }
-
-    useVoiceStore.getState().setIncomingDMCall(null);
-    navigate('/channels/@me');
   }, [incomingCall, navigate]);
 
   const handleDecline = useCallback(() => {

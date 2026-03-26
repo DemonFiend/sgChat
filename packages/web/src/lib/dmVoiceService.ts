@@ -45,6 +45,7 @@ class DMVoiceServiceClass {
   private notifyingTimerId: ReturnType<typeof setTimeout> | null = null;
   private autoKickTimerId: ReturnType<typeof setTimeout> | null = null;
   private autoLeaveAfterRemoteLeftTimerId: ReturnType<typeof setTimeout> | null = null;
+  private _wasMutedBeforeDeafen: boolean = false;
 
   setAudioContainer(container: HTMLElement) {
     this.audioContainer = container;
@@ -318,6 +319,8 @@ class DMVoiceServiceClass {
 
     try {
       if (deafened) {
+        // Save current mute state before deafen auto-mutes
+        this._wasMutedBeforeDeafen = voiceStore.isMuted();
         await this.room.localParticipant.setMicrophoneEnabled(false);
         this.audioElements.forEach(audio => {
           audio.muted = true;
@@ -326,12 +329,13 @@ class DMVoiceServiceClass {
         this.audioElements.forEach(audio => {
           audio.muted = false;
         });
-        if (!voiceStore.isMuted()) {
+        // Restore mic to the state it was in before deafening
+        if (!this._wasMutedBeforeDeafen) {
           await this.room.localParticipant.setMicrophoneEnabled(true);
         }
       }
 
-      voiceStore.setDeafened(deafened);
+      voiceStore.setDeafened(deafened, this._wasMutedBeforeDeafen);
       console.log('[DMVoiceService] Deafen state:', deafened);
     } catch (err) {
       console.error('[DMVoiceService] Failed to toggle deafen:', err);

@@ -88,6 +88,7 @@ class VoiceServiceClass {
   private electronScreenShareCleanup: (() => void) | null = null;
   private _isServerDeafened: boolean = false;
   private _isIntentionalLeave: boolean = false;
+  private _wasMutedBeforeDeafen: boolean = false;
 
   /**
    * Set the container element for audio elements
@@ -708,6 +709,8 @@ class VoiceServiceClass {
     try {
       // When deafening, also mute and disable all audio
       if (deafened) {
+        // Save current mute state before deafen auto-mutes
+        this._wasMutedBeforeDeafen = voiceStore.isMuted();
         await this.room.localParticipant.setMicrophoneEnabled(false);
         // Mute all audio elements
         this.audioElements.forEach(audio => {
@@ -718,13 +721,13 @@ class VoiceServiceClass {
         this.audioElements.forEach((audio, userId) => {
           audio.muted = this.localMutes.has(userId);
         });
-        // Only enable mic if not previously muted
-        if (!voiceStore.isMuted()) {
+        // Restore mic to the state it was in before deafening
+        if (!this._wasMutedBeforeDeafen) {
           await this.room.localParticipant.setMicrophoneEnabled(true);
         }
       }
 
-      voiceStore.setDeafened(deafened);
+      voiceStore.setDeafened(deafened, this._wasMutedBeforeDeafen);
       
       // Notify server (server listens for 'voice:update')
       const channelId = voiceStore.currentChannelId();

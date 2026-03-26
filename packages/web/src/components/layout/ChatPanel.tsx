@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo, memo } from '
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { clsx } from 'clsx';
 import { Avatar } from '@/components/ui/Avatar';
-import { MessageContent } from '@/components/ui/MessageContent';
+import { MessageContent, AttachmentCard } from '@/components/ui/MessageContent';
 import { ReactionPicker } from '@/components/ui/ReactionPicker';
 import { GifPicker } from '@/components/ui/GifPicker';
 import { StickerPicker } from '@/components/ui/StickerPicker';
@@ -115,6 +115,7 @@ interface ChatPanelProps {
   onOpenThread?: (messageId: string) => void;
   serverId?: string;
   serverBannerUrl?: string | null;
+  onMobileSidebarToggle?: () => void;
 }
 
 export function ChatPanel({
@@ -126,7 +127,7 @@ export function ChatPanel({
   onPinMessage, onUnpinMessage, pinnedMessageIds, isPinnedPanelOpen, onTogglePinnedPanel,
   canManageMessages, onSearchOpen, onClearMessages,
   onCreateThread, threadMessageIds, onOpenThread,
-  serverId, serverBannerUrl,
+  serverId, serverBannerUrl, onMobileSidebarToggle,
 }: ChatPanelProps) {
   const [messageInput, setMessageInput] = useState('');
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
@@ -687,6 +688,18 @@ export function ChatPanel({
           <div className="absolute inset-0 bg-gradient-to-r from-bg-primary/85 via-bg-primary/60 to-bg-primary/40" />
         )}
         <div className="relative z-10 flex items-center gap-2">
+          {/* Mobile hamburger menu — visible only below lg breakpoint */}
+          {onMobileSidebarToggle && (
+            <button
+              onClick={onMobileSidebarToggle}
+              className="p-1 -ml-1 mr-1 rounded text-text-muted hover:text-text-primary hover:bg-bg-modifier-hover transition-colors lg:hidden"
+              title="Toggle sidebar"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+          )}
           <svg className="w-5 h-5 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
           </svg>
@@ -822,6 +835,7 @@ export function ChatPanel({
                       onCreateThread={onCreateThread ? () => onCreateThread(message) : undefined}
                       hasThread={threadMessageIds?.has(message.id)}
                       onOpenThread={onOpenThread ? () => onOpenThread(message.id) : undefined}
+                      replyToMessage={message.reply_to_id ? messages.find((m) => m.id === message.reply_to_id) : undefined}
                     />
                 );
 
@@ -1280,6 +1294,7 @@ interface MessageItemProps {
   onCreateThread?: () => void;
   hasThread?: boolean;
   onOpenThread?: () => void;
+  replyToMessage?: Message | null;
 }
 
 const MemoizedMessageItem = memo(MessageItem, (prev, next) => {
@@ -1293,7 +1308,8 @@ const MemoizedMessageItem = memo(MessageItem, (prev, next) => {
     prev.editContent === next.editContent &&
     prev.isPinned === next.isPinned &&
     prev.canPin === next.canPin &&
-    prev.hasThread === next.hasThread
+    prev.hasThread === next.hasThread &&
+    prev.replyToMessage?.id === next.replyToMessage?.id
   );
 });
 
@@ -1376,7 +1392,7 @@ function MessageItem({
   isEditing, editContent, onEditChange, onEditSave, onEditCancel, onEditStart,
   onDeleteClick, onReactClick, onAuthorClick, onAuthorContextMenu, onReplyClick,
   isPinned, canPin, onPinClick,
-  onCreateThread, hasThread, onOpenThread,
+  onCreateThread, hasThread, onOpenThread, replyToMessage,
 }: MessageItemProps) {
   const isSystem = message.type === 'system' || message.system_event != null;
   const author = message.author || { id: 'unknown', username: 'Unknown User', display_name: null, avatar_url: null };
@@ -1485,8 +1501,32 @@ function MessageItem({
             <span className="text-[10px] text-text-muted ml-1" title={new Date(message.edited_at).toLocaleString()}>(edited)</span>
           )}
         </div>
+        {Array.isArray(message.attachments) && message.attachments.length > 0 && (
+          <div className="mt-1">
+            {message.attachments.map((att: any, idx: number) => (
+              <AttachmentCard key={idx} attachment={att} />
+            ))}
+          </div>
+        )}
         {renderReactions()}
       </>
+    );
+  };
+
+  const renderReplyIndicator = () => {
+    if (!message.reply_to_id || !replyToMessage) return null;
+    const replyAuthor = replyToMessage.author?.display_name || replyToMessage.author?.username || 'Unknown';
+    const preview = replyToMessage.content.length > 80
+      ? replyToMessage.content.slice(0, 80) + '...'
+      : replyToMessage.content;
+    return (
+      <div className="flex items-center gap-1.5 text-xs text-text-muted mb-0.5 ml-14 truncate">
+        <span className="flex-shrink-0">&#8617;</span>
+        <span className="font-medium" style={{ color: replyToMessage.author?.role_color || undefined }}>
+          @{replyAuthor}
+        </span>
+        <span className="truncate opacity-70">{preview}</span>
+      </div>
     );
   };
 
@@ -1530,6 +1570,7 @@ function MessageItem({
   if (showAuthor) {
     return (
       <div className={clsx('px-4 pt-4 pb-1 hover:bg-bg-modifier-hover group relative', isEditing && 'bg-bg-modifier-hover')}>
+        {renderReplyIndicator()}
         <MessageActionToolbar
           isOwnMessage={isOwnMessage}
           isPinned={isPinned}
@@ -1585,6 +1626,7 @@ function MessageItem({
   // Compact message (continuation)
   return (
     <div className={clsx('px-4 py-px hover:bg-bg-modifier-hover group relative', isEditing && 'bg-bg-modifier-hover')}>
+      {renderReplyIndicator()}
       <MessageActionToolbar
         isOwnMessage={isOwnMessage}
         onReactClick={onReactClick}
