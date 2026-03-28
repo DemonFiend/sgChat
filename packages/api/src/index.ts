@@ -251,9 +251,10 @@ async function start() {
     api.get('/health', async () => {
       const { getAccessControlSettings } = await import('./services/memberApprovals.js');
       const accessControl = await getAccessControlSettings();
+      const [server] = await db.sql`SELECT name FROM servers ORDER BY created_at ASC LIMIT 1`;
       return {
         status: 'ok',
-        name: process.env.SERVER_NAME || 'sgChat Server',
+        name: server?.name || process.env.SERVER_NAME || 'sgChat Server',
         version: APP_VERSION,
         commit: process.env.GIT_COMMIT || 'dev',
         timestamp: new Date().toISOString(),
@@ -280,9 +281,10 @@ async function start() {
   fastify.get('/health', async () => {
     const { getAccessControlSettings } = await import('./services/memberApprovals.js');
     const accessControl = await getAccessControlSettings();
+    const [server] = await db.sql`SELECT name FROM servers ORDER BY created_at ASC LIMIT 1`;
     return {
       status: 'ok',
-      name: process.env.SERVER_NAME || 'sgChat Server',
+      name: server?.name || process.env.SERVER_NAME || 'sgChat Server',
       version: APP_VERSION,
       commit: process.env.GIT_COMMIT || 'dev',
       timestamp: new Date().toISOString(),

@@ -86,7 +86,10 @@ const SOCKET_LIMITS = {
   'activity:update':{ max: 3,  windowMs: 30_000 },
 } as const;
 
+const RATE_LIMIT_DISABLED = process.env.DISABLE_RATE_LIMIT === 'true';
+
 function isRateLimited(socket: Socket, userId: string, event: keyof typeof SOCKET_LIMITS): boolean {
+  if (RATE_LIMIT_DISABLED) return false;
   const cfg = SOCKET_LIMITS[event];
   if (!socketLimiter.check(`${userId}:${event}`, cfg.max, cfg.windowMs)) {
     socketEmit(socket, 'error', { message: 'Rate limit exceeded', code: 'RATE_LIMITED' });

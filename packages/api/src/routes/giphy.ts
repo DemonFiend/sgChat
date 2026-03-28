@@ -14,6 +14,8 @@ import { authenticate } from '../middleware/auth.js';
 import { redis } from '../lib/redis.js';
 import { z } from 'zod';
 
+const RATE_LIMIT_DISABLED = process.env.DISABLE_RATE_LIMIT === 'true';
+
 const GIPHY_API_KEY = process.env.GIPHY_API_KEY;
 const GIPHY_BASE_URL = 'https://api.giphy.com/v1/gifs';
 
@@ -142,17 +144,19 @@ export const giphyRoutes: FastifyPluginAsync = async (fastify) => {
       const { limit, offset } = parseResult.data;
 
       // Check rate limit
-      const rateLimit = await checkRateLimit(request.user!.id);
-      reply.header('X-RateLimit-Limit', RATE_LIMIT_MAX);
-      reply.header('X-RateLimit-Remaining', rateLimit.remaining);
-      reply.header('X-RateLimit-Reset', rateLimit.resetIn);
+      if (!RATE_LIMIT_DISABLED) {
+        const rateLimit = await checkRateLimit(request.user!.id);
+        reply.header('X-RateLimit-Limit', RATE_LIMIT_MAX);
+        reply.header('X-RateLimit-Remaining', rateLimit.remaining);
+        reply.header('X-RateLimit-Reset', rateLimit.resetIn);
 
-      if (!rateLimit.allowed) {
-        return reply.code(429).send({
-          error: 'Rate limit exceeded',
-          message: `You have exceeded ${RATE_LIMIT_MAX} Giphy requests per hour. Try again in ${rateLimit.resetIn} seconds.`,
-          resetIn: rateLimit.resetIn,
-        });
+        if (!rateLimit.allowed) {
+          return reply.code(429).send({
+            error: 'Rate limit exceeded',
+            message: `You have exceeded ${RATE_LIMIT_MAX} Giphy requests per hour. Try again in ${rateLimit.resetIn} seconds.`,
+            resetIn: rateLimit.resetIn,
+          });
+        }
       }
 
       // Fetch from Giphy
@@ -211,17 +215,19 @@ export const giphyRoutes: FastifyPluginAsync = async (fastify) => {
       const { q, limit, offset } = parseResult.data;
 
       // Check rate limit
-      const rateLimit = await checkRateLimit(request.user!.id);
-      reply.header('X-RateLimit-Limit', RATE_LIMIT_MAX);
-      reply.header('X-RateLimit-Remaining', rateLimit.remaining);
-      reply.header('X-RateLimit-Reset', rateLimit.resetIn);
+      if (!RATE_LIMIT_DISABLED) {
+        const rateLimit = await checkRateLimit(request.user!.id);
+        reply.header('X-RateLimit-Limit', RATE_LIMIT_MAX);
+        reply.header('X-RateLimit-Remaining', rateLimit.remaining);
+        reply.header('X-RateLimit-Reset', rateLimit.resetIn);
 
-      if (!rateLimit.allowed) {
-        return reply.code(429).send({
-          error: 'Rate limit exceeded',
-          message: `You have exceeded ${RATE_LIMIT_MAX} Giphy requests per hour. Try again in ${rateLimit.resetIn} seconds.`,
-          resetIn: rateLimit.resetIn,
-        });
+        if (!rateLimit.allowed) {
+          return reply.code(429).send({
+            error: 'Rate limit exceeded',
+            message: `You have exceeded ${RATE_LIMIT_MAX} Giphy requests per hour. Try again in ${rateLimit.resetIn} seconds.`,
+            resetIn: rateLimit.resetIn,
+          });
+        }
       }
 
       // Fetch from Giphy
