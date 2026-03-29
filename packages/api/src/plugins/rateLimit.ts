@@ -17,6 +17,19 @@ export const rateLimitPlugin = fp(async (fastify) => {
     fastify.log.warn('Rate limiting is DISABLED (DISABLE_RATE_LIMIT=true). Do NOT use in production.');
   }
 
+  // Paths exempt from rate limiting (static assets, health checks, service worker)
+  const RATE_LIMIT_EXEMPT = new Set([
+    '/health',
+    '/api/health',
+    '/api/version',
+    '/sw.js',
+    '/manifest.webmanifest',
+    '/favicon.ico',
+  ]);
+
+  // Static asset extensions that should skip rate limiting
+  const STATIC_EXTENSIONS = /\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot|map|webp|avif|json)$/;
+
   await fastify.register(rateLimit, {
     global: true,
     max: RATE_LIMITS.API_READ.max,
@@ -24,7 +37,11 @@ export const rateLimitPlugin = fp(async (fastify) => {
     redis: redis.client,
     nameSpace: 'rl:',
     keyGenerator: rateLimitKeyGenerator,
-    ...(RATE_LIMIT_DISABLED && { allowList: () => true }),
+    allowList: (req) => {
+      if (RATE_LIMIT_DISABLED) return true;
+      const url = req.url?.split('?')[0] || '';
+      return RATE_LIMIT_EXEMPT.has(url) || STATIC_EXTENSIONS.test(url) || url.startsWith('/assets/');
+    },
     errorResponseBuilder: (_req, context) => ({
       statusCode: 429,
       error: 'Too Many Requests',
