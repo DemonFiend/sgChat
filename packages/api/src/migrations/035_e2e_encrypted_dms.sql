@@ -57,7 +57,26 @@ ALTER TABLE messages ADD COLUMN IF NOT EXISTS encrypted_content TEXT;
 -- Flag for server-side logic (skip search indexing, skip sanitization)
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_encrypted BOOLEAN DEFAULT false;
 
--- Drop old content CHECK constraint and add new one that allows NULL content when encrypted
+-- Drop the old inline CHECK constraint on content.
+-- PostgreSQL auto-names inline constraints, so we find it dynamically.
+DO $$
+DECLARE
+  _conname text;
+BEGIN
+  -- Find CHECK constraints on messages that reference 'content' length (the old 2000-char limit)
+  FOR _conname IN
+    SELECT c.conname FROM pg_constraint c
+    WHERE c.conrelid = 'messages'::regclass
+      AND c.contype = 'c'
+      AND pg_get_constraintdef(c.oid) LIKE '%length(content)%'
+      AND c.conname != 'message_content_check'
+  LOOP
+    EXECUTE format('ALTER TABLE messages DROP CONSTRAINT %I', _conname);
+    RAISE NOTICE 'Dropped old constraint: %', _conname;
+  END LOOP;
+END $$;
+
+-- Also drop the named version in case this migration ran partially before
 ALTER TABLE messages DROP CONSTRAINT IF EXISTS messages_content_check;
 
 -- New constraint: either plaintext or encrypted content, not both
