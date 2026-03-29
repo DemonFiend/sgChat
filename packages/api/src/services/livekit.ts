@@ -1,5 +1,6 @@
-import { AccessToken } from 'livekit-server-sdk';
+import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
 import { db } from '../lib/db.js';
+import { redis } from '../lib/redis.js';
 import { decryptWithKey } from '../lib/relayCrypto.js';
 
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || '';
@@ -118,4 +119,73 @@ export async function getRelayLiveKitUrl(relayId: string): Promise<string> {
  */
 export function getMasterEncryptionKey(): string {
   return MASTER_ENCRYPTION_KEY;
+}
+
+/**
+ * Reconcile LiveKit room state with Redis after server restart.
+ *
+ * When the API server restarts, Redis voice state is wiped (clearAllPresence).
+ * But LiveKit clients may still be connected to rooms. This function queries
+ * LiveKit for active rooms/participants and rebuilds the Redis voice state.
+ */
+export async function reconcileLiveKitVoiceState(): Promise<void> {
+  if (!LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
+    console.log('⏭️  LiveKit not configured, skipping voice state reconciliation');
+    return;
+  }
+
+  const httpUrl = LIVEKIT_URL.replace(/^ws(s?):\/\//, 'http$1://');
+
+  try {
+    const roomService = new RoomServiceClient(httpUrl, LIVEKIT_API_KEY, LIVEKIT_API_SECRET);
+    const rooms = await roomService.listRooms();
+
+    let totalReconciled = 0;
+
+    for (const room of rooms) {
+      // Only process sgChat voice rooms (format: "voice:{channelId}")
+      const match = room.name.match(/^voice:(.+)$/);
+      if (!match) continue;
+
+      const channelId = match[1];
+
+      // Verify channel still exists in database
+      const channel = await db.channels.findById(channelId);
+      if (!channel) continue;
+
+      // List participants in this LiveKit room
+      const participants = await roomService.listParticipants(room.name);
+
+      for (const participant of participants) {
+        const userId = participant.identity;
+        if (!userId) continue;
+
+        // Verify user exists
+        const user = await db.users.findById(userId);
+        if (!user) continue;
+
+        // Rebuild Redis voice state
+        await redis.client.sadd(`voice:channel:${channelId}`, userId);
+        await redis.client.set(`voice:user:${userId}`, channelId);
+        await redis.client.hset(`voice:state:${channelId}:${userId}`, {
+          joined_at: participant.joinedAt
+            ? new Date(Number(participant.joinedAt) * 1000).toISOString()
+            : new Date().toISOString(),
+          is_muted: 'false',
+          is_deafened: 'false',
+        });
+        await redis.client.set(`voice:activity:${userId}`, Date.now().toString());
+        totalReconciled++;
+      }
+    }
+
+    if (totalReconciled > 0) {
+      console.log(`🔄 Reconciled ${totalReconciled} voice participants from LiveKit`);
+    } else {
+      console.log('🔄 No active LiveKit voice sessions to reconcile');
+    }
+  } catch (err) {
+    // Don't crash startup — just log and continue
+    console.warn('⚠️  LiveKit voice reconciliation failed (LiveKit may be starting up):', (err as Error).message);
+  }
 }

@@ -52,6 +52,7 @@ import { relayRoutes } from './routes/relays.js';
 import { e2eKeyRoutes } from './routes/e2eKeys.js';
 import { cryptoPayloadPlugin } from './plugins/cryptoPayload.js';
 import { initSocketIO } from './socket/index.js';
+import { reconcileLiveKitVoiceState } from './services/livekit.js';
 import { cleanupEmptyTempChannels } from './services/tempChannels.js';
 import { checkAndMoveAfkUsers } from './services/afkService.js';
 import { checkAndAnnounceEvents } from './services/eventAnnouncements.js';
@@ -111,6 +112,7 @@ async function start() {
   await initDatabase();
   await runMigrations();
   await initRedis();
+  await reconcileLiveKitVoiceState();
   await initEventBus();
   await initStorage();
 
