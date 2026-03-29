@@ -76,8 +76,9 @@ BEGIN
   END LOOP;
 END $$;
 
--- Also drop the named version in case this migration ran partially before
+-- Also drop the named versions in case this migration ran partially before
 ALTER TABLE messages DROP CONSTRAINT IF EXISTS messages_content_check;
+ALTER TABLE messages DROP CONSTRAINT IF EXISTS message_content_check;
 
 -- New constraint: either plaintext or encrypted content, not both
 ALTER TABLE messages ADD CONSTRAINT message_content_check CHECK (
