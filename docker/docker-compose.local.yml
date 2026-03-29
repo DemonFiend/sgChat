@@ -50,14 +50,14 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: redis-server --appendonly yes
+    command: redis-server --save "" --appendonly no --requirepass ${REDIS_PASSWORD:-sgchat_local_redis}
     volumes:
       - redis_local:/data
     restart: unless-stopped
     networks:
       - sgchat-local
     healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-sgchat_local_redis}", "ping" ]
       interval: 10s
       timeout: 3s
       retries: 5

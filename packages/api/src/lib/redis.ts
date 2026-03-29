@@ -31,52 +31,88 @@ export async function initRedis() {
   await redis.clearAllPresence();
 }
 
-// Session data structure for cookie-based auth
-interface SessionData {
-  token: string;
-  userId: string;
-}
-
 // Redis helper functions
 export const redis = {
   client, // Expose client for direct access
 
-  // Session management with token indexing for cookie-based refresh
+  // ── Per-session refresh token management ───────────────────
+  // Each login/register creates an independent session keyed by its refresh token.
+  // Multiple devices can hold separate sessions without conflicting.
+  // Keys:
+  //   session_token:{token} → JSON { userId }          (session data, 7-day TTL)
+  //   user_sessions:{userId} → Set of active tokens     (tracks all sessions per user)
+
   async setSession(userId: string, token: string, expiresIn: number = 604800) {
-    const sessionData: SessionData = { token, userId };
-    // Store session by userId
-    await client.setex(`session:${userId}`, expiresIn, JSON.stringify(sessionData));
-    // Index by token for lookup without userId (cookie-based refresh)
-    await client.setex(`session_token:${token}`, expiresIn, userId);
+    // Store session data keyed by token
+    await client.setex(`session_token:${token}`, expiresIn, JSON.stringify({ userId }));
+    // Track this token in the user's session set
+    await client.sadd(`user_sessions:${userId}`, token);
+    // Prune expired tokens from the set (lazy cleanup)
+    await this.pruneUserSessions(userId);
   },
 
-  async getSession(userId: string): Promise<SessionData | null> {
-    const data = await client.get(`session:${userId}`);
+  // Look up session by token (for cookie-based refresh without Bearer header)
+  async getSessionByToken(token: string): Promise<{ userId: string } | null> {
+    const data = await client.get(`session_token:${token}`);
     if (!data) return null;
     try {
-      return JSON.parse(data) as SessionData;
+      return JSON.parse(data) as { userId: string };
     } catch {
       return null;
     }
   },
 
-  // Look up session by token (for cookie-based refresh without Bearer header)
-  async getSessionByToken(token: string): Promise<{ userId: string } | null> {
-    const userId = await client.get(`session_token:${token}`);
-    if (!userId) return null;
-    // Verify the session still exists and token matches
-    const session = await this.getSession(userId);
-    if (!session || session.token !== token) return null;
-    return { userId };
+  // Delete a single session by its token (for refresh rotation and single-device logout)
+  async deleteSessionByToken(token: string): Promise<string | null> {
+    const data = await client.get(`session_token:${token}`);
+    if (!data) return null;
+    try {
+      const { userId } = JSON.parse(data) as { userId: string };
+      await client.del(`session_token:${token}`);
+      await client.srem(`user_sessions:${userId}`, token);
+      return userId;
+    } catch {
+      await client.del(`session_token:${token}`);
+      return null;
+    }
   },
 
-  async deleteSession(userId: string) {
-    // Get the token first to delete the index
-    const session = await this.getSession(userId);
-    if (session?.token) {
-      await client.del(`session_token:${session.token}`);
+  // Delete ALL sessions for a user (password reset, password change, "log out everywhere")
+  async deleteAllSessions(userId: string) {
+    const tokens = await client.smembers(`user_sessions:${userId}`);
+    if (tokens.length > 0) {
+      const pipeline = client.pipeline();
+      for (const token of tokens) {
+        pipeline.del(`session_token:${token}`);
+      }
+      pipeline.del(`user_sessions:${userId}`);
+      await pipeline.exec();
+    } else {
+      await client.del(`user_sessions:${userId}`);
     }
-    await client.del(`session:${userId}`);
+  },
+
+  // Lazy cleanup: remove tokens from the set that have expired in Redis
+  async pruneUserSessions(userId: string) {
+    const tokens = await client.smembers(`user_sessions:${userId}`);
+    if (tokens.length === 0) return;
+    // Check which tokens still exist
+    const pipeline = client.pipeline();
+    for (const token of tokens) {
+      pipeline.exists(`session_token:${token}`);
+    }
+    const results = await pipeline.exec();
+    if (!results) return;
+    const stale: string[] = [];
+    for (let i = 0; i < tokens.length; i++) {
+      const [err, exists] = results[i] || [];
+      if (!err && exists === 0) {
+        stale.push(tokens[i]);
+      }
+    }
+    if (stale.length > 0) {
+      await client.srem(`user_sessions:${userId}`, ...stale);
+    }
   },
 
   // ── Multi-session presence tracking ──────────────────────────

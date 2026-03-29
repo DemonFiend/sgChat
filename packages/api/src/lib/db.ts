@@ -220,7 +220,9 @@ export const db = {
       channel_id?: string;
       dm_channel_id?: string;
       author_id: string | null;
-      content: string;
+      content?: string;
+      encrypted_content?: string;
+      is_encrypted?: boolean;
       reply_to_id?: string;
       attachments?: any[];
       queued_at?: Date;
@@ -230,14 +232,16 @@ export const db = {
     }) {
       const [message] = await sql`
         INSERT INTO messages (
-          channel_id, dm_channel_id, author_id, content, reply_to_id,
-          attachments, queued_at, system_event, status, is_tts
+          channel_id, dm_channel_id, author_id, content, encrypted_content, is_encrypted,
+          reply_to_id, attachments, queued_at, system_event, status, is_tts
         )
         VALUES (
           ${data.channel_id || null},
           ${data.dm_channel_id || null},
           ${data.author_id},
-          ${data.content},
+          ${data.content || null},
+          ${data.encrypted_content || null},
+          ${data.is_encrypted || false},
           ${data.reply_to_id || null},
           ${JSON.stringify(data.attachments || [])},
           ${data.queued_at || null},
@@ -354,6 +358,10 @@ export const db = {
         LEFT JOIN member_roles mr ON m.user_id = mr.member_user_id AND m.server_id = mr.member_server_id
         LEFT JOIN roles r ON mr.role_id = r.id
         WHERE m.server_id = ${serverId}
+          AND NOT EXISTS (
+            SELECT 1 FROM bans b
+            WHERE b.server_id = m.server_id AND b.user_id = m.user_id
+          )
         GROUP BY m.user_id, m.server_id, m.nickname, m.announce_online, m.joined_at,
                  u.username, u.display_name, u.avatar_url, u.status, u.custom_status, u.activity
         ORDER BY u.username ASC

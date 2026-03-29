@@ -2,7 +2,7 @@ import { FastifyPluginAsync } from 'fastify';
 import { createHash } from 'crypto';
 import { authenticate } from '../middleware/auth.js';
 import { db } from '../lib/db.js';
-import { sendMessageSchema, RATE_LIMITS } from '@sgchat/shared';
+import { sendMessageSchema, sendEncryptedMessageSchema, RATE_LIMITS } from '@sgchat/shared';
 import { notFound, forbidden, badRequest } from '../utils/errors.js';
 import { sanitizeMessage } from '../utils/sanitize.js';
 import { areFriends, isBlocked } from './friends.js';
@@ -216,8 +216,9 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
     },
     handler: async (request, reply) => {
       const { id } = request.params as { id: string };
-      const body = sendMessageSchema.parse(request.body);
-      
+      const rawBody = request.body as Record<string, unknown>;
+      const isEncrypted = rawBody?.is_encrypted === true;
+
       const dm = await db.dmChannels.findById(id);
       if (!dm) {
         return notFound(reply, 'DM channel');
@@ -241,28 +242,44 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
         return forbidden(reply, 'Cannot message this user');
       }
 
-      // Sanitize message content (strip HTML tags — defense-in-depth)
-      body.content = sanitizeMessage(body.content);
+      let message;
 
-      // Reject messages that become empty after sanitization (e.g. pure HTML tags)
-      if (!body.content.trim() && (!body.attachments || body.attachments.length === 0)) {
-        return badRequest(reply, 'Message content cannot be empty');
+      if (isEncrypted) {
+        // E2E encrypted message — server treats content as opaque blob
+        const body = sendEncryptedMessageSchema.parse(rawBody);
+        message = await db.messages.create({
+          dm_channel_id: id,
+          author_id: request.user!.id,
+          encrypted_content: body.encrypted_content,
+          is_encrypted: true,
+          reply_to_id: body.reply_to_id,
+          queued_at: body.queued_at ? new Date(body.queued_at) : undefined,
+        });
+      } else {
+        // Plaintext message — sanitize and validate as usual
+        const body = sendMessageSchema.parse(rawBody);
+        body.content = sanitizeMessage(body.content);
+
+        if (!body.content.trim() && (!body.attachments || body.attachments.length === 0)) {
+          return badRequest(reply, 'Message content cannot be empty');
+        }
+
+        message = await db.messages.create({
+          dm_channel_id: id,
+          author_id: request.user!.id,
+          content: body.content,
+          attachments: body.attachments,
+          reply_to_id: body.reply_to_id,
+          queued_at: body.queued_at ? new Date(body.queued_at) : undefined,
+        });
       }
-
-      const message = await db.messages.create({
-        dm_channel_id: id,
-        author_id: request.user!.id,
-        content: body.content,
-        attachments: body.attachments,
-        reply_to_id: body.reply_to_id,
-        queued_at: body.queued_at ? new Date(body.queued_at) : undefined,
-      });
 
       // Assign message to a segment for history management
       try {
         const segment = await getOrCreateSegment(null, id, new Date(message.created_at));
         await db.sql`UPDATE messages SET segment_id = ${segment.id} WHERE id = ${message.id}`;
-        await onMessageCreated(segment.id, body.content, body.attachments || []);
+        const contentForStats = isEncrypted ? '' : (message.content || '');
+        await onMessageCreated(segment.id, contentForStats, message.attachments || []);
       } catch (segmentError) {
         console.error('Failed to assign DM message to segment:', segmentError);
       }
@@ -274,6 +291,8 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
         id: message.id,
         dm_channel_id: message.dm_channel_id,
         content: message.content,
+        encrypted_content: message.encrypted_content,
+        is_encrypted: message.is_encrypted,
         author: {
           id: author.id,
           username: author.username,
@@ -374,8 +393,9 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
     },
     handler: async (request, reply) => {
       const { userId } = request.params as { userId: string };
-      const body = sendMessageSchema.parse(request.body);
-      
+      const rawBody = request.body as Record<string, unknown>;
+      const isEncrypted = rawBody?.is_encrypted === true;
+
       // Check if target user exists
       const targetUser = await db.users.findById(userId);
       if (!targetUser) {
@@ -400,39 +420,57 @@ export const dmRoutes: FastifyPluginAsync = async (fastify) => {
         _isNewChannel = true;
       }
 
-      // Sanitize message content (strip HTML tags — defense-in-depth)
-      body.content = sanitizeMessage(body.content);
+      let message;
 
-      // Reject messages that become empty after sanitization (e.g. pure HTML tags)
-      if (!body.content.trim() && (!body.attachments || body.attachments.length === 0)) {
-        return badRequest(reply, 'Message content cannot be empty');
+      if (isEncrypted) {
+        // E2E encrypted message — server treats content as opaque blob
+        const body = sendEncryptedMessageSchema.parse(rawBody);
+        message = await db.messages.create({
+          dm_channel_id: dm.id,
+          author_id: request.user!.id,
+          encrypted_content: body.encrypted_content,
+          is_encrypted: true,
+          reply_to_id: body.reply_to_id,
+          queued_at: body.queued_at ? new Date(body.queued_at) : undefined,
+        });
+      } else {
+        // Plaintext message — sanitize and validate as usual
+        const body = sendMessageSchema.parse(rawBody);
+        body.content = sanitizeMessage(body.content);
+
+        if (!body.content.trim() && (!body.attachments || body.attachments.length === 0)) {
+          return badRequest(reply, 'Message content cannot be empty');
+        }
+
+        message = await db.messages.create({
+          dm_channel_id: dm.id,
+          author_id: request.user!.id,
+          content: body.content,
+          attachments: body.attachments,
+          reply_to_id: body.reply_to_id,
+          queued_at: body.queued_at ? new Date(body.queued_at) : undefined,
+        });
       }
-
-      const message = await db.messages.create({
-        dm_channel_id: dm.id,
-        author_id: request.user!.id,
-        content: body.content,
-        attachments: body.attachments,
-        reply_to_id: body.reply_to_id,
-        queued_at: body.queued_at ? new Date(body.queued_at) : undefined,
-      });
 
       // Assign message to a segment for history management
       try {
         const segment = await getOrCreateSegment(null, dm.id, new Date(message.created_at));
         await db.sql`UPDATE messages SET segment_id = ${segment.id} WHERE id = ${message.id}`;
-        await onMessageCreated(segment.id, body.content, body.attachments || []);
+        const contentForStats = isEncrypted ? '' : (message.content || '');
+        await onMessageCreated(segment.id, contentForStats, message.attachments || []);
       } catch (segmentError) {
         console.error('Failed to assign DM message to segment:', segmentError);
       }
-      
+
       // Get author info for the formatted message
       const author = await db.users.findById(request.user!.id);
-      
+
       const formattedMessage = {
         id: message.id,
         dm_channel_id: dm.id,
         content: message.content,
+        encrypted_content: message.encrypted_content,
+        is_encrypted: message.is_encrypted,
         author: {
           id: author.id,
           username: author.username,

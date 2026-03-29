@@ -546,8 +546,8 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
         WHERE id = ${request.user!.id}
       `;
 
-      // Invalidate all refresh tokens for this user
-      await redis.deleteSession(request.user!.id);
+      // Invalidate all refresh tokens for this user (security: password was changed)
+      await redis.deleteAllSessions(request.user!.id);
 
       return { message: 'Password changed successfully' };
     },

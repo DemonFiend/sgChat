@@ -412,7 +412,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       // Get fresh user data
       const user = await db.users.findById(session.userId);
       if (!user) {
-        await redis.deleteSession(session.userId);
+        await redis.deleteAllSessions(session.userId);
         reply.clearCookie('refresh_token', getRefreshTokenCookieOptions());
         return reply.status(401).send({
           statusCode: 401,
@@ -421,8 +421,8 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      // Delete old session (invalidates old refresh token)
-      await redis.deleteSession(session.userId);
+      // Delete only the old token being rotated (other devices keep their sessions)
+      await redis.deleteSessionByToken(refresh_token!);
 
       // Generate new tokens (rotation)
       const access_token = fastify.jwt.sign({
@@ -466,10 +466,10 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       
       // Look up session by token
       const session = await redis.getSessionByToken(refresh_token);
-      
+
       if (session) {
-        // Delete refresh token from Redis
-        await redis.deleteSession(session.userId);
+        // Delete only this specific session (other devices stay logged in)
+        await redis.deleteSessionByToken(refresh_token);
         // Update user status to offline
         await db.users.updateStatus(session.userId, 'offline');
         await redis.setUserOffline(session.userId);
@@ -812,8 +812,8 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
           WHERE id = ${resetToken.id}
         `;
 
-        // Invalidate all sessions for this user
-        await redis.deleteSession(resetToken.user_id);
+        // Invalidate all sessions for this user (security: password was reset)
+        await redis.deleteAllSessions(resetToken.user_id);
 
         // Clean up old tokens for this user
         await db.sql`

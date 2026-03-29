@@ -49,6 +49,7 @@ import { emojiRoutes } from './routes/emojis.js';
 import { threadRoutes } from './routes/threads.js';
 import { eventRoutes } from './routes/events.js';
 import { relayRoutes } from './routes/relays.js';
+import { e2eKeyRoutes } from './routes/e2eKeys.js';
 import { cryptoPayloadPlugin } from './plugins/cryptoPayload.js';
 import { initSocketIO } from './socket/index.js';
 import { cleanupEmptyTempChannels } from './services/tempChannels.js';
@@ -235,6 +236,9 @@ async function start() {
     // Crypto key exchange (unauthenticated)
     await api.register(cryptoRoutes, { prefix: '/crypto' });
 
+    // E2E encryption key management
+    await api.register(e2eKeyRoutes, { prefix: '/e2e' });
+
     // Message search
     await api.register(searchRoutes, { prefix: '/search' });
 
@@ -321,6 +325,7 @@ async function start() {
   await fastify.register(crashReportsRoutes);
   await fastify.register(searchRoutes, { prefix: '/search' });
   await fastify.register(webhookRoutes, { prefix: '/webhooks' });
+  await fastify.register(e2eKeyRoutes, { prefix: '/e2e' });
   await fastify.register(threadRoutes);
   await fastify.register(relayRoutes);
 

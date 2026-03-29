@@ -86,6 +86,13 @@ export const sendMessageSchema = z.object({
   sticker_ids: z.array(z.string().uuid()).max(3).optional(),
 });
 
+export const sendEncryptedMessageSchema = z.object({
+  encrypted_content: z.string().min(1).max(32000),
+  is_encrypted: z.literal(true),
+  reply_to_id: z.string().uuid().optional(),
+  queued_at: z.string().datetime().optional(),
+});
+
 // Thread validators
 export const createThreadSchema = z.object({
   name: z.string().min(1).max(100),
@@ -245,6 +252,7 @@ export type LoginInput = z.infer<typeof loginSchema>;
 export type CreateServerInput = z.infer<typeof createServerSchema>;
 export type CreateChannelInput = z.infer<typeof createChannelSchema>;
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
+export type SendEncryptedMessageInput = z.infer<typeof sendEncryptedMessageSchema>;
 export type UpdateStatusInput = z.infer<typeof updateStatusSchema>;
 export type UpdateCustomStatusInput = z.infer<typeof updateCustomStatusSchema>;
 export type UpdateStatusCommentInput = z.infer<typeof updateStatusCommentSchema>;

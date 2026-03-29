@@ -176,6 +176,37 @@ CREATE INDEX idx_dm_channels_user1 ON dm_channels(user1_id);
 CREATE INDEX idx_dm_channels_user2 ON dm_channels(user2_id);
 
 -- ============================================================
+-- E2E ENCRYPTION: Device Key Bundles
+-- ============================================================
+
+CREATE TABLE e2e_device_keys (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  device_id TEXT NOT NULL CHECK (length(device_id) >= 1 AND length(device_id) <= 128),
+  device_label TEXT CHECK (length(device_label) <= 64),
+  identity_key TEXT NOT NULL CHECK (length(identity_key) >= 40 AND length(identity_key) <= 200),
+  signed_pre_key TEXT NOT NULL CHECK (length(signed_pre_key) >= 40 AND length(signed_pre_key) <= 200),
+  signed_pre_key_signature TEXT NOT NULL CHECK (length(signed_pre_key_signature) >= 40 AND length(signed_pre_key_signature) <= 200),
+  signed_pre_key_id INTEGER NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT e2e_device_keys_unique UNIQUE (user_id, device_id)
+);
+
+CREATE INDEX idx_e2e_device_keys_user ON e2e_device_keys(user_id);
+
+CREATE TABLE e2e_one_time_pre_keys (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  device_key_id UUID NOT NULL REFERENCES e2e_device_keys(id) ON DELETE CASCADE,
+  key_id INTEGER NOT NULL,
+  public_key TEXT NOT NULL CHECK (length(public_key) >= 40 AND length(public_key) <= 200),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT e2e_otpk_unique UNIQUE (device_key_id, key_id)
+);
+
+CREATE INDEX idx_e2e_otpk_device ON e2e_one_time_pre_keys(device_key_id);
+
+-- ============================================================
 -- MESSAGES
 -- ============================================================
 
@@ -189,9 +220,13 @@ CREATE TABLE messages (
   -- Author (null for system messages)
   author_id UUID REFERENCES users(id) ON DELETE SET NULL,
   
-  -- Content
-  content TEXT NOT NULL CHECK (length(content) >= 1 AND length(content) <= 2000),
+  -- Content (plaintext for normal messages, NULL for E2E encrypted)
+  content TEXT,
   attachments JSONB DEFAULT '[]',
+
+  -- E2E encryption (opaque ciphertext blob from client)
+  encrypted_content TEXT,
+  is_encrypted BOOLEAN DEFAULT false,
   
   -- Status tracking
   status TEXT DEFAULT 'sent' CHECK (status IN ('sending', 'sent', 'received', 'failed')),
@@ -215,6 +250,12 @@ CREATE TABLE messages (
   CONSTRAINT message_target CHECK (
     (channel_id IS NOT NULL AND dm_channel_id IS NULL) OR
     (channel_id IS NULL AND dm_channel_id IS NOT NULL)
+  ),
+
+  -- Either plaintext content or encrypted content, not both
+  CONSTRAINT message_content_check CHECK (
+    (is_encrypted = false AND content IS NOT NULL AND length(content) >= 1 AND length(content) <= 2000) OR
+    (is_encrypted = true AND encrypted_content IS NOT NULL AND length(encrypted_content) >= 1 AND length(encrypted_content) <= 32000)
   )
 );
 
@@ -224,10 +265,14 @@ CREATE INDEX idx_messages_author ON messages(author_id);
 CREATE INDEX idx_messages_pending ON messages(dm_channel_id, status) WHERE status = 'sent';
 CREATE INDEX idx_messages_search ON messages USING GIN(search_vector);
 
--- Auto-update search vector on message insert/update
+-- Auto-update search vector on message insert/update (skip encrypted messages)
 CREATE OR REPLACE FUNCTION messages_search_vector_update() RETURNS trigger AS $$
 BEGIN
-  NEW.search_vector := to_tsvector('english', coalesce(NEW.content, ''));
+  IF NEW.is_encrypted = true THEN
+    NEW.search_vector := NULL;
+  ELSE
+    NEW.search_vector := to_tsvector('english', coalesce(NEW.content, ''));
+  END IF;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
