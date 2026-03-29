@@ -121,6 +121,34 @@ function connect() {
     lastSequences = data.sequences || {};
     startRelayPingService();
 
+    // Hydrate voice participants for all channels so the sidebar is accurate
+    import('@/stores/voice').then(({ useVoiceStore }) => {
+      import('@/api').then(({ api }) => {
+        api.get<{ channels: Record<string, Array<{
+          user_id: string; username: string; display_name: string | null;
+          avatar_url: string | null; is_muted: boolean; is_deafened: boolean;
+          is_streaming?: boolean; voice_status?: string;
+        }>> }>('/voice/participants').then((res) => {
+          const voiceStore = useVoiceStore.getState();
+          for (const [channelId, participants] of Object.entries(res.channels)) {
+            voiceStore.setChannelParticipants(channelId, participants.map(p => ({
+              userId: p.user_id,
+              username: p.username,
+              displayName: p.display_name,
+              avatarUrl: p.avatar_url,
+              isMuted: p.is_muted,
+              isDeafened: p.is_deafened,
+              isSpeaking: false,
+              isStreaming: p.is_streaming || false,
+              voiceStatus: p.voice_status,
+            })));
+          }
+        }).catch((err) => {
+          console.warn('[Socket] Failed to hydrate voice participants:', err);
+        });
+      });
+    });
+
     // Attempt to rejoin voice channel after page refresh
     import('./voiceService').then(({ voiceService }) => {
       voiceService.attemptAutoRejoin().catch((err) => {
