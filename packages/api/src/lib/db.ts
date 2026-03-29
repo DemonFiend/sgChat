@@ -343,7 +343,8 @@ export const db = {
     async findByServerId(serverId: string) {
       return sql`
         SELECT m.user_id, m.server_id, m.nickname, m.announce_online, m.joined_at,
-               u.username, u.display_name, u.avatar_url, u.status, u.custom_status, u.activity,
+               u.username, u.display_name, u.avatar_url, u.status,
+               u.custom_status, u.custom_status_emoji, u.status_expires_at, u.activity,
                COALESCE(
                  json_agg(
                    json_build_object(
@@ -363,7 +364,8 @@ export const db = {
             WHERE b.server_id = m.server_id AND b.user_id = m.user_id
           )
         GROUP BY m.user_id, m.server_id, m.nickname, m.announce_online, m.joined_at,
-                 u.username, u.display_name, u.avatar_url, u.status, u.custom_status, u.activity
+                 u.username, u.display_name, u.avatar_url, u.status,
+                 u.custom_status, u.custom_status_emoji, u.status_expires_at, u.activity
         ORDER BY u.username ASC
       `;
     },

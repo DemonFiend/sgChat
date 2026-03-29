@@ -766,9 +766,12 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
 
       const validStatuses = ['online', 'idle', 'dnd', 'offline'];
       const status = validStatuses.includes(data.status) ? data.status : 'online';
-      
+
       await db.users.updateStatus(userId, status);
-      
+
+      // Fetch current user data so custom_status is included in the broadcast
+      const currentUserData = await db.users.findById(userId);
+
       for (const server of servers) {
         await publishEvent({
           type: 'presence.update',
@@ -777,6 +780,9 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
           payload: {
             user_id: userId,
             status,
+            custom_status: currentUserData?.custom_status || null,
+            custom_status_emoji: currentUserData?.custom_status_emoji || null,
+            activity: currentUserData?.activity || null,
           },
         });
       }
