@@ -469,7 +469,9 @@ CREATE TABLE user_settings (
   audio_auto_gain_control BOOLEAN DEFAULT true,
   audio_echo_cancellation BOOLEAN DEFAULT true,
   audio_noise_suppression BOOLEAN DEFAULT true,
-  audio_ai_noise_suppression BOOLEAN DEFAULT true,                -- Client-side DTLN AI noise suppression
+  audio_ai_noise_suppression BOOLEAN DEFAULT true,                -- Client-side DTLN AI noise suppression (legacy)
+  noise_suppression_mode VARCHAR(16) DEFAULT 'native',            -- off | native | nsnet2 | deepfilter
+  noise_aggressiveness REAL NOT NULL DEFAULT 0.5 CHECK (noise_aggressiveness >= 0.0 AND noise_aggressiveness <= 1.0),
   voice_activity_detection BOOLEAN DEFAULT true,                  -- VAD vs push-to-talk
   push_to_talk_key TEXT,                                          -- Key binding for PTT
   

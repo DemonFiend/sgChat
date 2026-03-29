@@ -8,6 +8,7 @@ import { streamViewerStore } from '@/stores/streamViewer';
 import { isElectron, getElectronAPI } from './electron';
 import { getCachedRelays, getRelayPings } from './relayPing';
 import { noiseSuppressionService } from './noiseSuppressionService';
+import { acquireMicStream, type MicPipelineResult } from '@/audio/micPipeline';
 
 interface JoinVoiceResponse {
   token: string;
@@ -56,6 +57,8 @@ interface VoiceSettings {
   audio_ai_noise_suppression: boolean;
   voice_activity_detection: boolean;
   enable_voice_join_sounds: boolean;
+  noise_suppression_mode: string | null;
+  noise_aggressiveness: number;
 }
 
 const VOICE_CHANNEL_STORAGE_KEY = 'sgchat_voice_channel';
@@ -89,6 +92,7 @@ class VoiceServiceClass {
   private _isServerDeafened: boolean = false;
   private _isIntentionalLeave: boolean = false;
   private _wasMutedBeforeDeafen: boolean = false;
+  private _micPipeline: MicPipelineResult | null = null;
 
   /**
    * Set the container element for audio elements
@@ -240,6 +244,8 @@ class VoiceServiceClass {
         audio_ai_noise_suppression: settings?.audio_ai_noise_suppression ?? true,
         voice_activity_detection: settings?.voice_activity_detection ?? true,
         enable_voice_join_sounds: settings?.enable_voice_join_sounds ?? true,
+        noise_suppression_mode: settings.noise_suppression_mode ?? null,
+        noise_aggressiveness: settings.noise_aggressiveness ?? 0.5,
       };
       this.outputVolume = this.voiceSettings.audio_output_volume;
       return this.voiceSettings;
@@ -258,6 +264,8 @@ class VoiceServiceClass {
         audio_ai_noise_suppression: true,
         voice_activity_detection: true,
         enable_voice_join_sounds: true,
+        noise_suppression_mode: null,
+        noise_aggressiveness: 0.5,
       };
     }
   }
@@ -407,8 +415,6 @@ class VoiceServiceClass {
       }
 
       // 3. Create and configure Room with user's audio settings
-      // When AI NS is enabled, disable browser's built-in noiseSuppression (DTLN replaces it)
-      const useAiNs = settings.audio_ai_noise_suppression && noiseSuppressionService.checkCapabilities().supported;
       const channelBitrate = bitrate || 64000;
       this.room = new Room({
         adaptiveStream: true,
@@ -418,7 +424,7 @@ class VoiceServiceClass {
           deviceId: settings.audio_input_device_id || undefined,
           autoGainControl: settings.audio_auto_gain_control,
           echoCancellation: settings.audio_echo_cancellation,
-          noiseSuppression: useAiNs ? false : settings.audio_noise_suppression,
+          noiseSuppression: false,
         },
         publishDefaults: {
           audioPreset: { maxBitrate: channelBitrate },
@@ -451,31 +457,23 @@ class VoiceServiceClass {
 
       // 7. Enable microphone if we have speak permission and not muted
       if (voicePermissions.canSpeak && !voiceStore.isMuted()) {
-        if (useAiNs) {
-          // AI Noise Suppression: capture mic, process through DTLN, publish clean track
-          try {
-            await noiseSuppressionService.loadModel();
-            const rawStream = await navigator.mediaDevices.getUserMedia({
-              audio: {
-                deviceId: settings.audio_input_device_id || undefined,
-                autoGainControl: settings.audio_auto_gain_control,
-                echoCancellation: settings.audio_echo_cancellation,
-                noiseSuppression: false,
-              },
-            });
-            const cleanStream = await noiseSuppressionService.processOutboundTrack(rawStream);
-            const cleanTrack = cleanStream.getAudioTracks()[0];
-            await this.room!.localParticipant.publishTrack(cleanTrack, {
-              source: Track.Source.Microphone,
-            });
-            console.log('[VoiceService] Microphone enabled with AI noise suppression');
-          } catch (nsErr) {
-            console.warn('[VoiceService] AI NS failed, falling back to browser NS:', nsErr);
-            await this.room!.localParticipant.setMicrophoneEnabled(true);
-          }
-        } else {
-          await this.room.localParticipant.setMicrophoneEnabled(true);
-          console.log('[VoiceService] Microphone enabled');
+        try {
+          const pipeline = await acquireMicStream({
+            deviceId: settings.audio_input_device_id || undefined,
+            autoGainControl: settings.audio_auto_gain_control,
+            echoCancellation: settings.audio_echo_cancellation,
+            noiseSuppressionMode: (settings.noise_suppression_mode as any) ?? 'native',
+            noiseAggressiveness: settings.noise_aggressiveness ?? 0.5,
+          });
+          this._micPipeline = pipeline;
+          const track = pipeline.stream.getAudioTracks()[0];
+          await this.room!.localParticipant.publishTrack(track, {
+            source: Track.Source.Microphone,
+          });
+          console.log('[VoiceService] Microphone enabled with noise mode:', settings.noise_suppression_mode ?? 'native');
+        } catch (micErr) {
+          console.warn('[VoiceService] Mic pipeline failed, falling back to basic mic:', micErr);
+          await this.room!.localParticipant.setMicrophoneEnabled(true);
         }
       }
 
@@ -542,6 +540,12 @@ class VoiceServiceClass {
 
       // Tear down AI noise suppression pipelines
       await noiseSuppressionService.destroy();
+
+      // Tear down mic pipeline
+      if (this._micPipeline) {
+        await this._micPipeline.cleanup();
+        this._micPipeline = null;
+      }
 
       // Play leave sound before disconnecting
       this.playSound('leave');
@@ -1436,6 +1440,10 @@ class VoiceServiceClass {
       }
     }
     noiseSuppressionService.destroy();
+    if (this._micPipeline) {
+      this._micPipeline.cleanup();
+      this._micPipeline = null;
+    }
     voiceStore.setDisconnected();
     this.cleanupAudioElements();
     this.cleanupVideoElements();

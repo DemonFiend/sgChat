@@ -11,7 +11,10 @@ import { AvatarPicker } from './AvatarPicker';
 import { api } from '@/api';
 import { USER_TIMEZONES } from '@/lib/timezones';
 import { isElectron } from '@/lib/electron';
-import { noiseSuppressionService } from '@/lib/noiseSuppressionService';
+import { NoiseModeSelector } from '@/components/voice/NoiseModeSelector';
+import { MicLevelMeter } from '@/components/voice/MicLevelMeter';
+import { useVoiceSettingsStore } from '@/stores/voiceSettings';
+import { acquireMicStream, type MicPipelineResult } from '@/audio/micPipeline';
 
 type SettingsTab = 'account' | 'profile' | 'appearance' | 'notifications' | 'voice' | 'keybinds';
 
@@ -1372,20 +1375,13 @@ function VoiceTab() {
   const [inputSensitivity, setInputSensitivity] = useState(50);
   const [autoGainControl, setAutoGainControl] = useState(true);
   const [echoCancellation, setEchoCancellation] = useState(true);
-  const [noiseSuppression, setNoiseSuppression] = useState(true);
-  const [aiNoiseSuppression, setAiNoiseSuppression] = useState(true);
-  const [aiNsSupported, setAiNsSupported] = useState(true);
-  const [aiNsUnsupportedReason, setAiNsUnsupportedReason] = useState<string | null>(null);
   const [voiceActivityDetection, setVoiceActivityDetection] = useState(true);
   const [enableVoiceJoinSounds, setEnableVoiceJoinSounds] = useState(true);
   const [isTesting, setIsTesting] = useState(false);
-  const [micLevel, setMicLevel] = useState(0);
+  const [testAnalyser, setTestAnalyser] = useState<AnalyserNode | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const testStreamRef = useRef<MediaStream | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
+  const micPipelineRef = useRef<MicPipelineResult | null>(null);
   const inputVolumeRef = useRef(inputVolume);
 
   // Keep inputVolumeRef in sync so the animation frame callback reads the latest value
@@ -1410,22 +1406,13 @@ function VoiceTab() {
     }
   }, []);
 
-  const stopMicTest = useCallback(() => {
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
+  const stopMicTest = useCallback(async () => {
+    if (micPipelineRef.current) {
+      await micPipelineRef.current.cleanup();
+      micPipelineRef.current = null;
     }
-    if (testStreamRef.current) {
-      testStreamRef.current.getTracks().forEach(track => track.stop());
-      testStreamRef.current = null;
-    }
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
-    analyserRef.current = null;
+    setTestAnalyser(null);
     setIsTesting(false);
-    setMicLevel(0);
   }, []);
 
   // Load saved settings
@@ -1441,19 +1428,15 @@ function VoiceTab() {
           setInputSensitivity(settings.audio_input_sensitivity ?? 50);
           setAutoGainControl(settings.audio_auto_gain_control ?? true);
           setEchoCancellation(settings.audio_echo_cancellation ?? true);
-          setNoiseSuppression(settings.audio_noise_suppression ?? true);
-          setAiNoiseSuppression(settings.audio_ai_noise_suppression ?? true);
           setVoiceActivityDetection(settings.voice_activity_detection ?? true);
-
-          // Check AI NS capability
-          const caps = noiseSuppressionService.checkCapabilities();
-          setAiNsSupported(caps.supported);
-          setAiNsUnsupportedReason(caps.reason || null);
           setEnableVoiceJoinSounds(settings.enable_voice_join_sounds ?? true);
         }
       } catch (err) {
         console.error('Failed to load voice settings:', err);
       }
+
+      // Load noise mode settings into the voice settings store
+      useVoiceSettingsStore.getState().load();
 
       await enumerateDevices();
     })();
@@ -1509,44 +1492,23 @@ function VoiceTab() {
     saveSettings({ [settingKey]: newValue });
   }, [saveSettings]);
 
-  const updateMicLevel = useCallback(() => {
-    if (!analyserRef.current) return;
-
-    const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
-    analyserRef.current.getByteFrequencyData(dataArray);
-
-    // Calculate average level
-    const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
-    const normalizedLevel = Math.min(100, (average / 128) * 100 * (inputVolumeRef.current / 100));
-    setMicLevel(normalizedLevel);
-
-    animationFrameRef.current = requestAnimationFrame(updateMicLevel);
-  }, []);
-
   const startMicTest = useCallback(async () => {
     try {
-      const constraints: MediaStreamConstraints = {
-        audio: {
-          deviceId: selectedInputDevice ? { exact: selectedInputDevice } : undefined,
-          autoGainControl: autoGainControl,
-          echoCancellation: echoCancellation,
-          noiseSuppression: noiseSuppression,
-        }
-      };
-
-      testStreamRef.current = await navigator.mediaDevices.getUserMedia(constraints);
-      audioContextRef.current = new AudioContext();
-      const source = audioContextRef.current.createMediaStreamSource(testStreamRef.current);
-      analyserRef.current = audioContextRef.current.createAnalyser();
-      analyserRef.current.fftSize = 256;
-      source.connect(analyserRef.current);
-
+      const voiceSettings = useVoiceSettingsStore.getState();
+      const pipeline = await acquireMicStream({
+        deviceId: selectedInputDevice || undefined,
+        autoGainControl,
+        echoCancellation,
+        noiseSuppressionMode: voiceSettings.noiseSuppressionMode,
+        noiseAggressiveness: voiceSettings.noiseAggressiveness,
+      });
+      micPipelineRef.current = pipeline;
+      setTestAnalyser(pipeline.analyserNode);
       setIsTesting(true);
-      updateMicLevel();
     } catch (err) {
       console.error('Failed to start mic test:', err);
     }
-  }, [selectedInputDevice, autoGainControl, echoCancellation, noiseSuppression, updateMicLevel]);
+  }, [selectedInputDevice, autoGainControl, echoCancellation]);
 
   const testSpeakers = useCallback(async () => {
     try {
@@ -1634,12 +1596,7 @@ function VoiceTab() {
           />
           {/* Mic level indicator */}
           {isTesting && (
-            <div className="mt-2 h-2 bg-bg-tertiary rounded-full overflow-hidden">
-              <div
-                className="h-full bg-success transition-all duration-75"
-                style={{ width: `${micLevel}%` }}
-              />
-            </div>
+            <MicLevelMeter analyserNode={testAnalyser} inputVolume={inputVolume} className="mt-2" />
           )}
         </div>
 
@@ -1726,65 +1683,8 @@ function VoiceTab() {
               </button>
             </div>
 
-            {/* AI Noise Suppression */}
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <div className="text-text-primary font-medium">AI Noise Suppression</div>
-                  {aiNoiseSuppression && aiNsSupported && (
-                    <span className={clsx(
-                      "inline-block w-2 h-2 rounded-full",
-                      noiseSuppressionService.cpuLevel === 'low' ? 'bg-success' :
-                      noiseSuppressionService.cpuLevel === 'moderate' ? 'bg-warning' : 'bg-error'
-                    )} title={`CPU usage: ${noiseSuppressionService.cpuLevel}`} />
-                  )}
-                </div>
-                <div className="text-sm text-text-muted">
-                  {aiNsSupported
-                    ? 'AI-powered noise removal using DTLN (processes audio locally)'
-                    : aiNsUnsupportedReason || 'Not supported in this browser'}
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  if (!aiNsSupported) return;
-                  toggleSetting(aiNoiseSuppression, setAiNoiseSuppression, 'audio_ai_noise_suppression');
-                }}
-                disabled={!aiNsSupported}
-                className={clsx(
-                  "relative w-12 h-6 rounded-full transition-colors",
-                  !aiNsSupported ? 'bg-bg-tertiary opacity-50 cursor-not-allowed' :
-                  aiNoiseSuppression ? 'bg-success' : 'bg-bg-tertiary'
-                )}
-              >
-                <div className={clsx(
-                  "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
-                  aiNoiseSuppression && aiNsSupported ? 'left-7' : 'left-1'
-                )} />
-              </button>
-            </div>
-
-            {/* Browser Noise Suppression (fallback when AI NS is off) */}
-            {!aiNoiseSuppression && (
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-text-primary font-medium">Browser Noise Suppression</div>
-                  <div className="text-sm text-text-muted">Basic browser-level noise reduction</div>
-                </div>
-                <button
-                  onClick={() => toggleSetting(noiseSuppression, setNoiseSuppression, 'audio_noise_suppression')}
-                  className={clsx(
-                    "relative w-12 h-6 rounded-full transition-colors",
-                    noiseSuppression ? 'bg-success' : 'bg-bg-tertiary'
-                  )}
-                >
-                  <div className={clsx(
-                    "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
-                    noiseSuppression ? 'left-7' : 'left-1'
-                  )} />
-                </button>
-              </div>
-            )}
+            {/* Noise Suppression Mode Selector */}
+            <NoiseModeSelector />
 
             {/* Auto Gain Control */}
             <div className="flex items-center justify-between">

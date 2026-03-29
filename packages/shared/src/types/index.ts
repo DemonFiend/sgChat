@@ -235,6 +235,9 @@ export interface UserSettings {
   audio_auto_gain_control: boolean;
   audio_echo_cancellation: boolean;
   audio_noise_suppression: boolean;
+  audio_ai_noise_suppression: boolean;
+  noise_suppression_mode: import('./audio.js').NoiseSuppressionMode | null;
+  noise_aggressiveness: number;
   voice_activity_detection: boolean;
   push_to_talk_key: string | null;
   // Notification sounds

@@ -4,6 +4,7 @@ import { voiceStore, type VoicePermissions, type ConnectionQualityLevel, type Sc
 import { socketService } from './socket';
 import { soundService } from './soundService';
 import { noiseSuppressionService } from './noiseSuppressionService';
+import { acquireMicStream, type MicPipelineResult } from '@/audio/micPipeline';
 
 interface JoinDMVoiceResponse {
   token: string;
@@ -29,6 +30,8 @@ interface VoiceSettings {
   audio_ai_noise_suppression: boolean;
   voice_activity_detection: boolean;
   enable_voice_join_sounds: boolean;
+  noise_suppression_mode: string | null;
+  noise_aggressiveness: number;
 }
 
 class DMVoiceServiceClass {
@@ -46,6 +49,7 @@ class DMVoiceServiceClass {
   private autoKickTimerId: ReturnType<typeof setTimeout> | null = null;
   private autoLeaveAfterRemoteLeftTimerId: ReturnType<typeof setTimeout> | null = null;
   private _wasMutedBeforeDeafen: boolean = false;
+  private _micPipeline: MicPipelineResult | null = null;
 
   setAudioContainer(container: HTMLElement) {
     this.audioContainer = container;
@@ -66,6 +70,8 @@ class DMVoiceServiceClass {
         audio_ai_noise_suppression: settings?.audio_ai_noise_suppression ?? true,
         voice_activity_detection: settings?.voice_activity_detection ?? true,
         enable_voice_join_sounds: settings?.enable_voice_join_sounds ?? true,
+        noise_suppression_mode: settings.noise_suppression_mode ?? null,
+        noise_aggressiveness: settings.noise_aggressiveness ?? 0.5,
       };
       this.outputVolume = this.voiceSettings.audio_output_volume;
       return this.voiceSettings;
@@ -83,6 +89,8 @@ class DMVoiceServiceClass {
         audio_ai_noise_suppression: true,
         voice_activity_detection: true,
         enable_voice_join_sounds: true,
+        noise_suppression_mode: null,
+        noise_aggressiveness: 0.5,
       };
     }
   }
@@ -118,8 +126,6 @@ class DMVoiceServiceClass {
 
       console.log('[DMVoiceService] Got token, connecting to LiveKit at:', url);
 
-      // When AI NS is enabled, disable browser's built-in noiseSuppression (DTLN replaces it)
-      const useAiNs = settings.audio_ai_noise_suppression && noiseSuppressionService.checkCapabilities().supported;
       this.room = new Room({
         adaptiveStream: true,
         dynacast: true,
@@ -127,7 +133,7 @@ class DMVoiceServiceClass {
           deviceId: settings.audio_input_device_id || undefined,
           autoGainControl: settings.audio_auto_gain_control,
           echoCancellation: settings.audio_echo_cancellation,
-          noiseSuppression: useAiNs ? false : settings.audio_noise_suppression,
+          noiseSuppression: false,
         },
         publishDefaults: {
           audioPreset: { maxBitrate: 64000 },
@@ -190,31 +196,23 @@ class DMVoiceServiceClass {
       }
 
       if (!voiceStore.isMuted()) {
-        if (useAiNs) {
-          // AI Noise Suppression: capture mic, process through DTLN, publish clean track
-          try {
-            await noiseSuppressionService.loadModel();
-            const rawStream = await navigator.mediaDevices.getUserMedia({
-              audio: {
-                deviceId: settings.audio_input_device_id || undefined,
-                autoGainControl: settings.audio_auto_gain_control,
-                echoCancellation: settings.audio_echo_cancellation,
-                noiseSuppression: false,
-              },
-            });
-            const cleanStream = await noiseSuppressionService.processOutboundTrack(rawStream);
-            const cleanTrack = cleanStream.getAudioTracks()[0];
-            await this.room!.localParticipant.publishTrack(cleanTrack, {
-              source: Track.Source.Microphone,
-            });
-            console.log('[DMVoiceService] Microphone enabled with AI noise suppression');
-          } catch (nsErr) {
-            console.warn('[DMVoiceService] AI NS failed, falling back to browser NS:', nsErr);
-            await this.room!.localParticipant.setMicrophoneEnabled(true);
-          }
-        } else {
-          await this.room.localParticipant.setMicrophoneEnabled(true);
-          console.log('[DMVoiceService] Microphone enabled');
+        try {
+          const pipeline = await acquireMicStream({
+            deviceId: settings.audio_input_device_id || undefined,
+            autoGainControl: settings.audio_auto_gain_control,
+            echoCancellation: settings.audio_echo_cancellation,
+            noiseSuppressionMode: (settings.noise_suppression_mode as any) ?? 'native',
+            noiseAggressiveness: settings.noise_aggressiveness ?? 0.5,
+          });
+          this._micPipeline = pipeline;
+          const track = pipeline.stream.getAudioTracks()[0];
+          await this.room!.localParticipant.publishTrack(track, {
+            source: Track.Source.Microphone,
+          });
+          console.log('[DMVoiceService] Microphone enabled with noise mode:', settings.noise_suppression_mode ?? 'native');
+        } catch (micErr) {
+          console.warn('[DMVoiceService] Mic pipeline failed, falling back to basic mic:', micErr);
+          await this.room!.localParticipant.setMicrophoneEnabled(true);
         }
       }
 
@@ -251,6 +249,12 @@ class DMVoiceServiceClass {
 
     // Tear down AI noise suppression pipelines
     await noiseSuppressionService.destroy();
+
+    // Tear down mic pipeline
+    if (this._micPipeline) {
+      await this._micPipeline.cleanup();
+      this._micPipeline = null;
+    }
 
     this.playSound('leave');
 
@@ -509,6 +513,10 @@ class DMVoiceServiceClass {
           api.post(`/dms/${this.currentDMChannelId}/voice/leave`, {}).catch(() => {});
         }
         noiseSuppressionService.destroy();
+        if (this._micPipeline) {
+          this._micPipeline.cleanup();
+          this._micPipeline = null;
+        }
         this.clearCallTimers();
         this.stopConnectionQualityMonitoring();
         this.cleanupAudioElements();
@@ -526,6 +534,10 @@ class DMVoiceServiceClass {
         api.post(`/dms/${this.currentDMChannelId}/voice/leave`, {}).catch(() => {});
       }
       noiseSuppressionService.destroy();
+      if (this._micPipeline) {
+        this._micPipeline.cleanup();
+        this._micPipeline = null;
+      }
       this.clearCallTimers();
       this.stopConnectionQualityMonitoring();
       this.cleanupAudioElements();

@@ -4,7 +4,7 @@ import { db } from '../lib/db.js';
 import { redis } from '../lib/redis.js';
 import { storage } from '../lib/storage.js';
 import { publishEvent } from '../lib/eventBus.js';
-import { UserStatus, usernameSchema, updateStatusSchema, updateCustomStatusSchema, updateStatusCommentSchema, toNamedPermissions, DEFAULT_AVATAR_LIMITS, isPreHashedPassword, updateActivitySchema, updateKeybindsSchema } from '@sgchat/shared';
+import { UserStatus, usernameSchema, updateStatusSchema, updateCustomStatusSchema, updateStatusCommentSchema, toNamedPermissions, DEFAULT_AVATAR_LIMITS, isPreHashedPassword, updateActivitySchema, updateKeybindsSchema, NOISE_SUPPRESSION_MODES } from '@sgchat/shared';
 import type { AvatarLimits, UserAvatar } from '@sgchat/shared';
 import { z } from 'zod';
 import { notFound, badRequest, unauthorized, forbidden } from '../utils/errors.js';
@@ -466,6 +466,28 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
     handler: async (request, _reply) => {
       const body = request.body as Record<string, any>;
 
+      // Validate noise suppression fields
+      if ('noise_suppression_mode' in body) {
+        if (!NOISE_SUPPRESSION_MODES.includes(body.noise_suppression_mode)) {
+          return _reply.status(400).send({
+            error: 'Invalid noise_suppression_mode. Must be one of: off, native, nsnet2, deepfilter',
+          });
+        }
+        // Sync legacy booleans for backward compat with older clients
+        body.audio_noise_suppression = body.noise_suppression_mode !== 'off';
+        body.audio_ai_noise_suppression =
+          body.noise_suppression_mode === 'nsnet2' || body.noise_suppression_mode === 'deepfilter';
+      }
+      if ('noise_aggressiveness' in body) {
+        const val = Number(body.noise_aggressiveness);
+        if (isNaN(val) || val < 0 || val > 1) {
+          return _reply.status(400).send({
+            error: 'noise_aggressiveness must be a number between 0 and 1',
+          });
+        }
+        body.noise_aggressiveness = val;
+      }
+
       const updates: any = { ...body, user_id: request.user!.id };
       updates.updated_at = new Date();
 
@@ -490,7 +512,29 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
     onRequest: [authenticate],
     handler: async (request, _reply) => {
       const body = request.body as Record<string, any>;
-      
+
+      // Validate noise suppression fields
+      if ('noise_suppression_mode' in body) {
+        if (!NOISE_SUPPRESSION_MODES.includes(body.noise_suppression_mode)) {
+          return _reply.status(400).send({
+            error: 'Invalid noise_suppression_mode. Must be one of: off, native, nsnet2, deepfilter',
+          });
+        }
+        // Sync legacy booleans for backward compat with older clients
+        body.audio_noise_suppression = body.noise_suppression_mode !== 'off';
+        body.audio_ai_noise_suppression =
+          body.noise_suppression_mode === 'nsnet2' || body.noise_suppression_mode === 'deepfilter';
+      }
+      if ('noise_aggressiveness' in body) {
+        const val = Number(body.noise_aggressiveness);
+        if (isNaN(val) || val < 0 || val > 1) {
+          return _reply.status(400).send({
+            error: 'noise_aggressiveness must be a number between 0 and 1',
+          });
+        }
+        body.noise_aggressiveness = val;
+      }
+
       const updates: any = { ...body, user_id: request.user!.id };
       updates.updated_at = new Date();
 

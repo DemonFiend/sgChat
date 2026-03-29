@@ -9,3 +9,4 @@ export { useThemeStore, type Theme, themeNames } from './theme';
 export { messageCache } from './messageCache';
 export * as permissions from './permissions';
 export { useEmojiManifestStore, emojiManifestStore } from './emojiManifest';
+export { useVoiceSettingsStore, voiceSettingsStore } from './voiceSettings';
