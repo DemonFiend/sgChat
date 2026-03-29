@@ -250,8 +250,27 @@ function FileCard({ url }: { url: string }) {
  * Render an attachment from the message's attachments array.
  * Exported for use in ChatPanel and DMChatPanel.
  */
-export function AttachmentCard({ attachment }: { attachment: { url: string; filename: string; size: number; type: string } }) {
+export function AttachmentCard({ attachment }: { attachment: { url: string; filename: string; size: number; type: string; width?: number; height?: number } }) {
   const filename = attachment.filename || parseFilenameFromUrl(attachment.url);
+  const isImage = attachment.type?.startsWith('image/');
+
+  // Render image attachments as inline previews
+  if (isImage) {
+    return (
+      <div className="my-1">
+        <a href={attachment.url} target="_blank" rel="noopener noreferrer">
+          <img
+            src={attachment.url}
+            alt={filename}
+            className="max-w-[400px] max-h-[300px] rounded-lg object-contain cursor-pointer hover:opacity-90 transition-opacity"
+            loading="lazy"
+          />
+        </a>
+      </div>
+    );
+  }
+
+  // Non-image attachments render as download cards
   const iconType = getFileIconType(filename);
 
   const iconPath = {
