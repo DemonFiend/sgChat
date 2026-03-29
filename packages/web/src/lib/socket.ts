@@ -122,15 +122,22 @@ function connect() {
     startRelayPingService();
 
     // Hydrate voice participants for all channels so the sidebar is accurate
-    import('@/stores/voice').then(({ useVoiceStore }) => {
-      import('@/api').then(({ api }) => {
+    import('@/api').then(({ api }) => {
+      import('@/stores/voice').then(({ useVoiceStore }) => {
         api.get<{ channels: Record<string, Array<{
           user_id: string; username: string; display_name: string | null;
           avatar_url: string | null; is_muted: boolean; is_deafened: boolean;
           is_streaming?: boolean; voice_status?: string;
         }>> }>('/voice/participants').then((res) => {
+          const channels = res?.channels;
+          if (!channels || typeof channels !== 'object') {
+            console.warn('[Socket] Voice participants response missing channels:', res);
+            return;
+          }
           const voiceStore = useVoiceStore.getState();
-          for (const [channelId, participants] of Object.entries(res.channels)) {
+          let totalHydrated = 0;
+          for (const [channelId, participants] of Object.entries(channels)) {
+            if (!Array.isArray(participants) || participants.length === 0) continue;
             voiceStore.setChannelParticipants(channelId, participants.map(p => ({
               userId: p.user_id,
               username: p.username,
@@ -142,7 +149,9 @@ function connect() {
               isStreaming: p.is_streaming || false,
               voiceStatus: p.voice_status,
             })));
+            totalHydrated += participants.length;
           }
+          console.log(`[Socket] Hydrated ${totalHydrated} voice participants across ${Object.keys(channels).length} channels`);
         }).catch((err) => {
           console.warn('[Socket] Failed to hydrate voice participants:', err);
         });
