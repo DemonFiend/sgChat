@@ -561,8 +561,8 @@ function StaticImageRenderer({ src, isOwnMessage, compact }: { src: string; isOw
         <img
           src={src}
           alt="Shared image"
-          className={`${imageClasses} object-contain bg-bg-tertiary ${imageLoaded ? 'opacity-100' : 'opacity-0 absolute'}`}
-          style={{ transition: 'opacity 0.2s ease-in', display: imageLoaded ? 'block' : 'none' }}
+          className={`${imageClasses} object-contain bg-bg-tertiary ${imageLoaded ? 'opacity-100 relative' : 'opacity-0 absolute pointer-events-none'}`}
+          style={{ transition: 'opacity 0.2s ease-in' }}
           loading="lazy"
           onLoad={() => { setImageLoaded(true); setImageError(false); }}
           onError={() => { setImageLoaded(false); setImageError(true); }}
