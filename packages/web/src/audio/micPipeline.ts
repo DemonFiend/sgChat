@@ -1,12 +1,12 @@
-import type { NoiseSuppressionMode } from '@sgchat/shared';
+import type { NoiseCancellationMode } from '@sgchat/shared';
 import { createRnnoiseNode, clearRnnoiseCache } from './rnnoiseWorklet';
 
 export interface MicPipelineConfig {
   deviceId?: string;
   autoGainControl: boolean;
   echoCancellation: boolean;
-  noiseSuppressionMode: NoiseSuppressionMode;
-  noiseAggressiveness: number;
+  noiseCancellationMode: NoiseCancellationMode;
+  nsAggressiveness: number;
 }
 
 export interface MicPipelineResult {
@@ -44,7 +44,7 @@ export function checkRnnoiseSupport(): { supported: boolean; reason?: string } {
  * - 'deepfilter': Treated as 'nsnet2' on web (desktop-only mode)
  */
 export async function acquireMicStream(config: MicPipelineConfig): Promise<MicPipelineResult> {
-  const effectiveMode = resolveMode(config.noiseSuppressionMode);
+  const effectiveMode = resolveMode(config.noiseCancellationMode);
 
   // For native mode, let the browser handle noise suppression via constraints
   const useNativeNS = effectiveMode === 'native';
@@ -114,7 +114,7 @@ export async function acquireMicStream(config: MicPipelineConfig): Promise<MicPi
     rawStream.getTracks().forEach((t) => t.stop());
     return acquireMicStream({
       ...config,
-      noiseSuppressionMode: 'native',
+      noiseCancellationMode: 'native',
     });
   }
 }
@@ -123,7 +123,7 @@ export async function acquireMicStream(config: MicPipelineConfig): Promise<MicPi
  * Resolves the effective mode for web: 'deepfilter' maps to 'nsnet2' (best available on web).
  * If RNNoise is not supported, falls back to 'native'.
  */
-function resolveMode(mode: NoiseSuppressionMode): 'off' | 'native' | 'nsnet2' {
+function resolveMode(mode: NoiseCancellationMode): 'off' | 'native' | 'nsnet2' {
   if (mode === 'off') return 'off';
   if (mode === 'native') return 'native';
 

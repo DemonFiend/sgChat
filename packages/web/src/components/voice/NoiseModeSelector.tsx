@@ -1,6 +1,6 @@
 import { useVoiceSettingsStore } from '@/stores/voiceSettings';
 import { checkRnnoiseSupport } from '@/audio/micPipeline';
-import type { NoiseSuppressionMode } from '@sgchat/shared';
+import type { NoiseCancellationMode } from '@sgchat/shared';
 import { WEB_NOISE_MODES } from '@sgchat/shared';
 import clsx from 'clsx';
 import { useMemo } from 'react';
@@ -18,8 +18,8 @@ const MODE_DESCRIPTIONS: Record<string, string> = {
 };
 
 export function NoiseModeSelector() {
-  const mode = useVoiceSettingsStore((s) => s.noiseSuppressionMode);
-  const aggressiveness = useVoiceSettingsStore((s) => s.noiseAggressiveness);
+  const mode = useVoiceSettingsStore((s) => s.noiseCancellationMode);
+  const aggressiveness = useVoiceSettingsStore((s) => s.nsAggressiveness);
   const setNoiseMode = useVoiceSettingsStore((s) => s.setNoiseMode);
   const setAggressiveness = useVoiceSettingsStore((s) => s.setAggressiveness);
 
@@ -28,7 +28,7 @@ export function NoiseModeSelector() {
   // Map deepfilter (desktop-only) to nsnet2 for display
   const displayMode = mode === 'deepfilter' ? 'nsnet2' : mode;
 
-  const handleModeChange = (newMode: NoiseSuppressionMode) => {
+  const handleModeChange = (newMode: NoiseCancellationMode) => {
     if (newMode === 'nsnet2' && !rnnoiseSupport.supported) return;
     setNoiseMode(newMode);
   };
@@ -80,13 +80,13 @@ export function NoiseModeSelector() {
         <div className="pt-2">
           <label
             className="block text-xs font-bold uppercase text-text-muted mb-2"
-            htmlFor="noise-aggressiveness"
+            htmlFor="ns-aggressiveness"
           >
             Suppression Strength — {Math.round(aggressiveness * 100)}%
           </label>
           <input
             type="range"
-            id="noise-aggressiveness"
+            id="ns-aggressiveness"
             min="0"
             max="100"
             value={Math.round(aggressiveness * 100)}

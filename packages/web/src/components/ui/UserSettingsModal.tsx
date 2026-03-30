@@ -1499,8 +1499,8 @@ function VoiceTab() {
         deviceId: selectedInputDevice || undefined,
         autoGainControl,
         echoCancellation,
-        noiseSuppressionMode: voiceSettings.noiseSuppressionMode,
-        noiseAggressiveness: voiceSettings.noiseAggressiveness,
+        noiseCancellationMode: voiceSettings.noiseCancellationMode,
+        nsAggressiveness: voiceSettings.nsAggressiveness,
       });
       micPipelineRef.current = pipeline;
       setTestAnalyser(pipeline.analyserNode);

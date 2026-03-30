@@ -57,8 +57,8 @@ interface VoiceSettings {
   audio_ai_noise_suppression: boolean;
   voice_activity_detection: boolean;
   enable_voice_join_sounds: boolean;
-  noise_suppression_mode: string | null;
-  noise_aggressiveness: number;
+  noise_cancellation_mode: string | null;
+  ns_aggressiveness: number;
 }
 
 const VOICE_CHANNEL_STORAGE_KEY = 'sgchat_voice_channel';
@@ -244,8 +244,8 @@ class VoiceServiceClass {
         audio_ai_noise_suppression: settings?.audio_ai_noise_suppression ?? true,
         voice_activity_detection: settings?.voice_activity_detection ?? true,
         enable_voice_join_sounds: settings?.enable_voice_join_sounds ?? true,
-        noise_suppression_mode: settings.noise_suppression_mode ?? null,
-        noise_aggressiveness: settings.noise_aggressiveness ?? 0.5,
+        noise_cancellation_mode: settings.noise_cancellation_mode ?? null,
+        ns_aggressiveness: settings.ns_aggressiveness ?? 0.5,
       };
       this.outputVolume = this.voiceSettings.audio_output_volume;
       return this.voiceSettings;
@@ -264,8 +264,8 @@ class VoiceServiceClass {
         audio_ai_noise_suppression: true,
         voice_activity_detection: true,
         enable_voice_join_sounds: true,
-        noise_suppression_mode: null,
-        noise_aggressiveness: 0.5,
+        noise_cancellation_mode: null,
+        ns_aggressiveness: 0.5,
       };
     }
   }
@@ -462,15 +462,15 @@ class VoiceServiceClass {
             deviceId: settings.audio_input_device_id || undefined,
             autoGainControl: settings.audio_auto_gain_control,
             echoCancellation: settings.audio_echo_cancellation,
-            noiseSuppressionMode: (settings.noise_suppression_mode as any) ?? 'native',
-            noiseAggressiveness: settings.noise_aggressiveness ?? 0.5,
+            noiseCancellationMode: (settings.noise_cancellation_mode as any) ?? 'off',
+            nsAggressiveness: settings.ns_aggressiveness ?? 0.5,
           });
           this._micPipeline = pipeline;
           const track = pipeline.stream.getAudioTracks()[0];
           await this.room!.localParticipant.publishTrack(track, {
             source: Track.Source.Microphone,
           });
-          console.log('[VoiceService] Microphone enabled with noise mode:', settings.noise_suppression_mode ?? 'native');
+          console.log('[VoiceService] Microphone enabled with noise mode:', settings.noise_cancellation_mode ?? 'off');
         } catch (micErr) {
           console.warn('[VoiceService] Mic pipeline failed, falling back to basic mic:', micErr);
           await this.room!.localParticipant.setMicrophoneEnabled(true);

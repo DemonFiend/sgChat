@@ -1,12 +1,12 @@
 import { create } from 'zustand';
-import type { NoiseSuppressionMode } from '@sgchat/shared';
-import { DEFAULT_NOISE_SUPPRESSION_MODE, DEFAULT_NOISE_AGGRESSIVENESS } from '@sgchat/shared';
+import type { NoiseCancellationMode } from '@sgchat/shared';
+import { DEFAULT_NOISE_CANCELLATION_MODE, DEFAULT_NS_AGGRESSIVENESS } from '@sgchat/shared';
 import { api } from '@/api/client';
 
 interface VoiceSettingsState {
-  // Noise suppression
-  noiseSuppressionMode: NoiseSuppressionMode;
-  noiseAggressiveness: number;
+  // Noise cancellation
+  noiseCancellationMode: NoiseCancellationMode;
+  nsAggressiveness: number;
   // Audio devices
   audioInputDeviceId: string | null;
   audioOutputDeviceId: string | null;
@@ -29,7 +29,7 @@ interface VoiceSettingsState {
 
 interface VoiceSettingsActions {
   load: () => Promise<void>;
-  setNoiseMode: (mode: NoiseSuppressionMode) => void;
+  setNoiseMode: (mode: NoiseCancellationMode) => void;
   setAggressiveness: (value: number) => void;
   saveSetting: (key: string, value: unknown) => Promise<void>;
 }
@@ -37,8 +37,8 @@ interface VoiceSettingsActions {
 export const useVoiceSettingsStore = create<VoiceSettingsState & VoiceSettingsActions>(
   (set, get) => ({
     // Default state
-    noiseSuppressionMode: DEFAULT_NOISE_SUPPRESSION_MODE,
-    noiseAggressiveness: DEFAULT_NOISE_AGGRESSIVENESS,
+    noiseCancellationMode: DEFAULT_NOISE_CANCELLATION_MODE,
+    nsAggressiveness: DEFAULT_NS_AGGRESSIVENESS,
     audioInputDeviceId: null,
     audioOutputDeviceId: null,
     inputVolume: 100,
@@ -57,9 +57,9 @@ export const useVoiceSettingsStore = create<VoiceSettingsState & VoiceSettingsAc
         const settings = await api.get<Record<string, unknown>>('/users/me/settings');
         if (settings) {
           // Derive noise mode from response — use new field if present, else derive from legacy booleans
-          let noiseMode: NoiseSuppressionMode = DEFAULT_NOISE_SUPPRESSION_MODE;
-          if (settings.noise_suppression_mode) {
-            noiseMode = settings.noise_suppression_mode as NoiseSuppressionMode;
+          let noiseMode: NoiseCancellationMode = DEFAULT_NOISE_CANCELLATION_MODE;
+          if (settings.noise_cancellation_mode) {
+            noiseMode = settings.noise_cancellation_mode as NoiseCancellationMode;
           } else if (settings.audio_ai_noise_suppression) {
             noiseMode = 'nsnet2';
           } else if (settings.audio_noise_suppression) {
@@ -69,9 +69,9 @@ export const useVoiceSettingsStore = create<VoiceSettingsState & VoiceSettingsAc
           }
 
           set({
-            noiseSuppressionMode: noiseMode,
-            noiseAggressiveness:
-              (settings.noise_aggressiveness as number) ?? DEFAULT_NOISE_AGGRESSIVENESS,
+            noiseCancellationMode: noiseMode,
+            nsAggressiveness:
+              (settings.ns_aggressiveness as number) ?? DEFAULT_NS_AGGRESSIVENESS,
             audioInputDeviceId: (settings.audio_input_device_id as string) ?? null,
             audioOutputDeviceId: (settings.audio_output_device_id as string) ?? null,
             inputVolume: (settings.audio_input_volume as number) ?? 100,
@@ -90,14 +90,14 @@ export const useVoiceSettingsStore = create<VoiceSettingsState & VoiceSettingsAc
       }
     },
 
-    setNoiseMode: (mode: NoiseSuppressionMode) => {
-      set({ noiseSuppressionMode: mode });
-      get().saveSetting('noise_suppression_mode', mode);
+    setNoiseMode: (mode: NoiseCancellationMode) => {
+      set({ noiseCancellationMode: mode });
+      get().saveSetting('noise_cancellation_mode', mode);
     },
 
     setAggressiveness: (value: number) => {
-      set({ noiseAggressiveness: value });
-      get().saveSetting('noise_aggressiveness', value);
+      set({ nsAggressiveness: value });
+      get().saveSetting('ns_aggressiveness', value);
     },
 
     saveSetting: async (key: string, value: unknown) => {
