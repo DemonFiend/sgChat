@@ -25,6 +25,7 @@ Tracks feature/bug requests from the sgChat desktop client team and their review
 | SRVREQ-custom-status-presence | [Custom Status Not Reflecting in Member List](SRVREQ-custom-status-presence.md) | P2 | Implemented | 2026-03-29 | Added missing custom_status_emoji + status_expires_at to member query; fixed presence event payload |
 | SRVREQ-image-upload-404 | [Investigate Image Upload 404 Errors](SRVREQ-image-upload-404.md) | P1 | Corrected | 2026-03-29 | All endpoints exist — 404 is client-side path mismatch. Documented correct paths for client team |
 | SRVREQ-noise-cancellation-mode | [Noise Cancellation Mode Remote Settings](SRVREQ-noise-cancellation-mode.md) | P3 | Implemented | 2026-03-29 | Added noise_cancellation_mode + ns_aggressiveness columns, server validation, legacy boolean sync. Also built web client RNNoise pipeline + UI |
+| SRVREQ-fix-disconnect-status | [Fix DB Status Not Updated on Disconnect](SRVREQ-fix-disconnect-status.md) | P1 | Implemented | 2026-04-01 | Bug confirmed & fixed — added `db.users.updateStatus(userId, 'offline')` in disconnect handler's isLastSession block |
 
 ---
 
@@ -92,6 +93,29 @@ Tracks feature/bug requests from the sgChat desktop client team and their review
 ### Implementation Recommendation
 - Implement change #1 (the `NOT EXISTS` subquery) — simple, safe, effective.
 - Skip change #2 (explicit DELETE after ban) — redundant given the existing transaction.
+
+---
+
+## Review: SRVREQ-fix-disconnect-status (P1)
+
+**Status: Accepted** — Valid bug. Client's analysis and proposed fix are correct.
+
+### 1. Bug Confirmed
+- Disconnect handler at [socket/index.ts:1305](packages/api/src/socket/index.ts#L1305) updates `last_seen_at` but **never sets `status = 'offline'`** in the `users` table.
+- Connect flow correctly writes status via `db.users.updateStatus(userId, 'online')` at [socket/index.ts:770](packages/api/src/socket/index.ts#L770).
+- Result: DB retains stale `'online'` status indefinitely after disconnect. New clients loading the member list see ghost users.
+
+### 2. Fix Location — CORRECT
+- File: `packages/api/src/socket/index.ts`, disconnect handler (~line 1305)
+- Function: `db.users.updateStatus(id, status)` at [db.ts:75](packages/api/src/lib/db.ts#L75) already exists and does the right thing.
+
+### 3. Proposed Code — ACCEPTED AS-IS
+- Add `await db.users.updateStatus(userId, 'offline')` inside `isLastSession` block, before the `wasInvisible` broadcast check.
+- Invisible users already have `'offline'` in DB — update is a harmless no-op.
+- No migration, no new columns, no schema changes. Pure one-line bug fix.
+
+### Priority Assessment
+- Client marked this as unlabeled; **upgrading to P1** — this causes incorrect presence state for every user that has ever connected and disconnected.
 
 ---
 

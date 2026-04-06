@@ -57,6 +57,13 @@ temp/
 *.7z
 *.rar
 
+# QA screenshots and image artifacts
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+
 # Docker
 .dockerignore
 

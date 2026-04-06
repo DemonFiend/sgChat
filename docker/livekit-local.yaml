@@ -12,6 +12,7 @@ turn:
 
 redis:
   address: redis:6379
+  password: sgchat_local_redis
 
 keys:
   devkey7880: secret_for_local_dev_only_not_for_production_use_1234

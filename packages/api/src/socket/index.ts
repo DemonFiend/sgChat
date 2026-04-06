@@ -1304,19 +1304,23 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
 
       await db.sql`UPDATE users SET last_seen_at = NOW() WHERE id = ${userId}`;
 
-      // Only broadcast offline status if this was the last session
-      if (!wasInvisible && isLastSession) {
-        for (const server of servers) {
-          await publishEvent({
-            type: 'presence.update',
-            actorId: userId,
-            resourceId: `server:${server.id}`,
-            payload: {
-              user_id: userId,
-              status: 'offline',
-              last_seen_at: new Date().toISOString(),
-            },
-          });
+      // Persist offline status to DB and broadcast if this was the last session
+      if (isLastSession) {
+        await db.users.updateStatus(userId, 'offline');
+
+        if (!wasInvisible) {
+          for (const server of servers) {
+            await publishEvent({
+              type: 'presence.update',
+              actorId: userId,
+              resourceId: `server:${server.id}`,
+              payload: {
+                user_id: userId,
+                status: 'offline',
+                last_seen_at: new Date().toISOString(),
+              },
+            });
+          }
         }
       }
     });
