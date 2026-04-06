@@ -657,6 +657,7 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
         let canDelete = message.author_id === userId;
         if (!canDelete && message.channel_id) {
           const channel = await db.channels.findById(message.channel_id);
+          if (!channel) return;
           const perms = await calculatePermissions(userId, channel.server_id, message.channel_id);
           canDelete = hasPermission(perms.text, TextPermissions.MANAGE_MESSAGES);
         }
@@ -1161,22 +1162,27 @@ export function initSocketIO(io: SocketIOServer, fastify: FastifyInstance) {
 
     socket.on('dm:ack', async (data: { message_ids: string[] }) => {
       try {
+        const now = new Date();
         for (const messageId of data.message_ids) {
-          await db.messages.updateStatus(messageId, 'received', new Date());
-          
           const message = await db.messages.findById(messageId);
-          if (message) {
-            await publishEvent({
-              type: 'dm.message.update',
-              actorId: userId,
-              resourceId: `user:${message.author_id}`,
-              payload: {
-                id: messageId,
-                status: 'received',
-                received_at: new Date().toISOString(),
-              },
-            });
-          }
+          if (!message || !message.dm_channel_id) continue;
+
+          // Verify the current user is a participant in this DM channel
+          const dmChannel = await db.dmChannels.findById(message.dm_channel_id);
+          if (!dmChannel || (dmChannel.user1_id !== userId && dmChannel.user2_id !== userId)) continue;
+
+          await db.messages.updateStatus(messageId, 'received', now);
+
+          await publishEvent({
+            type: 'dm.message.update',
+            actorId: userId,
+            resourceId: `user:${message.author_id}`,
+            payload: {
+              id: messageId,
+              status: 'received',
+              received_at: now.toISOString(),
+            },
+          });
         }
       } catch (err) {
         fastify.log.error(err);

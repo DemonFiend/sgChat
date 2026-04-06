@@ -490,6 +490,13 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
    * with full Administrator permissions.
    */
   fastify.post('/claim-admin', {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: '1 hour',
+        keyGenerator: (req) => (req as any).user?.id ?? req.ip,
+      },
+    },
     onRequest: [authenticate],
     handler: async (request, reply) => {
       const { code } = claimAdminSchema.parse(request.body);
